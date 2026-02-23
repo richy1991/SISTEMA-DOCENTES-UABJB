@@ -17,7 +17,9 @@ backend/db.sqlite3
 backend/media/
 
 # Temporary files
+tmpclaude-*-cwd
 tmpclaude-*-cwd/
+frontend/tmpclaude-*-cwd
 frontend/tmpclaude-*-cwd/
 *.tmp
 
