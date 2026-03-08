@@ -47,6 +47,8 @@ INSTALLED_APPS = [
     
     # Apps locales
     'fondos',
+    'catalogos',
+    'poa_document',
 ]
 
 MIDDLEWARE = [
