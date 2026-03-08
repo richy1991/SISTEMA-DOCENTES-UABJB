@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getFondosLargoPlazo } from '../api';
+import { getFondosLargoPlazo } from '../apis/api';
 import { Link } from 'react-router-dom';
 
 function FondosLargoPlazo({ isDark }) {

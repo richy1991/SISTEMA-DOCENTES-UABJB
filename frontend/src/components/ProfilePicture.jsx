@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { uploadProfilePicture, deleteProfilePicture } from '../api';
+import { uploadProfilePicture, deleteProfilePicture } from '../apis/api';
 import defaultProfileImg from '../assets/logoPre.jpg';
 import toast from 'react-hot-toast';
 

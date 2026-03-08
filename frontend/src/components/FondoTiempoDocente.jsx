@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import api from '../api';
+import api from '../apis/api';
 import toast from 'react-hot-toast';
 
 // debug: ayuda a asegurar que esta versión se está usando

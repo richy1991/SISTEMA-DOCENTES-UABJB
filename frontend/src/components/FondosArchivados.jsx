@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getFondosArchivados, restaurarFondo as restaurarFondoAPI } from '../api';
+import { getFondosArchivados, restaurarFondo as restaurarFondoAPI } from '../apis/api';
 
 function FondosArchivados({ isDark }) {
   const [archivados, setArchivados] = useState([]);

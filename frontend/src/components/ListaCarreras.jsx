@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { getCarreras } from '../api';
-import api from '../api';
+import { getCarreras } from '../apis/api';
+import api from '../apis/api';
 import toast from 'react-hot-toast';
 
 const PencilIcon = (props) => (

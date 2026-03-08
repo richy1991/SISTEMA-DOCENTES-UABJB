@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import ThemeToggle from './ThemeToggle';
-import api from '../api';
+import api from '../apis/api';
 import toast from 'react-hot-toast';
 
 // --- ICONOS ---

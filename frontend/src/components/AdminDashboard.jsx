@@ -1,6 +1,6 @@
 import { useState, useEffect }from 'react';
 import { Link } from 'react-router-dom';
-import api from '../api';
+import api from '../apis/api';
 
 const AdminDashboard = ({ user }) => {
     const displayName = `${user?.first_name || ''} ${user?.last_name || ''}`.trim() || user?.username || 'Admin';

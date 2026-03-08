@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getObservacionesPorFondo, responderObservacion } from '../api';
+import { getObservacionesPorFondo, responderObservacion } from '../apis/api';
 import toast from 'react-hot-toast';
 
 function TimelineObservaciones({ fondoId, puedeResponder = false }) {

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { getDocentes, getCarreras, crearFondoTiempo, getCalendarioActivo, getCalendarios } from '../api';
-import api from '../api';
+import { getDocentes, getCarreras, crearFondoTiempo, getCalendarioActivo, getCalendarios } from '../apis/api';
+import api from '../apis/api';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 

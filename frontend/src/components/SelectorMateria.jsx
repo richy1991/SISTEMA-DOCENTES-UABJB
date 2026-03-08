@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import api from '../api';
+import api from '../apis/api';
 
 const SelectorMateria = ({ onSeleccion, disabled }) => {
   const [semestre, setSemestre] = useState('');

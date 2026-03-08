@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getHistorial } from '../api';
+import { getHistorial } from '../apis/api';
 import { Link } from 'react-router-dom';
 
 // Re-usar los íconos de SeguimientoHistorial

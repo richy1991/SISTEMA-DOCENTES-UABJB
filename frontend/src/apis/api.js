@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = 'http://127.0.0.1:8000/api';
+const API_URL = 'http://localhost:8000/api';
 
 const api = axios.create({
   baseURL: API_URL,
@@ -68,7 +68,6 @@ api.interceptors.response.use(
 
 // ===================================
 // ENDPOINTS - FONDOS DE TIEMPO
-// ===================================
 export const getFondosTiempo = () => api.get('/fondos-tiempo/');
 export const getFondoTiempoDetalle = (id) => api.get(`/fondos-tiempo/${id}/`);
 export const crearFondoTiempo = (data) => api.post('/fondos-tiempo/', data);

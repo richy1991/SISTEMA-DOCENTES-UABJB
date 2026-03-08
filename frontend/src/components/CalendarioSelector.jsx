@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getCalendarioActivo, getCalendarios } from '../api';
+import { getCalendarioActivo, getCalendarios } from '../apis/api';
 
 const CalendarioSelector = ({ value, onChange, disabled = false }) => {
   const [calendarios, setCalendarios] = useState([]);

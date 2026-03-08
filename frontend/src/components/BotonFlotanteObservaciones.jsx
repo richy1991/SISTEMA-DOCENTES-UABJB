@@ -1,6 +1,6 @@
 import { useState, useEffect, forwardRef, useImperativeHandle, useRef } from 'react';
-import { getObservacionesPorFondo, agregarMensajeObservacion } from '../api';
-import api from '../api';
+import { getObservacionesPorFondo, agregarMensajeObservacion } from '../apis/api';
+import api from '../apis/api';
 import toast from 'react-hot-toast';
 
 const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObservacionCambiada }, ref) => {

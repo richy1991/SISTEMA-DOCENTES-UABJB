@@ -4,7 +4,7 @@ import { useTheme } from './useTheme';
 import { Toaster } from 'react-hot-toast';
 
 // Vistas y Componentes
-import api from './api';
+import api from './apis/api';
 import Login from './components/Login';
 import ModuleSelector from './components/ModuleSelector';
 import FondoTiempoLayout from './components/FondoTiempoLayout';

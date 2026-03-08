@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { observarFondo } from '../api';
+import { observarFondo } from '../apis/api';
 import toast from 'react-hot-toast';
 
 const PaperAirplaneIcon = (props) => (

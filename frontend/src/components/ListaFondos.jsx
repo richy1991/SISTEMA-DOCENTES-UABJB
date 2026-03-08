@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getFondosTiempo } from '../api';
+import { getFondosTiempo } from '../apis/api';
 import axios from 'axios';
 
 // --- ICONOS ---

@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import api from '../api';
+import api from '../apis/api';
 import toast from 'react-hot-toast';
 
 const CambiarPassword = ({ onPasswordChanged }) => {

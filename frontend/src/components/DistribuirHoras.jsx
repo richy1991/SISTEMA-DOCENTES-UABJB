@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getCategoriasPorFondo } from '../api';
+import { getCategoriasPorFondo } from '../apis/api';
 import toast from 'react-hot-toast';
 
 const FUNCIONES_SUSTANTIVAS = [

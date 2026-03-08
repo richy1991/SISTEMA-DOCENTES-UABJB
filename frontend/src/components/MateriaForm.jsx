@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import api from '../api';
+import api from '../apis/api';
 import toast from 'react-hot-toast';
 
 const InputField = ({ label, name, type = 'text', value, onChange, required, error }) => (
