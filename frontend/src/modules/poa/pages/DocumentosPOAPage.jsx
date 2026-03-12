@@ -4,9 +4,16 @@ import { DEFAULT_ENTIDAD } from '../config/defaults';
 import GestionSelectorModal from '../components/GestionSelectorModal';
 import NuevoDocumentoModal from '../components/NuevoDocumentoModal';
 import IconButton from '../components/IconButton';
-import { FaEdit, FaTrash, FaBuilding, FaCalendarAlt, FaLayerGroup, FaBriefcase, FaBullseye } from 'react-icons/fa';
+import { FaEdit, FaTrash, FaBuilding, FaCalendarAlt, FaLayerGroup, FaBriefcase, FaBullseye, FaCircle } from 'react-icons/fa';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { deleteDocumentoPOA, getDocumentosPOAPorGestion, API_BASE } from '../../../apis/poa.api';
+
+const ESTADO_CONFIG = {
+  elaboracion: { label: 'En elaboración', dot: 'bg-yellow-400',  badge: 'bg-yellow-100 text-yellow-800 border border-yellow-300',  strip: 'from-yellow-400 to-amber-500',   text: 'text-yellow-500' },
+  revision:    { label: 'En revisión',    dot: 'bg-sky-400',     badge: 'bg-sky-100 text-sky-800 border border-sky-300',           strip: 'from-sky-400 to-blue-500',       text: 'text-sky-400' },
+  aprobado:    { label: 'Aprobado',       dot: 'bg-emerald-400', badge: 'bg-emerald-100 text-emerald-800 border border-emerald-300', strip: 'from-emerald-400 to-green-500',  text: 'text-emerald-400' },
+  ejecucion:   { label: 'En ejecución',   dot: 'bg-violet-400',  badge: 'bg-violet-100 text-violet-800 border border-violet-300',   strip: 'from-violet-400 to-purple-500',  text: 'text-violet-400' },
+};
 
 const DocumentosPOAPage = () => {
   const [showModal, setShowModal] = useState(false);
@@ -139,7 +146,7 @@ const DocumentosPOAPage = () => {
     const id = docId ?? doc?.id;
     if (!id) return;
     const gestionValue = getGestionNumberForDoc(doc);
-    navigate(`/objetivos-especificos/${id}`, {
+    navigate(`/poa/objetivos-especificos/${id}`, {
       state: {
         gestion: gestionValue,
         gestionState: gestionValue,
@@ -212,82 +219,97 @@ const DocumentosPOAPage = () => {
         {/* Documentos en estado local */}
         {fromDialog && (
           <div className="mt-6">
-            <h3 className="text-2xl font-bold text-blue-900 mb-2"> Gestión: {gestionState || location?.state?.gestion}</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 w-full max-w-5xl mx-auto">
+            <h3 className="text-2xl font-bold text-blue-900 mb-4"> Gestión: {gestionState || location?.state?.gestion}</h3>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 w-full">
               {docs && docs.length > 0 ? (
                 docs.map((doc, idx) => (
                   <div key={doc.id || idx} className="w-full">
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleVerActividades(doc.id, doc); } }}
-                      onClick={() => handleVerActividades(doc.id, doc)}
-                      className="card-refined card-elegant p-1.5 md:p-2.5 flex flex-col gap-1.5 md:gap-2 cursor-pointer group focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                    >
-                      {/* Contenido compacto y moderno, igual que Home */}
-                      <div className="flex flex-col gap-2 w-full">
-                        {/* Fila: Entidad y Gestión siempre lado a lado */}
-                        <div className="grid grid-cols-2 gap-2">
-                          <div className="flex items-start gap-1.5 md:gap-2">
-                            <span className="inline-flex items-center justify-center w-6 h-6 md:w-7 md:h-7 rounded-md bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-md">
-                              <FaBuilding className="text-[10px] md:text-[12px]" />
-                            </span>
-                            <div>
-                              <div className="text-[0.6rem] md:text-[0.66rem] uppercase tracking-wide text-blue-700/90 font-semibold card-kv-label">Entidad</div>
-                              <div className="text-[0.72rem] md:text-[0.8rem] text-slate-800 font-semibold card-kv-value">{typeof doc.entidad === 'object' ? (doc.entidad.nombre || JSON.stringify(doc.entidad)) : (doc.entidad || DEFAULT_ENTIDAD)}</div>
-                            </div>
+                    {(() => {
+                      const estado = doc.estado || 'elaboracion';
+                      const cfg = ESTADO_CONFIG[estado] || ESTADO_CONFIG.elaboracion;
+                      const gestion = typeof doc.gestion === 'object' ? (doc.gestion.nombre || '') : (doc.gestion || gestionState);
+                      const programa = typeof doc.programa === 'object' ? (doc.programa.nombre || '') : (doc.programa || '');
+                      const unidad = typeof doc.unidad_solicitante === 'object' ? (doc.unidad_solicitante.nombre || '') : (doc.unidad_solicitante || '');
+                      const entidad = typeof doc.entidad === 'object' ? (doc.entidad.nombre || DEFAULT_ENTIDAD) : (doc.entidad || DEFAULT_ENTIDAD);
+                      const objetivo = typeof doc.objetivo_gestion_institucional === 'object' ? (doc.objetivo_gestion_institucional.nombre || '') : (doc.objetivo_gestion_institucional || '');
+                      return (
+                        <div
+                          role="button" tabIndex={0}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleVerActividades(doc.id, doc); } }}
+                          onClick={() => handleVerActividades(doc.id, doc)}
+                          className="card-refined card-elegant cursor-pointer group focus:outline-none focus:ring-2 focus:ring-blue-500/40 flex flex-row overflow-hidden rounded-2xl min-h-[160px]"
+                        >
+                          {/* Barra lateral de color según estado */}
+                          <div className={`w-2 flex-shrink-0 bg-gradient-to-b ${cfg.strip}`} />
+
+                          {/* Columna izquierda: AÑO grande + entidad + fecha */}
+                          <div className="poa-doc-aside flex flex-col items-center justify-center px-5 py-5 border-r flex-shrink-0 min-w-[90px] gap-1">
+                            <div className={`text-5xl font-black leading-none tracking-tighter ${cfg.text}`}>{gestion}</div>
+                            <div className="poa-doc-label text-[0.55rem] uppercase tracking-widest font-bold text-center mt-1">Gestión</div>
+                            {doc.fecha_elaboracion && (
+                              <div className="mt-2 text-center">
+                                <div className="poa-doc-label text-[0.55rem] uppercase tracking-widest font-semibold">Elaboración</div>
+                                <div className="poa-doc-value text-[0.68rem] font-semibold">{doc.fecha_elaboracion}</div>
+                              </div>
+                            )}
                           </div>
-                          <div className="flex items-start gap-1.5 md:gap-2">
-                            <span className="inline-flex items-center justify-center w-6 h-6 md:w-7 md:h-7 rounded-md bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-md">
-                              <FaCalendarAlt className="text-[10px] md:text-[12px]" />
-                            </span>
-                            <div>
-                              <div className="text-[0.6rem] md:text-[0.66rem] uppercase tracking-wide text-blue-700/90 font-semibold card-kv-label">Gestión</div>
-                              <div className="text-[0.72rem] md:text-[0.8rem] text-slate-800 font-semibold card-kv-value">{typeof doc.gestion === 'object' ? (doc.gestion.nombre || JSON.stringify(doc.gestion)) : (doc.gestion || location.state.gestion)}</div>
+
+                          {/* Columna central: contenido principal */}
+                          <div className="flex flex-col flex-1 min-w-0 p-4 gap-2 justify-between">
+                            <div className="flex flex-col gap-1.5">
+                              {/* Entidad + Estado badge en la misma fila */}
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <div className="flex items-center gap-1.5">
+                                  <FaBuilding className="text-xs text-blue-500 flex-shrink-0 poa-doc-icon" />
+                                  <span className="poa-doc-label text-[0.6rem] uppercase tracking-widest font-semibold">{entidad}</span>
+                                </div>
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[0.6rem] font-bold whitespace-nowrap ${cfg.badge}`}>
+                                  <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+                                  {cfg.label}
+                                </span>
+                              </div>
+
+                              {/* Programa — fuente grande, protagonista */}
+                              {programa && (
+                                <div>
+                                  <div className="flex items-center gap-1 mb-0.5">
+                                    <FaLayerGroup className="text-[0.6rem] text-indigo-500 flex-shrink-0 poa-doc-icon" />
+                                    <span className="poa-doc-label text-[0.55rem] uppercase tracking-widest font-semibold">Programa</span>
+                                  </div>
+                                  <div className="poa-doc-value text-base font-extrabold leading-tight">{programa}</div>
+                                </div>
+                              )}
+
+                              {/* Unidad — fuente media */}
+                              {unidad && (
+                                <div className="flex items-center gap-1.5">
+                                  <FaBriefcase className="text-[0.6rem] text-blue-500 flex-shrink-0 poa-doc-icon" />
+                                  <span className="poa-doc-label text-[0.6rem] uppercase tracking-widest font-semibold mr-1">Unidad:</span>
+                                  <span className="poa-doc-value text-sm font-semibold truncate">{unidad}</span>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Objetivo — recuadro compacto */}
+                            {objetivo && (
+                              <div className="poa-doc-obj-box rounded-lg px-3 py-2 mt-1">
+                                <div className="flex items-center gap-1 mb-1">
+                                  <FaBullseye className="poa-doc-obj-icon text-[0.6rem] flex-shrink-0" />
+                                  <span className="poa-doc-obj-label text-[0.55rem] uppercase tracking-widest font-semibold">Objetivo institucional</span>
+                                </div>
+                                <p className="poa-doc-value text-[0.72rem] leading-relaxed line-clamp-2">{objetivo}</p>
+                              </div>
+                            )}
+
+                            {/* Acciones */}
+                            <div className="flex items-center justify-end gap-2 pt-2 border-t poa-doc-actions-border mt-1">
+                              <IconButton showIcon icon={<FaEdit />} onClick={(e) => { e.stopPropagation(); openEdit(doc); }} className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold py-1 px-3 text-xs rounded-lg shadow hover:from-blue-600 hover:to-indigo-700 transition">Editar</IconButton>
+                              <IconButton showIcon icon={<FaTrash />} onClick={(e) => { e.stopPropagation(); handleDelete(doc); }} disabled={deletingId === doc.id} className={`${deletingId === doc.id ? 'bg-gray-400' : 'bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700'} text-white font-bold py-1 px-3 text-xs rounded-lg shadow transition`}>{deletingId === doc.id ? 'Eliminando...' : 'Eliminar'}</IconButton>
                             </div>
                           </div>
                         </div>
-
-                        {/* Resto: Programa y Unidad en una columna */}
-                        {doc?.programa && (
-                          <div className="flex items-start gap-1.5 md:gap-2">
-                            <span className="inline-flex items-center justify-center w-6 h-6 md:w-7 md:h-7 rounded-md bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-md">
-                              <FaLayerGroup className="text-[10px] md:text-[12px]" />
-                            </span>
-                            <div>
-                              <div className="text-[0.6rem] md:text-[0.66rem] uppercase tracking-wide text-blue-700/90 font-semibold card-kv-label">Programa</div>
-                              <div className="text-[0.72rem] md:text-[0.8rem] text-slate-800 font-semibold card-kv-value">{typeof doc.programa === 'object' ? (doc.programa.nombre || JSON.stringify(doc.programa)) : (doc.programa || 'N/A')}</div>
-                            </div>
-                          </div>
-                        )}
-                        {doc?.unidad_solicitante && (
-                          <div className="flex items-start gap-1.5 md:gap-2">
-                            <span className="inline-flex items-center justify-center w-6 h-6 md:w-7 md:h-7 rounded-md bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-md">
-                              <FaBriefcase className="text-[10px] md:text-[12px]" />
-                            </span>
-                            <div>
-                              <div className="text-[0.6rem] md:text-[0.66rem] uppercase tracking-wide text-blue-700/90 font-semibold card-kv-label">Unidad solicitante</div>
-                              <div className="text-[0.72rem] md:text-[0.8rem] text-slate-800 font-semibold card-kv-value">{typeof doc.unidad_solicitante === 'object' ? (doc.unidad_solicitante.nombre || JSON.stringify(doc.unidad_solicitante)) : (doc.unidad_solicitante || 'N/A')}</div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Objetivo con etiqueta y clamp */}
-                        <div className="flex items-center gap-1.5 md:gap-2 mb-1">
-                          <span className="inline-flex items-center justify-center w-6 h-6 md:w-7 md:h-7 rounded-md bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-md">
-                            <FaBullseye className="text-[10px] md:text-[12px]" />
-                          </span>
-                          <span className="rounded-md px-1.5 md:px-2 py-0.5 text-[0.6rem] md:text-[0.66rem] bg-blue-100 text-blue-800 border border-blue-200 objective-pill">Objetivo de gestión institucional</span>
-                        </div>
-                        <p className="text-[0.72rem] md:text-[0.8rem] text-slate-800 leading-snug line-clamp-4 card-objective">{typeof doc.objetivo_gestion_institucional === 'object' ? (doc.objetivo_gestion_institucional.nombre || JSON.stringify(doc.objetivo_gestion_institucional)) : (doc.objetivo_gestion_institucional || 'N/A')}</p>
-                      </div>
-
-                      {/* Acciones: colocadas al final, a la derecha */}
-                      <div className="flex items-center justify-end gap-2 mt-1">
-                        <IconButton showIcon icon={<FaEdit />} onClick={(e) => { e.stopPropagation(); openEdit(doc); }} className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold py-1 px-3 text-xs md:text-sm rounded-lg shadow-md hover:from-blue-600 hover:to-indigo-700 transition duration-300">Editar</IconButton>
-                        <IconButton showIcon icon={<FaTrash />} onClick={(e) => { e.stopPropagation(); handleDelete(doc); }} disabled={deletingId === doc.id} className={`${deletingId === doc.id ? 'bg-gray-400' : 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold py-1 px-3 text-xs md:text-sm rounded-lg shadow-md hover:from-blue-600 hover:to-indigo-700 transition duration-300'} text-white rounded`} title={deletingId === doc.id ? 'Eliminando...' : 'Eliminar'}>{deletingId === doc.id ? 'Eliminando...' : 'Eliminar'}</IconButton>
-                      </div>
-                    </div>
+                      );
+                    })()}
                   </div>
                 ))
               ) : (

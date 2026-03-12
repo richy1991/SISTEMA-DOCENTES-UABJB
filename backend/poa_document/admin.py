@@ -1,12 +1,12 @@
 from django.contrib import admin
-from poa_document.models import Persona, Direccion, DocumentoPOA
+from poa_document.models import UsuarioPOA, Direccion, DocumentoPOA
 
-@admin.register(Persona)
-class PersonaAdmin(admin.ModelAdmin):
-    list_display = ('nombre', 'cargo', 'activo', 'user')
-    search_fields = ('nombre', 'cargo')
-    list_filter = ('activo',)
-    ordering = ('nombre',)
+@admin.register(UsuarioPOA)
+class UsuarioPOAAdmin(admin.ModelAdmin):
+    list_display = ('docente', 'rol', 'nombre_entidad', 'activo', 'fecha_asignacion')
+    list_filter = ('rol', 'activo')
+    search_fields = ('docente__nombres', 'docente__apellido_paterno', 'nombre_entidad')
+    ordering = ('rol', 'docente__apellido_paterno')
        
 
 @admin.register(Direccion)

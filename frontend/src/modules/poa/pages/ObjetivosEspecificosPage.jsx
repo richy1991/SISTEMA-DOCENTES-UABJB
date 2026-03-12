@@ -239,7 +239,7 @@ const ObjetivosEspecificosPage = () => {
   }, []);
 
 
-  const handleVerActividades = (objetivoId) => navigate(`/actividades/${objetivoId}`);
+  const handleVerActividades = (objetivoId) => navigate(`/poa/actividades/${objetivoId}`);
 
   return (
     <section className="flex flex-col items-center justify-start flex-1 pb-4 px-4 w-full">

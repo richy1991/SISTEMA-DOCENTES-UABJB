@@ -10,7 +10,7 @@ import GestionSelectorModal from './components/GestionSelectorModal';
 import NuevoIndicadorModal from './components/NuevoIndicadorModal';
 import POAHomePage from './pages/POAHomePage';
 import DireccionesPage from './pages/DireccionesPage';
-import PersonasPage from './pages/PersonasPage';
+import AccesosPOAPage from './pages/AccesosPOAPage';
 import DocumentosPOAPage from './pages/DocumentosPOAPage';
 import ActividadesPage from './pages/ActividadesPage';
 import ObjetivosEspecificosPage from './pages/ObjetivosEspecificosPage';
@@ -41,9 +41,6 @@ function POAApp({ user }) {
   const scrollTimeout = useRef(null);
 
   const isHome = location?.pathname === '/poa' || location?.pathname === '/poa/';
-
-  // Debug: verificar usuario
-  console.log('POAApp user:', user);
 
   // Control del header por scroll
   useEffect(() => {
@@ -168,12 +165,12 @@ function POAApp({ user }) {
 
       {/* Modal de gestión */}
       {showGestionModal && (
-        <GestionSelectorModal 
-          onClose={() => setShowGestionModal(false)} 
+        <GestionSelectorModal
+          onClose={() => setShowGestionModal(false)}
           onSuccess={({ gestion, documentos }) => {
             setShowGestionModal(false);
             navigate('/poa/documentos', { state: { gestion, documentos } });
-          }} 
+          }}
         />
       )}
 

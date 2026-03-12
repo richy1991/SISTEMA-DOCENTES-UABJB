@@ -789,6 +789,62 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   border-color: rgba(56,189,248,0.25) !important;
 }
 
+/* ── Tarjeta DocumentoPOA: colores modo CLARO ───────────────────── */
+.poa-doc-aside {
+  background: rgba(241,245,249,0.7);     /* slate-100/70 */
+  border-color: rgba(148,163,184,0.35);  /* slate-300/35 */
+}
+.poa-doc-label {
+  color: #64748b;   /* slate-500 */
+}
+.poa-doc-value {
+  color: #1e293b;   /* slate-900 */
+}
+.poa-doc-icon {
+  color: #3b82f6;   /* blue-500 */
+}
+.poa-doc-obj-box {
+  background: #eef2ff;                   /* indigo-50 */
+  border: 1px solid #c7d2fe;            /* indigo-200 */
+}
+.poa-doc-obj-label {
+  color: #4338ca;   /* indigo-700 */
+}
+.poa-doc-obj-icon {
+  color: #6366f1;   /* indigo-500 */
+}
+.poa-doc-actions-border {
+  border-color: rgba(100,116,139,0.2);  /* slate-400/20 */
+}
+
+/* ── Tarjeta DocumentoPOA: overrides modo OSCURO ─────────────────── */
+:root[data-theme='dark'] .poa-doc-aside {
+  background: rgba(255,255,255,0.04) !important;
+  border-color: rgba(255,255,255,0.08) !important;
+}
+:root[data-theme='dark'] .poa-doc-label {
+  color: #9dd1ff !important;
+}
+:root[data-theme='dark'] .poa-doc-value {
+  color: #e6edf7 !important;
+}
+:root[data-theme='dark'] .poa-doc-icon {
+  color: #93c5fd !important;   /* blue-300 */
+}
+:root[data-theme='dark'] .poa-doc-obj-box {
+  background: rgba(79,70,229,0.12) !important;
+  border: 1px solid rgba(129,140,248,0.3) !important;
+}
+:root[data-theme='dark'] .poa-doc-obj-label {
+  color: #a5b4fc !important;   /* indigo-300 */
+}
+:root[data-theme='dark'] .poa-doc-obj-icon {
+  color: #818cf8 !important;   /* indigo-400 */
+}
+:root[data-theme='dark'] .poa-doc-actions-border {
+  border-color: rgba(255,255,255,0.08) !important;
+}
+
 /* Divisor para tarjetas y modales: sutil y consistente */
 .card-divider {
   height: 1px;

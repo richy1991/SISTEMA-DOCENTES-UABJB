@@ -60,7 +60,7 @@ const POAHomePage = () => {
 	const handleVerActividades = (doc) => {
 		if (!doc?.id) return;
 		const gestionValue = getGestionForDoc(doc);
-		navigate(`/objetivos-especificos/${doc.id}`, {
+		navigate(`/poa/objetivos-especificos/${doc.id}`, {
 			state: {
 				gestion: gestionValue,
 				gestionState: gestionValue,

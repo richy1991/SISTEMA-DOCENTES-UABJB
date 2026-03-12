@@ -9,7 +9,7 @@ import api from './apis/api';
 import POAApp from './modules/poa/poa_App';
 import POAHomePage from './modules/poa/pages/POAHomePage';
 import DireccionesPage from './modules/poa/pages/DireccionesPage';
-import PersonasPage from './modules/poa/pages/PersonasPage';
+import AccesosPOAPage from './modules/poa/pages/AccesosPOAPage';
 import DocumentosPOAPage from './modules/poa/pages/DocumentosPOAPage';
 import ActividadesPage from './modules/poa/pages/ActividadesPage';
 import ObjetivosEspecificosPage from './modules/poa/pages/ObjetivosEspecificosPage';
@@ -207,7 +207,7 @@ function App() {
             <Route path="/poa" element={<POAApp user={user} />}>
               <Route index element={<AnimatedRoute><POAHomePage /></AnimatedRoute>} />
               <Route path="direcciones" element={<AnimatedRoute><DireccionesPage /></AnimatedRoute>} />
-              <Route path="personas" element={<AnimatedRoute><PersonasPage /></AnimatedRoute>} />
+              <Route path="accesos" element={<AnimatedRoute><AccesosPOAPage /></AnimatedRoute>} />
               <Route path="documentos" element={<AnimatedRoute><DocumentosPOAPage /></AnimatedRoute>} />
               <Route path="documentos/nuevo" element={<AnimatedRoute><DocumentosPOAPage /></AnimatedRoute>} />
               <Route path="actividades" element={<AnimatedRoute><ActividadesPage /></AnimatedRoute>} />

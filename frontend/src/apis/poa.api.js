@@ -166,15 +166,6 @@ export const getDetallePorId = (id) => api.get(`/api/poa/detalle-presupuesto/${i
 export const updateDetalle = (id, payload) => api.patch(`/api/poa/detalle-presupuesto/${id}/`, payload);
 export const deleteDetalle = (id) => api.delete(`/api/poa/detalle-presupuesto/${id}/`);
 
-// Personas (expuestas por el app poa_document según apis.md)
-// Endpoint: GET /api/poa/personas/
-export const getAllPersonas = () => api.get('/api/poa/personas/');
-export const getPersonaPorId = (id) => api.get(`/api/poa/personas/${id}/`);
-export const createPersona = (payload) => api.post('/api/poa/personas/', payload);
-export const updatePersona = (id, payload) => api.patch(`/api/poa/personas/${id}/`, payload);
-export const deletePersona = (id) => api.delete(`/api/poa/personas/${id}/`);
-// Buscar personas por texto (usa parámetro 'search' compatible con DRF SearchFilter)
-export const searchPersonas = (q) => api.get('/api/poa/personas/', { params: { search: q } });
 
 // Catálogos (app catalogos)
 // Items
@@ -210,4 +201,26 @@ export const getOperacionesPorDireccion = (direccion_id) => {
 	return api.get('/api/catalogos/operaciones/', { params: { direccion_id: Number(direccion_id) } });
 };
 
+// ─── Usuarios POA ─────────────────────────────────────────────────────────────
+// Gestión de accesos al módulo POA (docentes con roles asignados)
 
+export const getUsuariosPOA = (params) => api.get('/api/poa/usuarios-poa/', { params });
+export const getUsuarioPOAPorId = (id) => api.get(`/api/poa/usuarios-poa/${id}/`);
+export const createUsuarioPOA = (payload) => api.post('/api/poa/usuarios-poa/', payload);
+export const updateUsuarioPOA = (id, payload) => api.patch(`/api/poa/usuarios-poa/${id}/`, payload);
+export const deleteUsuarioPOA = (id) => api.delete(`/api/poa/usuarios-poa/${id}/`);
+
+// Buscar docentes del sistema principal para asignar
+export const buscarDocentesPOA = (q) => {
+	if (!q || String(q).trim().length < 2) return Promise.resolve({ data: [] });
+	return api.get('/api/poa/docentes/buscar/', { params: { q: String(q).trim() } });
+};
+
+export const ROL_POA_CHOICES = [
+	{ value: 'elaborador',       label: 'Elaborador del POA',    color: 'blue' },
+	{ value: 'director_carrera', label: 'Director de Carrera',   color: 'indigo' },
+	{ value: 'revisor_1',        label: 'Entidad Revisora 1',    color: 'violet' },
+	{ value: 'revisor_2',        label: 'Entidad Revisora 2',    color: 'purple' },
+	{ value: 'revisor_3',        label: 'Entidad Revisora 3',    color: 'fuchsia' },
+	{ value: 'revisor_4',        label: 'Entidad Revisora 4',    color: 'pink' },
+];

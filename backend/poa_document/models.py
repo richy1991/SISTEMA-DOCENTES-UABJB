@@ -4,30 +4,61 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from catalogos.models import Direccion
 
-class Persona(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE, null=True, blank=True)
-    nombre = models.CharField(max_length=150)
-    cargo = models.CharField(max_length=150)
+
+class UsuarioPOA(models.Model):
+    """
+    Vincula a un Docente del sistema principal con un rol dentro del módulo POA.
+    Controla quién puede elaborar, dirigir o revisar documentos POA.
+    """
+    ROL_CHOICES = [
+        ('elaborador',      'Elaborador del POA'),
+        ('director_carrera','Director de Carrera'),
+        ('revisor_1',       'Entidad Revisora 1'),
+        ('revisor_2',       'Entidad Revisora 2'),
+        ('revisor_3',       'Entidad Revisora 3'),
+        ('revisor_4',       'Entidad Revisora 4'),
+    ]
+
+    docente = models.ForeignKey(
+        'fondos.Docente',
+        on_delete=models.CASCADE,
+        related_name='accesos_poa',
+        verbose_name='Docente',
+    )
+    rol = models.CharField(max_length=30, choices=ROL_CHOICES, verbose_name='Rol POA')
+    nombre_entidad = models.CharField(
+        max_length=150, blank=True,
+        help_text='Para roles de revisor: nombre de la entidad revisora (ej. DAF, VRA)',
+    )
     activo = models.BooleanField(default=True)
+    fecha_asignacion = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [('docente', 'rol')]
+        verbose_name = 'Usuario POA'
+        verbose_name_plural = 'Usuarios POA'
+        ordering = ['rol', 'docente__apellido_paterno']
 
     def __str__(self):
-        return self.nombre
-# en una gestion hay varios documentos poa de distintas unidades solicitantes
-# documento poa que pertenece a una sola unidad solicitante
-# y tiene varios objetivos especificos
-# y cada objetivo especifico tiene varias actividades
-# y cada actividad tiene varios detalles de presupuesto
-# y cada actividad puede tener un indicador de un catalogo predefinido
+        return f"{self.docente.nombre_completo} — {self.get_rol_display()}"
 
 
 class DocumentoPOA(models.Model):
+    ESTADO_CHOICES = [
+        ('elaboracion', 'En elaboración'),
+        ('revision',    'En revisión'),
+        ('aprobado',    'Aprobado'),
+        ('ejecucion',   'En ejecución'),
+    ]
+
     gestion = models.IntegerField(verbose_name="Año de Gestión")
     unidad_solicitante = models.CharField(max_length=200)
     programa = models.CharField(max_length=200)
     objetivo_gestion_institucional = models.TextField()
-    elaborado_por = models.ForeignKey(Persona, on_delete=models.PROTECT, related_name="documentos_elaborados")
-    jefe_unidad = models.ForeignKey(Persona, on_delete=models.PROTECT, related_name="documentos_jefe")
+    elaborado_por = models.ForeignKey('UsuarioPOA', on_delete=models.SET_NULL, null=True, blank=True, related_name="documentos_elaborados")
+    jefe_unidad = models.ForeignKey('UsuarioPOA', on_delete=models.SET_NULL, null=True, blank=True, related_name="documentos_jefe")
     fecha_elaboracion = models.DateField()
+    estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='elaboracion', verbose_name='Estado')
 
     creado_en = models.DateTimeField(auto_now_add=True)
     actualizado_en = models.DateTimeField(auto_now=True)

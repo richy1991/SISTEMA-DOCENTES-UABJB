@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import IconButton from './IconButton';
 import { FaTimes, FaSave, FaCalendarAlt } from 'react-icons/fa';
-import { createDocumentoPOA, updateDocumentoPOA, getAllDirecciones, getAllPersonas, getDocumentosPOAPorGestion, searchDirecciones, searchPersonas } from '../../../apis/poa.api';
+import { createDocumentoPOA, updateDocumentoPOA, getAllDirecciones, getUsuariosPOA, getDocumentosPOAPorGestion, searchDirecciones } from '../../../apis/poa.api';
 import { DEFAULT_ENTIDAD } from '../config/defaults';
 
 const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: docToEdit, onUpdated }) => {
@@ -19,6 +19,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
     objetivo_gestion_institucional: '',
     elaborado_por: '',
     jefe_unidad: '',
+    estado: 'elaboracion',
   });
   const [fechaElab, setFechaElab] = useState('');
   const dateInputRef = React.useRef(null);
@@ -43,19 +44,18 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
 
   useEffect(() => {
     setPersonasLoading(true);
-    getAllPersonas()
+    getUsuariosPOA({ activo: true })
       .then(res => {
         const raw = Array.isArray(res.data) ? res.data : (res.data.results || []);
-        // Normalizar: { id, nombre, user: { username } }
+        // Normalizar: { id, nombre } desde UsuarioPOA con docente_detalle
         const list = raw.map(p => ({
-          id: p.id ?? p.pk ?? p.uuid ?? null,
-          nombre: p.nombre ?? p.name ?? p.full_name ?? p.display ?? (p.user && p.user.username) ?? (typeof p === 'string' ? p : undefined),
-          user: p.user ?? null,
+          id: p.id,
+          nombre: p.docente_detalle?.nombre_completo ?? p.docente_detalle?.nombres ?? `Usuario POA #${p.id}`,
           raw: p,
-        })).filter(x => x.id !== null && x.nombre !== undefined);
+        })).filter(x => x.id !== null);
         setPersonas(list);
       })
-      .catch(err => setPersonasError(err?.response?.data || err.message || 'Error al cargar personas'))
+      .catch(err => setPersonasError(err?.response?.data || err.message || 'Error al cargar usuarios POA'))
       .finally(() => setPersonasLoading(false));
   }, []);
 
@@ -79,6 +79,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
         objetivo_gestion_institucional: docToEdit.objetivo_gestion_institucional ?? '',
         elaborado_por: docToEdit.elaborado_por?.id ?? docToEdit.elaborado_por_id ?? docToEdit.elaborado_por ?? '',
         jefe_unidad: docToEdit.jefe_unidad?.id ?? docToEdit.jefe_unidad_id ?? docToEdit.jefe_unidad ?? '',
+        estado: docToEdit.estado ?? 'elaboracion',
       }));
       setFechaElab(docToEdit.fecha_elaboracion ? String(docToEdit.fecha_elaboracion).slice(0,10) : '');
       // set elabQuery/jefeQuery to show names in inputs
@@ -98,23 +99,9 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
     }
     const q = elabQuery.trim();
     const t = setTimeout(() => {
-      if (q.length < 2) {
-        const filtered = personas.filter(p => ((p.nombre || '').toLowerCase().includes(q.toLowerCase()) || (p.user?.username || '').toLowerCase().includes(q.toLowerCase())) && String(p.id) !== String(form.jefe_unidad));
-        if (mounted) { setElabFilteredPersonas(filtered.slice(0,50)); setElabHighlight(0); }
-        return;
-      }
-      // search server
-      searchPersonas(q)
-        .then(res => {
-          const raw = Array.isArray(res.data) ? res.data : (res.data.results || []);
-          const list = raw.map(p => ({ id: p.id ?? p.pk ?? p.uuid ?? null, nombre: p.nombre ?? p.name ?? p.full_name ?? p.display ?? (p.user && p.user.username) ?? (typeof p === 'string' ? p : undefined), user: p.user ?? null, raw: p })).filter(x => x.id !== null && x.nombre !== undefined);
-          if (mounted) { setElabFilteredPersonas(list.slice(0,50)); setElabHighlight(0); }
-        })
-        .catch(() => {
-          const filtered = personas.filter(p => ((p.nombre || '').toLowerCase().includes(q.toLowerCase()) || (p.user?.username || '').toLowerCase().includes(q.toLowerCase())) && String(p.id) !== String(form.jefe_unidad));
-          if (mounted) { setElabFilteredPersonas(filtered.slice(0,50)); setElabHighlight(0); }
-        });
-    }, 300);
+      const filtered = personas.filter(p => (p.nombre || '').toLowerCase().includes(q.toLowerCase()) && String(p.id) !== String(form.jefe_unidad));
+      if (mounted) { setElabFilteredPersonas(filtered.slice(0,50)); setElabHighlight(0); }
+    }, 200);
     return () => { mounted = false; clearTimeout(t); };
   }, [elabQuery, personas, form.jefe_unidad]);
 
@@ -127,22 +114,9 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
     }
     const q = jefeQuery.trim();
     const t = setTimeout(() => {
-      if (q.length < 2) {
-        const filtered = personas.filter(p => ((p.nombre || '').toLowerCase().includes(q.toLowerCase()) || (p.user?.username || '').toLowerCase().includes(q.toLowerCase())) && String(p.id) !== String(form.elaborado_por));
-        if (mounted) { setJefeFilteredPersonas(filtered.slice(0,50)); setJefeHighlight(0); }
-        return;
-      }
-      searchPersonas(q)
-        .then(res => {
-          const raw = Array.isArray(res.data) ? res.data : (res.data.results || []);
-          const list = raw.map(p => ({ id: p.id ?? p.pk ?? p.uuid ?? null, nombre: p.nombre ?? p.name ?? p.full_name ?? p.display ?? (p.user && p.user.username) ?? (typeof p === 'string' ? p : undefined), user: p.user ?? null, raw: p })).filter(x => x.id !== null && x.nombre !== undefined);
-          if (mounted) { setJefeFilteredPersonas(list.slice(0,50)); setJefeHighlight(0); }
-        })
-        .catch(() => {
-          const filtered = personas.filter(p => ((p.nombre || '').toLowerCase().includes(q.toLowerCase()) || (p.user?.username || '').toLowerCase().includes(q.toLowerCase())) && String(p.id) !== String(form.elaborado_por));
-          if (mounted) { setJefeFilteredPersonas(filtered.slice(0,50)); setJefeHighlight(0); }
-        });
-    }, 300);
+      const filtered = personas.filter(p => (p.nombre || '').toLowerCase().includes(q.toLowerCase()) && String(p.id) !== String(form.elaborado_por));
+      if (mounted) { setJefeFilteredPersonas(filtered.slice(0,50)); setJefeHighlight(0); }
+    }, 200);
     return () => { mounted = false; clearTimeout(t); };
   }, [jefeQuery, personas, form.elaborado_por]);
 
@@ -174,6 +148,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
         elaborado_por_id: form.elaborado_por ? Number(form.elaborado_por) : null,
         jefe_unidad_id: form.jefe_unidad ? Number(form.jefe_unidad) : null,
         fecha_elaboracion: fechaElab || null,
+        estado: form.estado || 'elaboracion',
       };
 
       if (docToEdit && docToEdit.id) {
@@ -315,11 +290,32 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
             <textarea name="objetivo_gestion_institucional" value={form.objetivo_gestion_institucional} onChange={handleChange} rows={2} className="mt-1 block w-full border rounded px-3 py-2 text-xs leading-snug resize-y" />
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Estado del documento</label>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {[
+                { value: 'elaboracion', label: 'En elaboración', color: 'bg-yellow-100 border-yellow-400 text-yellow-800' },
+                { value: 'revision',   label: 'En revisión',    color: 'bg-blue-100 border-blue-400 text-blue-800' },
+                { value: 'aprobado',   label: 'Aprobado',       color: 'bg-green-100 border-green-400 text-green-800' },
+                { value: 'ejecucion',  label: 'En ejecución',   color: 'bg-purple-100 border-purple-400 text-purple-800' },
+              ].map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setForm(f => ({ ...f, estado: opt.value }))}
+                  className={`border-2 rounded-lg px-2 py-2 text-xs font-semibold transition-all ${form.estado === opt.value ? opt.color + ' ring-2 ring-offset-1 ring-current' : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-400'}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">Elaborado por</label>
               {personasLoading ? (
-                <div className="mt-1 text-sm text-gray-600">Cargando personas...</div>
+                <div className="mt-1 text-sm text-gray-600">Cargando usuarios POA...</div>
               ) : personasError ? (
                 <div className="mt-1 text-sm text-red-600">{String(personasError)}</div>
               ) : (
@@ -351,7 +347,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
             <div className="min-w-0">
               <label className="block text-sm font-medium text-gray-700">Jefe de unidad</label>
               {personasLoading ? (
-                <div className="mt-1 text-sm text-gray-600">Cargando personas...</div>
+                <div className="mt-1 text-sm text-gray-600">Cargando usuarios POA...</div>
               ) : personasError ? (
                 <div className="mt-1 text-sm text-red-600">{String(personasError)}</div>
               ) : (

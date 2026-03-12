@@ -3,15 +3,19 @@ from rest_framework.permissions import IsAuthenticated, AllowAny, SAFE_METHODS
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework import generics
+from rest_framework.views import APIView
 from django.utils import timezone
-from poa_document.models import Persona, Direccion, DocumentoPOA, ObjetivoEspecifico, Actividad, DetallePresupuesto
+from django.db.models import Q
+from poa_document.models import Direccion, DocumentoPOA, ObjetivoEspecifico, Actividad, DetallePresupuesto, UsuarioPOA
+from fondos.models import Docente
 from .serializers import (
-    PersonaSerializer,
     DireccionSerializer,
     DocumentoPOASerializer,
     ObjetivoEspecificoSerializer,
     ActividadSerializer,
     DetallePresupuestoSerializer,
+    UsuarioPOASerializer,
+    DocenteSimpleSerializer,
 )
 from catalogos.models import OperacionCatalogo
 from rest_framework.decorators import action
@@ -19,10 +23,40 @@ from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 
 
-class PersonaViewSet(viewsets.ModelViewSet):
-    queryset = Persona.objects.all()
-    serializer_class = PersonaSerializer
-    permission_classes = [AllowAny]  # Changed to allow anonymous access
+class UsuarioPOAViewSet(viewsets.ModelViewSet):
+    """CRUD de usuarios con acceso al módulo POA (vinculados a docentes del sistema)."""
+    queryset = UsuarioPOA.objects.select_related('docente').all()
+    serializer_class = UsuarioPOASerializer
+    permission_classes = [AllowAny]
+
+    def get_queryset(self):
+        qs = UsuarioPOA.objects.select_related('docente').all()
+        activo = self.request.query_params.get('activo')
+        if activo in ('true', '1'):
+            qs = qs.filter(activo=True)
+        elif activo in ('false', '0'):
+            qs = qs.filter(activo=False)
+        return qs
+
+
+class DocenteBusquedaView(APIView):
+    """Busca docentes del sistema principal para asignarles roles POA."""
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        q = request.query_params.get('q', '').strip()
+        if len(q) < 2:
+            return Response([])
+        qs = Docente.objects.filter(
+            Q(nombres__icontains=q) |
+            Q(apellido_paterno__icontains=q) |
+            Q(apellido_materno__icontains=q) |
+            Q(ci__icontains=q) |
+            Q(email__icontains=q),
+            activo=True,
+        ).order_by('apellido_paterno', 'nombres')[:20]
+        return Response(DocenteSimpleSerializer(qs, many=True).data)
+
 
 class DireccionViewSet(viewsets.ModelViewSet):
     queryset = Direccion.objects.all()

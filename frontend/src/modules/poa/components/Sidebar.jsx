@@ -76,12 +76,12 @@ const themeStyles = {
 };
 
 const menuItems = [
-  { name: 'Inicio', icon: <FaHome />, path: '.' },
-  { name: 'Personas', icon: <FaUsers />, path: './personas' },
-  { name: 'Documentos POA', icon: <FaFileAlt />, path: './documentos' },
-  { name: 'Catálogos', icon: <FaList />, path: './catalogos' },
-  { name: 'Detalle Presupuesto', icon: <FaChartBar />, path: './presupuestos' },
-  { name: 'Reportes', icon: <FaFilePdf />, path: './reportes' },
+  { name: 'Inicio', icon: <FaHome />, path: '/poa' },
+  { name: 'Accesos POA', icon: <FaUsers />, path: '/poa/accesos' },
+  { name: 'Documentos POA', icon: <FaFileAlt />, path: '/poa/documentos' },
+  { name: 'Catálogos', icon: <FaList />, path: '/poa/catalogos' },
+  { name: 'Detalle Presupuesto', icon: <FaChartBar />, path: '/poa/presupuestos' },
+  { name: 'Reportes', icon: <FaFilePdf />, path: '/poa/reportes' },
 ];
 
 const Sidebar = ({ theme, onNavigate, showGestionModal, setShowGestionModal, sidebarExpanded, setSidebarExpanded, user }) => {
@@ -92,9 +92,6 @@ const Sidebar = ({ theme, onNavigate, showGestionModal, setShowGestionModal, sid
   const [manualExpand, setManualExpand] = useState(false);
   const [showCatalogos, setShowCatalogos] = useState(false);
   const sidebarRef = useRef();
-
-  // Debug: ver estructura del usuario
-  console.log('Sidebar user:', user);
 
   const isDark = theme === 'dark';
   const themeConfig = themeStyles[theme];

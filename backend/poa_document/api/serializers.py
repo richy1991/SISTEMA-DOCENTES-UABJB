@@ -1,36 +1,42 @@
 from rest_framework import serializers
-from django.contrib.auth.models import User
 
 # Modelos del paquete
-from poa_document.models import DocumentoPOA, ObjetivoEspecifico, Actividad, DetallePresupuesto, Persona
+from poa_document.models import DocumentoPOA, ObjetivoEspecifico, Actividad, DetallePresupuesto, UsuarioPOA
+from fondos.models import Docente
 from catalogos.api.serializers import DireccionSerializer
 from catalogos.models import Direccion
 from catalogos.models import OperacionCatalogo
 
 
-class UserSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name']
-
-
-class PersonaSerializer(serializers.ModelSerializer):
-    user = UserSerializer(read_only=True)
+class DocenteSimpleSerializer(serializers.ModelSerializer):
+    nombre_completo = serializers.ReadOnlyField()
 
     class Meta:
-        model = Persona
-        fields = ['id', 'user', 'nombre', 'cargo', 'activo']
+        model = Docente
+        fields = ['id', 'nombre_completo', 'apellido_paterno', 'apellido_materno',
+                  'nombres', 'ci', 'email', 'categoria', 'dedicacion']
+
+
+class UsuarioPOASerializer(serializers.ModelSerializer):
+    docente_detalle = DocenteSimpleSerializer(source='docente', read_only=True)
+    rol_display = serializers.CharField(source='get_rol_display', read_only=True)
+
+    class Meta:
+        model = UsuarioPOA
+        fields = ['id', 'docente', 'docente_detalle', 'rol', 'rol_display',
+                  'nombre_entidad', 'activo', 'fecha_asignacion']
+        read_only_fields = ['fecha_asignacion']
 
 
 # DireccionSerializer ahora se importa desde catalogos.api.serializers
 
 
 class DocumentoPOASerializer(serializers.ModelSerializer):
-    elaborado_por = PersonaSerializer(read_only=True)
-    jefe_unidad = PersonaSerializer(read_only=True)
+    elaborado_por = UsuarioPOASerializer(read_only=True)
+    jefe_unidad = UsuarioPOASerializer(read_only=True)
 
-    elaborado_por_id = serializers.PrimaryKeyRelatedField(queryset=Persona.objects.all(), source='elaborado_por', write_only=True, required=False)
-    jefe_unidad_id = serializers.PrimaryKeyRelatedField(queryset=Persona.objects.all(), source='jefe_unidad', write_only=True, required=False)
+    elaborado_por_id = serializers.PrimaryKeyRelatedField(queryset=UsuarioPOA.objects.all(), source='elaborado_por', write_only=True, required=False, allow_null=True)
+    jefe_unidad_id = serializers.PrimaryKeyRelatedField(queryset=UsuarioPOA.objects.all(), source='jefe_unidad', write_only=True, required=False, allow_null=True)
 
     objetivos = serializers.SerializerMethodField()
 
@@ -38,7 +44,7 @@ class DocumentoPOASerializer(serializers.ModelSerializer):
         model = DocumentoPOA
         fields = [
             'id', 'gestion', 'unidad_solicitante', 'programa', 'objetivo_gestion_institucional',
-            'elaborado_por', 'jefe_unidad', 'fecha_elaboracion', 'creado_en', 'actualizado_en',
+            'elaborado_por', 'jefe_unidad', 'fecha_elaboracion', 'estado', 'creado_en', 'actualizado_en',
             'elaborado_por_id', 'jefe_unidad_id', 'objetivos'
         ]
 
