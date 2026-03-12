@@ -11,7 +11,7 @@ backend/*.pyc
 backend/venv/
 
 # Database
-backend/db.sqlite3
+# backend/db.sqlite3  # base de datos de desarrollo — rastreada intencionalmente
 
 # Media files
 backend/media/
