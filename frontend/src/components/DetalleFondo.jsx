@@ -938,7 +938,7 @@ function DetalleFondo({ isDark }) {
                         >
                           {/* SLIDE 1 — PieChart */}
                           <div className="min-w-full h-full flex-shrink-0">
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer width="100%" height="100%" minHeight={120}>
                               <PieChart>
                                 <Pie
                                   data={datosGrafico}

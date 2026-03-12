@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import './index.css';
+import { useTheme } from '../../useTheme';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import ThemeToggle from '../../components/ThemeToggle';
@@ -14,10 +15,10 @@ import AccesosPOAPage from './pages/AccesosPOAPage';
 import DocumentosPOAPage from './pages/DocumentosPOAPage';
 import ActividadesPage from './pages/ActividadesPage';
 import ObjetivosEspecificosPage from './pages/ObjetivosEspecificosPage';
-import PresupuestosPage from './pages/PresupuestosPage';
 import CatalogoItems from './pages/CatalogoItems';
 import CatalogosMenu from './pages/CatalogosMenu';
 import Reportes from './pages/Reportes';
+import PresupuestosPage from './pages/PresupuestosPage';
 
 const getInitialTheme = () => {
   if (typeof window === 'undefined') return 'dark';
@@ -27,7 +28,7 @@ const getInitialTheme = () => {
 function POAApp({ user }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const [theme, setTheme] = useState(getInitialTheme);
+  const { effectiveTheme: theme, setTheme } = useTheme();
   const [showGestionModal, setShowGestionModal] = useState(false);
   const [showNuevoIndicadorModal, setShowNuevoIndicadorModal] = useState(false);
   const [editOperacion, setEditOperacion] = useState(null);
@@ -72,15 +73,6 @@ function POAApp({ user }) {
       if (scrollTimeout.current) { clearTimeout(scrollTimeout.current); scrollTimeout.current = null; }
     };
   }, [isHome, forceShowHeader]);
-
-  // Actualizar tema
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem('theme', theme);
-    document.documentElement?.setAttribute('data-theme', theme);
-    // También aplicar la clase dark para compatibilidad con ThemeToggle
-    document.documentElement?.classList.toggle('dark', theme === 'dark');
-  }, [theme]);
 
   // Escuchar eventos para mostrar/ocultar el header global
   useEffect(() => {
@@ -145,7 +137,7 @@ function POAApp({ user }) {
   }, []);
 
   return (
-    <div className={`flex min-h-screen transition-colors duration-500`}>
+    <div className={`poa-app flex min-h-screen transition-colors duration-500`}>
       {/* Toast notifications */}
       <Toaster position="top-right" />
 
@@ -201,7 +193,7 @@ function POAApp({ user }) {
         />
 
         {/* Contenido central */}
-        <section className={`flex flex-col items-center justify-center flex-1 ${isHome ? 'py-12' : 'pt-24 pb-6'} px-4 w-full`}>
+        <section className={`flex flex-col items-stretch justify-start flex-1 ${isHome ? 'py-12' : 'pt-24 pb-6'} px-20 w-full`}>
           <Outlet />
         </section>
       </main>

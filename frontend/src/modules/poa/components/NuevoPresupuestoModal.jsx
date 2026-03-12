@@ -3,6 +3,7 @@ import IconButton from './IconButton';
 import { FaTimes } from 'react-icons/fa';
 import { createDetallePresupuesto, updateDetalle, getItemsCatalogo } from '../../../apis/poa.api';
 import toast from 'react-hot-toast';
+import { Input, Select, Modal } from './base';
 
 const NuevoPresupuestoModal = ({ actividadId, documentoId, detalle, onClose, onCreated, onUpdated }) => {
   const [submitting, setSubmitting] = useState(false);
@@ -190,9 +191,8 @@ const NuevoPresupuestoModal = ({ actividadId, documentoId, detalle, onClose, onC
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
-      <div className="relative z-20 w-full max-w-lg modal-panel card-elegant oe-modern rounded-xl overflow-hidden">
+    <Modal onClose={onClose}>
+      <div className="modal-panel rounded-xl w-full max-w-lg">
         <div className="modal-header flex items-center justify-between px-6 py-4">
           <h3 className="font-semibold">{detalle ? 'Editar ítem de presupuesto' : 'Nuevo ítem de presupuesto'}</h3>
           <IconButton onClick={() => onClose && onClose()} className="btn-header-icon rounded-full w-8 h-8 flex items-center justify-center" ariaLabel="Cerrar">
@@ -200,9 +200,9 @@ const NuevoPresupuestoModal = ({ actividadId, documentoId, detalle, onClose, onC
           </IconButton>
         </div>
         <form onSubmit={handleSubmit} ref={containerRef} className="p-4 space-y-4 modal-body">
-          {error && <div className="text-sm text-red-600">{error}</div>}
+          {error && <div className="text-sm text-red-600 dark:text-red-400">{error}</div>}
           <div>
-            <label className="block text-sm font-medium text-gray-700">Ítem / Detalle</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Ítem / Detalle</label>
             <div className="relative">
               <input
                 name="item"
@@ -210,58 +210,69 @@ const NuevoPresupuestoModal = ({ actividadId, documentoId, detalle, onClose, onC
                 onChange={handleChange}
                 onFocus={() => setShowDropdown(true)}
                 autoComplete="off"
-                className={`w-full border rounded px-2 py-1 ${fieldErrors.item ? 'border-red-600' : ''}`}
+                className={`poa-input w-full px-2 py-1 ${fieldErrors.item ? 'error' : ''}`}
                 placeholder={catalogLoading ? 'Cargando ítems...' : 'Buscar ítem del catálogo o escribir libremente'}
               />
               {showDropdown && filteredItems.length > 0 && (
-                <div className="absolute z-30 left-0 right-0 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 mt-1 rounded max-h-56 overflow-auto">
-                  {catalogLoading && <div className="p-2 text-sm text-gray-600 dark:text-gray-400">Cargando...</div>}
+                <div className="absolute z-30 left-0 right-0 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 mt-1 rounded max-h-56 overflow-auto shadow-lg">
+                  {catalogLoading && <div className="p-2 text-sm text-gray-600 dark:text-slate-400">Cargando...</div>}
                   {catalogError && <div className="p-2 text-sm text-red-600 dark:text-red-400">{catalogError}</div>}
                   {!catalogLoading && !catalogError && filteredItems.map(it => (
                     <button
                       key={it.id ?? it.codigo ?? it.descripcion}
                       type="button"
                       onMouseDown={(e) => { e.preventDefault(); handleSelectCatalogItem(it); }}
-                      className="w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm text-gray-900 dark:text-gray-100"
+                      className="w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-slate-700 text-sm text-gray-900 dark:text-slate-100"
                     >
                       <div className="font-medium">{it.descripcion ?? it.nombre ?? it.nombre_item ?? it.codigo}</div>
-                      {it.partida && <div className="text-xs text-gray-500 dark:text-gray-400">Partida: {it.partida.codigo ?? it.partida}</div>}
+                      {it.partida && <div className="text-xs text-gray-500 dark:text-slate-400">Partida: {it.partida.codigo ?? it.partida}</div>}
                     </button>
                   ))}
                 </div>
               )}
             </div>
-            {fieldErrors.item && <div className="text-xs text-red-600 mt-1">{fieldErrors.item}</div>}
+            {fieldErrors.item && <div className="text-xs text-red-600 dark:text-red-400 mt-1">{fieldErrors.item}</div>}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700">Unidad de medida</label>
-              <input name="unidad_medida" value={form.unidad_medida} onChange={handleChange} autoComplete="off" className="w-full border rounded px-2 py-1" />
-              {fieldErrors.unidad_medida && <div className="text-xs text-red-600 mt-1">{fieldErrors.unidad_medida}</div>}
+              <Input
+                label="Unidad de medida"
+                name="unidad_medida"
+                value={form.unidad_medida}
+                onChange={handleChange}
+                autoComplete="off"
+                error={fieldErrors.unidad_medida}
+              />
+              {fieldErrors.unidad_medida && <div className="text-xs text-red-600 dark:text-red-400 mt-1">{fieldErrors.unidad_medida}</div>}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Partida</label>
-              <input
+              <Input
+                label="Partida"
                 name="partida"
                 value={form.partida}
                 onChange={handleChange}
                 autoComplete="off"
-                className={`w-full border rounded px-2 py-1 ${fieldErrors.partida ? 'border-red-600' : ''}`}
+                error={fieldErrors.partida}
               />
-              {fieldErrors.partida && <div className="text-xs text-red-600 mt-1">{fieldErrors.partida}</div>}
+              {fieldErrors.partida && <div className="text-xs text-red-600 dark:text-red-400 mt-1">{fieldErrors.partida}</div>}
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Características</label>
-            <input name="caracteristicas" value={form.caracteristicas} onChange={handleChange} autoComplete="off" className="w-full border rounded px-2 py-1" />
+            <Input
+              label="Características"
+              name="caracteristicas"
+              value={form.caracteristicas}
+              onChange={handleChange}
+              autoComplete="off"
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700">Cantidad</label>
-              <input
+              <Input
+                label="Cantidad"
                 name="cantidad"
                 type="number"
                 min="0"
@@ -269,63 +280,63 @@ const NuevoPresupuestoModal = ({ actividadId, documentoId, detalle, onClose, onC
                 value={form.cantidad}
                 onChange={handleChange}
                 autoComplete="off"
-                className={`w-full border rounded px-2 py-1 ${fieldErrors.cantidad ? 'border-red-600' : ''}`}
+                error={fieldErrors.cantidad}
               />
-              {fieldErrors.cantidad && <div className="text-xs text-red-600 mt-1">{fieldErrors.cantidad}</div>}
+              {fieldErrors.cantidad && <div className="text-xs text-red-600 dark:text-red-400 mt-1">{fieldErrors.cantidad}</div>}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Costo unitario</label>
-              <input
+              <Input
+                label="Costo unitario"
                 name="costo_unitario"
                 type="number"
                 step="any"
                 value={form.costo_unitario}
                 onChange={handleChange}
                 autoComplete="off"
-                className={`w-full border rounded px-2 py-1 ${fieldErrors.costo_unitario ? 'border-red-600' : ''}`}
+                error={fieldErrors.costo_unitario}
               />
-              {fieldErrors.costo_unitario && <div className="text-xs text-red-600 mt-1">{fieldErrors.costo_unitario}</div>}
+              {fieldErrors.costo_unitario && <div className="text-xs text-red-600 dark:text-red-400 mt-1">{fieldErrors.costo_unitario}</div>}
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700">Mes de requerimiento</label>
-              <input
+              <Input
+                label="Mes de requerimiento"
                 name="mes_requerimiento"
                 value={form.mes_requerimiento}
                 onChange={handleChange}
-                className={`w-full border rounded px-2 py-1 ${fieldErrors.mes_requerimiento ? 'border-red-600' : ''}`}
+                error={fieldErrors.mes_requerimiento}
               />
-              {fieldErrors.mes_requerimiento && <div className="text-xs text-red-600 mt-1">{fieldErrors.mes_requerimiento}</div>}
+              {fieldErrors.mes_requerimiento && <div className="text-xs text-red-600 dark:text-red-400 mt-1">{fieldErrors.mes_requerimiento}</div>}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">Tipo</label>
-              <select
+              <Select
+                label="Tipo"
                 name="tipo"
                 value={form.tipo}
                 onChange={handleChange}
-                className={`w-full border rounded px-2 py-1 ${fieldErrors.tipo ? 'border-red-600' : ''}`}
+                error={fieldErrors.tipo}
               >
                 <option value="funcionamiento">Funcionamiento</option>
                 <option value="inversion">Inversión</option>
-              </select>
-              {fieldErrors.tipo && <div className="text-xs text-red-600 mt-1">{fieldErrors.tipo}</div>}
+              </Select>
+              {fieldErrors.tipo && <div className="text-xs text-red-600 dark:text-red-400 mt-1">{fieldErrors.tipo}</div>}
             </div>
           </div>
 
           <div className="flex justify-end gap-3 modal-actions">
-            <IconButton icon={<FaTimes />} onClick={() => onClose && onClose()} className="border px-3 py-2 rounded" title="Cancelar">
+            <IconButton icon={<FaTimes />} onClick={() => onClose && onClose()} className="btn-cancel border px-3 py-2 rounded" title="Cancelar">
               Cancelar
             </IconButton>
-            <button type="submit" disabled={submitting} className="px-4 py-2 rounded bg-emerald-600 text-white">
+            <button type="submit" disabled={submitting} className="px-4 py-2 rounded btn-success">
               {submitting ? 'Guardando...' : 'Guardar'}
             </button>
           </div>
         </form>
       </div>
-    </div>
+    </Modal>
   );
 };
 

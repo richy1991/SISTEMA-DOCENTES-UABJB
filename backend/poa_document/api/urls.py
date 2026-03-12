@@ -6,6 +6,7 @@ from .views import (
     DocumentoPOAReadOnlyViewSet,
     UsuarioPOAViewSet,
     DocenteBusquedaView,
+    UsuarioBusquedaView,
 )
 from .views import ObjetivoEspecificoViewSet, ActividadViewSet, DetallePresupuestoViewSet
 
@@ -24,4 +25,5 @@ router.register(r'detalle-presupuesto', DetallePresupuestoViewSet, basename='det
 
 urlpatterns = router.urls + [
     path('docentes/buscar/', DocenteBusquedaView.as_view(), name='docente-buscar-poa'),
+    path('usuarios/buscar/', UsuarioBusquedaView.as_view(), name='usuario-buscar-poa'),
 ]

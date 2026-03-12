@@ -1,9 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { FaChevronDown, FaBars, FaHome, FaUsers, FaMapMarkerAlt, FaFileAlt, FaList, FaChartBar, FaFilePdf } from 'react-icons/fa';
+import { FaChevronDown, FaBars, FaHome, FaUsers, FaMapMarkerAlt, FaFileAlt, FaList, FaFilePdf } from 'react-icons/fa';
 import IconButton from './IconButton';
 import CatalogosMenu from '../pages/CatalogosMenu';
 import ProfilePicture from '../../../components/ProfilePicture';
+
+const BackIcon = (props) => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+  </svg>
+);
 
 const getRoleName = (user) => {
   if (!user?.perfil?.rol) {
@@ -80,7 +86,6 @@ const menuItems = [
   { name: 'Accesos POA', icon: <FaUsers />, path: '/poa/accesos' },
   { name: 'Documentos POA', icon: <FaFileAlt />, path: '/poa/documentos' },
   { name: 'Catálogos', icon: <FaList />, path: '/poa/catalogos' },
-  { name: 'Detalle Presupuesto', icon: <FaChartBar />, path: '/poa/presupuestos' },
   { name: 'Reportes', icon: <FaFilePdf />, path: '/poa/reportes' },
 ];
 
@@ -104,6 +109,7 @@ const Sidebar = ({ theme, onNavigate, showGestionModal, setShowGestionModal, sid
     if (isHome) {
       setSidebarOpen(true);
       setManualExpand(true);
+      setSidebarHover(false);
     } else {
       setSidebarOpen(false);
       setManualExpand(false);
@@ -144,6 +150,7 @@ const Sidebar = ({ theme, onNavigate, showGestionModal, setShowGestionModal, sid
     setSidebarOpen(newOpen);
     setSidebarExpanded(newOpen);
     setManualExpand(newOpen);
+    setSidebarHover(false);
   };
 
   // Hover solo en páginas distintas al home
@@ -159,8 +166,9 @@ const Sidebar = ({ theme, onNavigate, showGestionModal, setShowGestionModal, sid
       {/* Botón hamburguesa flotante */}
       {showHamburger && (
         <button
-          className={`fixed top-4 left-4 z-50 ${themeConfig.hamburgerBg} p-3 rounded-full transition`}
+          className="fixed top-3 left-4 z-50 p-2 text-blue-200 hover:text-white transition-all duration-300"
           onClick={handleSidebarToggle}
+          title="Expandir menú"
         >
           <FaBars size={24} />
         </button>
@@ -169,26 +177,30 @@ const Sidebar = ({ theme, onNavigate, showGestionModal, setShowGestionModal, sid
       {/* Sidebar */}
       <aside
         ref={sidebarRef}
-        className={`fixed left-0 top-0 h-screen ${expanded ? 'w-72' : 'w-16'} ${themeConfig.sidebarBg} ${themeConfig.text} flex flex-col items-center py-8 ${sidebarShadow} ${themeConfig.sidebarBorder} z-40 transition-all duration-300`}
+        className={`fixed left-0 top-0 h-screen ${expanded ? 'w-72' : 'w-16'} ${themeConfig.sidebarBg} ${themeConfig.text} flex flex-col items-center py-4 ${sidebarShadow} ${themeConfig.sidebarBorder} z-40 transition-all duration-300`}
         style={{ minHeight: '100vh' }}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
-        {/* Botón para retraer */}
-        {showClose && (
-          <button
-            className={`absolute top-4 right-4 ${themeConfig.closeBg} text-blue-200 border border-blue-400/60 shadow-[0_6px_18px_rgba(14,165,233,0.5)] hover:brightness-110 p-2 rounded-full transition`}
-            onClick={handleSidebarToggle}
-            title="Ocultar menú"
-          >
-            <span className="text-lg font-bold">×</span>
-          </button>
-        )}
+        {/* Botón para retraer - en flujo normal, no absolute */}
+        <div className="w-full flex justify-end px-3 mb-2 min-h-[2rem]">
+          {showClose && (
+            <button
+              className="text-blue-200 hover:text-white p-1 rounded transition leading-none"
+              onClick={handleSidebarToggle}
+              title="Ocultar menú"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
 
         {/* Avatar header con datos del usuario */}
         {expanded ? (
           <div className="flex flex-col items-center px-4 mb-4">
-            <div className="w-20 h-20 mb-3">
+            <div className="w-40 h-40 mb-3">
               <ProfilePicture user={user} onUpdate={() => {}} />
             </div>
             <div className={`text-base font-bold ${themeConfig.profileText} text-center leading-tight`}>
@@ -197,15 +209,10 @@ const Sidebar = ({ theme, onNavigate, showGestionModal, setShowGestionModal, sid
             <div className="text-xs text-blue-300 text-center mt-0.5">
               {getRoleName(user)}
             </div>
-            {user?.email && (
-              <div className="text-xs text-blue-400/80 text-center mt-0.5 truncate max-w-full" title={user.email}>
-                {user.email}
-              </div>
-            )}
           </div>
         ) : (
           <div className="mb-10 flex justify-center">
-            <div className="w-10 h-10">
+            <div className="w-12 h-12">
               <ProfilePicture user={user} onUpdate={() => {}} />
             </div>
           </div>
@@ -267,6 +274,18 @@ const Sidebar = ({ theme, onNavigate, showGestionModal, setShowGestionModal, sid
             );
           })}
         </nav>
+
+        {/* Botón regresar al panel de módulos */}
+        <div className={`mt-auto w-full border-t border-blue-800/50 ${expanded ? 'px-3 py-3' : 'flex justify-center py-3'}`}>
+          <button
+            onClick={() => navigate('/')}
+            title="Panel de Módulos"
+            className={`group flex items-center gap-3 w-full transition-all duration-300 rounded-xl ${expanded ? 'px-4 py-3' : 'justify-center h-12 w-12'} text-blue-200 hover:bg-red-500/80 hover:text-white`}
+          >
+            <BackIcon className="w-5 h-5 flex-shrink-0" />
+            {expanded && <span className="font-medium text-sm whitespace-nowrap">Panel de Módulos</span>}
+          </button>
+        </div>
       </aside>
     </>
   );

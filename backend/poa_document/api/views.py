@@ -8,6 +8,7 @@ from django.utils import timezone
 from django.db.models import Q
 from poa_document.models import Direccion, DocumentoPOA, ObjetivoEspecifico, Actividad, DetallePresupuesto, UsuarioPOA
 from fondos.models import Docente
+from django.contrib.auth.models import User
 from .serializers import (
     DireccionSerializer,
     DocumentoPOASerializer,
@@ -24,13 +25,13 @@ from django.shortcuts import get_object_or_404
 
 
 class UsuarioPOAViewSet(viewsets.ModelViewSet):
-    """CRUD de usuarios con acceso al módulo POA (vinculados a docentes del sistema)."""
-    queryset = UsuarioPOA.objects.select_related('docente').all()
+    """CRUD de usuarios con acceso al módulo POA."""
+    queryset = UsuarioPOA.objects.select_related('user', 'docente').all()
     serializer_class = UsuarioPOASerializer
     permission_classes = [AllowAny]
 
     def get_queryset(self):
-        qs = UsuarioPOA.objects.select_related('docente').all()
+        qs = UsuarioPOA.objects.select_related('user', 'docente').all()
         activo = self.request.query_params.get('activo')
         if activo in ('true', '1'):
             qs = qs.filter(activo=True)
@@ -56,6 +57,37 @@ class DocenteBusquedaView(APIView):
             activo=True,
         ).order_by('apellido_paterno', 'nombres')[:20]
         return Response(DocenteSimpleSerializer(qs, many=True).data)
+
+
+class UsuarioBusquedaView(APIView):
+    """Busca usuarios del sistema principal para asignarles roles POA."""
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        q = request.query_params.get('q', '').strip()
+        if len(q) < 2:
+            return Response([])
+        qs = User.objects.select_related('perfil', 'perfil__docente').filter(
+            Q(username__icontains=q) |
+            Q(first_name__icontains=q) |
+            Q(last_name__icontains=q) |
+            Q(email__icontains=q),
+            is_active=True,
+        ).order_by('last_name', 'first_name')[:20]
+        results = []
+        for u in qs:
+            perfil = getattr(u, 'perfil', None)
+            results.append({
+                'id': u.id,
+                'username': u.username,
+                'email': u.email,
+                'nombre_completo': u.get_full_name() or u.username,
+                'perfil': {
+                    'rol': perfil.rol if perfil else None,
+                    'docente': perfil.docente_id if perfil else None,
+                } if perfil else None,
+            })
+        return Response(results)
 
 
 class DireccionViewSet(viewsets.ModelViewSet):

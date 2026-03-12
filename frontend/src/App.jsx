@@ -13,10 +13,10 @@ import AccesosPOAPage from './modules/poa/pages/AccesosPOAPage';
 import DocumentosPOAPage from './modules/poa/pages/DocumentosPOAPage';
 import ActividadesPage from './modules/poa/pages/ActividadesPage';
 import ObjetivosEspecificosPage from './modules/poa/pages/ObjetivosEspecificosPage';
-import PresupuestosPage from './modules/poa/pages/PresupuestosPage';
 import CatalogoItems from './modules/poa/pages/CatalogoItems';
 import CatalogosMenu from './modules/poa/pages/CatalogosMenu';
 import Reportes from './modules/poa/pages/Reportes';
+import PresupuestosPage from './modules/poa/pages/PresupuestosPage';
 import Login from './components/Login';
 import ModuleSelector from './components/ModuleSelector';
 import FondoTiempoLayout from './components/FondoTiempoLayout';
@@ -214,7 +214,6 @@ function App() {
               <Route path="actividades/:objetivoEspecificoId" element={<AnimatedRoute><ActividadesPage /></AnimatedRoute>} />
               <Route path="objetivos" element={<AnimatedRoute><ObjetivosEspecificosPage /></AnimatedRoute>} />
               <Route path="objetivos-especificos/:documentId" element={<AnimatedRoute><ObjetivosEspecificosPage /></AnimatedRoute>} />
-              <Route path="presupuestos" element={<AnimatedRoute><PresupuestosPage /></AnimatedRoute>} />
               <Route path="catalogos" element={<AnimatedRoute><CatalogosMenu /></AnimatedRoute>} />
               <Route path="catalogos/items" element={<AnimatedRoute><CatalogoItems /></AnimatedRoute>} />
               <Route path="catalogos/indicadores" element={<AnimatedRoute><DireccionesPage /></AnimatedRoute>} />
@@ -222,6 +221,7 @@ function App() {
               <Route path="catalogo-items" element={<AnimatedRoute><CatalogoItems /></AnimatedRoute>} />
               <Route path="indicadores" element={<AnimatedRoute><DireccionesPage /></AnimatedRoute>} />
               <Route path="reportes" element={<AnimatedRoute><Reportes /></AnimatedRoute>} />
+              <Route path="presupuestos" element={<AnimatedRoute><PresupuestosPage /></AnimatedRoute>} />
             </Route>
 
             {/* Módulos de Administración y Catálogos (protegidos) */}

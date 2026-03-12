@@ -2,7 +2,10 @@ import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 
 function ThemeToggle({ theme, setTheme }) {
-  const [currentTheme, setCurrentTheme] = useState(theme);
+  // Usar estado reactivo en vez de leer directamente del DOM
+  const [isDarkMode, setIsDarkMode] = useState(
+    () => document.documentElement.classList.contains('dark')
+  );
   const location = useLocation();
 
   // Detectar si estamos en DetalleFondo
@@ -13,38 +16,17 @@ function ThemeToggle({ theme, setTheme }) {
   const slotPosition = enDetalleFondo ? 'bottom-[11rem]' : 'bottom-[5.5rem]';
 
   useEffect(() => {
-    applyTheme(theme);
-    setCurrentTheme(theme);
+    const effective = theme === 'system'
+      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      : theme;
+    setIsDarkMode(effective === 'dark');
   }, [theme]);
 
-  const applyTheme = (newTheme) => {
-    const root = document.documentElement;
-
-    if (newTheme === 'system') {
-      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-      root.classList.toggle('dark', systemTheme === 'dark');
-    } else {
-      root.classList.toggle('dark', newTheme === 'dark');
-    }
-  };
-
-  const cambiarTema = (nuevoTema) => {
-    setCurrentTheme(nuevoTema);
-    setTheme(nuevoTema);
-    applyTheme(nuevoTema);
-  };
-
-  const getNextTheme = () => {
-    const isDarkMode = document.documentElement.classList.contains('dark');
-    return isDarkMode ? 'light' : 'dark';
-  };
-
   const toggleTheme = () => {
-    const nextTheme = getNextTheme();
-    cambiarTema(nextTheme);
+    const nextTheme = isDarkMode ? 'light' : 'dark';
+    setIsDarkMode(!isDarkMode);
+    setTheme(nextTheme);
   };
-
-  const isDarkMode = document.documentElement.classList.contains('dark');
 
   return (
     <button

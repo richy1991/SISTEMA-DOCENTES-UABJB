@@ -210,6 +210,12 @@ export const createUsuarioPOA = (payload) => api.post('/api/poa/usuarios-poa/', 
 export const updateUsuarioPOA = (id, payload) => api.patch(`/api/poa/usuarios-poa/${id}/`, payload);
 export const deleteUsuarioPOA = (id) => api.delete(`/api/poa/usuarios-poa/${id}/`);
 
+// Buscar usuarios del sistema principal (User) por nombre, username o email
+export const buscarUsuariosSistema = (q) => {
+	if (!q || String(q).trim().length < 2) return Promise.resolve({ data: [] });
+	return api.get('/api/poa/usuarios/buscar/', { params: { q: String(q).trim() } });
+};
+
 // Buscar docentes del sistema principal para asignar
 export const buscarDocentesPOA = (q) => {
 	if (!q || String(q).trim().length < 2) return Promise.resolve({ data: [] });

@@ -81,10 +81,10 @@ export default function AccesosPOAPage() {
 
   // Filtros
   const filtered = accesos.filter(a => {
-    const nombre = a.docente_detalle?.nombre_completo?.toLowerCase() || '';
-    const ci = a.docente_detalle?.ci?.toLowerCase() || '';
+    const nombre = (a.nombre_display || a.user_detalle?.nombre_completo || a.docente_detalle?.nombre_completo || '').toLowerCase();
+    const username = (a.user_detalle?.username || '').toLowerCase();
     const entidad = a.nombre_entidad?.toLowerCase() || '';
-    const matchSearch = !search || nombre.includes(search.toLowerCase()) || ci.includes(search.toLowerCase()) || entidad.includes(search.toLowerCase());
+    const matchSearch = !search || nombre.includes(search.toLowerCase()) || username.includes(search.toLowerCase()) || entidad.includes(search.toLowerCase());
     const matchRol = filterRol === 'todos' || a.rol === filterRol;
     return matchSearch && matchRol;
   });
@@ -105,7 +105,7 @@ export default function AccesosPOAPage() {
             Accesos al Módulo POA
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            Gestiona qué docentes tienen permisos y qué pueden hacer en el módulo POA.
+            Gestiona qué usuarios tienen permisos y qué pueden hacer en el módulo POA.
           </p>
         </div>
         <button
@@ -139,7 +139,7 @@ export default function AccesosPOAPage() {
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Buscar por nombre, CI o entidad..."
+            placeholder="Buscar por nombre, usuario o entidad..."
             className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
           />
         </div>
@@ -173,8 +173,7 @@ export default function AccesosPOAPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gradient-to-r from-blue-900 to-blue-950 text-white text-xs uppercase tracking-wider">
-                <th className="px-4 py-3 text-left">Docente</th>
-                <th className="px-4 py-3 text-left">CI</th>
+                <th className="px-4 py-3 text-left">Usuario</th>
                 <th className="px-4 py-3 text-left">Rol POA</th>
                 <th className="px-4 py-3 text-left">Entidad</th>
                 <th className="px-4 py-3 text-center">Estado</th>
@@ -185,10 +184,10 @@ export default function AccesosPOAPage() {
               {filtered.map((a, idx) => (
                 <tr key={a.id} className={`border-t border-gray-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-blue-50/30 transition`}>
                   <td className="px-4 py-3 font-semibold text-gray-800">
-                    {a.docente_detalle?.nombre_completo || '—'}
-                  </td>
-                  <td className="px-4 py-3 text-gray-500 font-mono text-xs">
-                    {a.docente_detalle?.ci || '—'}
+                    <div>{a.nombre_display || a.user_detalle?.nombre_completo || a.docente_detalle?.nombre_completo || '—'}</div>
+                    {a.user_detalle?.username && (
+                      <div className="text-xs text-gray-400 font-normal">@{a.user_detalle.username}</div>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <span className={`inline-block text-xs font-semibold px-2.5 py-1 rounded-full border ${ROL_COLOR[a.rol] || 'bg-gray-100 text-gray-700 border-gray-200'}`}>

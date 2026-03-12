@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.contrib.auth.models import User
 
 # Modelos del paquete
 from poa_document.models import DocumentoPOA, ObjetivoEspecifico, Actividad, DetallePresupuesto, UsuarioPOA
@@ -17,15 +18,40 @@ class DocenteSimpleSerializer(serializers.ModelSerializer):
                   'nombres', 'ci', 'email', 'categoria', 'dedicacion']
 
 
+class UserSimpleSerializer(serializers.ModelSerializer):
+    nombre_completo = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'nombre_completo']
+
+    def get_nombre_completo(self, obj):
+        return obj.get_full_name() or obj.username
+
+
 class UsuarioPOASerializer(serializers.ModelSerializer):
+    user_detalle = UserSimpleSerializer(source='user', read_only=True)
     docente_detalle = DocenteSimpleSerializer(source='docente', read_only=True)
     rol_display = serializers.CharField(source='get_rol_display', read_only=True)
+    nombre_display = serializers.SerializerMethodField()
 
     class Meta:
         model = UsuarioPOA
-        fields = ['id', 'docente', 'docente_detalle', 'rol', 'rol_display',
+        fields = ['id', 'user', 'user_detalle', 'docente', 'docente_detalle',
+                  'rol', 'rol_display', 'nombre_display',
                   'nombre_entidad', 'activo', 'fecha_asignacion']
         read_only_fields = ['fecha_asignacion']
+        extra_kwargs = {
+            'user': {'required': False, 'allow_null': True},
+            'docente': {'required': False, 'allow_null': True},
+        }
+
+    def get_nombre_display(self, obj):
+        if obj.user:
+            return obj.user.get_full_name() or obj.user.username
+        if obj.docente:
+            return obj.docente.nombre_completo
+        return f'UsuarioPOA #{obj.pk}'
 
 
 # DireccionSerializer ahora se importa desde catalogos.api.serializers

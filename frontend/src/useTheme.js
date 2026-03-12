@@ -8,61 +8,59 @@ export function useTheme() {
   });
 
   // Estado calculado del tema real (light o dark)
-  const [effectiveTheme, setEffectiveTheme] = useState('light');
+  const [effectiveTheme, setEffectiveTheme] = useState(() => {
+    const saved = localStorage.getItem('theme');
+    if (!saved || saved === 'system') {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    return saved;
+  });
+
+  const applyToDOM = (effective) => {
+    if (effective === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    // Sincronizar data-theme para que el CSS del módulo POA también responda
+    document.documentElement.setAttribute('data-theme', effective);
+  };
 
   useEffect(() => {
-    // Función para detectar preferencia del sistema
-    const getSystemTheme = () => {
-      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    };
+    const getSystemTheme = () =>
+      window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 
-    // Calcular el tema efectivo
-    const calculateEffectiveTheme = () => {
-      if (theme === 'system') {
-        return getSystemTheme();
-      }
-      return theme;
-    };
+    const calculateEffectiveTheme = () =>
+      theme === 'system' ? getSystemTheme() : theme;
 
-    // Aplicar el tema
     const applyTheme = () => {
       const effective = calculateEffectiveTheme();
       setEffectiveTheme(effective);
-
-      // Agregar o quitar clase 'dark' del documento
-      if (effective === 'dark') {
-        document.documentElement.classList.add('dark');
-      } else {
-        document.documentElement.classList.remove('dark');
-      }
+      applyToDOM(effective);
     };
 
-    // Aplicar tema inicial
     applyTheme();
 
-    // Escuchar cambios en la preferencia del sistema
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handleChange = () => {
-      if (theme === 'system') {
-        applyTheme();
-      }
-    };
-
+    const handleChange = () => { if (theme === 'system') applyTheme(); };
     mediaQuery.addEventListener('change', handleChange);
-
-    // Cleanup
     return () => mediaQuery.removeEventListener('change', handleChange);
   }, [theme]);
 
-  // Función para cambiar el tema
   const changeTheme = (newTheme) => {
     setTheme(newTheme);
     localStorage.setItem('theme', newTheme);
+    // Aplicar inmediatamente al DOM sin esperar el efecto (evita parpadeo en Chrome)
+    const effective = newTheme === 'system'
+      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      : newTheme;
+    applyToDOM(effective);
+    setEffectiveTheme(effective);
   };
 
   return {
-    theme, // 'light', 'dark', o 'system'
-    effectiveTheme, // el tema real aplicado ('light' o 'dark')
+    theme,
+    effectiveTheme,
     setTheme: changeTheme,
     isLight: effectiveTheme === 'light',
     isDark: effectiveTheme === 'dark',

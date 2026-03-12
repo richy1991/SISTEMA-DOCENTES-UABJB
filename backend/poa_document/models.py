@@ -7,8 +7,9 @@ from catalogos.models import Direccion
 
 class UsuarioPOA(models.Model):
     """
-    Vincula a un Docente del sistema principal con un rol dentro del módulo POA.
+    Vincula a un usuario del sistema con un rol dentro del módulo POA.
     Controla quién puede elaborar, dirigir o revisar documentos POA.
+    El campo docente es opcional para permitir usuarios que no son docentes.
     """
     ROL_CHOICES = [
         ('elaborador',      'Elaborador del POA'),
@@ -19,11 +20,21 @@ class UsuarioPOA(models.Model):
         ('revisor_4',       'Entidad Revisora 4'),
     ]
 
-    docente = models.ForeignKey(
-        'fondos.Docente',
+    user = models.ForeignKey(
+        User,
         on_delete=models.CASCADE,
         related_name='accesos_poa',
-        verbose_name='Docente',
+        verbose_name='Usuario del sistema',
+        null=True,
+        blank=True,
+    )
+    docente = models.ForeignKey(
+        'fondos.Docente',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='accesos_poa_docente',
+        verbose_name='Docente vinculado',
     )
     rol = models.CharField(max_length=30, choices=ROL_CHOICES, verbose_name='Rol POA')
     nombre_entidad = models.CharField(
@@ -34,13 +45,24 @@ class UsuarioPOA(models.Model):
     fecha_asignacion = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = [('docente', 'rol')]
         verbose_name = 'Usuario POA'
         verbose_name_plural = 'Usuarios POA'
-        ordering = ['rol', 'docente__apellido_paterno']
+        ordering = ['rol', 'id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'rol'],
+                condition=models.Q(user__isnull=False),
+                name='unique_user_rol_poa',
+            ),
+        ]
 
     def __str__(self):
-        return f"{self.docente.nombre_completo} — {self.get_rol_display()}"
+        if self.user:
+            nombre = self.user.get_full_name() or self.user.username
+            return f"{nombre} — {self.get_rol_display()}"
+        if self.docente:
+            return f"{self.docente.nombre_completo} — {self.get_rol_display()}"
+        return f"UsuarioPOA #{self.pk} — {self.get_rol_display()}"
 
 
 class DocumentoPOA(models.Model):

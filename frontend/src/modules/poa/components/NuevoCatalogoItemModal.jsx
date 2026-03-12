@@ -3,6 +3,7 @@ import IconButton from './IconButton';
 import { FaTimes } from 'react-icons/fa';
 import { createCatalogoItem, updateCatalogoItem } from '../../../apis/poa.api';
 import toast from 'react-hot-toast';
+import { Input, Modal } from './base';
 
 const NuevoCatalogoItemModal = ({ partida, item, onClose, onCreated, onUpdated }) => {
   const [submitting, setSubmitting] = useState(false);
@@ -84,49 +85,56 @@ const NuevoCatalogoItemModal = ({ partida, item, onClose, onCreated, onUpdated }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
-      <div className="relative z-20 w-full max-w-md modal-panel card-elegant oe-modern rounded-xl overflow-hidden">
+    <Modal onClose={onClose}>
+      <div className="modal-panel rounded-xl w-full max-w-md">
         <div className="modal-header flex items-center justify-between px-6 py-4">
           <h3 className="font-semibold">{item ? 'Editar ítem de catálogo' : 'Nuevo ítem de catálogo'}</h3>
-          <IconButton onClick={onClose} className="bg-transparent text-white hover:bg-white/10" ariaLabel="Cerrar">
+          <IconButton onClick={onClose} className="btn-header-icon rounded-full w-8 h-8 flex items-center justify-center" ariaLabel="Cerrar">
             <FaTimes />
           </IconButton>
         </div>
         <form onSubmit={handleSubmit} className="p-4 space-y-3 modal-body">
-          {error && <div className="text-sm text-red-600">{error}</div>}
+          {error && <div className="text-sm text-red-600 dark:text-red-400">{error}</div>}
           <div>
-            <label className="block text-sm text-gray-700">Descripción</label>
-            <input
+            <Input
+              label="Descripción"
               name="descripcion"
               value={form.descripcion}
               onChange={handleChange}
-              className={`w-full border rounded px-2 py-1 ${fieldErrors.descripcion ? 'border-red-600' : ''}`}
+              error={fieldErrors.descripcion}
             />
-            {fieldErrors.descripcion && <div className="text-sm text-red-600 mt-1">{fieldErrors.descripcion}</div>}
+            {fieldErrors.descripcion && <div className="text-sm text-red-600 dark:text-red-400 mt-1">{fieldErrors.descripcion}</div>}
           </div>
 
           <div>
-            <label className="block text-sm text-gray-700">Unidad de medida</label>
-            <input name="unidad_medida" value={form.unidad_medida} onChange={handleChange} className="w-full border rounded px-2 py-1" />
+            <Input
+              label="Unidad de medida"
+              name="unidad_medida"
+              value={form.unidad_medida}
+              onChange={handleChange}
+            />
           </div>
 
           <div>
-            <label className="block text-sm text-gray-700">Código (opcional)</label>
-            <input name="codigo" value={form.codigo} onChange={handleChange} className="w-full border rounded px-2 py-1" />
+            <Input
+              label="Código (opcional)"
+              name="codigo"
+              value={form.codigo}
+              onChange={handleChange}
+            />
           </div>
 
           <div className="flex justify-end gap-2 modal-actions">
-            <button type="button" onClick={onClose} className="px-3 py-1 rounded border bg-white">
+            <button type="button" onClick={onClose} className="btn-cancel px-3 py-1 rounded border">
               Cancelar
             </button>
-            <button type="submit" disabled={submitting} className="px-4 py-1 rounded bg-emerald-600 text-white">
+            <button type="submit" disabled={submitting} className="btn-success px-4 py-1 rounded">
               {submitting ? 'Guardando...' : 'Guardar'}
             </button>
           </div>
         </form>
       </div>
-    </div>
+    </Modal>
   );
 };
 

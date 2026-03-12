@@ -154,11 +154,7 @@ class CargaHorariaViewSet(viewsets.ModelViewSet):
         Solo Jefes de Estudio y Admins pueden crear, editar o borrar.
         """
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            if not (self.request.user.is_staff and hasattr(self.request.user, 'perfil')):
-                 raise PermissionDenied("Acción no permitida.")
-            
-            rol = self.request.user.perfil.rol
-            if rol not in ['admin', 'jefe_estudios']:
+            if not hasattr(self.request.user, 'perfil') or self.request.user.perfil.rol not in ['admin', 'jefe_estudios']:
                 raise PermissionDenied("Solo Jefes de Estudio o Administradores pueden modificar cargas horarias.")
         
         return super().get_permissions()

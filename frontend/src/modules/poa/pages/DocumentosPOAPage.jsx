@@ -181,8 +181,8 @@ const DocumentosPOAPage = () => {
   };
 
   return (
-    <section className="flex flex-col items-center justify-start flex-1 pb-4 px-4 w-full">
-      <div className="w-full max-w-6xl">
+    <section className="flex flex-col items-start justify-start flex-1 pb-4 px-1 w-full">
+      <div className="w-full">
         {/* Local controls removed: 'Nuevo documento' now available in global header */}
 
         {showModal && <GestionSelectorModal onClose={handleClose} onSuccess={handleSuccess} />}
@@ -220,7 +220,7 @@ const DocumentosPOAPage = () => {
         {fromDialog && (
           <div className="mt-6">
             <h3 className="text-2xl font-bold text-blue-900 mb-4"> Gestión: {gestionState || location?.state?.gestion}</h3>
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 w-full">
+            <div className="grid grid-cols-1 gap-4 w-full">
               {docs && docs.length > 0 ? (
                 docs.map((doc, idx) => (
                   <div key={doc.id || idx} className="w-full">
@@ -237,74 +237,78 @@ const DocumentosPOAPage = () => {
                           role="button" tabIndex={0}
                           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleVerActividades(doc.id, doc); } }}
                           onClick={() => handleVerActividades(doc.id, doc)}
-                          className="card-refined card-elegant cursor-pointer group focus:outline-none focus:ring-2 focus:ring-blue-500/40 flex flex-row overflow-hidden rounded-2xl min-h-[160px]"
+                          className="poa-futura-card cursor-pointer group focus:outline-none flex flex-row overflow-hidden w-full"
                         >
-                          {/* Barra lateral de color según estado */}
-                          <div className={`w-2 flex-shrink-0 bg-gradient-to-b ${cfg.strip}`} />
-
-                          {/* Columna izquierda: AÑO grande + entidad + fecha */}
-                          <div className="poa-doc-aside flex flex-col items-center justify-center px-5 py-5 border-r flex-shrink-0 min-w-[90px] gap-1">
-                            <div className={`text-5xl font-black leading-none tracking-tighter ${cfg.text}`}>{gestion}</div>
-                            <div className="poa-doc-label text-[0.55rem] uppercase tracking-widest font-bold text-center mt-1">Gestión</div>
+                          {/* Columna izquierda: AÑO con gradiente de estado */}
+                          <div className={`poa-futura-year bg-gradient-to-b ${cfg.strip} flex flex-col items-center justify-center px-8 py-7 flex-shrink-0 min-w-[170px] relative gap-1.5`}>
+                            {/* Grid decorativo de fondo */}
+                            <div className="poa-futura-year-grid" />
+                            <div className="text-8xl font-black leading-none tracking-tighter text-white drop-shadow-[0_2px_16px_rgba(0,0,0,0.5)] relative z-10 font-mono">{gestion}</div>
+                            <div className="text-[0.6rem] uppercase tracking-[0.25em] font-bold text-white/60 relative z-10">Gestión</div>
                             {doc.fecha_elaboracion && (
-                              <div className="mt-2 text-center">
-                                <div className="poa-doc-label text-[0.55rem] uppercase tracking-widest font-semibold">Elaboración</div>
-                                <div className="poa-doc-value text-[0.68rem] font-semibold">{doc.fecha_elaboracion}</div>
+                              <div className="mt-3 text-center border-t border-white/20 pt-2.5 w-full relative z-10">
+                                <div className="text-[0.55rem] uppercase tracking-[0.2em] font-bold text-white/50">Elaboración</div>
+                                <div className="text-xs font-bold text-white/80 font-mono mt-0.5">{doc.fecha_elaboracion}</div>
                               </div>
                             )}
+                            {/* Línea brillante derecha */}
+                            <div className="absolute right-0 top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-white/40 to-transparent" />
                           </div>
 
-                          {/* Columna central: contenido principal */}
-                          <div className="flex flex-col flex-1 min-w-0 p-4 gap-2 justify-between">
-                            <div className="flex flex-col gap-1.5">
-                              {/* Entidad + Estado badge en la misma fila */}
-                              <div className="flex items-center justify-between gap-2 flex-wrap">
-                                <div className="flex items-center gap-1.5">
-                                  <FaBuilding className="text-xs text-blue-500 flex-shrink-0 poa-doc-icon" />
-                                  <span className="poa-doc-label text-[0.6rem] uppercase tracking-widest font-semibold">{entidad}</span>
-                                </div>
-                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[0.6rem] font-bold whitespace-nowrap ${cfg.badge}`}>
-                                  <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
-                                  {cfg.label}
-                                </span>
+                          {/* Columna derecha: contenido */}
+                          <div className="flex flex-col flex-1 min-w-0 px-7 py-5 gap-3 justify-between">
+
+                            {/* Fila superior: entidad + badge estado */}
+                            <div className="flex items-center justify-between gap-3 flex-wrap">
+                              <div className="flex items-center gap-2">
+                                <div className={`w-1 h-4 rounded-full bg-gradient-to-b ${cfg.strip} flex-shrink-0`} />
+                                <FaBuilding className="text-xs poa-futura-icon flex-shrink-0" />
+                                <span className="poa-futura-label text-[0.65rem] uppercase tracking-[0.18em] font-bold">{entidad}</span>
                               </div>
-
-                              {/* Programa — fuente grande, protagonista */}
-                              {programa && (
-                                <div>
-                                  <div className="flex items-center gap-1 mb-0.5">
-                                    <FaLayerGroup className="text-[0.6rem] text-indigo-500 flex-shrink-0 poa-doc-icon" />
-                                    <span className="poa-doc-label text-[0.55rem] uppercase tracking-widest font-semibold">Programa</span>
-                                  </div>
-                                  <div className="poa-doc-value text-base font-extrabold leading-tight">{programa}</div>
-                                </div>
-                              )}
-
-                              {/* Unidad — fuente media */}
-                              {unidad && (
-                                <div className="flex items-center gap-1.5">
-                                  <FaBriefcase className="text-[0.6rem] text-blue-500 flex-shrink-0 poa-doc-icon" />
-                                  <span className="poa-doc-label text-[0.6rem] uppercase tracking-widest font-semibold mr-1">Unidad:</span>
-                                  <span className="poa-doc-value text-sm font-semibold truncate">{unidad}</span>
-                                </div>
-                              )}
+                              <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-[0.72rem] font-bold whitespace-nowrap ${cfg.badge}`}>
+                                <span className={`w-2 h-2 rounded-full animate-pulse ${cfg.dot}`} />
+                                {cfg.label}
+                              </span>
                             </div>
 
-                            {/* Objetivo — recuadro compacto */}
-                            {objetivo && (
-                              <div className="poa-doc-obj-box rounded-lg px-3 py-2 mt-1">
-                                <div className="flex items-center gap-1 mb-1">
-                                  <FaBullseye className="poa-doc-obj-icon text-[0.6rem] flex-shrink-0" />
-                                  <span className="poa-doc-obj-label text-[0.55rem] uppercase tracking-widest font-semibold">Objetivo institucional</span>
+                            {/* Programa */}
+                            {programa && (
+                              <div className="flex flex-col gap-0.5">
+                                <div className="flex items-center gap-1.5">
+                                  <FaLayerGroup className="text-[0.6rem] poa-futura-accent" />
+                                  <span className="poa-futura-accent text-[0.6rem] uppercase tracking-[0.2em] font-bold">Programa</span>
                                 </div>
-                                <p className="poa-doc-value text-[0.72rem] leading-relaxed line-clamp-2">{objetivo}</p>
+                                <div className="poa-futura-title text-2xl font-black tracking-tight leading-tight mt-0.5">{programa}</div>
+                              </div>
+                            )}
+
+                            {/* Unidad como chip */}
+                            {unidad && (
+                              <div className="flex items-center gap-2">
+                                <FaBriefcase className="text-xs poa-futura-icon" />
+                                <span className="poa-futura-label text-[0.6rem] uppercase tracking-[0.18em] font-bold">Unidad</span>
+                                <span className="poa-futura-chip px-3 py-0.5 rounded-full text-xs font-bold">{unidad}</span>
+                              </div>
+                            )}
+
+                            {/* Separador luminoso */}
+                            <div className="poa-futura-divider" />
+
+                            {/* Objetivo */}
+                            {objetivo && (
+                              <div className="poa-futura-obj-box rounded-xl px-4 py-2.5 flex flex-col gap-1">
+                                <div className="flex items-center gap-1.5">
+                                  <FaBullseye className="text-xs poa-futura-accent" />
+                                  <span className="poa-futura-accent text-[0.6rem] uppercase tracking-[0.2em] font-bold">Objetivo institucional</span>
+                                </div>
+                                <p className="poa-futura-body text-sm leading-relaxed line-clamp-2">{objetivo}</p>
                               </div>
                             )}
 
                             {/* Acciones */}
-                            <div className="flex items-center justify-end gap-2 pt-2 border-t poa-doc-actions-border mt-1">
-                              <IconButton showIcon icon={<FaEdit />} onClick={(e) => { e.stopPropagation(); openEdit(doc); }} className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold py-1 px-3 text-xs rounded-lg shadow hover:from-blue-600 hover:to-indigo-700 transition">Editar</IconButton>
-                              <IconButton showIcon icon={<FaTrash />} onClick={(e) => { e.stopPropagation(); handleDelete(doc); }} disabled={deletingId === doc.id} className={`${deletingId === doc.id ? 'bg-gray-400' : 'bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700'} text-white font-bold py-1 px-3 text-xs rounded-lg shadow transition`}>{deletingId === doc.id ? 'Eliminando...' : 'Eliminar'}</IconButton>
+                            <div className="flex items-center justify-end gap-3 pt-1">
+                              <IconButton showIcon icon={<FaEdit />} onClick={(e) => { e.stopPropagation(); openEdit(doc); }} className="poa-futura-btn-edit font-bold py-2 px-6 text-sm rounded-xl transition-all">Editar</IconButton>
+                              <IconButton showIcon icon={<FaTrash />} onClick={(e) => { e.stopPropagation(); handleDelete(doc); }} disabled={deletingId === doc.id} className={`${deletingId === doc.id ? 'opacity-50 cursor-not-allowed poa-futura-btn-delete' : 'poa-futura-btn-delete'} font-bold py-2 px-6 text-sm rounded-xl transition-all`}>{deletingId === doc.id ? 'Eliminando...' : 'Eliminar'}</IconButton>
                             </div>
                           </div>
                         </div>

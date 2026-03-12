@@ -175,7 +175,10 @@ function ListaDocentes({ isDark }) {
     setIsSubmitting(true);
     setErrors({});
     try {
-      await api.post('/docentes/', formData);
+      const payload = { ...formData };
+      if (payload.email === '') payload.email = null;
+      if (payload.telefono === '') payload.telefono = null;
+      await api.post('/docentes/', payload);
       toast.success('Docente creado correctamente');
       setIsCreating(false);
       cargarDocentes();

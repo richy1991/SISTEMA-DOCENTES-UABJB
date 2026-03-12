@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FaTimes, FaSave, FaSearch, FaUserCheck } from 'react-icons/fa';
+import { FaTimes, FaSave, FaSearch, FaUserCheck, FaUser } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import IconButton from './IconButton';
-import { buscarDocentesPOA, createUsuarioPOA, updateUsuarioPOA, ROL_POA_CHOICES } from '../../../apis/poa.api';
+import { buscarUsuariosSistema, createUsuarioPOA, updateUsuarioPOA, ROL_POA_CHOICES } from '../../../apis/poa.api';
+import { Modal } from './base';
 
 const REVISORES = ['revisor_1', 'revisor_2', 'revisor_3', 'revisor_4'];
 
@@ -10,41 +11,50 @@ const AsignarAccesoPOAModal = ({ onClose, accesoToEdit, onCreated, onUpdated }) 
   const [searchQ, setSearchQ] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
-  const [selectedDocente, setSelectedDocente] = useState(null);
+  const [selectedUser, setSelectedUser] = useState(null);
   const [rol, setRol] = useState('elaborador');
   const [nombreEntidad, setNombreEntidad] = useState('');
   const [loading, setLoading] = useState(false);
   const searchTimeout = useRef(null);
 
-  // Bloquear scroll del body
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
-  }, []);
-
-  // Si estamos editando, pre-cargar datos
   useEffect(() => {
     if (!accesoToEdit) return;
     setRol(accesoToEdit.rol || 'elaborador');
     setNombreEntidad(accesoToEdit.nombre_entidad || '');
-    if (accesoToEdit.docente_detalle) {
-      setSelectedDocente(accesoToEdit.docente_detalle);
+    if (accesoToEdit.user_detalle) {
+      setSelectedUser({
+        id: accesoToEdit.user_detalle.id,
+        nombre_completo: accesoToEdit.user_detalle.nombre_completo,
+        username: accesoToEdit.user_detalle.username,
+        email: accesoToEdit.user_detalle.email || '',
+      });
+      setSearchQ(accesoToEdit.user_detalle.nombre_completo || accesoToEdit.user_detalle.username);
+    } else if (accesoToEdit.docente_detalle) {
+      // Compatibilidad con registros anteriores que solo tienen docente
+      setSelectedUser({
+        id: null,
+        nombre_completo: accesoToEdit.docente_detalle.nombre_completo,
+        username: accesoToEdit.docente_detalle.email || '',
+        email: accesoToEdit.docente_detalle.email || '',
+      });
       setSearchQ(accesoToEdit.docente_detalle.nombre_completo || '');
     }
   }, [accesoToEdit]);
 
   const handleSearch = (val) => {
     setSearchQ(val);
-    setSelectedDocente(null);
+    setSelectedUser(null);
     clearTimeout(searchTimeout.current);
     if (val.trim().length < 2) { setSearchResults([]); return; }
     searchTimeout.current = setTimeout(async () => {
       setSearching(true);
       try {
-        const res = await buscarDocentesPOA(val.trim());
-        setSearchResults(res?.data || []);
-      } catch {
+        const res = await buscarUsuariosSistema(val.trim());
+        const lista = Array.isArray(res?.data) ? res.data
+          : Array.isArray(res?.data?.results) ? res.data.results : [];
+        setSearchResults(lista);
+      } catch (err) {
+        console.error('[AsignarAccesoPOA] Error buscando usuarios:', err);
         setSearchResults([]);
       } finally {
         setSearching(false);
@@ -52,15 +62,15 @@ const AsignarAccesoPOAModal = ({ onClose, accesoToEdit, onCreated, onUpdated }) 
     }, 300);
   };
 
-  const selectDocente = (doc) => {
-    setSelectedDocente(doc);
-    setSearchQ(doc.nombre_completo);
+  const selectUser = (user) => {
+    setSelectedUser(user);
+    setSearchQ(user.nombre_completo || user.username);
     setSearchResults([]);
   };
 
   const handleSubmit = async (e) => {
     e?.preventDefault();
-    if (!selectedDocente) { toast.error('Selecciona un docente'); return; }
+    if (!selectedUser) { toast.error('Selecciona un usuario'); return; }
     if (!rol) { toast.error('Selecciona un rol'); return; }
     if (REVISORES.includes(rol) && !nombreEntidad.trim()) {
       toast.error('Ingresa el nombre de la entidad revisora'); return;
@@ -68,7 +78,7 @@ const AsignarAccesoPOAModal = ({ onClose, accesoToEdit, onCreated, onUpdated }) 
     setLoading(true);
     try {
       const payload = {
-        docente: selectedDocente.id,
+        user: selectedUser.id,
         rol,
         nombre_entidad: REVISORES.includes(rol) ? nombreEntidad.trim() : '',
         activo: true,
@@ -93,15 +103,12 @@ const AsignarAccesoPOAModal = ({ onClose, accesoToEdit, onCreated, onUpdated }) 
     }
   };
 
-  const rolData = ROL_POA_CHOICES.find(r => r.value === rol);
   const isEditor = accesoToEdit != null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60" aria-hidden="true" onClick={onClose} />
-      <div className="relative z-20 w-full max-w-lg modal-panel card-elegant oe-modern rounded-xl overflow-hidden" style={{ transform: 'none' }}>
+    <Modal onClose={onClose}>
+      <div className="modal-panel rounded-xl w-full max-w-lg">
 
-        {/* Header */}
         <div className="modal-header flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
             <FaUserCheck className="text-xl opacity-90" />
@@ -110,63 +117,71 @@ const AsignarAccesoPOAModal = ({ onClose, accesoToEdit, onCreated, onUpdated }) 
             </span>
           </div>
           <IconButton icon={<FaTimes />} onClick={onClose}
-            className="rounded-full w-8 h-8 flex items-center justify-center hover:bg-white/20 transition"
+            className="btn-header-icon rounded-full w-8 h-8 flex items-center justify-center"
             title="Cerrar" ariaLabel="Cerrar" />
         </div>
 
-        {/* Body */}
         <div className="px-6 py-5 modal-body space-y-5">
-
-          {/* Búsqueda de docente */}
           <div>
-            <label className="block text-sm font-semibold mb-1.5">
-              Docente <span className="text-red-500">*</span>
+            <label className="block text-sm font-semibold mb-1.5 text-gray-700 dark:text-slate-300">
+              Usuario del sistema <span className="text-red-500">*</span>
             </label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500">
                 <FaSearch size={13} />
               </span>
               <input
                 value={searchQ}
                 onChange={e => handleSearch(e.target.value)}
                 disabled={isEditor}
-                placeholder="Buscar por nombre, apellido o CI..."
-                className="modal-input block w-full border border-gray-300 rounded-lg pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Buscar por nombre, usuario o correo..."
+                className="poa-input block w-full rounded-lg pl-9 pr-4 py-2.5 text-sm"
               />
               {searching && (
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-blue-400">Buscando…</span>
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-blue-500 dark:text-sky-400">Buscando…</span>
               )}
             </div>
-            {/* Dropdown de resultados */}
-            {searchResults.length > 0 && !selectedDocente && (
-              <ul className="mt-1 border border-gray-200 rounded-lg shadow-lg overflow-hidden max-h-52 overflow-y-auto bg-white z-10">
-                {searchResults.map(doc => (
-                  <li key={doc.id}>
+            {searchResults.length > 0 && !selectedUser && (
+              <ul className="mt-1 border border-gray-200 dark:border-slate-600 rounded-lg shadow-lg overflow-hidden max-h-52 overflow-y-auto bg-white dark:bg-slate-800 z-10">
+                {searchResults.map(u => (
+                  <li key={u.id}>
                     <button
                       type="button"
-                      onClick={() => selectDocente(doc)}
-                      className="w-full text-left px-4 py-2.5 hover:bg-blue-50 text-sm flex flex-col"
+                      onClick={() => selectUser(u)}
+                      className="w-full text-left px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-700 text-sm flex items-center gap-3"
                     >
-                      <span className="font-semibold text-gray-800">{doc.nombre_completo}</span>
-                      <span className="text-gray-500 text-xs">CI: {doc.ci} · {doc.email || '—'}</span>
+                      <div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs flex-shrink-0">
+                        {(u.nombre_completo || u.username)?.[0]?.toUpperCase() || '?'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-gray-800 dark:text-slate-200 truncate">{u.nombre_completo || u.username}</p>
+                        <p className="text-gray-500 dark:text-slate-400 text-xs truncate">
+                          @{u.username}
+                          {u.email ? ` · ${u.email}` : ''}
+                          {u.perfil?.rol ? ` · ${u.perfil.rol}` : ''}
+                        </p>
+                      </div>
                     </button>
                   </li>
                 ))}
               </ul>
             )}
-            {/* Docente seleccionado */}
-            {selectedDocente && (
-              <div className="mt-2 flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5">
+            {selectedUser && (
+              <div className="mt-2 flex items-center gap-3 bg-blue-50 dark:bg-slate-700 border border-blue-200 dark:border-slate-600 rounded-lg px-4 py-2.5">
                 <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">
-                  {selectedDocente.nombre_completo?.[0] || '?'}
+                  {(selectedUser.nombre_completo || selectedUser.username)?.[0]?.toUpperCase() || '?'}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-blue-900 text-sm truncate">{selectedDocente.nombre_completo}</p>
-                  <p className="text-xs text-blue-600">CI: {selectedDocente.ci} · {selectedDocente.email || '—'}</p>
+                  <p className="font-semibold text-blue-900 dark:text-slate-200 text-sm truncate">
+                    {selectedUser.nombre_completo || selectedUser.username}
+                  </p>
+                  <p className="text-xs text-blue-600 dark:text-slate-400 truncate">
+                    @{selectedUser.username}{selectedUser.email ? ` · ${selectedUser.email}` : ''}
+                  </p>
                 </div>
                 {!isEditor && (
-                  <button type="button" onClick={() => { setSelectedDocente(null); setSearchQ(''); }}
-                    className="text-blue-400 hover:text-red-500 flex-shrink-0 transition">
+                  <button type="button" onClick={() => { setSelectedUser(null); setSearchQ(''); }}
+                    className="text-gray-400 hover:text-red-500 flex-shrink-0 transition">
                     <FaTimes size={12} />
                   </button>
                 )}
@@ -174,9 +189,8 @@ const AsignarAccesoPOAModal = ({ onClose, accesoToEdit, onCreated, onUpdated }) 
             )}
           </div>
 
-          {/* Selector de rol */}
           <div>
-            <label className="block text-sm font-semibold mb-2">
+            <label className="block text-sm font-semibold mb-2 text-gray-700 dark:text-slate-300">
               Rol / Permiso <span className="text-red-500">*</span>
             </label>
             <div className="grid grid-cols-2 gap-2">
@@ -188,7 +202,7 @@ const AsignarAccesoPOAModal = ({ onClose, accesoToEdit, onCreated, onUpdated }) 
                   className={`text-left px-3 py-2.5 rounded-lg border-2 text-sm font-medium transition-all duration-150 ${
                     rol === r.value
                       ? 'border-blue-500 bg-blue-600 text-white shadow-md'
-                      : 'border-gray-200 bg-white text-gray-700 hover:border-blue-300 hover:bg-blue-50'
+                      : 'border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-300 hover:border-blue-300 hover:bg-blue-50 dark:hover:bg-slate-700'
                   }`}
                 >
                   <span className={`inline-block w-2 h-2 rounded-full mr-2 ${
@@ -200,19 +214,18 @@ const AsignarAccesoPOAModal = ({ onClose, accesoToEdit, onCreated, onUpdated }) 
             </div>
           </div>
 
-          {/* Nombre entidad (solo para revisores) */}
           {REVISORES.includes(rol) && (
             <div>
-              <label className="block text-sm font-semibold mb-1.5">
+              <label className="block text-sm font-semibold mb-1.5 text-gray-700 dark:text-slate-300">
                 Nombre de la Entidad Revisora <span className="text-red-500">*</span>
               </label>
               <input
                 value={nombreEntidad}
                 onChange={e => setNombreEntidad(e.target.value)}
                 placeholder="Ej: DAF, VRA, DI, Rectorado…"
-                className="modal-input block w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="poa-input block w-full border border-gray-300 dark:border-slate-600 rounded-lg px-4 py-2.5 text-sm"
               />
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
                 Nombre de la institución o unidad que revisa y aprueba documentos POA.
               </p>
             </div>
@@ -220,15 +233,14 @@ const AsignarAccesoPOAModal = ({ onClose, accesoToEdit, onCreated, onUpdated }) 
 
         </div>
 
-        {/* Footer */}
         <div className="px-6 py-4 modal-actions flex justify-end gap-3">
           <button type="button" onClick={onClose}
-            className="border border-gray-300 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition font-medium">
+            className="border border-gray-300 dark:border-slate-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-slate-700 transition font-medium text-gray-700 dark:text-slate-300">
             Cancelar
           </button>
           <button
             type="button"
-            disabled={loading || !selectedDocente}
+            disabled={loading || !selectedUser}
             onClick={handleSubmit}
             className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-5 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition">
             <FaSave size={13} />
@@ -236,7 +248,7 @@ const AsignarAccesoPOAModal = ({ onClose, accesoToEdit, onCreated, onUpdated }) 
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 
