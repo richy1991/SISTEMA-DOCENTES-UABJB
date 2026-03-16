@@ -1,3 +1,6 @@
+# ============================================================
+# DEPENDENCIAS DEL BACKEND (Django REST Framework)
+# ============================================================
 asgiref==3.10.0
 charset-normalizer==3.4.4
 Django==5.2.7
@@ -15,7 +18,12 @@ python-dateutil==2.9.0.post0
 python-decouple==3.8
 pytz==2025.2
 reportlab==4.4.5
+setuptools<81
 six==1.17.0
 sqlparse==0.5.3
 tzdata==2025.2
+
+# ============================================================
+# DEPENDENCIAS DEL FRONTEND (React)
+# ============================================================
 lucide-react
