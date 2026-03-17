@@ -1629,7 +1629,19 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         user.save()
         
         return Response({'success': 'Contraseña actualizada correctamente'})
-    
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
+    def resetear_password(self, request, pk=None):
+        """Restablece la contraseña del usuario a la contraseña por defecto (username + UABJB)"""
+        user = self.get_object()
+        nueva_password = f"{user.username}UABJB"
+        user.set_password(nueva_password)
+        user.save()
+        if hasattr(user, 'perfil'):
+            user.perfil.debe_cambiar_password = True
+            user.perfil.save()
+        return Response({'success': f'Contraseña restablecida correctamente a: {nueva_password}'})
+
     @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
     def toggle_activo(self, request, pk=None):
         """Activar o desactivar usuario"""
@@ -1651,13 +1663,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
 def usuario_actual(request):
     """Retorna la información completa del usuario actual"""
     user = request.user
-    # Modificado para usar el serializer que incluye la foto de perfil
     serializer = UsuarioSerializer(user, context={'request': request})
-    data = serializer.data
-    # Asegurarse de que la URL de la foto de perfil esté completa
-    if data.get('perfil') and data['perfil'].get('foto_perfil'):
-        data['perfil']['foto_perfil'] = request.build_absolute_uri(data['perfil']['foto_perfil'])
-    return Response(data)
     return Response(serializer.data)
 
 
@@ -1700,7 +1706,8 @@ class FotoPerfilUpdateView(generics.RetrieveUpdateDestroyAPIView):
 
     def perform_destroy(self, instance):
         """Al hacer DELETE, solo borra la foto de perfil, no el objeto PerfilUsuario."""
-        instance.foto_perfil.delete(save=True)
+        instance.clear_foto_perfil()
+        instance.save(update_fields=['foto_perfil', 'foto_perfil_cifrada', 'foto_perfil_mime'])
 
 
 @api_view(['POST'])

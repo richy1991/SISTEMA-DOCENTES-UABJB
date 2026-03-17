@@ -2,23 +2,13 @@ import { useState, useEffect } from 'react';
 import api from '../apis/api';
 import toast from 'react-hot-toast';
 
-const UserIcon = () => (
-    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-    </svg>
-);
-
-const InfoIcon = (props) => (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-);
-
 const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, carreras, roles }) => {
   const [formData, setFormData] = useState({});
   const [crearNuevoDocente, setCrearNuevoDocente] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
+  const [resettingPassword, setResettingPassword] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   useEffect(() => {
     const initialData = {
@@ -29,8 +19,6 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
       rol: userToEdit?.perfil?.rol || 'docente',
       carrera: userToEdit?.perfil?.carrera || '',
       docente: userToEdit?.perfil?.docente || '',
-      password: '',
-      password_confirm: '',
       docente_data: {
         nombres: '',
         apellido_paterno: '',
@@ -44,6 +32,7 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
     setFormData(initialData);
     setCrearNuevoDocente(false);
     setErrors({});
+    setShowResetConfirm(false);
   }, [userToEdit]);
 
   const handleChange = (e) => {
@@ -121,6 +110,21 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
     }
   };
 
+  const handleResetearPassword = async () => {
+    const passwordPorDefecto = `${userToEdit.username}UABJB`;
+    setResettingPassword(true);
+    try {
+      await api.post(`/usuarios/${userToEdit.id}/resetear_password/`);
+      toast.success(`Contraseña restablecida. Nueva contraseña: ${passwordPorDefecto}`);
+      setShowResetConfirm(false);
+      onSaveSuccess();
+    } catch (err) {
+      toast.error('No se pudo restablecer la contraseña');
+    } finally {
+      setResettingPassword(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -132,14 +136,8 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
       first_name: formData.first_name,
       last_name: formData.last_name,
       rol: formData.rol,
+      is_active: userToEdit.is_active,
     };
-
-    if (userToEdit) { // Edit mode
-      payload.is_active = userToEdit.is_active;
-    } else { // Create mode
-      payload.password = formData.password;
-      payload.password_confirm = formData.password_confirm;
-    }
 
     if (formData.rol === 'director' || formData.rol === 'jefe_estudios') {
       payload.carrera = formData.carrera;
@@ -152,13 +150,8 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
     }
 
     try {
-      if (userToEdit) {
-        await api.put(`/usuarios/${userToEdit.id}/`, payload);
-        toast.success('Usuario actualizado correctamente');
-      } else {
-        await api.post('/usuarios/', payload);
-        toast.success('Usuario creado correctamente');
-      }
+      await api.put(`/usuarios/${userToEdit.id}/`, payload);
+      toast.success('Usuario actualizado correctamente');
       onSaveSuccess();
       // La función onSaveSuccess ya se encarga de cerrar el modal,
       // por lo que la llamada a onCancel/onClose aquí es innecesaria y se elimina.
@@ -184,15 +177,15 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || !userToEdit) return null;
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-2xl max-w-4xl w-full max-h-[95vh] flex flex-col">
         <div className="px-6 py-4 border-b-2 border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-700/50 flex justify-between items-center">
             <h3 className="text-xl font-bold text-blue-600 dark:text-white flex items-center gap-2">
-                <span>{userToEdit ? '✏️' : '➕'}</span>
-                {userToEdit ? 'Editar Usuario' : 'Crear Nuevo Usuario'}
+            <span>✏️</span>
+            Editar Usuario
             </h3>
             <button onClick={onClose} disabled={loading} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors" title="Cerrar">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -205,12 +198,6 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
             <div className="space-y-4">
               <InputField label="Usuario" name="username" value={formData.username} onChange={handleChange} required disabled={!!userToEdit} error={errors.username} />
               <InputField label="Email" name="email" type="email" value={formData.email} onChange={handleChange} error={errors.email} />
-              {!userToEdit && (
-                <>
-                  <InputField label="Contraseña" name="password" type="password" value={formData.password} onChange={handleChange} required error={errors.password} />
-                  <InputField label="Confirmar Contraseña" name="password_confirm" type="password" value={formData.password_confirm} onChange={handleChange} required error={errors.password_confirm} />
-                </>
-              )}
               <InputField label="Nombres" name="first_name" value={formData.first_name} onChange={handleChange} required error={errors.first_name} />
               <InputField label="Apellidos" name="last_name" value={formData.last_name} onChange={handleChange} required error={errors.last_name} />
             </div>
@@ -308,13 +295,78 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
           </div>
         </form>
         <div className="border-t-2 border-slate-200 dark:border-slate-700 px-6 py-4 bg-slate-50 dark:bg-slate-900">
-            <div className="flex justify-end gap-3">
-                <button type="button" onClick={onClose} disabled={loading} className="px-6 py-2.5 rounded-xl font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm disabled:opacity-50">Cancelar</button>
-                <button type="submit" form="user-form" disabled={loading} className={`px-6 py-2.5 rounded-xl text-white font-bold transition-all shadow-lg hover:shadow-xl flex items-center gap-2 ${loading ? 'bg-slate-400 cursor-not-allowed' : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 hover:scale-105'}`}>
-                    {loading ? 'Guardando...' : (userToEdit ? 'Actualizar Usuario' : 'Crear Usuario')}
-                </button>
+            <div className="flex justify-between items-center">
+                <div>
+                    {userToEdit && (
+                        <button
+                            type="button"
+                          onClick={() => setShowResetConfirm(true)}
+                            disabled={loading || resettingPassword}
+                            className={`px-4 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm flex items-center gap-2 border-2 ${
+                                resettingPassword
+                                    ? 'bg-slate-100 dark:bg-slate-700 text-slate-400 border-slate-300 dark:border-slate-600 cursor-not-allowed'
+                                    : 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/40'
+                            }`}
+                            title={`Restablecer contraseña a: ${userToEdit?.username}UABJB`}
+                        >
+                            🔑 {resettingPassword ? 'Restableciendo...' : 'Restablecer Contraseña'}
+                        </button>
+                    )}
+                </div>
+                <div className="flex gap-3">
+                    <button type="button" onClick={onClose} disabled={loading} className="px-6 py-2.5 rounded-xl font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm disabled:opacity-50">Cancelar</button>
+                    <button type="submit" form="user-form" disabled={loading} className={`px-6 py-2.5 rounded-xl text-white font-bold transition-all shadow-lg hover:shadow-xl flex items-center gap-2 ${loading ? 'bg-slate-400 cursor-not-allowed' : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 hover:scale-105'}`}>
+                    {loading ? 'Guardando...' : 'Actualizar Usuario'}
+                    </button>
+                </div>
             </div>
         </div>
+
+        {showResetConfirm && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+            <div
+              className="absolute inset-0 bg-black/70 backdrop-blur-[2px]"
+              onClick={() => !resettingPassword && setShowResetConfirm(false)}
+            />
+            <div className="relative w-full max-w-lg rounded-2xl border border-amber-300/40 dark:border-amber-700/50 bg-slate-900 shadow-2xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-slate-700/70 bg-gradient-to-r from-amber-900/30 to-slate-900">
+                <h4 className="text-lg font-bold text-amber-300 flex items-center gap-2">
+                  <span>🔐</span>
+                  Confirmar Restablecimiento
+                </h4>
+              </div>
+              <div className="px-5 py-4 space-y-3 text-slate-200">
+                <p className="text-sm leading-relaxed">
+                  Se restablecerá la contraseña de <strong className="text-white">{userToEdit?.username}</strong> a la contraseña inicial.
+                </p>
+                <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+                  Contraseña por defecto: <strong className="text-amber-300">{userToEdit?.username}UABJB</strong>
+                </div>
+                <p className="text-xs text-slate-400">
+                  El usuario deberá cambiarla al iniciar sesión.
+                </p>
+              </div>
+              <div className="px-5 py-4 border-t border-slate-700/70 flex justify-end gap-3 bg-slate-950/70">
+                <button
+                  type="button"
+                  onClick={() => setShowResetConfirm(false)}
+                  disabled={resettingPassword}
+                  className="px-4 py-2 rounded-lg font-semibold text-slate-300 border border-slate-600 hover:bg-slate-800 disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetearPassword}
+                  disabled={resettingPassword}
+                  className={`px-4 py-2 rounded-lg font-bold text-white ${resettingPassword ? 'bg-slate-500 cursor-not-allowed' : 'bg-amber-600 hover:bg-amber-700'}`}
+                >
+                  {resettingPassword ? 'Restableciendo...' : 'Confirmar y Restablecer'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

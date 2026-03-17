@@ -294,7 +294,7 @@ class FondoTiempoListSerializer(serializers.ModelSerializer):
 class PerfilUsuarioSerializer(serializers.ModelSerializer):
     carrera_nombre = serializers.SerializerMethodField()
     docente_nombre = serializers.SerializerMethodField()
-    foto_perfil = serializers.ImageField(read_only=True)
+    foto_perfil = serializers.SerializerMethodField()
 
     class Meta:
         model = PerfilUsuario
@@ -309,11 +309,29 @@ class PerfilUsuarioSerializer(serializers.ModelSerializer):
         """Retorna el nombre completo del docente si existe, si no, None."""
         return obj.docente.nombre_completo if obj.docente else None
 
+    def get_foto_perfil(self, obj):
+        return obj.get_foto_perfil_data_uri()
 
-class FotoPerfilSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = PerfilUsuario
-        fields = ['foto_perfil']
+
+class FotoPerfilSerializer(serializers.Serializer):
+    foto_perfil = serializers.ImageField(required=False, allow_null=True)
+
+    def to_representation(self, instance):
+        return {'foto_perfil': instance.get_foto_perfil_data_uri()}
+
+    def update(self, instance, validated_data):
+        incoming = validated_data.get('foto_perfil', serializers.empty)
+
+        if incoming is serializers.empty:
+            return instance
+
+        if incoming is None:
+            instance.clear_foto_perfil()
+        else:
+            instance.set_foto_perfil_cifrada(incoming)
+
+        instance.save(update_fields=['foto_perfil', 'foto_perfil_cifrada', 'foto_perfil_mime'])
+        return instance
 
 
 class UsuarioSerializer(serializers.ModelSerializer):

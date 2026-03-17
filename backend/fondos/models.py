@@ -6,6 +6,10 @@ from django.contrib.auth.models import User
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from django.utils import timezone
+from django.conf import settings
+from cryptography.fernet import Fernet, InvalidToken
+import base64
+import hashlib
 import os
 
 
@@ -722,6 +726,8 @@ class PerfilUsuario(models.Model):
     carrera = models.ForeignKey(Carrera, on_delete=models.SET_NULL, null=True, blank=True)
     telefono = models.CharField(max_length=20, blank=True)
     foto_perfil = models.ImageField(upload_to='perfiles/', null=True, blank=True)
+    foto_perfil_cifrada = models.BinaryField(null=True, blank=True, editable=False)
+    foto_perfil_mime = models.CharField(max_length=64, blank=True, default='')
     debe_cambiar_password = models.BooleanField(default=True, help_text="Indica si el usuario debe cambiar su contraseña en el próximo inicio de sesión")
     activo = models.BooleanField(default=True)
     fecha_creacion = models.DateTimeField(auto_now_add=True)
@@ -732,6 +738,52 @@ class PerfilUsuario(models.Model):
     
     def __str__(self):
         return f"{self.user.username} - {self.get_rol_display()}"
+
+    @staticmethod
+    def _get_cipher():
+        key_from_env = getattr(settings, 'PROFILE_IMAGE_ENCRYPTION_KEY', '')
+        if key_from_env:
+            key = key_from_env.encode('utf-8') if isinstance(key_from_env, str) else key_from_env
+        else:
+            digest = hashlib.sha256(settings.SECRET_KEY.encode('utf-8')).digest()
+            key = base64.urlsafe_b64encode(digest)
+        return Fernet(key)
+
+    def set_foto_perfil_cifrada(self, uploaded_file):
+        image_bytes = uploaded_file.read()
+        if not image_bytes:
+            raise ValidationError("La imagen está vacía.")
+
+        mime_type = getattr(uploaded_file, 'content_type', '') or 'image/jpeg'
+        encrypted = self._get_cipher().encrypt(image_bytes)
+
+        self.foto_perfil_cifrada = encrypted
+        self.foto_perfil_mime = mime_type
+
+        # Limpieza de compatibilidad: elimina el archivo físico si existía en el almacenamiento antiguo.
+        if self.foto_perfil and self.foto_perfil.name:
+            self.foto_perfil.delete(save=False)
+        self.foto_perfil = None
+
+    def clear_foto_perfil(self):
+        if self.foto_perfil and self.foto_perfil.name:
+            self.foto_perfil.delete(save=False)
+        self.foto_perfil = None
+        self.foto_perfil_cifrada = None
+        self.foto_perfil_mime = ''
+
+    def get_foto_perfil_data_uri(self):
+        if not self.foto_perfil_cifrada:
+            return None
+
+        try:
+            decrypted = self._get_cipher().decrypt(bytes(self.foto_perfil_cifrada))
+        except InvalidToken:
+            return None
+
+        b64_image = base64.b64encode(decrypted).decode('ascii')
+        mime = self.foto_perfil_mime or 'image/jpeg'
+        return f"data:{mime};base64,{b64_image}"
 
 
 @receiver(post_save, sender=User)
