@@ -102,6 +102,65 @@ class Docente(models.Model):
                 self.horas_contrato_semanales = None
 
 
+class SaldoVacacionesGestion(models.Model):
+    """
+    Saldo de vacaciones por docente y gestión académica.
+    Permite especificar de forma granular los días de vacación disponibles
+    para cada docente en cada año/gestión.
+    """
+    docente = models.ForeignKey(Docente, on_delete=models.CASCADE, related_name='saldos_vacaciones')
+    gestion = models.IntegerField(
+        validators=[MinValueValidator(2020), MaxValueValidator(2100)],
+        help_text="Año/Gestión académica"
+    )
+    dias_disponibles = models.IntegerField(
+        help_text="Días de vacación disponibles para esta gestión"
+    )
+    
+    class Meta:
+        verbose_name = "Saldo de Vacaciones"
+        verbose_name_plural = "Saldos de Vacaciones"
+        unique_together = ['docente', 'gestion']
+        ordering = ['-gestion', 'docente']
+    
+    def __str__(self):
+        return f"{self.docente.nombre_completo} - {self.gestion}: {self.dias_disponibles} días"
+    
+    def clean(self):
+        """
+        Validar que si hay FondoDeTiempo aprobados para este docente en esta gestión,
+        NO se permita cambiar el saldo de vacaciones (consistencia regulatoria).
+        """
+        super().clean()
+        
+        # Solo validar si el objeto ya existe (está siendo actualizado)
+        if self.pk:
+            saldo_anterior = SaldoVacacionesGestion.objects.get(pk=self.pk)
+            
+            # Si los días cambiaron
+            if saldo_anterior.dias_disponibles != self.dias_disponibles:
+                # Verificar si hay fondos aprobados
+                fondos_aprobados = FondoTiempo.objects.filter(
+                    docente=self.docente,
+                    gestion=self.gestion,
+                    estado='aprobado_director'
+                ).count()
+                
+                if fondos_aprobados > 0:
+                    raise ValidationError({
+                        'dias_disponibles': (
+                            f'⚠️ NO SE PUEDE MODIFICAR: Hay {fondos_aprobados} Fondo(s) de Tiempo '
+                            f'aprobado(s) para este docente en la gestión {self.gestion}. '
+                            f'Cambiar el saldo de vacaciones desalinearía las horas_efectivas '
+                            f'legalmente aprobadas. Contacte al administrador si necesita corregir.'
+                        )
+                    })
+    
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
 class Carrera(models.Model):
     """Carreras de la universidad"""
     
@@ -361,42 +420,196 @@ class FondoTiempo(models.Model):
         
         return False
     
-    def puede_cambiar_estado(self, usuario):
-        """Solo admin/director pueden cambiar estado"""
-        return usuario.is_staff
+    def puede_cambiar_estado(self, usuario, nuevo_estado=None):
+        """
+        Valida permisos para cambiar el estado del Fondo de Tiempo.
+        
+        - 'observado': Solo jefe_estudios (del mismo programa) o admin
+        - Otros cambios: Solo admin o director (is_staff)
+        """
+        # Necesario ser staff
+        if not usuario.is_staff:
+            return False
+        
+        # Si se especifica nuevo estado, hacer validaciones adicionales
+        if nuevo_estado == 'observado':
+            # Solo admin o jefe_estudios pueden cambiar a 'observado'
+            if hasattr(usuario, 'perfil') and usuario.perfil:
+                rol = usuario.perfil.rol
+                if rol in ['admin', 'jefe_estudios']:
+                    return True
+            return False
+        
+        # Para otros estados, basta con ser staff
+        return True
     
     def puede_archivar(self, usuario):
         """Solo admin puede archivar"""
         return usuario.is_staff
+
+    def _obtener_horas_vacacion_docente(self):
+        """
+        Obtiene las horas de vacación para el docente en la gestión actual.
+        
+        Flujo:
+        1. Busca un registro en SaldoVacacionesGestion para (docente, gestion)
+        2. Si existe, multiplica los días por 8 (horas/día) y los retorna
+        3. Si NO existe (fallback), usa los días del perfil del docente
+        4. Si aún no hay valor, calcula automáticamente por antigüedad
+        """
+        if not self.docente:
+            return 0
+
+        # Intenta obtener del saldo específico de la gestión
+        try:
+            saldo = SaldoVacacionesGestion.objects.get(
+                docente=self.docente,
+                gestion=self.gestion
+            )
+            dias_vacacion = saldo.dias_disponibles
+            return int(dias_vacacion) * 8
+        except SaldoVacacionesGestion.DoesNotExist:
+            pass
+
+        # Fallback: usa el valor del perfil del docente
+        dias_vacacion = self.docente.dias_vacacion or 0
+        if dias_vacacion <= 0:
+            dias_vacacion = self.docente.calcular_dias_vacacion(self.gestion)
+
+        return int(dias_vacacion) * 8
+
+    def _recalcular_horas_automaticas(self):
+        """
+        Regla UABJB:
+        horas_disponibles_reglamentarias = 2080 - horas_vacacion - horas_feriados
+        """
+        if not self.docente:
+            return
+
+        self.horas_semana = Decimal(self.docente.horas_semanales_maximas)
+
+        # El contrato reglamentario anual se trabaja sobre base 2080.
+        self.contrato_horas = 2080
+
+        # Fuente de datos: perfil/registro del docente.
+        self.horas_vacacion = self._obtener_horas_vacacion_docente()
+        self.horas_feriados = int(self.docente.horas_feriados_gestion or 0)
+
+        horas_disponibles_reglamentarias = (
+            Decimal(self.contrato_horas)
+            - Decimal(self.horas_vacacion)
+            - Decimal(self.horas_feriados)
+        )
+
+        self.horas_efectivas = max(horas_disponibles_reglamentarias, Decimal('0.00'))
+
+    def clean(self):
+        super().clean()
+
+        # Sin docente no es posible validar reglas de carga horaria.
+        if not self.docente:
+            return
+
+        # ============================================================
+        # VALIDACIÓN 1: Bloqueo por Estado
+        # ============================================================
+        # Si el fondo está en un estado bloqueado (presentado, aprobado, etc.),
+        # NO permitir cambios. Solo 'borrador' y 'observado' son editables.
+        
+        ESTADOS_BLOQUEADOS = [
+            'presentado_jefe',
+            'presentado_director',
+            'aprobado_director',
+            'en_ejecucion',
+            'informe_presentado',
+            'finalizado',
+            'archivado'
+        ]
+        
+        ESTADOS_EDITABLES = ['borrador', 'observado', 'rechazado']
+        
+        # Si el fondo ya existe en DB, verificar si está en estado bloqueado
+        if self.pk:
+            fondo_actual = FondoTiempo.objects.get(pk=self.pk)
+            
+            # Si está en estado bloqueado, comparar con cambios
+            if fondo_actual.estado in ESTADOS_BLOQUEADOS:
+                # Campos que NO pueden cambiar una vez presentado
+                campos_criticos = [
+                    'docente', 'carrera', 'gestion', 'periodo',
+                    'horas_vacacion', 'horas_feriados', 'horas_efectivas'
+                ]
+                
+                cambios_detectados = False
+                for campo in campos_criticos:
+                    if getattr(self, campo) != getattr(fondo_actual, campo):
+                        cambios_detectados = True
+                        break
+                
+                if cambios_detectados:
+                    raise ValidationError({
+                        'estado': (
+                            f'No se puede editar un Fondo de Tiempo en estado '
+                            f'"{fondo_actual.get_estado_display()}". '
+                            f'Solo se pueden editar fondos en estado "Borrador" u "Observado".'
+                        )
+                    })
+            
+            # Si pasó, al menos el estado actual es editable
+            if self.estado not in ESTADOS_EDITABLES + [fondo_actual.estado]:
+                raise ValidationError({
+                    'estado': (
+                        f'Transición de estado no permitida. '
+                        f'Estados editables: {", ".join([dict(self.ESTADO_CHOICES)[s] for s in ESTADOS_EDITABLES])}.'
+                    )
+                })
+
+        # ============================================================
+        # VALIDACIÓN 2: Recalor de horas
+        # ============================================================
+        # Recalcula aquí también para que la validación use valores actualizados.
+        self._recalcular_horas_automaticas()
+
+        # Validación reglamentaria: suma de las 7 dimensiones no debe exceder las horas efectivas.
+        total_dimensiones = Decimal('0.00')
+        if self.pk:
+            total_dimensiones = self.categorias.aggregate(total=models.Sum('total_horas'))['total'] or Decimal('0.00')
+
+        if Decimal(total_dimensiones) > Decimal(self.horas_efectivas):
+            raise ValidationError({
+                'horas_efectivas': (
+                    'La suma de las 7 dimensiones no puede superar las horas disponibles '
+                    f'({self.horas_efectivas}). Total actual: {total_dimensiones}.'
+                )
+            })
+        
+        # ============================================================
+        # VALIDACIÓN 3: Consistencia con SaldoVacacionesGestion
+        # ============================================================
+        # Si el estado es aprobado y hay cambios en saldo de vacaciones, alertar
+        if self.pk:
+            fondo_actual = FondoTiempo.objects.get(pk=self.pk)
+            
+            if fondo_actual.estado == 'aprobado_director':
+                # Verificar si el saldo de vacaciones ha cambiado
+                horas_vacacion_anterior = fondo_actual.horas_vacacion
+                horas_vacacion_nueva = self._obtener_horas_vacacion_docente()
+                
+                if horas_vacacion_nueva != horas_vacacion_anterior:
+                    raise ValidationError({
+                        'horas_vacacion': (
+                            f'⚠️ ALERTA DE CONSISTENCIA: El saldo de vacaciones del docente ha sido '
+                            f'modificado después de la aprobación. Horas anteriores: {horas_vacacion_anterior}, '
+                            f'Horas actuales: {horas_vacacion_nueva}. '
+                            f'Si continúa, el Fondo de Tiempo quedará desalineado con lo aprobado legalmente. '
+                            f'Contacte al administrador para resolver.'
+                        )
+                    })
     
     def save(self, *args, **kwargs):
-        # Constantes
-        SEMANAS_ANIO = Decimal(52)
-        HORAS_DIA = Decimal(8)
+        self._recalcular_horas_automaticas()
+        self.full_clean()
 
-        if self.docente:
-            # 1. Obtener horas semanales según dedicación
-            self.horas_semana = Decimal(self.docente.horas_semanales_maximas)
-            
-            # 2. Calcular base anual
-            base_anual = self.horas_semana * SEMANAS_ANIO
-            self.contrato_horas = int(base_anual)
-            
-            # 3. Calcular antigüedad y vacaciones dinámicamente
-            dias_vacacion_calc = self.docente.calcular_dias_vacacion(self.gestion)
-            
-            # 4. Actualizar deducciones
-            self.horas_vacacion = dias_vacacion_calc * int(HORAS_DIA)
-            self.horas_feriados = 128 # 16 días * 8 horas (Estándar)
-
-            # 5. Cálculo de Horas Efectivas (Meta)
-            # Fórmula: (horas_semana * 52) - (dias_vacacion * 8) - horas_feriados
-            deducciones = Decimal(self.horas_vacacion) + Decimal(self.horas_feriados) 
-            self.horas_efectivas = base_anual - deducciones
-            
-            if self.horas_efectivas < 0:
-                self.horas_efectivas = Decimal('0.00')
-        
         super(FondoTiempo, self).save(*args, **kwargs)
         
     @property

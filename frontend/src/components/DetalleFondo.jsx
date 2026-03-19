@@ -15,6 +15,7 @@ import CargaHorariaManager from './CargaHorariaManager';
 import toast from 'react-hot-toast';
 import ValidacionRequisitos from './ValidacionRequisitos';
 import PDFPreviewModal from './PDFPreviewModal';
+import { Eye, CheckCircle2, FileDown, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4'];
 const CATEGORIAS_BLOQUEADAS = [];
@@ -173,9 +174,13 @@ function DetalleFondo({ isDark }) {
   const [mostrarModalInforme, setMostrarModalInforme] = useState(false);
   const [mostrarModalPDF, setMostrarModalPDF] = useState(false);
   const [cargaParaEditar, setCargaParaEditar] = useState(null);
+  const [panelCentral, setPanelCentral] = useState('resumen');
+  const [direccionPanel, setDireccionPanel] = useState('derecha');
   const [slideGrafico, setSlideGrafico] = useState(0);
+  const vistaActual = 'docente';
   const slideGraficoRef = useRef(0);
   const timerGraficoRef = useRef(null);
+  const prevTotalesCategoriasRef = useRef({});
 
   // ESTADOS PARA MODAL DE INFORME FINAL
   const [mostrarModalPresentacion, setMostrarModalPresentacion] = useState(false);
@@ -186,6 +191,15 @@ function DetalleFondo({ isDark }) {
     conclusiones: ''
   });
   const [enviandoInforme, setEnviandoInforme] = useState(false);
+
+  const esAdmin = usuarioActual?.perfil?.rol === 'admin';
+  const esJefeEstudios = usuarioActual?.perfil?.rol === 'jefe_estudios';
+  const puedeGestionarCarga = esJefeEstudios;
+
+  useEffect(() => {
+    // Define panel inicial por rol al entrar a la vista.
+    setPanelCentral(puedeGestionarCarga ? 'carga' : 'resumen');
+  }, [puedeGestionarCarga]);
 
   const abrirModalPresentacion = () => {
     setMostrarModalPresentacion(true);
@@ -227,6 +241,48 @@ function DetalleFondo({ isDark }) {
   useEffect(() => {
     cargarDetalle();
   }, [id]);
+
+  // Guarda el ultimo total por categoria para detectar aparicion de tarjetas (0 -> >0)
+  useEffect(() => {
+    if (!fondo?.categorias) return;
+    const snapshot = {};
+    fondo.categorias.forEach((categoria) => {
+      snapshot[categoria.id] = Number(categoria.total_horas || 0);
+    });
+    prevTotalesCategoriasRef.current = snapshot;
+  }, [fondo?.categorias]);
+
+  // Evita overlays residuales al entrar a otro detalle
+  useEffect(() => {
+    setMostrarFormActividad(false);
+    setMostrarFormEditar(false);
+    setMostrarFormObservar(false);
+    setMostrarFormPresentarInforme(false);
+    setMostrarFormEvaluarInforme(false);
+    setMostrarModalAprobar(false);
+    setMostrarModalIniciarEjecucion(false);
+    setMostrarModalInforme(false);
+    setMostrarModalPresentacion(false);
+    setMostrarModalPDF(false);
+    setActividadAEliminar(null);
+  }, [id]);
+
+  // Limpiar todos los modales al desmontar el componente
+  useEffect(() => {
+    return () => {
+      setMostrarFormActividad(false);
+      setMostrarFormEditar(false);
+      setMostrarFormObservar(false);
+      setMostrarFormPresentarInforme(false);
+      setMostrarFormEvaluarInforme(false);
+      setMostrarModalAprobar(false);
+      setMostrarModalIniciarEjecucion(false);
+      setMostrarModalInforme(false);
+      setMostrarModalPresentacion(false);
+      setMostrarModalPDF(false);
+      setActividadAEliminar(null);
+    };
+  }, []);
 
   // Sincronizar altura de Acciones y CargaHoraria con el grupo Balance+Distribución
   useEffect(() => {
@@ -731,7 +787,39 @@ function DetalleFondo({ isDark }) {
     );
   }
 
-  if (!fondo) return null;
+  if (!fondo) {
+    return (
+      <div className="h-full flex items-center justify-center bg-slate-50 dark:bg-slate-900 p-6">
+        <div className="bg-amber-50 dark:bg-amber-900/20 border-l-4 border-amber-500 p-6 rounded-xl shadow-md max-w-lg w-full">
+          <div className="flex items-start gap-3">
+            <span className="text-2xl">⚠️</span>
+            <div>
+              <p className="text-amber-800 dark:text-amber-300 font-semibold mb-2">
+                No se pudo cargar el detalle del Fondo de Tiempo.
+              </p>
+              <p className="text-sm text-amber-700 dark:text-amber-400 mb-4">
+                La respuesta del servidor llegó vacia o incompleta para este registro.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={cargarDetalle}
+                  className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-medium transition-colors"
+                >
+                  Reintentar
+                </button>
+                <button
+                  onClick={cerrarPanel}
+                  className="px-4 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-medium transition-colors"
+                >
+                  Volver
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const datosGrafico = fondo.categorias
     ?.filter(cat => cat.total_horas > 0)
@@ -743,13 +831,27 @@ function DetalleFondo({ isDark }) {
 
   const puedeEditar = fondo.puede_editar;
   const requisitos = validarRequisitos();
-  const esJefeEstudios = usuarioActual?.perfil?.rol === 'jefe_estudios';
+  const puedeEditarDocente = Boolean(puedeEditar) && !esAdmin;
+
+  const mostrarCargaAcademica = panelCentral === 'carga';
+
+  const desplazarDerecha = () => {
+    if (!puedeGestionarCarga) return;
+    setDireccionPanel('derecha');
+    setPanelCentral((prev) => (prev === 'resumen' ? 'carga' : 'resumen'));
+  };
+
+  const desplazarIzquierda = () => {
+    if (!puedeGestionarCarga) return;
+    setDireccionPanel('izquierda');
+    setPanelCentral((prev) => (prev === 'resumen' ? 'carga' : 'resumen'));
+  };
 
   return (
     <div className="h-full flex flex-col bg-slate-50 dark:bg-slate-900">
       {/* Contenido Simétrico (3 columnas: izq - centro - drch) */}
       <div ref={contenedorRef} className="flex-1 overflow-y-auto scroll-smooth">
-        <div className="max-w-7xl mx-auto px-6 py-8">
+        <div className="mx-auto max-w-[1400px] px-6 lg:px-8 py-8">
 
           {/* Header Card Rediseñado v3 */}
           <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-300 dark:border-slate-700 mb-8 relative group">
@@ -878,7 +980,7 @@ function DetalleFondo({ isDark }) {
             <div className="lg:col-span-3 flex flex-col space-y-6">
 
               {/* Grupo alineado: Balance de Horas + Distribución (referencia de altura para Acciones) */}
-              <div ref={refWidgetReferencia} className="flex flex-col gap-6">
+              <div ref={refWidgetReferencia} className="flex flex-col gap-6 sticky top-24">
 
                 {/* Widget Balance de Horas */}
                 <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-300 dark:border-slate-700 shadow-sm p-6 relative overflow-hidden">
@@ -1076,37 +1178,75 @@ function DetalleFondo({ isDark }) {
             {/* ================================================= */}
             <div className="lg:col-span-6 space-y-8">
 
-              {/* GESTOR DE CARGA HORARIA (JEFE ESTUDIOS/ADMIN) */}
-              {fondo && (usuarioActual?.perfil?.rol === 'jefe_estudios' || usuarioActual?.perfil?.rol === 'admin' || usuarioActual?.is_staff) && fondo.calendario_academico && ['borrador', 'observado'].includes(fondo.estado) && (
-                <div className="mb-6">
-                  <div ref={refWidgetCarga} style={{ minHeight: '4rem' }}>
-                    <CargaHorariaManager
-                      docenteId={fondo.docente.id}
-                      calendarioId={fondo.calendario_academico.id}
-                      onCargaUpdate={cargarDetalle}
-                      cargaEdicion={cargaParaEditar}
-                      onCancelarEdicion={() => setCargaParaEditar(null)}
-                    />
+              {/* Caja central simétrica con tabs integrados */}
+              <div className="relative bg-white dark:bg-slate-800 rounded-2xl border border-slate-300 dark:border-slate-700 shadow-sm overflow-visible min-h-[34rem] flex flex-col">
+                <div className="h-1.5 bg-gradient-to-r from-blue-500 to-indigo-600"></div>
+
+                {puedeGestionarCarga ? (
+                  <div className="fondo-central-nav-overlay">
+                    <div className="fondo-central-nav">
+                      <button
+                        onClick={desplazarIzquierda}
+                        className="fondo-central-nav-btn btn-left"
+                        title="Desplazar a la izquierda"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+
+                      <button
+                        onClick={desplazarDerecha}
+                        className="fondo-central-nav-btn btn-right"
+                        title="Desplazar a la derecha"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="p-5 flex-1 min-h-0">
+                  <div className="fondo-central-flex h-full gap-4">
+                    <div className="fondo-central-stage">
+                      {puedeGestionarCarga && mostrarCargaAcademica ? (
+                        <div key="panel-carga" className={`fondo-panel-anim ${direccionPanel === 'derecha' ? 'fondo-panel-enter-right' : 'fondo-panel-enter-left'}`}>
+                          <div className="h-full overflow-y-auto pr-1">
+                            <CargaHorariaManager
+                              docenteId={fondo.docente?.id}
+                              calendarioId={fondo.calendario_academico?.id}
+                              onCargaUpdate={handleActualizacionHoras}
+                              cargaEdicion={cargaParaEditar}
+                              onCancelarEdicion={() => setCargaParaEditar(null)}
+                              readOnly={false}
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <div key="panel-resumen" className={`fondo-panel-anim ${direccionPanel === 'derecha' ? 'fondo-panel-enter-right' : 'fondo-panel-enter-left'} fondo-distribucion-grow`}>
+                          <div className="h-full flex flex-col justify-center">
+                            <DistribuirHoras
+                              fondoId={fondo.id}
+                              horasEfectivas={fondo.horas_efectivas}
+                              onActualizar={handleActualizacionHoras}
+                              onAgregarActividad={puedeEditarDocente ? abrirFormularioActividadGlobal : undefined}
+                              hideActionButtons={esAdmin || !puedeEditarDocente}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {!puedeEditarDocente && !esAdmin && !esStaff && (
+                      <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 shadow-sm">
+                        <p className="text-amber-800 dark:text-amber-300 text-sm font-medium flex items-center gap-2">
+                          <span className="text-lg">🔒</span>
+                          <span>Solo puedes modificar la distribución cuando el fondo está en <strong>"Borrador"</strong> u <strong>"Observado"</strong>.</span>
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
-              )}
 
-              {/* Distribuir Horas (Solo editable en borrador/observado) */}
-              {puedeEditar ? (
-                <DistribuirHoras
-                  fondoId={fondo.id}
-                  horasEfectivas={fondo.horas_efectivas}
-                  onActualizar={handleActualizacionHoras}
-                  onAgregarActividad={abrirFormularioActividadGlobal}
-                />
-              ) : !esStaff && (
-                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 shadow-sm">
-                  <p className="text-amber-800 dark:text-amber-300 text-sm font-medium flex items-center gap-2">
-                    <span className="text-lg">🔒</span>
-                    <span>Solo puedes modificar la distribución cuando el fondo está en <strong>"Borrador"</strong> u <strong>"Observado"</strong>.</span>
-                  </p>
-                </div>
-              )}
+              </div>
 
             </div>
 
@@ -1146,20 +1286,29 @@ function DetalleFondo({ isDark }) {
                   )}
 
                   <div className="space-y-2.5 mt-auto pt-2">
-                    {/* placeholder para que mt-auto funcione cuando no hay validación */}
+                    {/* Acciones rápidas superiores */}
+                    <div className="space-y-2 pb-2 border-b border-slate-200 dark:border-slate-700">
+                      {fondo.tiene_programa_analitico && fondo.programa_analitico_url && (
+                        <a
+                          href={fondo.programa_analitico_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full py-2 rounded-xl font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 dark:hover:bg-blue-900/40 flex justify-center items-center gap-2 border border-blue-200 dark:border-blue-800 transition-all shadow-sm hover:shadow-md group text-xs"
+                        >
+                          <ExternalLinkIcon className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
+                          Programa Analítico
+                        </a>
+                      )}
 
-                    {/* ENLACE AL PROGRAMA ANALÍTICO */}
-                    {fondo.tiene_programa_analitico && fondo.programa_analitico_url && (
-                      <a
-                        href={fondo.programa_analitico_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="w-full py-2 rounded-xl font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 dark:hover:bg-blue-900/40 flex justify-center items-center gap-2 border border-blue-200 dark:border-blue-800 transition-all shadow-sm hover:shadow-md group text-xs"
+                      <button
+                        onClick={() => setMostrarModalPDF(true)}
+                        className="w-full py-1.5 rounded-xl font-semibold text-slate-600 bg-white border-2 border-slate-300 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700 flex justify-center items-center gap-1.5 transition-all text-xs"
                       >
-                        <ExternalLinkIcon className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
-                        Programa Analítico
-                      </a>
-                    )}
+                        <FileDown className="w-3.5 h-3.5" /> PDF
+                      </button>
+
+
+                    </div>
 
                     {/* DOCENTE: Presentar */}
                     {fondo.estado === 'borrador' && !esStaff && (
@@ -1173,19 +1322,21 @@ function DetalleFondo({ isDark }) {
                       </button>
                     )}
 
-                    {/* DIRECTOR: Revisar */}
+                    {/* ADMIN/DIRECTOR: Revisar */}
                     {fondo.estado === 'presentado_director' && esStaff && (
                       <div className="grid grid-cols-2 gap-1.5">
                         <button
                           onClick={abrirFormularioObservar}
-                          className="py-1.5 rounded-xl font-bold text-white bg-orange-500 hover:bg-orange-600 shadow-md hover:shadow-lg transition-all text-xs"
+                          className="py-1.5 rounded-xl font-bold text-white bg-orange-500 hover:bg-orange-600 shadow-md hover:shadow-lg transition-all text-xs flex items-center justify-center gap-1.5"
                         >
+                          <Eye className="w-3.5 h-3.5" />
                           Observar
                         </button>
                         <button
                           onClick={() => setMostrarModalAprobar(true)}
-                          className="py-1.5 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 shadow-md hover:shadow-lg transition-all text-xs"
+                          className="py-1.5 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 shadow-md hover:shadow-lg transition-all text-xs flex items-center justify-center gap-1.5"
                         >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
                           Aprobar
                         </button>
                       </div>
@@ -1204,7 +1355,7 @@ function DetalleFondo({ isDark }) {
                     )}
 
                     {/* ADMIN: Iniciar Ejecución */}
-                    {fondo.estado === 'aprobado_director' && esStaff && (
+                    {fondo.estado === 'aprobado_director' && esStaff && !esAdmin && (
                       <button
                         onClick={() => setMostrarModalIniciarEjecucion(true)}
                         className="w-full py-2 rounded-xl font-bold text-white bg-purple-600 hover:bg-purple-700 shadow-lg shadow-purple-500/30 flex justify-center items-center gap-2 transition-all hover:scale-[1.02] text-xs"
@@ -1226,7 +1377,7 @@ function DetalleFondo({ isDark }) {
                     )}
 
                     {/* ADMIN: Evaluar Informe */}
-                    {fondo.estado === 'informe_presentado' && esStaff && (
+                    {fondo.estado === 'informe_presentado' && esStaff && !esAdmin && (
                       <div className="space-y-1.5">
                         <button
                           onClick={() => setMostrarModalInforme(true)}
@@ -1244,13 +1395,6 @@ function DetalleFondo({ isDark }) {
                       </div>
                     )}
 
-                    {/* Botón PDF */}
-                    <button
-                      onClick={() => setMostrarModalPDF(true)}
-                      className="w-full py-1.5 rounded-xl font-semibold text-slate-600 bg-white border-2 border-slate-300 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700 flex justify-center items-center gap-1.5 transition-all text-xs"
-                    >
-                      <span>📄</span> PDF
-                    </button>
                   </div>
                 </div>
 
@@ -1260,26 +1404,43 @@ function DetalleFondo({ isDark }) {
             {/* ================================================= */}
             {/* FILA COMPLETA - Actividades Planificadas (col-span-12) */}
             {/* ================================================= */}
-            {fondo.categorias && fondo.categorias.length > 0 && (
-              <div className="lg:col-span-12 space-y-6">
+            {fondo.categorias && (
+              <div id="fondo-actividades-planificadas" className="lg:col-span-12 space-y-6 fondo-tiempo-cards">
                 <h2 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-3 pb-2 border-b border-slate-300 dark:border-slate-700">
                   <span className="text-2xl">📋</span> Actividades Planificadas
                 </h2>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                   {(() => {
                     const ORDEN_FUNCIONES = ['docente', 'investigacion', 'extension', 'asesorias', 'tribunales', 'administrativo', 'vida_universitaria'];
                     const categoriasOrdenadas = [...fondo.categorias].sort((a, b) => {
                       return ORDEN_FUNCIONES.indexOf(a.tipo) - ORDEN_FUNCIONES.indexOf(b.tipo);
                     });
 
-                    return categoriasOrdenadas.map((categoria, idx) => {
+                    const categoriasVisibles = categoriasOrdenadas.filter(
+                      (categoria) => Number(categoria.total_horas || 0) > 0
+                    );
+
+                    if (categoriasVisibles.length === 0) {
+                      return (
+                        <div className="md:col-span-2 lg:col-span-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 rounded-2xl p-10 text-center">
+                          <p className="text-slate-600 dark:text-slate-300 font-medium">
+                            Sin actividades planificadas para mostrar
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    return categoriasVisibles.map((categoria, idx) => {
                       const esBloqueada = CATEGORIAS_BLOQUEADAS.includes(categoria.tipo);
                       const Icon = CATEGORY_ICONS[categoria.tipo] || DocumentTextIcon;
                       const color = COLORS[idx % COLORS.length];
+                      const totalActual = Number(categoria.total_horas || 0);
+                      const totalPrevio = Number(prevTotalesCategoriasRef.current[categoria.id] || 0);
+                      const aparecioRecien = totalPrevio <= 0 && totalActual > 0;
 
                       return (
-                        <div key={categoria.id} className="group bg-white dark:bg-slate-800 rounded-2xl border border-slate-300 dark:border-slate-700 shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden flex flex-col h-full">
+                        <div key={categoria.id} className={`group bg-white dark:bg-slate-800 rounded-2xl border border-slate-300 dark:border-slate-700 shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden flex flex-col h-full ${aparecioRecien ? 'animate-fade-in' : ''}`}>
 
                           {/* Header de categoría con diseño moderno */}
                           <div className="px-6 py-5 flex justify-between items-center bg-white dark:bg-slate-800 border-b border-slate-300 dark:border-slate-700 relative overflow-hidden">
@@ -1288,15 +1449,15 @@ function DetalleFondo({ isDark }) {
 
                             <div className="flex justify-between items-center">
                               <div className="flex items-center gap-4 pl-2">
-                                <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 ring-1 ring-slate-300 dark:ring-slate-600">
+                                <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 ring-1 ring-slate-300 dark:ring-slate-600 shadow-sm">
                                   <Icon className="w-6 h-6" style={{ color: color }} strokeWidth={2} />
                                 </div>
                                 <div>
-                                  <h3 className="text-lg font-bold text-slate-800 dark:text-white leading-tight group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                                  <h3 className="text-lg font-bold text-slate-800 dark:text-white leading-tight transition-colors">
                                     {categoria.tipo_display}
                                   </h3>
                                   <div className="flex items-center gap-3 text-xs font-medium text-slate-500 dark:text-slate-400 mt-1">
-                                    <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                                    <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600">
                                       <span className="font-bold" style={{ color: color }}>{categoria.total_horas}</span> hrs asignadas
                                     </span>
                                     <span className="text-slate-300 dark:text-slate-600">|</span>
@@ -1316,7 +1477,7 @@ function DetalleFondo({ isDark }) {
                           {/* Tabla de actividades */}
                           <div className="p-0 flex-1 flex flex-col">
                             {/* 1. MOSTRAR CARGA HORARIA (JEFATURA) SI EXISTE */}
-                            {categoria.detalles_carga && categoria.detalles_carga.length > 0 && (
+                            {vistaActual === 'jefatura' && categoria.detalles_carga && categoria.detalles_carga.length > 0 && (
                               <div className="border-b border-slate-300 dark:border-slate-700">
                                 {!esBloqueada && (
                                   <div className="px-6 py-2 bg-blue-50/40 dark:bg-blue-900/10 text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider border-b border-blue-100 dark:border-blue-800/30 flex items-center gap-2">
@@ -1373,7 +1534,7 @@ function DetalleFondo({ isDark }) {
                             )}
 
                             {/* 2. MOSTRAR ACTIVIDADES MANUALES (SI NO ESTÁ BLOQUEADA) */}
-                            {!esBloqueada && (
+                            {vistaActual === 'docente' && !esBloqueada && (
                               <div>
                                 {categoria.detalles_carga && categoria.detalles_carga.length > 0 && categoria.actividades && categoria.actividades.length > 0 && (
                                   <div className="px-6 py-2 bg-slate-50/50 dark:bg-slate-800 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-y border-slate-300 dark:border-slate-700 flex items-center gap-2">
@@ -1399,7 +1560,7 @@ function DetalleFondo({ isDark }) {
                                           <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-1/4">
                                             Evidencias
                                           </th>
-                                          {puedeEditar && !esBloqueada && (
+                                          {puedeEditarDocente && !esBloqueada && (
                                             <th className="px-6 py-3 text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                                               Acciones
                                             </th>
@@ -1427,7 +1588,7 @@ function DetalleFondo({ isDark }) {
                                             <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400">
                                               {renderEvidencia(actividad)}
                                             </td>
-                                            {puedeEditar && !esBloqueada && (
+                                            {puedeEditarDocente && !esBloqueada && (
                                               <td className="px-6 py-4 text-right">
                                                 <div className="flex gap-1 justify-end">
                                                   <button
@@ -1452,15 +1613,40 @@ function DetalleFondo({ isDark }) {
                                       </tbody>
                                     </table>
                                   </div>
+                                ) : categoria.detalles_carga && categoria.detalles_carga.length > 0 ? (
+                                  <div className="overflow-x-auto">
+                                    <table className="min-w-full">
+                                      <thead>
+                                        <tr className="bg-slate-50/30 dark:bg-slate-800/30 border-b border-slate-300 dark:border-slate-700">
+                                          <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                                            Actividad Asignada
+                                          </th>
+                                          <th className="px-6 py-3 text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                                            Horas
+                                          </th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {categoria.detalles_carga.map((detalle, dIdx) => (
+                                          <tr key={dIdx} className="border-b border-slate-200 dark:border-slate-800/50 last:border-b-0 hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
+                                            <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-300 font-medium">
+                                              {detalle.titulo_actividad}
+                                            </td>
+                                            <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-300 text-right font-semibold">
+                                              {detalle.horas}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
                                 ) : (
-                                  (!categoria.detalles_carga || categoria.detalles_carga.length === 0) && (
-                                    <div className="text-center py-8 bg-slate-50/30 dark:bg-slate-800/30">
-                                      <p className="text-slate-400 dark:text-slate-500 italic text-sm flex flex-col items-center gap-2">
-                                        <span className="text-2xl opacity-50">📭</span>
-                                        Sin actividades registradas
-                                      </p>
-                                    </div>
-                                  )
+                                  <div className="text-center py-8 bg-slate-50/30 dark:bg-slate-800/30">
+                                    <p className="text-slate-400 dark:text-slate-500 italic text-sm flex flex-col items-center gap-2">
+                                      <span className="text-2xl opacity-50">📭</span>
+                                      Sin actividades registradas
+                                    </p>
+                                  </div>
                                 )}
                               </div>
                             )}
@@ -1498,7 +1684,7 @@ function DetalleFondo({ isDark }) {
         document.body
       )}
       {/* Modal de formulario - Portal para centrar en pantalla */}
-      {mostrarFormActividad && categoriaSeleccionada && ReactDOM.createPortal(
+      {fondo && mostrarFormActividad && categoriaSeleccionada && ReactDOM.createPortal(
         <FormularioActividad
           categoria={categoriaSeleccionada}
           categoriasDisponibles={fondo.categorias.filter(c => c.tipo !== 'docente').map(c => ({ id: c.id, nombre: c.tipo_display, tipo: c.tipo }))}
@@ -1510,7 +1696,7 @@ function DetalleFondo({ isDark }) {
       )}
 
       {/* Modal de editar actividad - Portal para centrar en pantalla */}
-      {mostrarFormEditar && actividadAEditar && ReactDOM.createPortal(
+      {fondo && mostrarFormEditar && actividadAEditar && ReactDOM.createPortal(
         <FormularioActividad
           categoria={categoriaSeleccionada}
           actividadInicial={actividadAEditar}
@@ -1526,7 +1712,7 @@ function DetalleFondo({ isDark }) {
       )}
 
       {/* Modal de observaciones - Portal para centrar en pantalla */}
-      {mostrarFormObservar && ReactDOM.createPortal(
+      {fondo && mostrarFormObservar && ReactDOM.createPortal(
         <FormularioObservar
           fondo={fondo}
           onObservar={handleObservacionEnviada}
@@ -1539,7 +1725,7 @@ function DetalleFondo({ isDark }) {
       {/* NUEVO: Modal Presentar Informe */}
       {/* ============================================ */}
       {
-        mostrarFormPresentarInforme && (
+        fondo && mostrarFormPresentarInforme && (
           <FormularioPresentarInforme
             fondoId={fondo.id}
             onInformePresentado={async () => {
@@ -1555,7 +1741,7 @@ function DetalleFondo({ isDark }) {
       {/* NUEVO: Modal Evaluar Informe */}
       {/* ============================================ */}
       {
-        mostrarFormEvaluarInforme && (
+        fondo && mostrarFormEvaluarInforme && (
           <FormularioEvaluarInforme
             fondoId={fondo.id}
             onInformeEvaluado={async () => {
@@ -1569,7 +1755,7 @@ function DetalleFondo({ isDark }) {
 
       {/* Modal de confirmación para aprobar */}
       {
-        mostrarModalAprobar && (
+        fondo && mostrarModalAprobar && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
               <div className="bg-gradient-to-r from-green-500 to-emerald-600 px-6 py-4">
@@ -1637,7 +1823,7 @@ function DetalleFondo({ isDark }) {
       {/* NUEVO: Modal Iniciar Ejecución */}
       {/* ============================================ */}
       {
-        mostrarModalIniciarEjecucion && (
+        fondo && mostrarModalIniciarEjecucion && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
               <div className="bg-gradient-to-r from-purple-500 to-indigo-600 px-6 py-4">
@@ -1682,8 +1868,7 @@ function DetalleFondo({ isDark }) {
       }
 
       {/* Modal Ver Informe - Rediseñado */}
-      {
-        mostrarModalInforme && fondo.informe_actual && (
+      {mostrarModalInforme && fondo.informe_actual && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
               {/* Header elegante */}
@@ -1807,8 +1992,7 @@ function DetalleFondo({ isDark }) {
               </div>
             </div>
           </div>
-        )
-      }
+        )}
       {/* Modal de confirmación para eliminar - Portal para centrar en pantalla */}
       {actividadAEliminar && ReactDOM.createPortal(
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -1849,15 +2033,16 @@ function DetalleFondo({ isDark }) {
       )}
 
       {/* MODAL PREVIEW PDF */}
-      <PDFPreviewModal
-        isOpen={mostrarModalPDF}
-        onClose={() => setMostrarModalPDF(false)}
-        pdfUrl={`http://127.0.0.1:8000/api/fondos-tiempo/${id}/pdf-oficial/`}
-      />
+      {fondo && (
+        <PDFPreviewModal
+          isOpen={mostrarModalPDF}
+          onClose={() => setMostrarModalPDF(false)}
+          pdfUrl={`http://127.0.0.1:8000/api/fondos-tiempo/${id}/pdf-oficial/`}
+        />
+      )}
 
       {/* MODAL DE REDACCIÓN DE INFORME FINAL */}
-      {
-        mostrarModalPresentacion && (
+      {fondo && mostrarModalPresentacion && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[80] p-4 animate-fade-in">
             <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden">
               {/* Header */}
@@ -1963,9 +2148,7 @@ function DetalleFondo({ isDark }) {
               </div>
             </div>
           </div>
-        )
-      }
-
+        )}
     </div>
   );
 }

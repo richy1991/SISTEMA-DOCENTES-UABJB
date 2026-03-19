@@ -15,7 +15,8 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 
 from .models import (
     Docente, Carrera, Materia, FondoTiempo, CategoriaFuncion, Actividad, PerfilUsuario, CargaHoraria,
-    CalendarioAcademico, Proyecto, InformeFondo, ObservacionFondo, MensajeObservacion, HistorialFondo
+    CalendarioAcademico, Proyecto, InformeFondo, ObservacionFondo, MensajeObservacion, HistorialFondo,
+    SaldoVacacionesGestion
 )
 from .serializers import (
     DocenteSerializer, CarreraSerializer, MateriaSerializer, FondoTiempoSerializer,
@@ -28,19 +29,22 @@ from .serializers import (
     HistorialFondoSerializer, DocenteDetalleSerializer,
     FondoTiempoDetalleSerializer, PresentarFondoSerializer,
     AprobarFondoSerializer, ObservarFondoSerializer,
+    SaldoVacacionesGestionSerializer,
     CustomTokenObtainPairSerializer
 )
 
 class IsFullAdmin(BasePermission):
     """
-    Permite acceso solo a superusuarios o usuarios con rol 'admin' explícito.
-    Bloquea a otros miembros del staff como 'jefe_estudios' o 'director'.
+    Permite acceso solo a usuarios autenticados con perfil y rol 'admin'.
+    Bloquea a cualquier otro rol aunque tenga is_staff=True.
     """
     def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated and (
-            request.user.is_superuser or 
-            (hasattr(request.user, 'perfil') and request.user.perfil.rol == 'admin')
-        ))
+        return bool(
+            request.user
+            and request.user.is_authenticated
+            and hasattr(request.user, 'perfil')
+            and request.user.perfil.rol == 'admin'
+        )
 
 class IsAdminOrDirector(BasePermission):
     def has_permission(self, request, view):
@@ -104,11 +108,92 @@ class DocenteViewSet(viewsets.ModelViewSet):
             )
 
 
+class SaldoVacacionesGestionViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet para gestionar saldos de vacaciones por docente y gestión.
+    Permite cargar masivamente los saldos del PDF de 'Vacaciones 2024'.
+    """
+    queryset = SaldoVacacionesGestion.objects.all()
+    serializer_class = SaldoVacacionesGestionSerializer
+    permission_classes = [IsFullAdmin]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['docente__nombres', 'docente__apellido_paterno', 'docente__apellido_materno', 'gestion']
+    ordering_fields = ['gestion', 'docente']
+    ordering = ['-gestion', 'docente']
+
+    def get_queryset(self):
+        """Solo admin puede acceder a los saldos de vacaciones."""
+        return SaldoVacacionesGestion.objects.all()
+
+    @action(detail=False, methods=['post'], permission_classes=[IsFullAdmin])
+    def cargar_masivo(self, request):
+        """
+        Endpoint para cargar masivamente saldos de vacaciones.
+        
+        Esperado (JSON):
+        [
+            {"docente_id": 5, "gestion": 2024, "dias_disponibles": 15},
+            {"docente_id": 7, "gestion": 2024, "dias_disponibles": 20},
+            ...
+        ]
+        
+        Retorna: Cantidad de registros creados/actualizados y errores (si los hay)
+        """
+        data = request.data
+        
+        if not isinstance(data, list):
+            return Response(
+                {'error': 'Se esperaba una lista de registros'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        resultado = {
+            'creados': 0,
+            'actualizados': 0,
+            'errores': []
+        }
+        
+        for idx, item in enumerate(data):
+            serializer = SaldoVacacionesGestionSerializer(data=item)
+            if serializer.is_valid():
+                try:
+                    obj, created = SaldoVacacionesGestion.objects.update_or_create(
+                        docente_id=item.get('docente_id'),
+                        gestion=item.get('gestion'),
+                        defaults={'dias_disponibles': item.get('dias_disponibles')}
+                    )
+                    if created:
+                        resultado['creados'] += 1
+                    else:
+                        resultado['actualizados'] += 1
+                except Exception as e:
+                    resultado['errores'].append({
+                        'fila': idx + 1,
+                        'docente_id': item.get('docente_id'),
+                        'gestion': item.get('gestion'),
+                        'error': str(e)
+                    })
+            else:
+                resultado['errores'].append({
+                    'fila': idx + 1,
+                    'validacion': serializer.errors
+                })
+        
+        return Response(resultado, status=status.HTTP_201_CREATED if resultado['errores'] == [] else status.HTTP_207_MULTI_STATUS)
+
+
 class CarreraViewSet(viewsets.ModelViewSet):
     queryset = Carrera.objects.filter(activo=True)
     serializer_class = CarreraSerializer
+    permission_classes = [IsAuthenticated]
     filter_backends = [filters.SearchFilter]
     search_fields = ['nombre', 'codigo', 'facultad']
+
+    def get_permissions(self):
+        # Configuración global de carreras: solo admin real.
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsFullAdmin()]
+        return [IsAuthenticated()]
 
 
 class MateriaViewSet(viewsets.ModelViewSet):
@@ -224,7 +309,7 @@ class CalendarioAcademicoViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         """Solo admins pueden crear, editar y eliminar calendarios"""
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsAdminUser()]
+            return [IsFullAdmin()]
         return [IsAuthenticated()]
     
     def destroy(self, request, *args, **kwargs):
@@ -473,15 +558,22 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
     def cambiar_estado(self, request, pk=None):
         """
-        Cambiar estado del fondo (solo admin/director)
+        Cambiar estado del fondo (solo admin/director/jefe_estudios según permisos)
         Estados: borrador → revision → aprobado → validado
+        
+        Permisos especiales:
+        - 'observado': Solo jefe_estudios o admin
         """
         fondo = self.get_object()
         nuevo_estado = request.data.get('estado')
         comentarios = request.data.get('comentarios', '')
         
-        if not fondo.puede_cambiar_estado(request.user):
-            raise PermissionDenied("No tiene permisos para cambiar el estado")
+        # Validar permisos (incluyendo validación para 'observado')
+        if not fondo.puede_cambiar_estado(request.user, nuevo_estado):
+            raise PermissionDenied(
+                f"No tiene permisos para cambiar el estado a '{nuevo_estado}'. "
+                f"Solo jefe_estudios o admin pueden cambiar a 'observado'."
+            )
         
         estados_validos = [choice[0] for choice in FondoTiempo.ESTADO_CHOICES]
         if nuevo_estado not in estados_validos:
@@ -1531,14 +1623,14 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         Usuarios autenticados pueden ver y editar su propio perfil.
         """
         if self.action in ['list', 'create', 'destroy']:
-            return [IsAdminUser()]
+            return [IsFullAdmin()]
         return [IsAuthenticated()]
     
     def get_queryset(self):
         user = self.request.user
         queryset = User.objects.select_related('perfil').all()
-        
-        if user.is_staff:
+
+        if hasattr(user, 'perfil') and user.perfil.rol == 'admin':
             return queryset
             
         return queryset.filter(id=user.id)
@@ -1600,7 +1692,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
+    @action(detail=True, methods=['post'], permission_classes=[IsFullAdmin])
     def cambiar_password(self, request, pk=None):
         """Cambiar contraseña de un usuario"""
         user = self.get_object()
@@ -1630,7 +1722,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         
         return Response({'success': 'Contraseña actualizada correctamente'})
 
-    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
+    @action(detail=True, methods=['post'], permission_classes=[IsFullAdmin])
     def resetear_password(self, request, pk=None):
         """Restablece la contraseña del usuario a la contraseña por defecto (username + UABJB)"""
         user = self.get_object()
@@ -1642,7 +1734,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
             user.perfil.save()
         return Response({'success': f'Contraseña restablecida correctamente a: {nueva_password}'})
 
-    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
+    @action(detail=True, methods=['post'], permission_classes=[IsFullAdmin])
     def toggle_activo(self, request, pk=None):
         """Activar o desactivar usuario"""
         user = self.get_object()

@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from .models import Docente, Carrera, Materia, FondoTiempo, CategoriaFuncion, Actividad, PerfilUsuario, InformeFondo, ObservacionFondo, MensajeObservacion, HistorialFondo, CargaHoraria
+from .models import Docente, Carrera, Materia, FondoTiempo, CategoriaFuncion, Actividad, PerfilUsuario, InformeFondo, ObservacionFondo, MensajeObservacion, HistorialFondo, CargaHoraria, SaldoVacacionesGestion
 from django.db.models import Sum
     
 
@@ -37,6 +37,26 @@ class DocenteSerializer(serializers.ModelSerializer):
         if hasattr(obj, 'usuario') and obj.usuario and obj.usuario.user:
             return obj.usuario.user.email
         return None
+
+
+class SaldoVacacionesGestionSerializer(serializers.ModelSerializer):
+    docente_nombre = serializers.CharField(source='docente.nombre_completo', read_only=True)
+    docente_id = serializers.IntegerField(write_only=False)
+    
+    class Meta:
+        model = SaldoVacacionesGestion
+        fields = ['id', 'docente_id', 'docente_nombre', 'gestion', 'dias_disponibles']
+    
+    def validate_docente_id(self, value):
+        """Valida que el docente exista."""
+        if not Docente.objects.filter(id=value).exists():
+            raise serializers.ValidationError("El docente especificado no existe.")
+        return value
+    
+    def create(self, validated_data):
+        docente_id = validated_data.pop('docente_id')
+        validated_data['docente_id'] = docente_id
+        return super().create(validated_data)
 
 
 class CarreraSerializer(serializers.ModelSerializer):

@@ -45,6 +45,287 @@
   animation: pulse-slow 2s ease-in-out infinite;
 }
 
+/* Fondo de Tiempo: switch/toggle central + slide de paneles */
+.fondo-central-flex {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.fondo-central-switch-wrap {
+  display: flex;
+  justify-content: center;
+}
+
+.fondo-central-nav-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.fondo-central-nav {
+  position: relative;
+  width: 100%;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fondo-central-nav-btn {
+  position: absolute;
+  top: -1.05rem;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: #ffffff;
+  color: #334155;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.09);
+  pointer-events: auto;
+  transform: none !important;
+  transition: none !important;
+  animation: none !important;
+}
+
+.fondo-central-nav-btn:hover:not(:disabled) {
+  transform: none !important;
+  transition: none !important;
+  animation: none !important;
+  opacity: 1;
+}
+
+.fondo-central-nav-btn:focus,
+.fondo-central-nav-btn:focus-visible,
+.fondo-central-nav-btn:active {
+  transform: none !important;
+  transition: none !important;
+  animation: none !important;
+}
+
+.fondo-central-nav-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.fondo-central-nav-btn.btn-left {
+  left: 0;
+}
+
+.fondo-central-nav-btn.btn-right {
+  right: 0;
+}
+
+.fondo-central-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.62rem 1rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  background: linear-gradient(135deg, #2563eb, #3b82f6);
+  color: #ffffff;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.28);
+  transition: transform 0.22s ease, box-shadow 0.22s ease, filter 0.22s ease;
+}
+
+.fondo-central-switch:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.03);
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.34);
+}
+
+.fondo-central-switch:active {
+  transform: translateY(0);
+}
+
+.fondo-central-stage {
+  position: relative;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.fondo-panel-anim {
+  width: 100%;
+  height: 100%;
+}
+
+.fondo-panel-enter-right {
+  animation: fondo-panel-right 260ms ease-out;
+}
+
+.fondo-panel-enter-left {
+  animation: fondo-panel-left 260ms ease-out;
+}
+
+@keyframes fondo-panel-right {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes fondo-panel-left {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.fondo-distribucion-grow {
+  flex-grow: 1;
+}
+
+@media (max-width: 1024px) {
+  .fondo-central-switch {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .fondo-central-nav-btn {
+    width: 2rem;
+    height: 2rem;
+  }
+}
+
+/* Fondo de Tiempo: aislar tablas/tarjetas de Actividades Planificadas */
+.fondo-tiempo-cards table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  border-spacing: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.fondo-tiempo-cards table:hover {
+  box-shadow: none !important;
+}
+
+.fondo-tiempo-cards table th,
+.fondo-tiempo-cards table td {
+  background: transparent !important;
+  font-size: inherit !important;
+  letter-spacing: normal !important;
+  text-transform: none !important;
+}
+
+.fondo-tiempo-cards table th {
+  background: rgba(241, 245, 249, 0.55) !important;
+  color: #64748b !important;
+  border-bottom: 1px solid rgba(203, 213, 225, 0.8) !important;
+}
+
+.fondo-tiempo-cards table td {
+  color: #334155 !important;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.8) !important;
+}
+
+.fondo-tiempo-cards table tbody tr {
+  background: transparent !important;
+}
+
+.fondo-tiempo-cards table tbody tr:nth-child(odd),
+.fondo-tiempo-cards table tbody tr:nth-child(even) {
+  background: transparent !important;
+}
+
+.fondo-tiempo-cards table tbody tr:hover {
+  background: rgba(248, 250, 252, 0.8) !important;
+}
+
+.dark .fondo-tiempo-cards table,
+.dark .fondo-tiempo-cards table th,
+.dark .fondo-tiempo-cards table td,
+.dark .fondo-tiempo-cards table tbody tr,
+.dark .fondo-tiempo-cards table tbody tr:nth-child(odd),
+.dark .fondo-tiempo-cards table tbody tr:nth-child(even),
+.dark .fondo-tiempo-cards table tbody tr:hover {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.dark .fondo-tiempo-cards table th {
+  background: rgba(30, 41, 59, 0.45) !important;
+  color: #94a3b8 !important;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.9) !important;
+}
+
+.dark .fondo-tiempo-cards table td {
+  color: #cbd5e1 !important;
+  border-bottom: 1px solid rgba(30, 41, 59, 0.9) !important;
+}
+
+.dark .fondo-tiempo-cards table tbody tr:hover {
+  background: rgba(51, 65, 85, 0.25) !important;
+}
+
+/* Refuerzo por ID: anula definitivamente estilos globales de POA en esta sección */
+#fondo-actividades-planificadas table {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+#fondo-actividades-planificadas table th {
+  background: rgba(241, 245, 249, 0.55) !important;
+  color: #64748b !important;
+  border-bottom: 1px solid rgba(203, 213, 225, 0.8) !important;
+}
+
+#fondo-actividades-planificadas table td {
+  background: transparent !important;
+  color: #334155 !important;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.8) !important;
+}
+
+#fondo-actividades-planificadas table tbody tr,
+#fondo-actividades-planificadas table tbody tr:nth-child(odd),
+#fondo-actividades-planificadas table tbody tr:nth-child(even) {
+  background: transparent !important;
+}
+
+#fondo-actividades-planificadas table tbody tr:hover {
+  background: rgba(248, 250, 252, 0.8) !important;
+}
+
+.dark #fondo-actividades-planificadas table th {
+  background: rgba(30, 41, 59, 0.45) !important;
+  color: #94a3b8 !important;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.9) !important;
+}
+
+.dark #fondo-actividades-planificadas table td {
+  background: transparent !important;
+  color: #cbd5e1 !important;
+  border-bottom: 1px solid rgba(30, 41, 59, 0.9) !important;
+}
+
+.dark #fondo-actividades-planificadas table tbody tr:hover {
+  background: rgba(51, 65, 85, 0.25) !important;
+}
+
 /* Efectos de hover mejorados */
 .card-hover {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);

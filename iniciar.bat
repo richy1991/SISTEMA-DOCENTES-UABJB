@@ -8,7 +8,7 @@ echo Iniciando servidores...
 echo.
 
 cd backend
-start cmd /k "venv\Scripts\activate && python manage.py runserver"
+start cmd /k "call ..\venv\Scripts\activate.bat && python manage.py runserver"
 
 cd ..\frontend
 start cmd /k "npm run dev"

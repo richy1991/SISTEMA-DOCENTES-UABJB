@@ -28,7 +28,7 @@ const ChevronDown = () => (
     </div>
 );
 
-const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdicion, onCancelarEdicion }) => {
+const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdicion, onCancelarEdicion, readOnly = false }) => {
     const [cargas, setCargas] = useState([]);
     const [loading, setLoading] = useState(true);
     const [semestre, setSemestre] = useState('');
@@ -43,6 +43,7 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
         documento_respaldo: ''
     });
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const isReadOnly = Boolean(readOnly);
 
     const CATEGORIA_OPCIONES = [
         { value: 'docente', label: 'Docencia' },
@@ -126,6 +127,7 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        if (isReadOnly) return;
         if (!formData.titulo_actividad || !formData.horas) {
             toast.error("Complete los campos obligatorios");
             return;
@@ -184,30 +186,28 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
     const labelCls = "block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5";
 
     return (
-        /* h-full + flex-col: el componente se estira hasta la altura asignada por el padre */
-        <div className="h-full flex flex-col bg-white dark:bg-slate-800 rounded-2xl border border-slate-300 dark:border-slate-700 shadow-sm relative overflow-hidden">
-
-            {/* Barra superior — idéntica a Balance y Distribución */}
-            <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-blue-500 to-indigo-600" />
-
-            {/* Contenido — flex-1 para ocupar todo el alto, flex-col para distribuir */}
-            <div className="flex-1 flex flex-col px-5 pt-6 pb-5 overflow-y-auto">
-
-                {/* ── Header ───────────────────────────────────── */}
-                <div className="flex items-center justify-between mb-4 shrink-0">
-                    <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
-                        Asignación de Carga Horaria
-                        <span className="text-slate-300 dark:text-slate-600">·</span>
-                        <span className="text-blue-400 dark:text-blue-500 normal-case font-semibold tracking-normal text-[10px]">Jefatura</span>
-                    </h3>
-                    {cargaEdicion && (
-                        <button type="button" onClick={onCancelarEdicion}
-                            className="flex items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 px-2 py-1 rounded-lg transition-colors">
+        <div className="h-full flex flex-col bg-white dark:bg-slate-800/95 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden transition-colors duration-300">
+            <div className="px-5 py-2 border-b border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/50 flex items-center justify-between shrink-0">
+                <h3 className="text-sm font-semibold tracking-wide text-slate-700 dark:text-slate-100">
+                    Asignacion de Carga Horaria
+                </h3>
+                <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider">
+                        Jefatura
+                    </span>
+                    {cargaEdicion && !isReadOnly && (
+                        <button
+                            type="button"
+                            onClick={onCancelarEdicion}
+                            className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-white bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 px-2 py-1 rounded-lg transition-colors"
+                        >
                             <XMarkIcon className="w-3 h-3" /> Cancelar
                         </button>
                     )}
                 </div>
+            </div>
+
+            <div className="flex-1 flex flex-col p-4 sm:p-5 overflow-y-auto">
 
                 {/* Banner edición */}
                 {cargaEdicion && (
@@ -231,7 +231,8 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
                                 <label className={labelCls}>Categoría</label>
                                 <div className="relative">
                                     <select className={selectCls} value={formData.categoria}
-                                        onChange={e => setFormData({ ...formData, categoria: e.target.value })}>
+                                        onChange={e => setFormData({ ...formData, categoria: e.target.value })}
+                                        disabled={isReadOnly}>
                                         {CATEGORIA_OPCIONES.map(opt => (
                                             <option key={opt.value} value={opt.value}>{opt.label}</option>
                                         ))}
@@ -243,7 +244,7 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
                                 <label className={labelCls}>Semestre / Nivel</label>
                                 <div className="relative">
                                     <select className={selectCls} value={semestre}
-                                        onChange={e => setSemestre(e.target.value)} disabled={loadingMaterias}>
+                                        onChange={e => setSemestre(e.target.value)} disabled={loadingMaterias || isReadOnly}>
                                         <option value="">{loadingMaterias ? 'Cargando…' : '-- Nivel --'}</option>
                                         {semestresDisponibles.map(s => (
                                             <option key={s} value={s}>{s}° Semestre</option>
@@ -258,7 +259,8 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
                         <div>
                             <label className={labelCls}>Materia (Malla curricular)</label>
                             <div className="relative">
-                                <select className={selectCls} onChange={handleMateriaChange} disabled={!semestre}
+                                <select className={selectCls} onChange={handleMateriaChange}
+                                    disabled={!semestre || isReadOnly}
                                     value={materias.find(m => m.nombre === formData.titulo_actividad)?.id || ''}>
                                     <option value="">{!semestre ? '← Seleccione un nivel primero' : '-- Seleccionar Materia --'}</option>
                                     {materias.map(m => (
@@ -305,12 +307,14 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
                             </label>
                             <input type="text" className={inputCls} placeholder="Ej: Memo #123"
                                 value={formData.documento_respaldo}
-                                onChange={e => setFormData({ ...formData, documento_respaldo: e.target.value })} />
+                                onChange={e => setFormData({ ...formData, documento_respaldo: e.target.value })}
+                                disabled={isReadOnly} />
                         </div>
                     </div>
 
                     {/* ── Botón — pegado al fondo con mt-auto ── */}
                     <div className="mt-5">
+                        {!isReadOnly && (
                         <button type="submit"
                             disabled={isSubmitting || !formData.titulo_actividad || !formData.horas}
                             className={`w-full py-3 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2 transition-all shadow-md hover:shadow-lg hover:scale-[1.01] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:shadow-none
@@ -332,6 +336,7 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
                                 <><PlusIcon className="w-4 h-4" /> Agregar Asignación</>
                             )}
                         </button>
+                        )}
                     </div>
 
                 </form>

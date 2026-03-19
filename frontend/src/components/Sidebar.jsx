@@ -68,7 +68,7 @@ const BookOpenIcon = (props) => (
     </svg>
 );
 
-function Sidebar({ user, onLogout, collapsed, setCollapsed, onProfileUpdate }) {
+function Sidebar({ user, onLogout, collapsed, setCollapsed, theme, setTheme, onProfileUpdate }) {
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -120,14 +120,6 @@ function Sidebar({ user, onLogout, collapsed, setCollapsed, onProfileUpdate }) {
 
   return (
     <>
-      {/* Overlay para modo móvil */}
-      {!collapsed && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-30 lg:hidden"
-          onClick={() => setCollapsed(true)}
-        ></div>
-      )}
-
       {/* --- BARRA LATERAL PRINCIPAL --- */}
       <div
         className={`fixed left-0 top-0 h-screen bg-gradient-to-b from-blue-900 to-blue-950 text-white shadow-2xl z-40 transition-all duration-300 flex flex-col ${
@@ -238,10 +230,11 @@ function Sidebar({ user, onLogout, collapsed, setCollapsed, onProfileUpdate }) {
 
         {/* --- 3. PIE DE PÁGINA CON BOTÓN "ATRÁS" --- */}
         <div className="mt-auto p-4 border-t border-blue-800/50">
+          {/* Botón Atrás */}
           <button
             onClick={() => navigate('..')}
             title="Atrás"
-            className={`group flex items-center gap-4 w-full transition-all duration-300 rounded-xl ${collapsed ? 'justify-center h-14' : 'px-4 py-3'} text-blue-200 hover:bg-red-500/80 hover:text-white`}
+            className={`group flex items-center gap-4 w-full transition-all duration-300 rounded-lg ${collapsed ? 'justify-center h-14' : 'px-4 py-3'} text-blue-200 hover:bg-red-500/80 hover:text-white border border-transparent hover:border-red-300/30`}
           >
             <BackIcon className="w-6 h-6 flex-shrink-0" />
             {!collapsed && (
