@@ -233,12 +233,14 @@
 .fondo-tiempo-cards table th {
   background: rgba(241, 245, 249, 0.55) !important;
   color: #64748b !important;
-  border-bottom: 1px solid rgba(203, 213, 225, 0.8) !important;
+  border-bottom: 1px solid rgba(203, 213, 225, 0.6) !important;
+  padding: 0.75rem !important;
 }
 
 .fondo-tiempo-cards table td {
   color: #334155 !important;
-  border-bottom: 1px solid rgba(226, 232, 240, 0.8) !important;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.6) !important;
+  padding: 0.75rem !important;
 }
 
 .fondo-tiempo-cards table tbody tr {
@@ -251,7 +253,7 @@
 }
 
 .fondo-tiempo-cards table tbody tr:hover {
-  background: rgba(248, 250, 252, 0.8) !important;
+  background: rgba(248, 250, 252, 0.7) !important;
 }
 
 .dark .fondo-tiempo-cards table,
@@ -268,16 +270,18 @@
 .dark .fondo-tiempo-cards table th {
   background: rgba(30, 41, 59, 0.45) !important;
   color: #94a3b8 !important;
-  border-bottom: 1px solid rgba(51, 65, 85, 0.9) !important;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.6) !important;
+  padding: 0.75rem !important;
 }
 
 .dark .fondo-tiempo-cards table td {
   color: #cbd5e1 !important;
-  border-bottom: 1px solid rgba(30, 41, 59, 0.9) !important;
+  border-bottom: 1px solid rgba(30, 41, 59, 0.6) !important;
+  padding: 0.75rem !important;
 }
 
 .dark .fondo-tiempo-cards table tbody tr:hover {
-  background: rgba(51, 65, 85, 0.25) !important;
+  background: rgba(51, 65, 85, 0.3) !important;
 }
 
 /* Refuerzo por ID: anula definitivamente estilos globales de POA en esta sección */
@@ -291,13 +295,15 @@
 #fondo-actividades-planificadas table th {
   background: rgba(241, 245, 249, 0.55) !important;
   color: #64748b !important;
-  border-bottom: 1px solid rgba(203, 213, 225, 0.8) !important;
+  border-bottom: 1px solid rgba(203, 213, 225, 0.6) !important;
+  padding: 0.75rem !important;
 }
 
 #fondo-actividades-planificadas table td {
   background: transparent !important;
   color: #334155 !important;
-  border-bottom: 1px solid rgba(226, 232, 240, 0.8) !important;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.6) !important;
+  padding: 0.75rem !important;
 }
 
 #fondo-actividades-planificadas table tbody tr,
@@ -307,23 +313,89 @@
 }
 
 #fondo-actividades-planificadas table tbody tr:hover {
-  background: rgba(248, 250, 252, 0.8) !important;
+  background: rgba(248, 250, 252, 0.7) !important;
 }
 
 .dark #fondo-actividades-planificadas table th {
   background: rgba(30, 41, 59, 0.45) !important;
   color: #94a3b8 !important;
-  border-bottom: 1px solid rgba(51, 65, 85, 0.9) !important;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.6) !important;
+  padding: 0.75rem !important;
 }
 
 .dark #fondo-actividades-planificadas table td {
   background: transparent !important;
   color: #cbd5e1 !important;
-  border-bottom: 1px solid rgba(30, 41, 59, 0.9) !important;
+  border-bottom: 1px solid rgba(30, 41, 59, 0.6) !important;
+  padding: 0.75rem !important;
 }
 
 .dark #fondo-actividades-planificadas table tbody tr:hover {
-  background: rgba(51, 65, 85, 0.25) !important;
+  background: rgba(51, 65, 85, 0.3) !important;
+}
+
+/* Refuerzo específico: tabla de Gestión de Usuarios en Fondo de Tiempo */
+#fondo-usuarios-tabla table,
+#fondo-usuarios-tabla thead,
+#fondo-usuarios-tabla tbody,
+#fondo-usuarios-tabla tr,
+#fondo-usuarios-tabla th,
+#fondo-usuarios-tabla td {
+  background-image: none !important;
+}
+
+#fondo-usuarios-tabla thead,
+#fondo-usuarios-tabla thead tr {
+  background: #1f3f96 !important;
+}
+
+#fondo-usuarios-tabla thead th {
+  background: #1f3f96 !important;
+  color: #f8fafc !important;
+  border-bottom: 1px solid rgba(31, 63, 150, 0.5) !important;
+  font-weight: 600 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
+}
+
+/* Dark mode: usar MISMO color azul para evitar flashing/movimiento */
+.dark #fondo-usuarios-tabla thead,
+.dark #fondo-usuarios-tabla thead tr {
+  background: #1f3f96 !important;
+}
+
+.dark #fondo-usuarios-tabla thead th {
+  background: #1f3f96 !important;
+  color: #f8fafc !important;
+  border-bottom: 1px solid rgba(31, 63, 150, 0.5) !important;
+  font-weight: 600 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
+}
+
+/* Estandarizar tbody para evitar cambios de altura entre temas */
+#fondo-usuarios-tabla tbody tr {
+  background: transparent !important;
+  border-bottom: 1px solid rgba(203, 213, 225, 0.5) !important;
+}
+
+#fondo-usuarios-tabla tbody td {
+  padding: 0.75rem !important;
+  color: #334155 !important;
+}
+
+.dark #fondo-usuarios-tabla tbody tr {
+  background: transparent !important;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.5) !important;
+}
+
+.dark #fondo-usuarios-tabla tbody td {
+  padding: 0.75rem !important;
+  color: #cbd5e1 !important;
 }
 
 /* Efectos de hover mejorados */

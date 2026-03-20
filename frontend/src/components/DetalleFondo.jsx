@@ -13,7 +13,8 @@ import FormularioEvaluarInforme from './FormularioEvaluarInforme';
 import ThemeToggle from './ThemeToggle';
 import CargaHorariaManager from './CargaHorariaManager';
 import toast from 'react-hot-toast';
-import ValidacionRequisitos from './ValidacionRequisitos';
+import EstadoTimeline from './EstadoTimeline';
+import TimelineObservaciones from './TimelineObservaciones';
 import PDFPreviewModal from './PDFPreviewModal';
 import { Eye, CheckCircle2, FileDown, ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -195,6 +196,7 @@ function DetalleFondo({ isDark }) {
   const esAdmin = usuarioActual?.perfil?.rol === 'admin';
   const esJefeEstudios = usuarioActual?.perfil?.rol === 'jefe_estudios';
   const puedeGestionarCarga = esJefeEstudios;
+  const soloLecturaPorRol = !esJefeEstudios;
 
   useEffect(() => {
     // Define panel inicial por rol al entrar a la vista.
@@ -371,11 +373,19 @@ function DetalleFondo({ isDark }) {
   };
 
   const abrirFormularioActividad = (categoria) => {
+    if (!esJefeEstudios) {
+      toast.error('Solo Jefatura puede agregar actividades.');
+      return;
+    }
     setCategoriaSeleccionada(categoria);
     setMostrarFormActividad(true);
   };
 
   const abrirFormularioActividadGlobal = () => {
+    if (!esJefeEstudios) {
+      toast.error('Solo Jefatura puede agregar actividades.');
+      return;
+    }
     const catDefault = fondo.categorias?.find(c => c.tipo === 'vida_universitaria') || fondo.categorias?.[0] || { id: '' };
     setCategoriaSeleccionada({ id: catDefault.id, nombre: catDefault.tipo_display });
     setMostrarFormActividad(true);
@@ -404,6 +414,10 @@ function DetalleFondo({ isDark }) {
   };
 
   const guardarActividad = async (actividadData) => {
+    if (!esJefeEstudios) {
+      toast.error('No tienes permisos para agregar actividades.');
+      return;
+    }
     try {
       const scrollContainer = getScrollContainer();
       scrollPosRef.current = scrollContainer
@@ -436,6 +450,10 @@ function DetalleFondo({ isDark }) {
   };
 
   const editarActividadHandler = (actividad) => {
+    if (!esJefeEstudios) {
+      toast.error('No tienes permisos para editar actividades.');
+      return;
+    }
     setActividadAEditar(actividad);
     setCategoriaSeleccionada({
       id: actividad.categoria,
@@ -445,6 +463,10 @@ function DetalleFondo({ isDark }) {
   };
 
   const actualizarActividad = async (actividadData) => {
+    if (!esJefeEstudios) {
+      toast.error('No tienes permisos para editar actividades.');
+      return;
+    }
     try {
       const scrollContainer = getScrollContainer();
       scrollPosRef.current = scrollContainer
@@ -478,6 +500,10 @@ function DetalleFondo({ isDark }) {
 
   const confirmarEliminarActividad = async () => {
     if (!actividadAEliminar) return;
+    if (!esJefeEstudios) {
+      toast.error('No tienes permisos para eliminar actividades.');
+      return;
+    }
 
     try {
       const scrollContainer = getScrollContainer();
@@ -636,6 +662,58 @@ function DetalleFondo({ isDark }) {
       'V': 'Verano'
     };
     return periodos[periodo] || periodo;
+  };
+
+  const calcularDiasEnEtapa = () => {
+    if (!fondo || !fondo.fecha_creacion) return 0;
+    const fechaCreacion = new Date(fondo.fecha_creacion);
+    const ahora = new Date();
+    const diferenciaMilisegundos = ahora - fechaCreacion;
+    const dias = Math.floor(diferenciaMilisegundos / (1000 * 60 * 60 * 24));
+    return dias;
+  };
+
+  const verificarEstadoCronometro = () => {
+    if (!fondo || !fondo.fecha_finalizacion) return { activo: false, vencido: false };
+    
+    const ahora = new Date();
+    const fechaFinalizacion = new Date(fondo.fecha_finalizacion);
+    
+    // Si la fecha de hoy es igual o mayor a la fecha de finalización estimada, está vencido
+    const vencido = ahora >= fechaFinalizacion;
+    
+    return { 
+      activo: !vencido,  // Activo si NO está vencido
+      vencido: vencido
+    };
+  };
+
+  const getColoresDiasEnEtapa = () => {
+    const { activo, vencido } = verificarEstadoCronometro();
+    
+    // Punto verde si está activo (dentro del plazo), rojo si vencido
+    const punto = activo ? 'bg-green-500' : 'bg-red-500';
+    
+    // Número siempre azul (visible)
+    const numero = 'text-blue-600 dark:text-blue-400';
+    
+    return { numero, punto, activo, vencido };
+  };
+
+  const obtenerTextoDiasEnEtapa = () => {
+    const { activo, vencido } = verificarEstadoCronometro();
+    
+    // Si está vencido, mostrar "Vencido"
+    if (vencido) {
+      return 'Vencido';
+    }
+    
+    // Si está activo, mostrar días desde creación
+    if (activo) {
+      return `${calcularDiasEnEtapa()} días`;
+    }
+    
+    return '0 días';
   };
 
   const getEstadoBadgeColor = (estado) => {
@@ -831,7 +909,7 @@ function DetalleFondo({ isDark }) {
 
   const puedeEditar = fondo.puede_editar;
   const requisitos = validarRequisitos();
-  const puedeEditarDocente = Boolean(puedeEditar) && !esAdmin;
+  const puedeEditarDocente = Boolean(puedeEditar) && !esAdmin && esJefeEstudios;
 
   const mostrarCargaAcademica = panelCentral === 'carga';
 
@@ -949,11 +1027,14 @@ function DetalleFondo({ isDark }) {
 
               {/* Metadata (Estado, Periodo, Gestión) Compacto */}
               <div className="flex flex-col gap-2.5 min-w-[160px] w-full lg:w-48 shrink-0">
-                {/* Estado Actual */}
+                {/* Tiempo en Etapa */}
                 <div className="px-4 py-2.5 rounded-xl border shadow-sm flex flex-col items-center justify-center bg-slate-50/70 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/80">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-200 pb-0.5">Estado Actual</span>
-                  <p className="text-[15px] font-bold leading-tight text-slate-800 dark:text-slate-200">
-                    {fondo.estado_display || fondo.estado?.toUpperCase()}
+                  <div className="flex items-center gap-2 w-full justify-center mb-1">
+                    <div className={`w-3 h-3 rounded-full ${getColoresDiasEnEtapa().punto} shadow-md animate-pulse`}></div>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-200">Tiempo en Etapa</span>
+                  </div>
+                  <p className={`text-2xl font-black leading-tight ${getColoresDiasEnEtapa().numero}`}>
+                    {obtenerTextoDiasEnEtapa()}
                   </p>
                 </div>
 
@@ -1171,6 +1252,14 @@ function DetalleFondo({ isDark }) {
                 </div>
               )}
 
+              {/* Widget Observaciones para Docente */}
+              {fondo.estado === 'observado' && !esStaff && (
+                <TimelineObservaciones 
+                  fondoId={fondo.id}
+                  puedeResponder={true}
+                />
+              )}
+
             </div>
 
             {/* ================================================= */}
@@ -1216,7 +1305,7 @@ function DetalleFondo({ isDark }) {
                               onCargaUpdate={handleActualizacionHoras}
                               cargaEdicion={cargaParaEditar}
                               onCancelarEdicion={() => setCargaParaEditar(null)}
-                              readOnly={false}
+                              readOnly={soloLecturaPorRol}
                             />
                           </div>
                         </div>
@@ -1227,7 +1316,8 @@ function DetalleFondo({ isDark }) {
                               fondoId={fondo.id}
                               horasEfectivas={fondo.horas_efectivas}
                               onActualizar={handleActualizacionHoras}
-                              onAgregarActividad={puedeEditarDocente ? abrirFormularioActividadGlobal : undefined}
+                              onAgregarActividad={esJefeEstudios ? abrirFormularioActividadGlobal : undefined}
+                              canAddActivity={esJefeEstudios}
                               hideActionButtons={esAdmin || !puedeEditarDocente}
                             />
                           </div>
@@ -1235,14 +1325,6 @@ function DetalleFondo({ isDark }) {
                       )}
                     </div>
 
-                    {!puedeEditarDocente && !esAdmin && !esStaff && (
-                      <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 shadow-sm">
-                        <p className="text-amber-800 dark:text-amber-300 text-sm font-medium flex items-center gap-2">
-                          <span className="text-lg">🔒</span>
-                          <span>Solo puedes modificar la distribución cuando el fondo está en <strong>"Borrador"</strong> u <strong>"Observado"</strong>.</span>
-                        </p>
-                      </div>
-                    )}
                   </div>
                 </div>
 
@@ -1265,25 +1347,12 @@ function DetalleFondo({ isDark }) {
                     Acciones
                   </h3>
 
-                  {/* VALIDACIÓN DE REQUISITOS - crece para llenar espacio disponible */}
-                  {['borrador', 'observado'].includes(fondo.estado) && !esStaff && (
-                    <div className="flex-1 flex flex-col justify-end">
-                      <ValidacionRequisitos requisitos={requisitos} fondo={fondo} />
-                      {requisitos.total && (
-                        <div className="mt-2 p-2.5 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border border-green-200 dark:border-green-800 rounded-xl flex items-start gap-2 shadow-sm animate-fade-in">
-                          <div className="p-1 bg-green-100 dark:bg-green-800 rounded-full flex-shrink-0 mt-0.5">
-                            <svg className="w-3 h-3 text-green-600 dark:text-green-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                            </svg>
-                          </div>
-                          <div>
-                            <p className="text-xs font-bold text-green-800 dark:text-green-300">¡Todo listo!</p>
-                            <p className="text-[11px] text-green-700 dark:text-green-400 mt-0.5 leading-relaxed">Requisitos cumplidos ya se puede presentar al director.</p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  <div className="flex-1 flex flex-col">
+                    <EstadoTimeline 
+                      estado={fondo.estado}
+                      tieneObservaciones={observacionesPendientes > 0}
+                    />
+                  </div>
 
                   <div className="space-y-2.5 mt-auto pt-2">
                     {/* Acciones rápidas superiores */}
@@ -1302,7 +1371,7 @@ function DetalleFondo({ isDark }) {
 
                       <button
                         onClick={() => setMostrarModalPDF(true)}
-                        className="w-full py-1.5 rounded-xl font-semibold text-slate-600 bg-white border-2 border-slate-300 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700 flex justify-center items-center gap-1.5 transition-all text-xs"
+                        className="w-full py-2 rounded-xl font-bold text-white bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 dark:from-indigo-700 dark:to-blue-700 dark:hover:from-indigo-800 dark:hover:to-blue-800 shadow-md hover:shadow-lg flex justify-center items-center gap-2 transition-all text-xs border border-indigo-500 dark:border-indigo-600"
                       >
                         <FileDown className="w-3.5 h-3.5" /> PDF
                       </button>

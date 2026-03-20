@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from '../apis/api';
 import toast from 'react-hot-toast';
 
@@ -20,15 +20,110 @@ const XMarkIcon = (props) => (
     </svg>
 );
 
-const ChevronDown = () => (
+const SEMANAS_GESTION = 45.8;
+
+const ChevronDown = ({ open = false }) => (
     <div className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center">
-        <svg className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
-        </svg>
+        <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-cyan-50 dark:bg-cyan-900/30 ring-1 ring-cyan-200/70 dark:ring-cyan-700/70">
+            <svg
+                className={`w-3 h-3 text-cyan-700 dark:text-cyan-300 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+            >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+            </svg>
+        </span>
     </div>
 );
 
-const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdicion, onCancelarEdicion, readOnly = false }) => {
+const CustomSelect = ({
+    value,
+    options,
+    onChange,
+    placeholder,
+    disabled = false,
+    emptyText = 'Sin opciones disponibles',
+    menuMaxHeight = 'max-h-56'
+}) => {
+    const [open, setOpen] = useState(false);
+    const containerRef = useRef(null);
+    const selected = options.find(opt => opt.value?.toString() === value?.toString());
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (containerRef.current && !containerRef.current.contains(event.target)) {
+                setOpen(false);
+            }
+        };
+
+        const handleEscape = (event) => {
+            if (event.key === 'Escape') setOpen(false);
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        document.addEventListener('keydown', handleEscape);
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+            document.removeEventListener('keydown', handleEscape);
+        };
+    }, []);
+
+    const handlePick = (newValue) => {
+        onChange(newValue);
+        setOpen(false);
+    };
+
+    return (
+        <div ref={containerRef} className="relative">
+            <button
+                type="button"
+                onClick={() => !disabled && setOpen(prev => !prev)}
+                disabled={disabled}
+                className={`w-full text-left pl-3.5 pr-10 py-2.5 rounded-xl border bg-white dark:bg-slate-800 text-sm shadow-sm transition-all ${
+                    disabled
+                        ? 'border-slate-300/80 dark:border-slate-700 text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-70'
+                        : open
+                            ? 'border-cyan-500/80 dark:border-cyan-500 ring-2 ring-cyan-400/40 dark:ring-cyan-500/35 text-slate-900 dark:text-slate-100'
+                            : 'border-cyan-300/70 dark:border-cyan-700/80 hover:border-cyan-500/70 dark:hover:border-cyan-500/80 text-slate-800 dark:text-slate-100'
+                }`}
+            >
+                <span className="block truncate font-semibold">{selected ? selected.label : placeholder}</span>
+                <ChevronDown open={open} />
+            </button>
+
+            {open && !disabled && (
+                <div className={`absolute z-30 mt-1.5 w-full overflow-auto rounded-xl border border-cyan-300 dark:border-cyan-700 bg-white dark:bg-slate-900 shadow-xl shadow-cyan-900/15 dark:shadow-black/35 ${menuMaxHeight}`}>
+                    {options.length === 0 ? (
+                        <div className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{emptyText}</div>
+                    ) : (
+                        options.map((opt) => {
+                            const active = opt.value?.toString() === value?.toString();
+                            return (
+                                <button
+                                    key={opt.value}
+                                    type="button"
+                                    onClick={() => handlePick(opt.value)}
+                                    className={`w-full text-left px-3 py-1.5 text-sm transition-colors border-l-2 ${
+                                        active
+                                            ? 'bg-cyan-50 dark:bg-cyan-900/30 border-cyan-500 text-cyan-800 dark:text-cyan-200 font-semibold'
+                                            : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/90'
+                                    }`}
+                                    title={opt.label}
+                                >
+                                    <span className="block truncate">{opt.label}</span>
+                                </button>
+                            );
+                        })
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdicion, onCancelarEdicion, readOnly = true }) => {
     const [cargas, setCargas] = useState([]);
     const [loading, setLoading] = useState(true);
     const [semestre, setSemestre] = useState('');
@@ -132,6 +227,10 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
             toast.error("Complete los campos obligatorios");
             return;
         }
+        if (formData.categoria !== 'docente' && !formData.documento_respaldo?.trim()) {
+            toast.error("El campo de respaldo es obligatorio para categorías distintas a Docencia");
+            return;
+        }
         setIsSubmitting(true);
         try {
             if (cargaEdicion) {
@@ -171,17 +270,25 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
         }
     };
 
-    const handleMateriaChange = (e) => {
-        const materiaId = e.target.value;
+    const handleMateriaChange = (materiaId) => {
         const materia = materias.find(m => m.id.toString() === materiaId);
         if (materia) {
-            const horasAnuales = Math.round((materia.horas_totales || 0) * 45.8);
-            setFormData({ ...formData, titulo_actividad: materia.nombre, horas: horasAnuales, categoria: 'docente' });
+            const horasAnuales = Math.round((materia.horas_totales || 0) * SEMANAS_GESTION);
+            setFormData({ ...formData, titulo_actividad: materia.nombre, horas: horasAnuales });
         }
     };
 
-    // Estilos reutilizables idénticos al resto del sistema
-    const selectCls = "w-full pl-3 pr-8 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-400 dark:focus:ring-blue-600 focus:border-transparent transition-all cursor-pointer appearance-none disabled:opacity-40 disabled:cursor-not-allowed";
+    const categoriaOptions = CATEGORIA_OPCIONES.map(opt => ({ value: opt.value, label: opt.label }));
+    const semestreOptions = semestresDisponibles.map(s => ({ value: s.toString(), label: `${s}° Semestre` }));
+    const materiaOptions = materias.map(m => ({
+        value: m.id.toString(),
+        label: `${m.nombre} (${m.horas_teoricas} HT / ${m.horas_practicas} HP - Total: ${m.horas_totales} hrs/sem)`
+    }));
+    const selectedMateriaId = materias.find(m => m.nombre === formData.titulo_actividad)?.id?.toString() || '';
+    const respaldoRequerido = formData.categoria !== 'docente';
+    const respaldoInvalido = respaldoRequerido && !formData.documento_respaldo?.trim();
+    const submitDisabled = isSubmitting || !formData.titulo_actividad || !formData.horas || respaldoInvalido;
+
     const inputCls = "w-full px-3 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-400 dark:focus:ring-blue-600 focus:border-transparent transition-all";
     const labelCls = "block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5";
 
@@ -229,48 +336,39 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
                         <div className="grid grid-cols-2 gap-3">
                             <div>
                                 <label className={labelCls}>Categoría</label>
-                                <div className="relative">
-                                    <select className={selectCls} value={formData.categoria}
-                                        onChange={e => setFormData({ ...formData, categoria: e.target.value })}
-                                        disabled={isReadOnly}>
-                                        {CATEGORIA_OPCIONES.map(opt => (
-                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                        ))}
-                                    </select>
-                                    <ChevronDown />
-                                </div>
+                                <CustomSelect
+                                    value={formData.categoria}
+                                    options={categoriaOptions}
+                                    onChange={(newValue) => setFormData({ ...formData, categoria: newValue })}
+                                    placeholder="Seleccionar categoría"
+                                    disabled={isReadOnly}
+                                />
                             </div>
                             <div>
                                 <label className={labelCls}>Semestre / Nivel</label>
-                                <div className="relative">
-                                    <select className={selectCls} value={semestre}
-                                        onChange={e => setSemestre(e.target.value)} disabled={loadingMaterias || isReadOnly}>
-                                        <option value="">{loadingMaterias ? 'Cargando…' : '-- Nivel --'}</option>
-                                        {semestresDisponibles.map(s => (
-                                            <option key={s} value={s}>{s}° Semestre</option>
-                                        ))}
-                                    </select>
-                                    <ChevronDown />
-                                </div>
+                                <CustomSelect
+                                    value={semestre}
+                                    options={semestreOptions}
+                                    onChange={(newValue) => setSemestre(newValue)}
+                                    placeholder={loadingMaterias ? 'Cargando…' : '-- Nivel --'}
+                                    disabled={loadingMaterias || isReadOnly}
+                                    emptyText={loadingMaterias ? 'Cargando niveles…' : 'No hay niveles disponibles'}
+                                />
                             </div>
                         </div>
 
                         {/* Fila 2: Materia */}
                         <div>
                             <label className={labelCls}>Materia (Malla curricular)</label>
-                            <div className="relative">
-                                <select className={selectCls} onChange={handleMateriaChange}
-                                    disabled={!semestre || isReadOnly}
-                                    value={materias.find(m => m.nombre === formData.titulo_actividad)?.id || ''}>
-                                    <option value="">{!semestre ? '← Seleccione un nivel primero' : '-- Seleccionar Materia --'}</option>
-                                    {materias.map(m => (
-                                        <option key={m.id} value={m.id}>
-                                            {m.nombre} ({m.horas_teoricas} HT / {m.horas_practicas} HP - Total: {m.horas_totales} hrs/sem)
-                                        </option>
-                                    ))}
-                                </select>
-                                <ChevronDown />
-                            </div>
+                            <CustomSelect
+                                value={selectedMateriaId}
+                                options={materiaOptions}
+                                onChange={handleMateriaChange}
+                                placeholder={!semestre ? '← Seleccione un nivel primero' : '-- Seleccionar Materia --'}
+                                disabled={!semestre || isReadOnly}
+                                emptyText={!semestre ? 'Selecciona primero un nivel' : 'No hay materias en este nivel'}
+                                menuMaxHeight="max-h-64"
+                            />
                         </div>
 
                         {/* Fila 3: Horas calculadas — tarjeta destacada */}
@@ -296,16 +394,18 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
                                 </span>
                             </div>
                             <p className="text-[9px] text-slate-400 dark:text-slate-500 mt-1.5 leading-tight">
-                                Total horas anuales = (HT + HP) × 45.8 semanas
+                                Total horas anuales = (HT + HP) × {SEMANAS_GESTION} semanas
                             </p>
                         </div>
 
                         {/* Fila 4: Respaldo */}
                         <div>
                             <label className={labelCls}>
-                                Respaldo <span className="text-slate-400 dark:text-slate-500 font-normal normal-case">(opcional)</span>
+                                Respaldo <span className={`font-normal normal-case ${respaldoInvalido ? 'text-red-500 dark:text-red-400' : 'text-slate-400 dark:text-slate-500'}`}>
+                                    ({respaldoRequerido ? 'OBLIGATORIO' : 'opcional'})
+                                </span>
                             </label>
-                            <input type="text" className={inputCls} placeholder="Ej: Memo #123"
+                            <input type="text" className={`${inputCls} ${respaldoInvalido ? 'border-red-500 dark:border-red-400 focus:ring-red-400 dark:focus:ring-red-500' : ''}`} placeholder="Ej: Memo #123"
                                 value={formData.documento_respaldo}
                                 onChange={e => setFormData({ ...formData, documento_respaldo: e.target.value })}
                                 disabled={isReadOnly} />
@@ -316,12 +416,15 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
                     <div className="mt-5">
                         {!isReadOnly && (
                         <button type="submit"
-                            disabled={isSubmitting || !formData.titulo_actividad || !formData.horas}
-                            className={`w-full py-3 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2 transition-all shadow-md hover:shadow-lg hover:scale-[1.01] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:shadow-none
-                                ${cargaEdicion
-                                    ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-amber-500/20'
-                                    : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-blue-500/25'
-                                }`}>
+                            disabled={submitDisabled}
+                            className={`w-full py-3 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2 transition-all ${
+                                submitDisabled
+                                    ? 'bg-slate-400 dark:bg-slate-600 opacity-60 cursor-not-allowed shadow-none'
+                                    : `shadow-md hover:shadow-lg hover:scale-[1.01] ${cargaEdicion
+                                        ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-amber-500/20'
+                                        : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-blue-500/25'
+                                    }`
+                            }`}>
                             {isSubmitting ? (
                                 <>
                                     <svg className="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

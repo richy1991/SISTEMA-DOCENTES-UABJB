@@ -51,6 +51,8 @@ const MateriaList = ({ isDark }) => {
     const [loading, setLoading] = useState(true);
     const [user, setUser] = useState(null);
     const [semestreSeleccionado, setSemestreSeleccionado] = useState('todos');
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [materiaToDelete, setMateriaToDelete] = useState(null);
 
     useEffect(() => {
         const userData = JSON.parse(localStorage.getItem('user') || 'null');
@@ -82,16 +84,22 @@ const MateriaList = ({ isDark }) => {
         fetchMaterias();
     }, []);
 
-    const handleDelete = async (id) => {
-        if (window.confirm('¿Estás seguro de eliminar esta materia?')) {
-            try {
-                await api.delete(`/materias/${id}/`);
-                setMaterias(materias.filter(m => m.id !== id));
-                toast.success('Materia eliminada correctamente');
-            } catch (error) {
-                console.error("Error eliminando materia:", error);
-                toast.error('Error al eliminar materia');
-            }
+    const handleDelete = (materia) => {
+        setMateriaToDelete(materia);
+        setShowDeleteModal(true);
+    };
+
+    const confirmarEliminar = async () => {
+        if (!materiaToDelete) return;
+        try {
+            await api.delete(`/materias/${materiaToDelete.id}/`);
+            setMaterias(materias.filter(m => m.id !== materiaToDelete.id));
+            toast.success('Materia eliminada correctamente');
+            setShowDeleteModal(false);
+            setMateriaToDelete(null);
+        } catch (error) {
+            console.error("Error eliminando materia:", error);
+            toast.error('Error al eliminar materia');
         }
     };
 
@@ -220,8 +228,8 @@ const MateriaList = ({ isDark }) => {
                                                     <PencilIcon className="w-4 h-4" />
                                                 </Link>
                                                 <button 
-                                                    onClick={() => handleDelete(materia.id)}
-                                                    className="p-2 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+                                                    onClick={() => handleDelete(materia)}
+                                                    className="p-2 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-colors"
                                                     title="Eliminar"
                                                 >
                                                     <TrashIcon className="w-4 h-4" />
@@ -256,6 +264,48 @@ const MateriaList = ({ isDark }) => {
                     </div>
                 )}
             </div>
+
+            {/* Modal de Confirmación de Eliminación */}
+            {showDeleteModal && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px]" onClick={() => setShowDeleteModal(false)} />
+                    <div className="relative w-full max-w-lg rounded-2xl border border-red-300/40 dark:border-red-700/50 bg-slate-900 shadow-2xl overflow-hidden animate-slide-up" style={{ animationDuration: '160ms' }}>
+                        <div className="px-5 py-4 border-b border-slate-700/70 bg-gradient-to-r from-red-900/30 to-slate-900">
+                            <h4 className="text-lg font-bold text-red-300 flex items-center gap-2">
+                                <span>🗑️</span>
+                                Confirmar Eliminación
+                            </h4>
+                        </div>
+                        <div className="px-5 py-4 space-y-3 text-slate-200">
+                            <p className="text-sm leading-relaxed">
+                                Se eliminará la materia <strong className="text-white">{materiaToDelete?.nombre}</strong> del sistema de forma permanente.
+                            </p>
+                            <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm">
+                                Acción irreversible: <strong className="text-red-300">la materia quedará eliminada definitivamente.</strong>
+                            </div>
+                            <p className="text-xs text-slate-400">
+                                Esta operación no se puede deshacer.
+                            </p>
+                        </div>
+                        <div className="px-5 py-4 border-t border-slate-700/70 flex justify-end gap-3 bg-slate-950/70">
+                            <button
+                                type="button"
+                                onClick={() => setShowDeleteModal(false)}
+                                className="px-4 py-2 rounded-lg font-semibold text-slate-300 border border-slate-600 hover:bg-slate-800"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                type="button"
+                                onClick={confirmarEliminar}
+                                className="px-4 py-2 rounded-lg font-bold text-white bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800"
+                            >
+                                🗑️ Eliminar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

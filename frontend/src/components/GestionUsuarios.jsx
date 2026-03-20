@@ -49,6 +49,24 @@ const InputField = ({ label, name, type = 'text', value, onChange, required, dis
   </div>
 );
 
+const ToggleSwitch = ({ isActive, onChange }) => (
+  <button
+    type="button"
+    onClick={onChange}
+    className={`relative inline-flex h-6 w-12 items-center rounded-full transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+      isActive 
+        ? 'bg-emerald-500 dark:bg-emerald-600 focus:ring-emerald-400 dark:focus:ring-emerald-500' 
+        : 'bg-slate-300 dark:bg-slate-600 focus:ring-slate-400 dark:focus:ring-slate-500'
+    }`}
+  >
+    <span
+      className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition-transform duration-300 ${
+        isActive ? 'translate-x-6' : 'translate-x-0.5'
+      }`}
+    />
+  </button>
+);
+
 const dedicacionStyles = {
   tiempo_completo: {
       bg: 'bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20',
@@ -94,6 +112,9 @@ function GestionUsuarios({ isDark }) {
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [usuarioToDelete, setUsuarioToDelete] = useState(null);
+
+  const [showToggleModal, setShowToggleModal] = useState(false);
+  const [usuarioToToggle, setUsuarioToToggle] = useState(null);
 
   useEffect(() => {
     cargarDatos();
@@ -158,57 +179,9 @@ function GestionUsuarios({ isDark }) {
     setIsCreating(false); // Hide create form if it was open
   };
 
-  const handleToggleActivo = async (usuario) => {
-    toast((t) => (
-      <div className="flex flex-col gap-3 min-w-[300px]">
-        <div className="flex items-start gap-3">
-          <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${usuario.is_active ? 'bg-amber-100 dark:bg-amber-900/30' : 'bg-green-100 dark:bg-green-900/30'}`}>
-            {usuario.is_active ? <PauseIcon className="w-5 h-5 text-amber-600 dark:text-amber-400" /> : <PlayIcon className="w-5 h-5 text-green-600 dark:text-green-400" />}
-          </div>
-          <div>
-            <h3 className="font-bold text-slate-800 dark:text-white text-sm">¿{usuario.is_active ? 'Desactivar' : 'Activar'} Usuario?</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              El usuario <span className="font-semibold text-slate-700 dark:text-slate-300">{usuario.username}</span> {usuario.is_active ? 'perderá el acceso al sistema.' : 'podrá acceder nuevamente.'}
-            </p>
-          </div>
-        </div>
-        <div className="flex gap-2 justify-end mt-1">
-          <button
-            onClick={() => toast.dismiss(t.id)}
-            className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={async () => {
-              toast.dismiss(t.id);
-              try {
-                await api.post(`/usuarios/${usuario.id}/toggle_activo/`);
-                toast.success(`Usuario ${usuario.is_active ? 'desactivado' : 'activado'} con éxito`);
-                cargarDatos();
-              } catch (err) {
-                console.error('Error:', err);
-                toast.error('Error al cambiar el estado del usuario');
-              }
-            }}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold text-white shadow-sm transition-colors flex items-center gap-1 ${usuario.is_active ? 'bg-amber-500 hover:bg-amber-600' : 'bg-green-600 hover:bg-green-700'}`}
-          >
-            {usuario.is_active ? 'Desactivar' : 'Activar'}
-          </button>
-        </div>
-      </div>
-    ), {
-      duration: 5000,
-      position: 'top-center',
-      style: {
-        background: isDark ? '#1e293b' : '#ffffff',
-        color: isDark ? '#f1f5f9' : '#0f172a',
-        border: isDark ? '1px solid #334155' : '1px solid #e2e8f0',
-        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
-        padding: '16px',
-        borderRadius: '12px',
-      }
-    });
+  const handleToggleActivo = (usuario) => {
+    setUsuarioToToggle(usuario);
+    setShowToggleModal(true);
   };
 
   const handleEliminar = (usuario) => {
@@ -568,7 +541,7 @@ function GestionUsuarios({ isDark }) {
         />
         
         {/* Tabla de usuarios */}
-        <div className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-lg overflow-hidden">
+        <div id="fondo-usuarios-tabla" className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-lg overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y-2 divide-slate-300 dark:divide-slate-700">
               <thead className="bg-gradient-to-r from-blue-600 to-indigo-600">
@@ -620,33 +593,31 @@ function GestionUsuarios({ isDark }) {
                       {usuario.email || '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-3 py-1.5 inline-flex text-xs font-bold rounded-lg border-2 shadow-sm ${
-                        usuario.is_active 
-                          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700' 
-                          : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-red-300 dark:border-red-700'
-                      }`}>
-                        {usuario.is_active ? '✅ Activo' : '⛔ Inactivo'}
-                      </span>
+                      <div className="flex items-center gap-3">
+                        <ToggleSwitch 
+                          isActive={usuario.is_active}
+                          onChange={() => handleToggleActivo(usuario)}
+                        />
+                        <span className="text-sm font-semibold">
+                          {usuario.is_active 
+                            ? <span className="text-emerald-600 dark:text-emerald-400">Activo</span>
+                            : <span className="text-amber-600 dark:text-amber-400">Inactivo</span>
+                          }
+                        </span>
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-center">
                       <div className="flex justify-center gap-2">
                         <button
                           onClick={() => abrirModalEditar(usuario)}
-                          className="flex items-center justify-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg transition-all duration-200 shadow-sm hover:shadow-md hover:scale-105"
+                          className="flex items-center justify-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 text-white text-xs font-semibold rounded-lg transition-all duration-200 shadow-sm hover:shadow-md hover:scale-105"
                         >
                           <PencilIcon className="w-4 h-4" />
                           <span>Editar</span>
                         </button>
                         <button
-                          onClick={() => handleToggleActivo(usuario)}
-                          className="flex items-center justify-center gap-1 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-lg transition-all duration-200 shadow-sm hover:shadow-md hover:scale-105"
-                        >
-                          {usuario.is_active ? <PauseIcon className="w-4 h-4" /> : <PlayIcon className="w-4 h-4" />}
-                          <span>{usuario.is_active ? 'Desactivar' : 'Activar'}</span>
-                        </button>
-                        <button
                           onClick={() => handleEliminar(usuario)}
-                          className="flex items-center justify-center gap-1 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg transition-all duration-200 shadow-sm hover:shadow-md hover:scale-105"
+                          className="flex items-center justify-center gap-1 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 dark:bg-amber-700 dark:hover:bg-amber-800 text-white text-xs font-semibold rounded-lg transition-all duration-200 shadow-sm hover:shadow-md hover:scale-105"
                         >
                           <TrashIcon className="w-4 h-4" />
                           <span>Eliminar</span>
@@ -666,27 +637,104 @@ function GestionUsuarios({ isDark }) {
           </div>
         </div>
 
+        {/* Modal de Confirmación de Toggle Estado */}
+        {showToggleModal && usuarioToToggle && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px]" onClick={() => setShowToggleModal(false)} />
+            <div
+              className={`relative w-full max-w-lg rounded-2xl border bg-slate-900 shadow-2xl overflow-hidden animate-slide-up ${
+                usuarioToToggle.is_active
+                  ? 'border-uab-gold-300/40 dark:border-uab-gold-700/50'
+                  : 'border-uab-green-300/40 dark:border-uab-green-700/50'
+              }`}
+              style={{ animationDuration: '160ms' }}
+            >
+              <div className={`px-5 py-4 border-b border-slate-700/70 bg-gradient-to-r ${usuarioToToggle.is_active ? 'from-uab-gold-900/30 to-slate-900' : 'from-uab-green-900/30 to-slate-900'}`}>
+                <h4 className={`text-lg font-bold flex items-center gap-2 ${usuarioToToggle.is_active ? 'text-uab-gold-300' : 'text-uab-green-300'}`}>
+                  <span>{usuarioToToggle.is_active ? '⏸️' : '▶️'}</span>
+                  {usuarioToToggle.is_active ? 'Confirmar Pausa de Acceso' : 'Confirmar Reactivación'}
+                </h4>
+              </div>
+              <div className="px-5 py-4 space-y-3 text-slate-200">
+                <p className="text-sm leading-relaxed">
+                  {usuarioToToggle.is_active
+                    ? `Se pausará el acceso de ${usuarioToToggle.username} al sistema.`
+                    : `Se reactivará el acceso de ${usuarioToToggle.username} al sistema.`}
+                </p>
+                <div className={`rounded-lg border px-3 py-2 text-sm ${usuarioToToggle.is_active ? 'border-uab-gold-500/40 bg-uab-gold-500/10' : 'border-uab-green-500/40 bg-uab-green-500/10'}`}>
+                  Usuario: <strong className={usuarioToToggle.is_active ? 'text-uab-gold-300' : 'text-uab-green-300'}>{usuarioToToggle.username}</strong>
+                </div>
+                <p className="text-xs text-slate-400">
+                  Esta acción se puede revertir desde el interruptor de estado.
+                </p>
+              </div>
+              <div className="px-5 py-4 border-t border-slate-700/70 flex justify-end gap-3 bg-slate-950/70">
+                <button
+                  type="button"
+                  onClick={() => setShowToggleModal(false)}
+                  className="px-4 py-2 rounded-lg font-semibold text-slate-300 border border-slate-600 hover:bg-slate-800"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await api.post(`/usuarios/${usuarioToToggle.id}/toggle_activo/`);
+                      toast.success(`Usuario ${usuarioToToggle.is_active ? 'pausado' : 'reactivado'} con exito`);
+                      setShowToggleModal(false);
+                      cargarDatos();
+                    } catch (err) {
+                      console.error('Error:', err);
+                      toast.error('Error al cambiar el estado del usuario');
+                    }
+                  }}
+                  className={`px-4 py-2 rounded-lg font-bold text-white ${usuarioToToggle.is_active ? 'bg-uab-gold-600 hover:bg-uab-gold-700' : 'bg-uab-green-600 hover:bg-uab-green-700'}`}
+                >
+                  {usuarioToToggle.is_active ? '⏸️ Confirmar Pausa' : '▶️ Confirmar Reactivación'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Modal de Confirmación de Eliminación */}
         {showDeleteModal && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
-              <div className="bg-gradient-to-r from-red-500 to-red-600 px-6 py-4">
-                <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                  <TrashIcon className="w-6 h-6 text-white" />
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px]" onClick={() => setShowDeleteModal(false)} />
+            <div className="relative w-full max-w-lg rounded-2xl border border-red-300/40 dark:border-red-700/50 bg-slate-900 shadow-2xl overflow-hidden animate-slide-up" style={{ animationDuration: '160ms' }}>
+              <div className="px-5 py-4 border-b border-slate-700/70 bg-gradient-to-r from-red-900/30 to-slate-900">
+                <h4 className="text-lg font-bold text-red-300 flex items-center gap-2">
+                  <span>🗑️</span>
                   Confirmar Eliminación
-                </h2>
+                </h4>
               </div>
-              <div className="p-6">
-                <p className="text-slate-700 dark:text-slate-300 mb-4">
-                  ¿Estás seguro de que deseas eliminar al usuario <strong>{usuarioToDelete?.username}</strong>?
+              <div className="px-5 py-4 space-y-3 text-slate-200">
+                <p className="text-sm leading-relaxed">
+                  Se eliminará el usuario <strong className="text-white">{usuarioToDelete?.username}</strong> del sistema de forma permanente.
                 </p>
-                <p className="text-sm text-slate-500 dark:text-slate-400">
-                  Esta acción no se puede deshacer.
+                <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm">
+                  Acción irreversible: <strong className="text-red-300">El usuario perderá su acceso definitivamente.</strong>
+                </div>
+                <p className="text-xs text-slate-400">
+                  Esta operación no se puede deshacer.
                 </p>
               </div>
-              <div className="px-6 py-4 bg-slate-50 dark:bg-slate-700/50 flex justify-end gap-3">
-                <button onClick={() => setShowDeleteModal(false)} className="px-4 py-2 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 font-semibold transition-colors">Cancelar</button>
-                <button onClick={confirmarEliminar} className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold shadow-md transition-colors">Eliminar</button>
+              <div className="px-5 py-4 border-t border-slate-700/70 flex justify-end gap-3 bg-slate-950/70">
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteModal(false)}
+                  className="px-4 py-2 rounded-lg font-semibold text-slate-300 border border-slate-600 hover:bg-slate-800"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmarEliminar}
+                  className="px-4 py-2 rounded-lg font-bold text-white bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800"
+                >
+                  🗑️ Eliminar
+                </button>
               </div>
             </div>
           </div>

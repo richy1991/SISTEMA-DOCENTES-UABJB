@@ -195,6 +195,19 @@ class CarreraViewSet(viewsets.ModelViewSet):
             return [IsFullAdmin()]
         return [IsAuthenticated()]
 
+    def destroy(self, request, *args, **kwargs):
+        """
+        Evita borrado fisico de carreras para no disparar cascadas sobre
+        materias y fondos relacionados. Se realiza desactivacion logica.
+        """
+        carrera = self.get_object()
+        if not carrera.activo:
+            return Response({'detail': 'La carrera ya estaba desactivada.'}, status=status.HTTP_200_OK)
+
+        carrera.activo = False
+        carrera.save(update_fields=['activo'])
+        return Response({'detail': 'Carrera desactivada correctamente.'}, status=status.HTTP_200_OK)
+
 
 class MateriaViewSet(viewsets.ModelViewSet):
     queryset = Materia.objects.select_related('carrera').all()

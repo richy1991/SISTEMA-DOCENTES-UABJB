@@ -280,14 +280,14 @@ function ListaCarreras({ isDark }) {
                     <div className="flex gap-2 pt-3 border-t-2 border-slate-200 dark:border-slate-700">
                       <button
                         onClick={() => abrirModalEditar(carrera)}
-                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105"
+                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 text-white text-sm font-semibold rounded-lg transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105"
                       >
                         <PencilIcon className="w-4 h-4" />
                         <span>Editar</span>
                       </button>
                       <button
                         onClick={() => eliminarCarrera(carrera)}
-                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-lg transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105"
+                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-amber-600 hover:bg-amber-700 dark:bg-amber-700 dark:hover:bg-amber-800 text-white text-sm font-semibold rounded-lg transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105"
                       >
                         <TrashIcon className="w-4 h-4" />
                         <span>Eliminar</span>
@@ -420,25 +420,41 @@ function ListaCarreras({ isDark }) {
 
       {/* Modal de Confirmación de Eliminación */}
       {showDeleteModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
-            <div className="bg-gradient-to-r from-red-500 to-red-600 px-6 py-4">
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <TrashIcon className="w-6 h-6 text-white" />
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px]" onClick={() => setShowDeleteModal(false)} />
+          <div className="relative w-full max-w-lg rounded-2xl border border-red-300/40 dark:border-red-700/50 bg-slate-900 shadow-2xl overflow-hidden animate-slide-up" style={{ animationDuration: '160ms' }}>
+            <div className="px-5 py-4 border-b border-slate-700/70 bg-gradient-to-r from-red-900/30 to-slate-900">
+              <h4 className="text-lg font-bold text-red-300 flex items-center gap-2">
+                <span>🗑️</span>
                 Confirmar Eliminación
-              </h2>
+              </h4>
             </div>
-            <div className="p-6">
-              <p className="text-slate-700 dark:text-slate-300 mb-4">
-                ¿Estás seguro de que deseas eliminar la carrera <strong>{carreraToDelete?.nombre}</strong>?
+            <div className="px-5 py-4 space-y-3 text-slate-200">
+              <p className="text-sm leading-relaxed">
+                Se eliminará la carrera <strong className="text-white">{carreraToDelete?.nombre}</strong> del sistema de forma permanente.
               </p>
-              <p className="text-sm text-slate-500 dark:text-slate-400">
-                Esta acción no se puede deshacer.
+              <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm">
+                Acción irreversible: <strong className="text-red-300">la carrera quedará eliminada definitivamente.</strong>
+              </div>
+              <p className="text-xs text-slate-400">
+                Esta operación no se puede deshacer.
               </p>
             </div>
-            <div className="px-6 py-4 bg-slate-50 dark:bg-slate-700/50 flex justify-end gap-3">
-              <button onClick={() => setShowDeleteModal(false)} className="px-4 py-2 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 font-semibold transition-colors">Cancelar</button>
-              <button onClick={confirmarEliminar} className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold shadow-md transition-colors">Eliminar</button>
+            <div className="px-5 py-4 border-t border-slate-700/70 flex justify-end gap-3 bg-slate-950/70">
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(false)}
+                className="px-4 py-2 rounded-lg font-semibold text-slate-300 border border-slate-600 hover:bg-slate-800"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmarEliminar}
+                className="px-4 py-2 rounded-lg font-bold text-white bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800"
+              >
+                🗑️ Eliminar
+              </button>
             </div>
           </div>
         </div>
