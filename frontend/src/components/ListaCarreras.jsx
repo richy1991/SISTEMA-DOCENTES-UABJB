@@ -595,7 +595,7 @@ function ListaCarreras({ isDark }) {
               <button
                 type="button"
                 onClick={() => setShowDependencyWarningModal(false)}
-                className="px-4 py-2 rounded-lg font-semibold text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="px-4 py-2 rounded-lg font-semibold text-red-800 dark:text-red-200 border border-red-300 dark:border-red-700/60 bg-red-100 dark:bg-red-900/25 hover:bg-red-200 dark:hover:bg-red-900/35"
               >
                 Entendido
               </button>

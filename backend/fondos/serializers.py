@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .models import Docente, Carrera, Materia, FondoTiempo, CategoriaFuncion, Actividad, PerfilUsuario, InformeFondo, ObservacionFondo, MensajeObservacion, HistorialFondo, CargaHoraria, SaldoVacacionesGestion
 from django.db.models import Sum
@@ -72,6 +73,67 @@ class MateriaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Materia
         fields = '__all__'
+
+    def validate(self, attrs):
+        instance = getattr(self, 'instance', None)
+
+        sigla = attrs.get('sigla', getattr(instance, 'sigla', None))
+        horas_teoricas = attrs.get('horas_teoricas', getattr(instance, 'horas_teoricas', 0))
+        horas_practicas = attrs.get('horas_practicas', getattr(instance, 'horas_practicas', 0))
+
+        errors = {}
+
+        if horas_teoricas is None or horas_teoricas < 0:
+            errors['horas_teoricas'] = 'Las horas teóricas deben ser positivas o cero.'
+
+        if horas_practicas is None or horas_practicas < 0:
+            errors['horas_practicas'] = 'Las horas prácticas deben ser positivas o cero.'
+
+        total_horas_semana = (horas_teoricas or 0) + (horas_practicas or 0)
+        if total_horas_semana <= 0:
+            errors['non_field_errors'] = ['La materia debe tener al menos una carga horaria positiva.']
+
+        # Relación reglamentaria usada en el sistema para materia semestral.
+        horas_periodo_20_semanas = total_horas_semana * 20
+        if horas_periodo_20_semanas <= 0:
+            errors['non_field_errors'] = ['La relación con 20 semanas debe resultar en horas mayores a cero.']
+
+        if sigla:
+            sigla_qs = Materia.objects.filter(sigla__iexact=sigla)
+            if instance:
+                sigla_qs = sigla_qs.exclude(pk=instance.pk)
+            if sigla_qs.exists():
+                errors['sigla'] = 'Ya existe una materia con esta sigla.'
+
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        return attrs
+
+    def _raise_model_validation_error(self, exc):
+        detail = getattr(exc, 'message_dict', None) or {'non_field_errors': exc.messages}
+        raise serializers.ValidationError(detail)
+
+    def create(self, validated_data):
+        instance = Materia(**validated_data)
+        try:
+            instance.full_clean()
+        except DjangoValidationError as exc:
+            self._raise_model_validation_error(exc)
+        instance.save()
+        return instance
+
+    def update(self, instance, validated_data):
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+
+        try:
+            instance.full_clean()
+        except DjangoValidationError as exc:
+            self._raise_model_validation_error(exc)
+
+        instance.save()
+        return instance
 
 
 class ActividadSerializer(serializers.ModelSerializer):
