@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from '../apis/api';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -46,14 +46,129 @@ const FilterIcon = (props) => (
     </svg>
 );
 
+const ChevronDown = ({ open = false }) => (
+    <div className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center">
+        <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-[#263F8A]/10 dark:bg-[#263F8A]/25 ring-1 ring-[#263F8A]/35 dark:ring-[#263F8A]/45">
+            <svg
+                className={`w-3 h-3 text-[#263F8A] dark:text-[#8EA0D9] transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+            >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+            </svg>
+        </span>
+    </div>
+);
+
+const CustomSelect = ({
+    value,
+    options,
+    onChange,
+    placeholder,
+    disabled = false,
+    emptyText = 'Sin opciones disponibles',
+    menuMaxHeight = 'max-h-56',
+}) => {
+    const [open, setOpen] = useState(false);
+    const containerRef = useRef(null);
+    const selected = options.find((opt) => opt.value?.toString() === value?.toString());
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (containerRef.current && !containerRef.current.contains(event.target)) {
+                setOpen(false);
+            }
+        };
+
+        const handleEscape = (event) => {
+            if (event.key === 'Escape') setOpen(false);
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        document.addEventListener('keydown', handleEscape);
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+            document.removeEventListener('keydown', handleEscape);
+        };
+    }, []);
+
+    const handlePick = (newValue) => {
+        onChange(newValue);
+        setOpen(false);
+    };
+
+    return (
+        <div ref={containerRef} className="relative w-full sm:w-[220px]">
+            <button
+                type="button"
+                onClick={() => !disabled && setOpen((prev) => !prev)}
+                disabled={disabled}
+                className={`w-full text-left pl-3.5 pr-10 py-2.5 rounded-xl border bg-white dark:bg-slate-800 text-sm shadow-sm transition-all ${
+                    disabled
+                        ? 'border-slate-300/80 dark:border-slate-700 text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-70'
+                        : open
+                            ? 'border-blue-600 dark:border-blue-600 ring-2 ring-blue-500/35 dark:ring-blue-500/35 text-slate-900 dark:text-slate-100'
+                            : 'border-blue-200 dark:border-blue-700 hover:border-blue-400 dark:hover:border-blue-600 text-slate-800 dark:text-slate-100'
+                }`}
+            >
+                <span className="block truncate font-semibold">{selected ? selected.label : placeholder}</span>
+                <ChevronDown open={open} />
+            </button>
+
+            {open && !disabled && (
+                <div className={`absolute z-30 mt-1.5 w-full overflow-auto rounded-xl border border-blue-400 dark:border-blue-700 bg-white dark:bg-slate-900 shadow-xl shadow-blue-500/20 dark:shadow-black/35 ${menuMaxHeight}`}>
+                    {options.length === 0 ? (
+                        <div className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{emptyText}</div>
+                    ) : (
+                        options.map((opt) => {
+                            const active = opt.value?.toString() === value?.toString();
+                            return (
+                                <button
+                                    key={opt.value}
+                                    type="button"
+                                    onClick={() => handlePick(opt.value)}
+                                    className={`w-full text-left px-3 py-1.5 text-sm transition-colors border-l-2 ${
+                                        active
+                                            ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-600 dark:border-blue-500 text-blue-700 dark:text-blue-200 font-semibold'
+                                            : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-800/90'
+                                    }`}
+                                    title={opt.label}
+                                >
+                                    <span className="block truncate">{opt.label}</span>
+                                </button>
+                            );
+                        })
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
+
 const MateriaList = ({ isDark }) => {
     const [materias, setMaterias] = useState([]);
+    const [carreras, setCarreras] = useState([]);
     const [loading, setLoading] = useState(true);
     const [user, setUser] = useState(null);
     const [semestreSeleccionado, setSemestreSeleccionado] = useState('todos');
+    const [carreraSeleccionada, setCarreraSeleccionada] = useState('todas');
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [materiaToDelete, setMateriaToDelete] = useState(null);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
+
+    const [showMateriaModal, setShowMateriaModal] = useState(false);
+    const [isSubmittingMateria, setIsSubmittingMateria] = useState(false);
+    const [materiaFormData, setMateriaFormData] = useState({
+        nombre: '',
+        sigla: '',
+        carrera: '',
+        semestre: '',
+        horas_teoricas: 0,
+        horas_practicas: 0,
+    });
+    const [materiaFormErrors, setMateriaFormErrors] = useState({});
 
     useEffect(() => {
         const userData = JSON.parse(localStorage.getItem('user') || 'null');
@@ -78,11 +193,23 @@ const MateriaList = ({ isDark }) => {
             } catch (error) {
                 console.error("Error cargando materias:", error);
                 toast.error("Error al cargar materias");
-            } finally {
-                setLoading(false);
             }
         };
-        fetchMaterias();
+
+        const fetchCarreras = async () => {
+            try {
+                const res = await api.get('/carreras/');
+                const carrerasData = res.data?.results || res.data || [];
+                setCarreras(Array.isArray(carrerasData) ? carrerasData : []);
+            } catch (error) {
+                console.error("Error cargando carreras:", error);
+                toast.error("Error al cargar carreras");
+            }
+        };
+
+        Promise.all([fetchMaterias(), fetchCarreras()]).finally(() => {
+            setLoading(false);
+        });
     }, []);
 
     const handleDelete = (materia) => {
@@ -116,13 +243,119 @@ const MateriaList = ({ isDark }) => {
 
     const canEdit = user?.is_superuser || user?.perfil?.rol === 'admin' || user?.perfil?.rol === 'director';
 
+    const getMateriaCarreraId = (materia) => {
+        if (!materia) return '';
+        if (typeof materia.carrera === 'object' && materia.carrera !== null) {
+            return String(materia.carrera.id || '');
+        }
+        return String(materia.carrera || '');
+    };
+
     // Obtener lista de semestres únicos para el filtro
     const semestresDisponibles = [...new Set(materias.map(m => m.semestre))].sort((a, b) => a - b);
+    const semestresOptions = [
+        { value: 'todos', label: 'Todos los Semestres' },
+        ...semestresDisponibles.map((s) => ({ value: String(s), label: `${s}º Semestre` })),
+    ];
+
+    // Obtener carreras disponibles priorizando el catálogo del backend
+    const carrerasDisponibles = carreras.length > 0
+        ? carreras
+        : [...new Map(
+            materias
+                .filter(m => getMateriaCarreraId(m))
+                .map(m => [getMateriaCarreraId(m), { id: getMateriaCarreraId(m), nombre: m.carrera_nombre || `Carrera ${getMateriaCarreraId(m)}` }])
+        ).values()];
+    const carrerasOptions = [
+        { value: 'todas', label: 'Todas las Carreras' },
+        ...carrerasDisponibles.map((c) => ({ value: String(c.id), label: c.nombre })),
+    ];
+    const carreraFormOptions = carrerasDisponibles.map((c) => ({ value: String(c.id), label: c.nombre }));
+    const semestreFormOptions = Array.from({ length: 12 }, (_, index) => {
+        const value = String(index + 1);
+        return { value, label: `${value}º Semestre` };
+    });
+
+    const openMateriaModal = () => {
+        const carreraInicial = carreraSeleccionada !== 'todas'
+            ? carreraSeleccionada
+            : (carrerasDisponibles[0] ? String(carrerasDisponibles[0].id) : '');
+
+        setMateriaFormData({
+            nombre: '',
+            sigla: '',
+            carrera: carreraInicial,
+            semestre: '',
+            horas_teoricas: 0,
+            horas_practicas: 0,
+        });
+        setMateriaFormErrors({});
+        setShowMateriaModal(true);
+    };
+
+    const closeMateriaModal = () => {
+        setShowMateriaModal(false);
+        setMateriaFormErrors({});
+        setIsSubmittingMateria(false);
+    };
+
+    const handleMateriaFieldChange = (event) => {
+        const { name, value } = event.target;
+        setMateriaFormData((prev) => ({ ...prev, [name]: value }));
+    };
+
+    const handleMateriaSelectChange = (fieldName, value) => {
+        setMateriaFormData((prev) => ({ ...prev, [fieldName]: value }));
+    };
+
+    const handleCreateMateria = async (event) => {
+        event.preventDefault();
+        setIsSubmittingMateria(true);
+        setMateriaFormErrors({});
+
+        const payload = {
+            ...materiaFormData,
+            carrera: materiaFormData.carrera ? Number(materiaFormData.carrera) : materiaFormData.carrera,
+            semestre: materiaFormData.semestre ? Number(materiaFormData.semestre) : materiaFormData.semestre,
+            horas_teoricas: Number(materiaFormData.horas_teoricas || 0),
+            horas_practicas: Number(materiaFormData.horas_practicas || 0),
+        };
+
+        try {
+            const response = await api.post('/materias/', payload);
+            if (response.status !== 201) {
+                throw new Error('Respuesta inesperada al crear materia');
+            }
+            setMaterias((prev) => [...prev, response.data]);
+            toast.success('Materia creada correctamente');
+            closeMateriaModal();
+        } catch (err) {
+            console.error(err);
+            const apiErrors = err.response?.data;
+            if (apiErrors) {
+                setMateriaFormErrors(apiErrors);
+                Object.keys(apiErrors).forEach((key) => {
+                    const message = Array.isArray(apiErrors[key]) ? apiErrors[key].join(' ') : String(apiErrors[key]);
+                    if (key === 'non_field_errors') {
+                        toast.error(message);
+                    } else {
+                        toast.error(`Error en ${key}: ${message}`);
+                    }
+                });
+            } else {
+                toast.error('Ocurrió un error inesperado.');
+            }
+        } finally {
+            setIsSubmittingMateria(false);
+        }
+    };
 
     // Filtrar materias
-    const materiasFiltradas = semestreSeleccionado === 'todos'
-        ? materias
-        : materias.filter(m => m.semestre.toString() === semestreSeleccionado);
+    const materiasFiltradas = materias.filter(m => {
+        const cumpleSemestre = semestreSeleccionado === 'todos' || m.semestre.toString() === semestreSeleccionado;
+        const cumpleCarrera = carreraSeleccionada === 'todas' || getMateriaCarreraId(m) === carreraSeleccionada;
+        return cumpleSemestre && cumpleCarrera;
+    });
 
     if (loading) {
         return (
@@ -153,33 +386,36 @@ const MateriaList = ({ isDark }) => {
                         
                         <div className="flex flex-col sm:flex-row gap-3 items-center">
                             {/* Filtro por Semestre */}
-                            <div className="relative w-full sm:w-auto">
-                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                    <FilterIcon className="h-5 w-5 text-slate-400" />
-                                </div>
-                                <select
+                            <div className="flex items-center gap-2 w-full sm:w-auto">
+                                <FilterIcon className="h-5 w-5 text-slate-500 dark:text-slate-300" />
+                                <CustomSelect
                                     value={semestreSeleccionado}
-                                    onChange={(e) => setSemestreSeleccionado(e.target.value)}
-                                    className="w-full sm:w-auto appearance-none bg-slate-50 dark:bg-slate-700 border-2 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 py-2.5 pl-10 pr-10 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium transition-shadow cursor-pointer"
-                                >
-                                    <option value="todos">Todos los Semestres</option>
-                                    {semestresDisponibles.map(s => (
-                                        <option key={s} value={s}>{s}º Semestre</option>
-                                    ))}
-                                </select>
-                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
-                                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-                                </div>
+                                    options={semestresOptions}
+                                    onChange={setSemestreSeleccionado}
+                                    placeholder="Selecciona semestre"
+                                />
+                            </div>
+
+                            {/* Filtro por Carrera */}
+                            <div className="flex items-center gap-2 w-full sm:w-auto">
+                                <AcademicCapIcon className="h-5 w-5 text-slate-500 dark:text-slate-300" />
+                                <CustomSelect
+                                    value={carreraSeleccionada}
+                                    options={carrerasOptions}
+                                    onChange={setCarreraSeleccionada}
+                                    placeholder="Selecciona carrera"
+                                />
                             </div>
 
                             {canEdit && (
-                                <Link 
-                                    to="/fondo-tiempo/materias/nueva" 
+                                <button
+                                    type="button"
+                                    onClick={openMateriaModal}
                                     className="w-full sm:w-auto px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center justify-center gap-2"
                                 >
                                     <PlusIcon className="w-5 h-5" />
                                     Nueva Materia
-                                </Link>
+                                </button>
                             )}
                         </div>
                     </div>
@@ -258,23 +494,134 @@ const MateriaList = ({ isDark }) => {
                             <BookOpenIcon className="w-10 h-10 text-slate-400 dark:text-slate-500" />
                         </div>
                         <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-2">
-                            {materias.length > 0 ? 'No hay materias en este semestre' : 'No hay materias registradas'}
+                            {materias.length > 0 ? 'No hay materias con los filtros seleccionados' : 'No hay materias registradas'}
                         </h3>
                         <p className="text-slate-600 dark:text-slate-400 mb-6">
-                            {materias.length > 0 ? 'Intenta seleccionar otro semestre o "Todos".' : 'Comienza agregando tu primera materia al sistema.'}
+                            {materias.length > 0 ? 'Prueba con otro semestre o cambia la carrera seleccionada.' : 'Comienza agregando tu primera materia al sistema.'}
                         </p>
                         {canEdit && (
-                            <Link 
-                                to="/fondo-tiempo/materias/nueva" 
+                            <button
+                                type="button"
+                                onClick={openMateriaModal}
                                 className="inline-flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105"
                             >
                                 <PlusIcon className="w-5 h-5" />
                                 Crear Primera Materia
-                            </Link>
+                            </button>
                         )}
                     </div>
                 )}
             </div>
+
+            {showMateriaModal && (
+                <div className="fixed inset-0 z-[65] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/40 dark:bg-black/60 backdrop-blur-md transition-all duration-300" onClick={closeMateriaModal} />
+                    <div className="relative w-full max-w-3xl bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden animate-slide-up" style={{ animationDuration: '180ms' }}>
+                        <div className="relative px-6 py-5 border-b border-[#7F97E8]/45 bg-[#2C4AAE] shadow-lg">
+                            <div className="absolute inset-0 bg-white/5 dark:bg-white/[0.02]"></div>
+                            <h3 className="relative text-xl font-bold text-slate-100 flex items-center gap-3">
+                                <span className="text-2xl">📚</span>
+                                Nueva Materia
+                            </h3>
+                        </div>
+
+                        <form onSubmit={handleCreateMateria} className="p-6 md:p-8 space-y-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <label className="block text-sm font-semibold mb-2.5 text-slate-700 dark:text-slate-200">Nombre de la Materia <span className="text-red-500">*</span></label>
+                                    <input
+                                        type="text"
+                                        name="nombre"
+                                        value={materiaFormData.nombre}
+                                        onChange={handleMateriaFieldChange}
+                                        required
+                                        className={`w-full px-4 py-3 rounded-xl border-2 bg-white dark:bg-slate-700/50 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent transition-all shadow-sm dark:shadow-lg ${materiaFormErrors.nombre ? 'border-red-500 dark:border-red-600' : 'border-blue-200 dark:border-slate-600 hover:border-blue-300 dark:hover:border-slate-500'}`}
+                                    />
+                                    {materiaFormErrors.nombre && <p className="text-xs text-red-600 dark:text-red-400 mt-1.5 font-medium">{Array.isArray(materiaFormErrors.nombre) ? materiaFormErrors.nombre.join(' ') : materiaFormErrors.nombre}</p>}
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-semibold mb-2.5 text-slate-700 dark:text-slate-200">Sigla <span className="text-red-500">*</span></label>
+                                    <input
+                                        type="text"
+                                        name="sigla"
+                                        value={materiaFormData.sigla}
+                                        onChange={handleMateriaFieldChange}
+                                        required
+                                        className={`w-full px-4 py-3 rounded-xl border-2 bg-white dark:bg-slate-700/50 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent transition-all shadow-sm dark:shadow-lg ${materiaFormErrors.sigla ? 'border-red-500 dark:border-red-600' : 'border-blue-200 dark:border-slate-600 hover:border-blue-300 dark:hover:border-slate-500'}`}
+                                    />
+                                    {materiaFormErrors.sigla && <p className="text-xs text-red-600 dark:text-red-400 mt-1.5 font-medium">{Array.isArray(materiaFormErrors.sigla) ? materiaFormErrors.sigla.join(' ') : materiaFormErrors.sigla}</p>}
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-semibold mb-2.5 text-slate-700 dark:text-slate-200">Seleccionar Carrera <span className="text-red-500">*</span></label>
+                                    <CustomSelect
+                                        value={String(materiaFormData.carrera || '')}
+                                        options={carreraFormOptions}
+                                        onChange={(value) => handleMateriaSelectChange('carrera', value)}
+                                        placeholder="Seleccione una carrera"
+                                    />
+                                    {materiaFormErrors.carrera && <p className="text-xs text-red-600 dark:text-red-400 mt-1.5 font-medium">{Array.isArray(materiaFormErrors.carrera) ? materiaFormErrors.carrera.join(' ') : materiaFormErrors.carrera}</p>}
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-semibold mb-2.5 text-slate-700 dark:text-slate-200">Seleccionar Semestre <span className="text-red-500">*</span></label>
+                                    <CustomSelect
+                                        value={String(materiaFormData.semestre || '')}
+                                        options={semestreFormOptions}
+                                        onChange={(value) => handleMateriaSelectChange('semestre', value)}
+                                        placeholder="Seleccione semestre"
+                                    />
+                                    {materiaFormErrors.semestre && <p className="text-xs text-red-600 dark:text-red-400 mt-1.5 font-medium">{Array.isArray(materiaFormErrors.semestre) ? materiaFormErrors.semestre.join(' ') : materiaFormErrors.semestre}</p>}
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-semibold mb-2.5 text-slate-700 dark:text-slate-200">Horas Prácticas <span className="text-red-500">*</span></label>
+                                    <input
+                                        type="number"
+                                        name="horas_practicas"
+                                        value={materiaFormData.horas_practicas}
+                                        onChange={handleMateriaFieldChange}
+                                        required
+                                        className={`w-full px-4 py-3 rounded-xl border-2 bg-white dark:bg-slate-700/50 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent transition-all shadow-sm dark:shadow-lg ${materiaFormErrors.horas_practicas ? 'border-red-500 dark:border-red-600' : 'border-blue-200 dark:border-slate-600 hover:border-blue-300 dark:hover:border-slate-500'}`}
+                                    />
+                                    {materiaFormErrors.horas_practicas && <p className="text-xs text-red-600 dark:text-red-400 mt-1.5 font-medium">{Array.isArray(materiaFormErrors.horas_practicas) ? materiaFormErrors.horas_practicas.join(' ') : materiaFormErrors.horas_practicas}</p>}
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-semibold mb-2.5 text-slate-700 dark:text-slate-200">Horas Teóricas <span className="text-red-500">*</span></label>
+                                    <input
+                                        type="number"
+                                        name="horas_teoricas"
+                                        value={materiaFormData.horas_teoricas}
+                                        onChange={handleMateriaFieldChange}
+                                        required
+                                        className={`w-full px-4 py-3 rounded-xl border-2 bg-white dark:bg-slate-700/50 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent transition-all shadow-sm dark:shadow-lg ${materiaFormErrors.horas_teoricas ? 'border-red-500 dark:border-red-600' : 'border-blue-200 dark:border-slate-600 hover:border-blue-300 dark:hover:border-slate-500'}`}
+                                    />
+                                    {materiaFormErrors.horas_teoricas && <p className="text-xs text-red-600 dark:text-red-400 mt-1.5 font-medium">{Array.isArray(materiaFormErrors.horas_teoricas) ? materiaFormErrors.horas_teoricas.join(' ') : materiaFormErrors.horas_teoricas}</p>}
+                                </div>
+                            </div>
+
+                            <div className="pt-6 border-t border-blue-200/50 dark:border-blue-800/50 flex justify-end gap-3">
+                                <button
+                                    type="button"
+                                    onClick={closeMateriaModal}
+                                    className="px-6 py-3 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-semibold border border-slate-300 dark:border-slate-600 transition-all duration-200 hover:shadow-md"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={isSubmittingMateria}
+                                    className="px-6 py-3 bg-[#4654E8] hover:bg-[#3D47D1] text-white font-semibold rounded-xl shadow-[0_8px_20px_rgba(70,84,232,0.35)] hover:shadow-[0_8px_20px_rgba(70,84,232,0.5)] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {isSubmittingMateria ? '⏳ Guardando...' : '💾 Guardar'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
 
             {/* Modal de Confirmación de Eliminación */}
             {showDeleteModal && (
