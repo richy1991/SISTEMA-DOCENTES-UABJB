@@ -68,7 +68,9 @@ function ListaCarreras({ isDark }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
 
+  // States para modal de eliminación
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showDependencyWarningModal, setShowDependencyWarningModal] = useState(false);
   const [carreraToDelete, setCarreraToDelete] = useState(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleteImpact, setDeleteImpact] = useState({
@@ -78,16 +80,20 @@ function ListaCarreras({ isDark }) {
     informes: 0,
     failed: false,
   });
-  const [showDependencyWarningModal, setShowDependencyWarningModal] = useState(false);
-
-  // State for inline creation form
-  const [isCreating, setIsCreating] = useState(false);
 
   useEffect(() => {
     cargarCarreras();
-    const userData = JSON.parse(localStorage.getItem('user') || 'null');
-    setUser(userData);
+    cargarUsuario();
   }, []);
+
+  const cargarUsuario = () => {
+    try {
+      const userData = JSON.parse(localStorage.getItem('user'));
+      setUser(userData);
+    } catch (err) {
+      console.error('Error cargando usuario:', err);
+    }
+  };
 
   const cargarCarreras = async () => {
     try {
@@ -102,20 +108,16 @@ function ListaCarreras({ isDark }) {
     }
   };
 
-  useEffect(() => {
-    if (isCreating) {
-      setFormData({
-        nombre: '',
-        codigo: '',
-        facultad: '',
-        activo: true,
-      });
-      setErrors({});
-    }
-  }, [isCreating]);
-
-  const handleToggleCreateForm = () => {
-    setIsCreating(!isCreating);
+  const abrirModalCrear = () => {
+    setCarreraSeleccionada(null);
+    setFormData({
+      nombre: '',
+      codigo: '',
+      facultad: '',
+      activo: true,
+    });
+    setErrors({});
+    setShowModal(true);
   };
 
   const abrirModalEditar = (carrera) => {
@@ -127,7 +129,6 @@ function ListaCarreras({ isDark }) {
       activo: carrera.activo
     });
     setShowModal(true);
-    setIsCreating(false);
   };
 
   const handleChange = (e) => {
@@ -152,7 +153,7 @@ function ListaCarreras({ isDark }) {
     try {
       await api.post('/carreras/', formData);
       toast.success('Carrera creada correctamente');
-      setIsCreating(false);
+      setShowModal(false);
       cargarCarreras();
     } catch (err) {
       console.error(err);
@@ -306,41 +307,15 @@ function ListaCarreras({ isDark }) {
             </div>
             {esAdmin() && (
               <button
-                onClick={handleToggleCreateForm}
+                onClick={abrirModalCrear}
                 className="px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center gap-2"
               >
-                <span>{isCreating ? '➖' : '➕'}</span>
-                {isCreating ? 'Cancelar' : 'Nueva Carrera'}
+                <span>➕</span>
+                Nueva Carrera
               </button>
             )}
           </div>
         </div>
-
-        {/* FORMULARIO DE CREACIÓN EN LÍNEA */}
-        {isCreating && (
-          <div className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-lg mt-6 animate-fade-in">
-            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700">
-              <h2 className="text-xl font-bold text-slate-800 dark:text-white">
-                Crear Nueva Carrera
-              </h2>
-            </div>
-            <form onSubmit={handleCreateSubmit}>
-              <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-                <InputField label="Nombre de la Carrera" name="nombre" value={formData.nombre} onChange={handleChange} required error={errors.nombre} />
-                <InputField label="Código" name="codigo" value={formData.codigo} onChange={handleChange} required error={errors.codigo} />
-                <InputField label="Facultad" name="facultad" value={formData.facultad} onChange={handleChange} required error={errors.facultad} />
-              </div>
-              <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
-                <button type="button" onClick={() => setIsCreating(false)} disabled={isSubmitting} className="px-6 py-2.5 rounded-xl font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm disabled:opacity-50">
-                  Cancelar
-                </button>
-                <button type="submit" disabled={isSubmitting} className="px-6 py-2.5 rounded-xl text-white font-bold transition-all shadow-lg hover:shadow-xl flex items-center gap-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 hover:scale-105">
-                  {isSubmitting ? 'Guardando...' : 'Crear Carrera'}
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
 
         {carreras.length > 0 ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -405,7 +380,7 @@ function ListaCarreras({ isDark }) {
             </p>
             {esAdmin() && (
               <button
-                onClick={handleToggleCreateForm}
+                onClick={abrirModalCrear}
                 className="inline-flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105"
               >
                 <span>➕</span>
@@ -417,20 +392,20 @@ function ListaCarreras({ isDark }) {
       </div>
 
       {/* Modal Crear/Editar */}
-      {showModal && carreraSeleccionada && (
+      {showModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in" style={{ animationDuration: '160ms' }}>
-          <div className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto animate-slide-up" style={{ animationDuration: '180ms' }}>
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-2xl max-w-2xl w-full max-h-[98vh] md:max-h-[95vh] overflow-visible animate-slide-up" style={{ animationDuration: '180ms' }}>
             {/* Header Modal */}
-            <div className="px-6 py-4 border-b border-[#7F97E8]/45 bg-[#2C4AAE] rounded-t-2xl">
+            <div className="px-6 py-5 border-b border-[#7F97E8]/45 bg-[#2C4AAE] rounded-t-3xl">
               <h3 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-                ✏️ Editar Carrera
+                {carreraSeleccionada ? '✏️ Editar Carrera' : '➕ Nueva Carrera'}
               </h3>
             </div>
 
             {/* Formulario */}
-            <form onSubmit={handleUpdateSubmit} className="px-6 py-4">
-              <div className="space-y-4">
-                <div>
+            <form onSubmit={carreraSeleccionada ? handleUpdateSubmit : handleCreateSubmit} className="p-6 md:p-7">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div className="md:col-span-2">
                   <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
                     Nombre de la Carrera <span className="text-red-500">*</span>
                   </label>
@@ -439,9 +414,9 @@ function ListaCarreras({ isDark }) {
                     name="nombre"
                     value={formData.nombre}
                     onChange={handleChange}
-                    required                    
+                    required
                     placeholder="Ej: Ingeniería de Sistemas"
-                    className="w-full px-4 py-2.5 rounded-xl border-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md"
+                    className="w-full px-4 py-3 rounded-2xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/80 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                   />
                 </div>
 
@@ -454,13 +429,36 @@ function ListaCarreras({ isDark }) {
                     name="codigo"
                     value={formData.codigo}
                     onChange={handleChange}
-                    required                    
+                    required
                     placeholder="Ej: IS"
-                    className="w-full px-4 py-2.5 rounded-xl border-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md"
+                    className="w-full px-4 py-3 rounded-2xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/80 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                   />
                 </div>
 
-                <div>
+                <div className="flex items-center gap-1.5 py-0.5 px-2 rounded-xl border w-fit transition-colors duration-200"
+                  style={{ minHeight: 'unset', lineHeight: 1 }}
+                >
+                  <div className="flex flex-col justify-center">
+                    <p className={`text-[10px] font-semibold uppercase tracking-wide leading-none ${
+                      formData.activo
+                        ? 'text-emerald-700 dark:text-emerald-300'
+                        : 'text-rose-700 dark:text-rose-300'
+                    }`}>Estado</p>
+                    <p className={`text-[11px] font-semibold leading-none ${
+                      formData.activo
+                        ? 'text-emerald-800 dark:text-emerald-200'
+                        : 'text-rose-800 dark:text-rose-200'
+                    }`}>
+                      {formData.activo ? 'Activa' : 'Inactiva'}
+                    </p>
+                  </div>
+                  <ToggleSwitch
+                    isActive={Boolean(formData.activo)}
+                    onChange={handleActivoSwitchChange}
+                  />
+                </div>
+
+                <div className="md:col-span-2">
                   <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
                     Facultad <span className="text-red-500">*</span>
                   </label>
@@ -469,39 +467,26 @@ function ListaCarreras({ isDark }) {
                     name="facultad"
                     value={formData.facultad}
                     onChange={handleChange}
-                    required                    
+                    required
                     placeholder="Ej: Ciencias y Tecnología"
-                    className="w-full px-4 py-2.5 rounded-xl border-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md"
+                    className="w-full px-4 py-3 rounded-2xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/80 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                   />
-                </div>
-
-                <div className="bg-slate-50 dark:bg-slate-700/30 rounded-xl p-3 border-2 border-slate-300 dark:border-slate-600">
-                  <div className="flex items-center gap-3">
-                    <ToggleSwitch
-                      isActive={Boolean(formData.activo)}
-                      onChange={handleActivoSwitchChange}
-                    />
-                    <span className="text-sm font-medium text-slate-800 dark:text-slate-300">
-                      {formData.activo ? '✅ Carrera Activa' : '⚪ Carrera Inactiva'}
-                    </span>
-                  </div>
                 </div>
               </div>
 
-              {/* Botones */}
-              <div className="mt-6 pt-4 border-t-2 border-slate-300 dark:border-slate-700 flex gap-3">
+              <div className="mt-6 pt-5 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="flex-1 px-4 py-2.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-xl font-semibold transition-all duration-200 border-2 border-slate-300 dark:border-slate-600 shadow-sm hover:shadow-md hover:scale-105"
+                  className="px-5 py-2.5 min-w-[120px] bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-xl font-semibold transition-all duration-200 border border-slate-300 dark:border-slate-600"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-semibold transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105"
+                  className="px-5 py-2.5 min-w-[150px] bg-[#4654E8] hover:bg-[#3D47D1] text-white rounded-xl font-semibold transition-all duration-200 shadow-[0_8px_20px_rgba(70,84,232,0.35)] hover:shadow-[0_8px_20px_rgba(70,84,232,0.5)]"
                 >
-                  💾 Actualizar
+                  {carreraSeleccionada ? '💾 Actualizar' : '✅ Crear Carrera'}
                 </button>
               </div>
             </form>
