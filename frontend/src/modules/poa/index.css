@@ -410,8 +410,8 @@ body {
 
 /* Scrollbars en modo oscuro */
 .dark ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 5px;
+  height: 5px;
 }
 
 .dark ::-webkit-scrollbar-track {
@@ -420,7 +420,7 @@ body {
 
 .dark ::-webkit-scrollbar-thumb {
   background: linear-gradient(180deg, #1e3a8a, #3b82f6);
-  border-radius: 5px;
+  border-radius: 3px;
 }
 
 .dark ::-webkit-scrollbar-thumb:hover {

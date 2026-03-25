@@ -1,6 +1,18 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Ocultar scrollbar en Chrome/Safari/Edge */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Ocultar scrollbar en Firefox */
+.hide-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
 /* Animaciones personalizadas */
 @keyframes fade-in {
   from {
@@ -419,8 +431,8 @@
 
 /* Scrollbar personalizado */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -429,7 +441,7 @@
 
 ::-webkit-scrollbar-thumb {
   background: #0066E6;
-  border-radius: 5px;
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {

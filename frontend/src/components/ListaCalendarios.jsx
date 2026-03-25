@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import api from '../apis/api';
 import toast from 'react-hot-toast';
+import { motion, AnimatePresence } from 'framer-motion';
 
 // --- ICONOS ---
 const PencilIcon = (props) => (
@@ -15,11 +16,766 @@ const TrashIcon = (props) => (
     </svg>
 );
 
-const CheckCircleIcon = (props) => (
+const PauseIcon = (props) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25v13.5m-7.5-13.5v13.5" />
     </svg>
 );
+
+const PlayIcon = (props) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z" />
+    </svg>
+);
+
+const ToggleSwitch = ({ isActive, onChange }) => (
+  <button
+    type="button"
+    onClick={onChange}
+    className={`relative inline-flex h-6 w-12 items-center rounded-full transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+      isActive
+        ? 'bg-emerald-500 dark:bg-emerald-600 focus:ring-emerald-400 dark:focus:ring-emerald-500'
+        : 'bg-slate-300 dark:bg-slate-600 focus:ring-slate-400 dark:focus:ring-slate-500'
+    }`}
+  >
+    <span
+      className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition-transform duration-300 ${
+        isActive ? 'translate-x-6' : 'translate-x-0.5'
+      }`}
+    />
+  </button>
+);
+
+const SegmentedOptions = ({ options, value, onChange, className = '' }) => (
+  <div
+    className={`grid gap-1.5 rounded-2xl p-1.5 bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 shadow-sm ${className}`}
+  >
+    {options.map((opt) => {
+      const isActive = String(opt.value) === String(value);
+      return (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => onChange(opt.value)}
+          className="relative h-14 md:h-12 w-full rounded-xl overflow-hidden"
+        >
+          {isActive && (
+            <motion.span
+              layoutId="period-segment-pill"
+              className="absolute inset-0 rounded-xl border border-[#4A55F0] bg-[#4654E8] shadow-[0_8px_20px_rgba(70,84,232,0.35)]"
+              transition={{ type: 'spring', stiffness: 420, damping: 34, mass: 0.7 }}
+            />
+          )}
+          <span
+            className={`relative z-10 px-2 text-sm md:text-base font-semibold leading-tight transition-colors duration-200 ${
+              isActive ? 'text-white' : 'text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            {opt.label}
+          </span>
+        </button>
+      );
+    })}
+  </div>
+);
+
+const YearWheelItem = ({ year, distance, itemHeight, onCenterClick }) => {
+  const isCenter = Math.abs(distance) < 0.35;
+  const isSpacer = year === null;
+  const clamped = Math.max(-4, Math.min(4, distance));
+  const abs = Math.abs(clamped);
+  const curvedDistance = Math.sign(clamped) * Math.pow(abs, 1.08);
+  const rotationX = Math.max(-62, Math.min(62, curvedDistance * 16));
+  const stepScale = abs < 0.35 ? 1 : 0.97;
+  const opacity = abs < 0.35 ? 1 : Math.max(0.4, 1 - abs * 0.2);
+  const translateZ = -Math.min(58, abs * 16);
+
+  return (
+    <div
+      className="flex items-center justify-center flex-shrink-0"
+      style={{
+        height: `${itemHeight}px`,
+        width: '100%',
+        transformStyle: 'preserve-3d',
+        transform: `translateY(${Math.sign(clamped) * abs * 0.35}px) rotateX(${rotationX}deg) translateZ(${translateZ}px) scale(${stepScale})`,
+        transformOrigin: 'center center',
+        opacity,
+      }}
+    >
+      {isSpacer ? null : isCenter ? (
+        <button
+          type="button"
+          onClick={() => onCenterClick?.(year)}
+          className="w-full h-full flex items-center justify-center tracking-wide font-extrabold text-transparent text-lg scale-125 cursor-pointer select-none"
+          title="Confirmar año seleccionado"
+          aria-label={`Seleccionar año ${year}`}
+        >
+          {year}
+        </button>
+      ) : (
+        <span className="tracking-wide font-semibold text-slate-700 dark:text-slate-300 text-sm" style={{ opacity: 1 }}>
+          {year}
+        </span>
+      )}
+    </div>
+  );
+};
+
+const VerticalYearWheelPicker = ({
+  value,
+  openInitialYear,
+  onChange,
+  onSettled,
+  onConfirm,
+  wheelResetToken = 0,
+  minYear,
+  maxYear,
+  visibleCount = 5,
+  itemHeight = 52,
+}) => {
+  const iosWheelTransition = {
+    type: 'spring',
+    stiffness: 240,
+    damping: 30,
+    mass: 0.9,
+    restDelta: 0.2,
+    restSpeed: 0.2,
+  };
+
+  const getIndexFromYear = (yearValue) => {
+    const numeric = Number(yearValue);
+    const fallbackYear = Math.round((minYear + maxYear) / 2);
+    const safeYear = Number.isFinite(numeric) ? numeric : fallbackYear;
+    const clampedYear = Math.max(minYear, Math.min(maxYear, safeYear));
+    return clampedYear - minYear;
+  };
+
+  const initialIndex = getIndexFromYear(openInitialYear ?? value);
+
+  const viewportRef = useRef(null);
+  const padSlots = 3;
+  const [targetIndex, setTargetIndex] = useState(initialIndex);
+  const [centeredIndex, setCenteredIndex] = useState(initialIndex);
+  const [centerFloatIndex, setCenterFloatIndex] = useState(initialIndex);
+  const centeredIndexRef = useRef(initialIndex);
+  const centerFloatRef = useRef(initialIndex);
+  const isIntroAnimatingRef = useRef(true);
+  const lastInternalYearRef = useRef(null);
+  const wheelDeltaAccumRef = useRef(0);
+  const wheelLastStepAtRef = useRef(0);
+  const wheelIdleResetTimerRef = useRef(null);
+  const wheelIgnoreUntilRef = useRef(0);
+
+  const years = useMemo(() => {
+    const list = [];
+    for (let y = minYear; y <= maxYear; y += 1) list.push(y);
+    return list;
+  }, [minYear, maxYear]);
+
+  const clampIndex = (idx) => Math.max(0, Math.min(years.length - 1, idx));
+  const wheelHeight = visibleCount * itemHeight;
+  const centerOffset = Math.floor(visibleCount / 2);
+
+  const displayYears = useMemo(() => {
+    const top = new Array(padSlots).fill(null);
+    const bottom = new Array(padSlots).fill(null);
+    return [...top, ...years, ...bottom];
+  }, [years]);
+
+  const centeredDisplayIndex = centeredIndex + padSlots;
+  const targetDisplayIndex = targetIndex + padSlots;
+  const targetY = (centerOffset - targetDisplayIndex) * itemHeight;
+  const clampedFloatIndex = Math.max(0, Math.min(years.length - 1, centerFloatIndex));
+  const visualDisplayIndex = clampedFloatIndex + padSlots;
+  const lowerFloatIndex = Math.floor(clampedFloatIndex);
+  const upperFloatIndex = Math.ceil(clampedFloatIndex);
+  const centerProgress = clampedFloatIndex - lowerFloatIndex;
+
+  const getOverlayStyle = (offsetY) => {
+    const ratio = Math.max(0, 1 - Math.abs(offsetY) / itemHeight);
+    const eased = ratio * ratio;
+    const scale = 0.92 + 0.48 * eased;
+    const opacity = 0.22 + 0.78 * ratio;
+    const brightness = 0.85 + 0.25 * eased;
+    return {
+      transform: `translateY(${offsetY}px) scale(${scale})`,
+      opacity,
+      filter: `brightness(${brightness})`,
+    };
+  };
+
+  const emitSelection = (idx) => {
+    const finalIndex = clampIndex(idx);
+    const finalYear = years[finalIndex];
+    if (finalYear !== undefined) {
+      lastInternalYearRef.current = Number(finalYear);
+    }
+    setTargetIndex(finalIndex);
+    setCenteredIndex(finalIndex);
+    setCenterFloatIndex(finalIndex);
+    centeredIndexRef.current = finalIndex;
+    centerFloatRef.current = finalIndex;
+    isIntroAnimatingRef.current = true;
+  };
+
+  const stepSelection = (steps) => {
+    if (!years.length || steps === 0) return;
+    setTargetIndex((prev) => clampIndex(prev + steps));
+  };
+
+  useEffect(() => {
+    if (!years.length) return;
+    const sourceYear = Number.isFinite(Number(openInitialYear)) ? openInitialYear : value;
+    const idx = years.findIndex((y) => Number(y) === Number(sourceYear));
+    const syncIndex = idx >= 0 ? idx : Math.floor(years.length / 2);
+    const syncYear = years[syncIndex];
+
+    setTargetIndex(syncIndex);
+    setCenteredIndex(syncIndex);
+    setCenterFloatIndex(syncIndex);
+    centeredIndexRef.current = syncIndex;
+    centerFloatRef.current = syncIndex;
+    if (syncYear !== undefined) {
+      lastInternalYearRef.current = Number(syncYear);
+    }
+  }, [wheelResetToken, years.length, openInitialYear]);
+
+  useEffect(() => {
+    if (centeredIndex !== targetIndex) return;
+
+    const selectedYear = years[centeredIndex];
+    if (selectedYear === undefined) return;
+
+    if (Number(selectedYear) === lastInternalYearRef.current) return;
+    lastInternalYearRef.current = Number(selectedYear);
+    onChange(selectedYear);
+    onSettled?.(selectedYear);
+  }, [centeredIndex, targetIndex, years]);
+
+  useEffect(() => {
+    if (!years.length) return;
+    const idx = years.findIndex((y) => Number(y) === Number(value));
+    const initialIndex = idx >= 0 ? idx : Math.floor(years.length / 2);
+    emitSelection(initialIndex);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [years.length]);
+
+  useEffect(() => {
+    if (!years.length) return;
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) return;
+    if (numericValue === lastInternalYearRef.current) return;
+
+    const idx = years.findIndex((y) => Number(y) === Number(value));
+    if (idx >= 0 && idx !== targetIndex) {
+      setTargetIndex(idx);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
+  useEffect(() => {
+    const node = viewportRef.current;
+    if (!node) return;
+
+    // Evita que la inercia residual al abrir dispare cambios en los primeros ms.
+    wheelIgnoreUntilRef.current = Date.now() + 360;
+    wheelDeltaAccumRef.current = 0;
+    wheelLastStepAtRef.current = 0;
+
+    const handleWheelNative = (event) => {
+      event.preventDefault();
+
+      const now = Date.now();
+      if (now < wheelIgnoreUntilRef.current) return;
+
+      // Normaliza delta según el modo del dispositivo para un comportamiento estable.
+      const normalizedDelta =
+        event.deltaMode === 1
+          ? event.deltaY * 16
+          : event.deltaMode === 2
+            ? event.deltaY * wheelHeight
+            : event.deltaY;
+
+      // Filtra micro-jitter de touchpad para evitar temblor/saltos erraticos.
+      if (event.deltaMode === 0 && Math.abs(normalizedDelta) < 8) return;
+
+      wheelDeltaAccumRef.current += normalizedDelta;
+
+      // Ajuste fino: menos sensible para evitar que salte muchos años.
+      const threshold = 48;
+      if (Math.abs(wheelDeltaAccumRef.current) < threshold) return;
+
+      // Enfriamiento corto: evita múltiples pasos en un mismo "ataque" de eventos.
+      const cooldownMs = 95;
+      if (now - wheelLastStepAtRef.current < cooldownMs) return;
+
+      const direction = wheelDeltaAccumRef.current > 0 ? 1 : -1;
+      stepSelection(direction);
+      wheelLastStepAtRef.current = now;
+
+      // Reset estricto: cada tick efectivo mueve un solo año.
+      wheelDeltaAccumRef.current = 0;
+
+      if (wheelIdleResetTimerRef.current) clearTimeout(wheelIdleResetTimerRef.current);
+      wheelIdleResetTimerRef.current = setTimeout(() => {
+        wheelDeltaAccumRef.current = 0;
+      }, 140);
+    };
+
+    node.addEventListener('wheel', handleWheelNative, { passive: false });
+    return () => node.removeEventListener('wheel', handleWheelNative);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [years.length, wheelResetToken]);
+
+  useEffect(() => {
+    return () => {
+      wheelDeltaAccumRef.current = 0;
+      wheelLastStepAtRef.current = 0;
+      wheelIgnoreUntilRef.current = 0;
+      if (wheelIdleResetTimerRef.current) clearTimeout(wheelIdleResetTimerRef.current);
+    };
+  }, []);
+
+  return (
+    <div
+      className="relative rounded-xl border border-[#3D6DE0]/35 dark:border-[#4B67C0]/45 bg-white/70 dark:bg-slate-800/60 overflow-hidden transition-all duration-100"
+      style={{
+        height: `${wheelHeight}px`,
+        perspective: '1000px',
+        perspectiveOrigin: '50% 50%',
+        transformStyle: 'preserve-3d',
+      }}
+    >
+      <div
+        className="pointer-events-none absolute inset-x-0 z-10 border-y-2 border-[#3D6DE0]/60 dark:border-[#6B86DE]/70 bg-gradient-to-r from-[#3D6DE0]/15 to-[#3D6DE0]/15 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.35),inset_0_-1px_0_0_rgba(255,255,255,0.25)]"
+        style={{
+          top: `${centerOffset * itemHeight}px`,
+          height: `${itemHeight}px`,
+        }}
+      >
+        <div className="absolute inset-0 overflow-hidden">
+          <div className="relative h-full w-full flex items-center justify-center">
+            {years[lowerFloatIndex] !== undefined && (
+              <span
+                className="absolute tracking-wide font-extrabold text-[#1F3274] dark:text-white text-lg drop-shadow-[0_1px_2px_rgba(255,255,255,0.35)] dark:drop-shadow-lg"
+                style={getOverlayStyle(-centerProgress * itemHeight)}
+              >
+                {years[lowerFloatIndex]}
+              </span>
+            )}
+
+            {upperFloatIndex !== lowerFloatIndex && years[upperFloatIndex] !== undefined && (
+              <span
+                className="absolute tracking-wide font-extrabold text-[#1F3274] dark:text-white text-lg drop-shadow-[0_1px_2px_rgba(255,255,255,0.35)] dark:drop-shadow-lg"
+                style={getOverlayStyle((1 - centerProgress) * itemHeight)}
+              >
+                {years[upperFloatIndex]}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-white/70 via-white/30 to-transparent dark:from-slate-900/70 dark:via-slate-900/25 z-10" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-white/70 via-white/30 to-transparent dark:from-slate-900/70 dark:via-slate-900/25 z-10" />
+
+      <div
+        ref={viewportRef}
+        className="relative select-none overflow-hidden cursor-default"
+        style={{
+          height: '100%',
+          scrollSnapType: 'y mandatory',
+          scrollSnapStop: 'always',
+          touchAction: 'auto',
+        }}
+        tabIndex={0}
+        onKeyDown={(event) => {
+          if (event.repeat) return;
+          const key = event.key.toLowerCase();
+          if (key === 'w') {
+            event.preventDefault();
+            stepSelection(-1);
+          } else if (key === 's') {
+            event.preventDefault();
+            stepSelection(1);
+          } else if (key === 'enter') {
+            event.preventDefault();
+            const selectedYear = years[centeredIndex];
+            if (selectedYear !== undefined) onConfirm?.(selectedYear);
+          }
+        }}
+        onPointerDown={(event) => {
+          event.currentTarget.focus();
+        }}
+      >
+        <motion.div
+          className="flex flex-col"
+          initial={{ y: targetY + itemHeight * 2 }}
+          animate={{ y: targetY }}
+          transition={iosWheelTransition}
+          style={{ willChange: 'transform' }}
+          onUpdate={(latest) => {
+            const y = typeof latest === 'number' ? latest : latest?.y;
+            if (!Number.isFinite(y)) return;
+
+            const floatDisplayIndex = centerOffset - y / itemHeight;
+            const floatYearIndex = floatDisplayIndex - padSlots;
+            const boundedFloat = Math.max(0, Math.min(years.length - 1, floatYearIndex));
+            if (Math.abs(boundedFloat - centerFloatRef.current) > 0.005) {
+              centerFloatRef.current = boundedFloat;
+              setCenterFloatIndex(boundedFloat);
+            }
+
+            // Durante la intro solo animamos el overlay (entrada/salida), sin mover seleccion logica.
+            if (isIntroAnimatingRef.current) return;
+
+            const displayIndex = Math.round(centerOffset - y / itemHeight);
+            const idx = clampIndex(displayIndex - padSlots);
+            if (idx === centeredIndexRef.current) return;
+
+            // Histeresis direccional: evita oscilacion de indice por rebote del spring.
+            const current = centeredIndexRef.current;
+            const directionToTarget = Math.sign(targetIndex - current);
+            if (directionToTarget > 0 && idx <= current) return;
+            if (directionToTarget < 0 && idx >= current) return;
+            if (directionToTarget === 0) return;
+
+            centeredIndexRef.current = idx;
+            setCenteredIndex(idx);
+          }}
+          onAnimationComplete={() => {
+            if (!isIntroAnimatingRef.current) return;
+            isIntroAnimatingRef.current = false;
+            setCenterFloatIndex(centeredIndexRef.current);
+          }}
+        >
+          {displayYears.map((year, idx) => (
+            <YearWheelItem
+              key={year === null ? `spacer-${idx}` : year}
+              year={year}
+              distance={idx - visualDisplayIndex}
+              itemHeight={itemHeight}
+              onCenterClick={(clickedYear) => {
+                if (idx === centeredDisplayIndex) onConfirm?.(clickedYear);
+              }}
+            />
+          ))}
+        </motion.div>
+      </div>
+    </div>
+  );
+};
+
+const YearPickerField = ({ value, onChange, currentYear }) => {
+  const [open, setOpen] = useState(false);
+  const [manualMode, setManualMode] = useState(false);
+  const [manualYear, setManualYear] = useState(String(value || currentYear));
+  const [draftYear, setDraftYear] = useState(Number(value || currentYear));
+  const [pickerOpenToken, setPickerOpenToken] = useState(0);
+  const [pickerStartYear, setPickerStartYear] = useState(Number(currentYear));
+  const [popupManualYear, setPopupManualYear] = useState(String(value || currentYear));
+  const [popupHasError, setPopupHasError] = useState(false);
+  const [popupIsTyping, setPopupIsTyping] = useState(false);
+  const longPressTimerRef = useRef(null);
+  const popupValidationTimerRef = useRef(null);
+  const popupTypingTimerRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) {
+      setManualYear(String(value || currentYear));
+      setDraftYear(Number(value || currentYear));
+      setPopupManualYear(String(value || currentYear));
+      setPopupHasError(false);
+    }
+  }, [value, currentYear, open]);
+
+  useEffect(() => {
+    return () => {
+      if (popupValidationTimerRef.current) clearTimeout(popupValidationTimerRef.current);
+      if (popupTypingTimerRef.current) clearTimeout(popupTypingTimerRef.current);
+    };
+  }, []);
+
+  const minYear = 2010;
+  const maxYear = 2040;
+
+  const clampYear = (year) => Math.max(minYear, Math.min(maxYear, year));
+  const isValidYearInRange = (year) => Number.isFinite(year) && year >= minYear && year <= maxYear;
+  const actualCurrentYear = clampYear(new Date().getFullYear());
+
+  const commitManualYear = () => {
+    const parsed = Number.parseInt(manualYear, 10);
+    if (Number.isFinite(parsed)) {
+      const finalYear = clampYear(parsed);
+      setDraftYear(finalYear);
+      onChange(finalYear);
+    }
+    setManualMode(false);
+  };
+
+  const commitDraftAndClose = () => {
+    onChange(clampYear(Number(draftYear || currentYear)));
+    setOpen(false);
+  };
+
+  const applyPopupManualYear = (rawValue) => {
+    const parsed = Number.parseInt(rawValue, 10);
+    if (!isValidYearInRange(parsed)) return false;
+    setDraftYear(parsed);
+    onChange(parsed);
+    return true;
+  };
+
+  const startLongPress = () => {
+    longPressTimerRef.current = setTimeout(() => {
+      setManualMode(true);
+      setOpen(false);
+    }, 520);
+  };
+
+  const clearLongPress = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const openYearSelector = () => {
+    if (popupValidationTimerRef.current) clearTimeout(popupValidationTimerRef.current);
+    if (popupTypingTimerRef.current) clearTimeout(popupTypingTimerRef.current);
+    setDraftYear(actualCurrentYear);
+    setPickerStartYear(actualCurrentYear);
+    setPopupManualYear('');
+    setPopupHasError(false);
+    setPopupIsTyping(false);
+    setPickerOpenToken((prev) => prev + 1);
+    setOpen(true);
+  };
+
+  return (
+    <>
+      {!manualMode ? (
+        <button
+          type="button"
+          onClick={openYearSelector}
+          onDoubleClick={() => {
+            setManualMode(true);
+            setOpen(false);
+          }}
+          onMouseDown={startLongPress}
+          onMouseUp={clearLongPress}
+          onMouseLeave={clearLongPress}
+          className="w-full px-4 py-3 rounded-xl border border-[#3D6DE0]/35 dark:border-[#4B67C0]/45 bg-white/80 dark:bg-slate-800/75 text-slate-800 dark:text-slate-100 text-left flex items-center justify-between hover:border-[#3D6DE0]/70 transition-all"
+          title="Click para abrir ruleta. Doble click o click prolongado para escribir."
+        >
+          <span className="font-semibold">{draftYear}</span>
+          <span className="text-xs text-slate-500 dark:text-slate-400">Abrir selector</span>
+        </button>
+      ) : (
+        <input
+          autoFocus
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          value={manualYear}
+          onChange={(e) => setManualYear(e.target.value)}
+          onBlur={commitManualYear}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commitManualYear();
+            if (e.key === 'Escape') setManualMode(false);
+          }}
+          className="w-full px-4 py-3 rounded-xl border border-[#3D6DE0]/45 dark:border-[#4B67C0]/55 bg-white/85 dark:bg-slate-800/80 text-slate-900 dark:text-slate-100 text-center font-semibold focus:outline-none focus:ring-2 focus:ring-[#3D6DE0]/35"
+        />
+      )}
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            className="fixed inset-0 z-[90] flex items-center justify-center p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.14 }}
+          >
+            <div className="absolute inset-0 bg-black/35 backdrop-blur-[1px]" onClick={commitDraftAndClose} />
+            <motion.div
+              className="relative w-full max-w-xs rounded-2xl border border-[#3D6DE0]/35 dark:border-[#5B75CD]/55 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl shadow-2xl overflow-hidden"
+              initial={{ y: 14, scale: 0.98, opacity: 0 }}
+              animate={{ y: 0, scale: 1, opacity: 1 }}
+              exit={{ y: 10, scale: 0.99, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+            >
+            <div className="p-4">
+              <VerticalYearWheelPicker
+                key={`year-wheel-${pickerOpenToken}`}
+                value={Number(draftYear || currentYear)}
+                openInitialYear={pickerStartYear}
+                onChange={(year) => setDraftYear(Number(year))}
+                onSettled={(year) => onChange(Number(year))}
+                onConfirm={commitDraftAndClose}
+                wheelResetToken={pickerOpenToken}
+                minYear={minYear}
+                maxYear={maxYear}
+                visibleCount={5}
+                itemHeight={44}
+              />
+
+              <div className="mt-3 flex justify-center">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={popupManualYear}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setPopupManualYear(next);
+                    setPopupHasError(false);
+                    setPopupIsTyping(true);
+
+                    if (popupTypingTimerRef.current) clearTimeout(popupTypingTimerRef.current);
+                    popupTypingTimerRef.current = setTimeout(() => setPopupIsTyping(false), 420);
+
+                    applyPopupManualYear(next);
+
+                    if (popupValidationTimerRef.current) clearTimeout(popupValidationTimerRef.current);
+                    popupValidationTimerRef.current = setTimeout(() => {
+                      const parsed = Number.parseInt(next, 10);
+                      const isEmpty = next.trim() === '';
+                      setPopupHasError(!isEmpty && !isValidYearInRange(parsed));
+                    }, 5000);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      commitDraftAndClose();
+                    }
+                  }}
+                  className={`w-44 px-3 py-2 rounded-lg border bg-white/85 dark:bg-slate-800/80 text-slate-900 dark:text-slate-100 text-center text-sm font-semibold focus:outline-none focus:ring-2 transition-colors ${
+                    popupHasError
+                      ? 'border-red-500/90 dark:border-red-400/90 focus:ring-red-400/35'
+                      : 'border-[#3D6DE0]/45 dark:border-[#4B67C0]/55 focus:ring-[#3D6DE0]/35'
+                  } ${popupIsTyping ? 'animate-pulse' : ''}`}
+                  placeholder="Escribir año"
+                />
+              </div>
+
+              <p
+                className={`mt-3 text-[11px] ${
+                  popupHasError ? 'text-red-600 dark:text-red-400 font-semibold' : 'text-slate-500 dark:text-slate-400'
+                }`}
+              >
+                {popupHasError
+                  ? 'No se encontraron resultados para ese año. Intenta con un valor entre 2010 y 2040.'
+                  : 'Usa la rueda del mouse o escribe el año manualmente en el campo superior.'}
+              </p>
+            </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
+  );
+};
+
+const ChevronDown = ({ open = false }) => (
+  <div className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center">
+    <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-[#263F8A]/10 dark:bg-[#263F8A]/25 ring-1 ring-[#263F8A]/35 dark:ring-[#263F8A]/45">
+      <svg
+        className={`w-3 h-3 text-[#263F8A] dark:text-[#8EA0D9] transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+      </svg>
+    </span>
+  </div>
+);
+
+const CustomSelect = ({
+  value,
+  options,
+  onChange,
+  placeholder,
+  disabled = false,
+  emptyText = 'Sin opciones disponibles',
+  menuMaxHeight = 'max-h-56',
+}) => {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef(null);
+  const selected = options.find((opt) => opt.value?.toString() === value?.toString());
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, []);
+
+  const handlePick = (newValue) => {
+    onChange(newValue);
+    setOpen(false);
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => !disabled && setOpen((prev) => !prev)}
+        disabled={disabled}
+        className={`w-full text-left pl-3.5 pr-10 py-2.5 rounded-xl border bg-white dark:bg-slate-800 text-sm shadow-sm transition-all ${
+          disabled
+            ? 'border-slate-300/80 dark:border-slate-700 text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-70'
+            : open
+              ? 'border-[#263F8A] dark:border-[#3A56AF] ring-2 ring-[#263F8A]/35 dark:ring-[#3A56AF]/35 text-slate-900 dark:text-slate-100'
+              : 'border-[#263F8A]/45 dark:border-[#3A56AF]/60 hover:border-[#263F8A]/75 dark:hover:border-[#4B67C0] text-slate-800 dark:text-slate-100'
+        }`}
+      >
+        <span className="block truncate font-semibold">{selected ? selected.label : placeholder}</span>
+        <ChevronDown open={open} />
+      </button>
+
+      {open && !disabled && (
+        <div className={`absolute z-30 mt-1.5 w-full overflow-auto rounded-xl border border-[#263F8A]/40 dark:border-[#3A56AF]/60 bg-white dark:bg-slate-900 shadow-xl shadow-[#263F8A]/20 dark:shadow-black/35 ${menuMaxHeight}`}>
+          {options.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{emptyText}</div>
+          ) : (
+            options.map((opt) => {
+              const active = opt.value?.toString() === value?.toString();
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => handlePick(opt.value)}
+                  className={`w-full text-left px-3 py-1.5 text-sm transition-colors border-l-2 ${
+                    active
+                      ? 'bg-[#263F8A]/10 dark:bg-[#263F8A]/30 border-[#263F8A] dark:border-[#5C77CC] text-[#263F8A] dark:text-[#B6C3EC] font-semibold'
+                      : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/90'
+                  }`}
+                  title={opt.label}
+                >
+                  <span className="block truncate">{opt.label}</span>
+                </button>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const InputField = ({ label, name, type = 'text', value, onChange, required, error, ...props }) => (
   <div>
@@ -37,7 +793,542 @@ const InputField = ({ label, name, type = 'text', value, onChange, required, err
   </div>
 );
 
+const DatePickerField = ({ label, name, value, onDateChange, required, error, minDate, invalidSelectionMessage, onInvalidSelection, showErrorText = true, onFieldInteraction }) => {
+  const [open, setOpen] = useState(false);
+  const [openQuickPicker, setOpenQuickPicker] = useState(null);
+  const [draftDay, setDraftDay] = useState(null);
+  const [draftMonth, setDraftMonth] = useState(null);
+  const [draftYear, setDraftYear] = useState(null);
+  const [hasSelectedMonth, setHasSelectedMonth] = useState(false);
+  const [hasSelectedYear, setHasSelectedYear] = useState(false);
+  const containerRef = useRef(null);
+  const yearMenuRef = useRef(null);
+  const currentYearOptionRef = useRef(null);
+
+  const parseIsoDate = (iso) => {
+    if (!iso || typeof iso !== 'string') return null;
+    const parts = iso.split('-').map(Number);
+    if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return null;
+    const [year, month, day] = parts;
+    const d = new Date(year, month - 1, day);
+    if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) return null;
+    return d;
+  };
+
+  const toIsoDate = (dateObj) => {
+    const y = dateObj.getFullYear();
+    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const d = String(dateObj.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+
+  const formatDisplayDate = (iso) => {
+    const dateObj = parseIsoDate(iso);
+    if (!dateObj) return '';
+    const dd = String(dateObj.getDate()).padStart(2, '0');
+    const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const yyyy = dateObj.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  };
+
+  const parseDisplayDate = (display) => {
+    if (!display || typeof display !== 'string') return null;
+    const match = display.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!match) return null;
+    const [, dd, mm, yyyy] = match;
+    const day = Number(dd);
+    const month = Number(mm);
+    const year = Number(yyyy);
+    const d = new Date(year, month - 1, day);
+    if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) return null;
+    return d;
+  };
+
+  const [inputValue, setInputValue] = useState(formatDisplayDate(value));
+
+  useEffect(() => {
+    setInputValue(formatDisplayDate(value));
+  }, [value]);
+
+  const selectedDate = parseIsoDate(value);
+  const minAllowedDate = parseIsoDate(minDate);
+  const today = new Date();
+  const [visibleMonth, setVisibleMonth] = useState(
+    selectedDate ? new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1) : new Date(today.getFullYear(), today.getMonth(), 1)
+  );
+
+  useEffect(() => {
+    if (open) {
+      const base = selectedDate || today;
+      setVisibleMonth(new Date(base.getFullYear(), base.getMonth(), 1));
+      setDraftDay(null);
+      setDraftMonth(base.getMonth());
+      setDraftYear(base.getFullYear());
+      setHasSelectedMonth(false);
+      setHasSelectedYear(false);
+    } else {
+      setOpenQuickPicker(null);
+      setDraftDay(null);
+      setDraftMonth(null);
+      setDraftYear(null);
+      setHasSelectedMonth(false);
+      setHasSelectedYear(false);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    const handleOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+
+    if (open) {
+      document.addEventListener('mousedown', handleOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (openQuickPicker !== 'year') return;
+
+    const rafId = requestAnimationFrame(() => {
+      const menuEl = yearMenuRef.current;
+      const currentYearEl = currentYearOptionRef.current;
+      if (!menuEl || !currentYearEl) return;
+
+      const targetTop = currentYearEl.offsetTop - (menuEl.clientHeight / 2) + (currentYearEl.clientHeight / 2);
+      menuEl.scrollTop = Math.max(0, targetTop);
+    });
+
+    return () => cancelAnimationFrame(rafId);
+  }, [openQuickPicker]);
+
+  const weekDays = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+  const monthNames = [
+    'Enero',
+    'Febrero',
+    'Marzo',
+    'Abril',
+    'Mayo',
+    'Junio',
+    'Julio',
+    'Agosto',
+    'Septiembre',
+    'Octubre',
+    'Noviembre',
+    'Diciembre',
+  ];
+
+  const year = visibleMonth.getFullYear();
+  const month = visibleMonth.getMonth();
+  const currentYearRef = today.getFullYear();
+  const startYear = currentYearRef - 25;
+  const endYear = currentYearRef + 25;
+  const yearOptions = Array.from({ length: endYear - startYear + 1 }, (_, idx) => startYear + idx);
+  const monthOptions = monthNames.map((label, valueIndex) => ({ value: valueIndex, label }));
+  const firstDay = new Date(year, month, 1);
+  const offset = (firstDay.getDay() + 6) % 7;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  const calendarCells = [];
+  for (let i = 0; i < offset; i += 1) calendarCells.push(null);
+  for (let d = 1; d <= daysInMonth; d += 1) {
+    calendarCells.push(new Date(year, month, d));
+  }
+  while (calendarCells.length % 7 !== 0) calendarCells.push(null);
+
+  const isSameDate = (a, b) => (
+    a
+    && b
+    && a.getFullYear() === b.getFullYear()
+    && a.getMonth() === b.getMonth()
+    && a.getDate() === b.getDate()
+  );
+
+  const handlePickDate = (dateObj) => {
+    if (minAllowedDate && dateObj < minAllowedDate) {
+      if (invalidSelectionMessage) toast.error(invalidSelectionMessage);
+      if (onInvalidSelection) onInvalidSelection();
+      return;
+    }
+
+    const nextDay = dateObj.getDate();
+    setDraftDay(nextDay);
+
+    const monthCandidate = draftMonth ?? month;
+    const yearCandidate = draftYear ?? year;
+    const canCommit = Boolean(nextDay && hasSelectedMonth && hasSelectedYear && monthCandidate !== null && yearCandidate !== null);
+    if (!canCommit) return;
+
+    const maxDayForMonth = new Date(yearCandidate, monthCandidate + 1, 0).getDate();
+    if (nextDay > maxDayForMonth) return;
+
+    const finalDate = new Date(yearCandidate, monthCandidate, nextDay);
+    const iso = toIsoDate(finalDate);
+    onDateChange(name, iso, { skipRangeToast: true });
+    setInputValue(formatDisplayDate(iso));
+    setOpen(false);
+  };
+
+  const handleQuickPickMonth = (nextMonth) => {
+    const yearCandidate = draftYear ?? year;
+    setDraftMonth(nextMonth);
+    setHasSelectedMonth(true);
+    setVisibleMonth(new Date(yearCandidate, nextMonth, 1));
+    setOpenQuickPicker(null);
+
+    const dayCandidate = draftDay;
+    if (!dayCandidate || !hasSelectedYear || yearCandidate === null) return;
+
+    const maxDayForMonth = new Date(yearCandidate, nextMonth + 1, 0).getDate();
+    if (dayCandidate > maxDayForMonth) {
+      setDraftDay(null);
+      return;
+    }
+
+    const finalDate = new Date(yearCandidate, nextMonth, dayCandidate);
+    if (minAllowedDate && finalDate < minAllowedDate) {
+      if (invalidSelectionMessage) toast.error(invalidSelectionMessage);
+      if (onInvalidSelection) onInvalidSelection();
+      return;
+    }
+    const iso = toIsoDate(finalDate);
+    onDateChange(name, iso, { skipRangeToast: true });
+    setInputValue(formatDisplayDate(iso));
+    setOpen(false);
+  };
+
+  const handleQuickPickYear = (nextYear) => {
+    const monthCandidate = draftMonth ?? month;
+    setDraftYear(nextYear);
+    setHasSelectedYear(true);
+    setVisibleMonth(new Date(nextYear, monthCandidate, 1));
+    setOpenQuickPicker(null);
+
+    const dayCandidate = draftDay;
+    if (!dayCandidate || !hasSelectedMonth || monthCandidate === null) return;
+
+    const maxDayForMonth = new Date(nextYear, monthCandidate + 1, 0).getDate();
+    if (dayCandidate > maxDayForMonth) {
+      setDraftDay(null);
+      return;
+    }
+
+    const finalDate = new Date(nextYear, monthCandidate, dayCandidate);
+    if (minAllowedDate && finalDate < minAllowedDate) {
+      if (invalidSelectionMessage) toast.error(invalidSelectionMessage);
+      if (onInvalidSelection) onInvalidSelection();
+      return;
+    }
+    const iso = toIsoDate(finalDate);
+    onDateChange(name, iso, { skipRangeToast: true });
+    setInputValue(formatDisplayDate(iso));
+    setOpen(false);
+  };
+
+  const handleManualInputChange = (e) => {
+    const rawValue = e.target.value;
+    const onlyDigits = rawValue.replace(/\D/g, '').slice(0, 8);
+
+    let formatted = onlyDigits;
+    if (onlyDigits.length > 2) {
+      formatted = `${onlyDigits.slice(0, 2)}/${onlyDigits.slice(2)}`;
+    }
+    if (onlyDigits.length > 4) {
+      formatted = `${onlyDigits.slice(0, 2)}/${onlyDigits.slice(2, 4)}/${onlyDigits.slice(4)}`;
+    }
+
+    setInputValue(formatted);
+
+    if (formatted.length === 10) {
+      const parsed = parseDisplayDate(formatted);
+      if (parsed) {
+        if (minAllowedDate && parsed < minAllowedDate) {
+          if (onInvalidSelection) onInvalidSelection();
+          return;
+        }
+
+        onDateChange(name, toIsoDate(parsed), { skipRangeToast: true });
+        setVisibleMonth(new Date(parsed.getFullYear(), parsed.getMonth(), 1));
+      }
+    }
+
+    if (!formatted) {
+      onDateChange(name, '');
+    }
+  };
+
+  const handleManualInputBlur = () => {
+    if (!inputValue) {
+      onDateChange(name, '');
+      return;
+    }
+
+    const parsed = parseDisplayDate(inputValue);
+    if (parsed) {
+      if (minAllowedDate && parsed < minAllowedDate) {
+        if (invalidSelectionMessage) toast.error(invalidSelectionMessage);
+        if (onInvalidSelection) onInvalidSelection();
+        const previousDisplay = formatDisplayDate(value);
+        setInputValue(previousDisplay);
+        return;
+      }
+
+      const iso = toIsoDate(parsed);
+      onDateChange(name, iso, { skipRangeToast: true });
+      setInputValue(formatDisplayDate(iso));
+      setVisibleMonth(new Date(parsed.getFullYear(), parsed.getMonth(), 1));
+      return;
+    }
+
+    onDateChange(name, '');
+    setInputValue('');
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label} {required && <span className="text-red-500">*</span>}</label>
+      <div className={`relative w-full rounded-xl border-2 bg-slate-50 dark:bg-slate-700 shadow-sm ${error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'} focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent`}>
+        <input
+          type="text"
+          inputMode="numeric"
+          placeholder="dd/mm/aaaa"
+          value={inputValue}
+          onChange={handleManualInputChange}
+          onBlur={handleManualInputBlur}
+          onClick={() => onFieldInteraction?.()}
+          className="w-full bg-transparent text-slate-800 dark:text-white px-4 py-2.5 pr-12 rounded-xl focus:outline-none"
+          aria-label={label}
+        />
+        <button
+          type="button"
+          onClick={() => {
+            onFieldInteraction?.();
+            setOpen((prev) => !prev);
+          }}
+          className="absolute right-1.5 top-1/2 h-8 w-8 rounded-lg border border-[#3A56AF]/40 bg-[#2C4AAE] text-slate-100 hover:bg-[#233C8F] transition-colors"
+          style={{ transform: 'translateY(-50%)' }}
+          aria-label={`Abrir calendario de ${label}`}
+        >
+          <svg className="w-4 h-4 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10m-13 9h16a1 1 0 001-1V7a1 1 0 00-1-1H4a1 1 0 00-1 1v12a1 1 0 001 1z" />
+          </svg>
+        </button>
+      </div>
+
+      {open && (
+        <div
+          className="absolute z-50 mt-2 w-[268px] max-w-[calc(100vw-2rem)] rounded-xl border border-[#7F97E8]/45 bg-[#2C4AAE] backdrop-blur-xl shadow-2xl p-2.5"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <button
+              type="button"
+              onClick={() => setVisibleMonth(new Date(year, month - 1, 1))}
+              className="h-7 w-7 rounded-lg text-slate-100 hover:bg-white/15"
+              aria-label="Mes anterior"
+            >
+              ‹
+            </button>
+            <p className="text-xs font-semibold text-slate-100">
+              {monthNames[month]} {year}
+            </p>
+            <button
+              type="button"
+              onClick={() => setVisibleMonth(new Date(year, month + 1, 1))}
+              className="h-7 w-7 rounded-lg text-slate-100 hover:bg-white/15"
+              aria-label="Mes siguiente"
+            >
+              ›
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-1.5 mb-2">
+            <div className="relative">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpenQuickPicker((prev) => (prev === 'month' ? null : 'month'));
+                }}
+                className={`w-full h-8 text-left pl-2.5 pr-8 rounded-xl border bg-white dark:bg-slate-800 text-xs shadow-sm ${
+                  openQuickPicker === 'month'
+                    ? 'border-cyan-500/80 dark:border-cyan-500 ring-2 ring-cyan-400/40 dark:ring-cyan-500/35 text-slate-900 dark:text-slate-100'
+                    : 'border-cyan-300/70 dark:border-cyan-700/80 hover:border-cyan-500/70 dark:hover:border-cyan-500/80 text-slate-800 dark:text-slate-100'
+                }`}
+                aria-label="Seleccionar mes"
+              >
+                <span className="block truncate font-semibold">{hasSelectedMonth && draftMonth !== null ? monthNames[draftMonth] : 'Seleccione'}</span>
+                <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center">
+                  <span className="inline-flex h-4 w-4 items-center justify-center rounded-md bg-cyan-50 dark:bg-cyan-900/30 ring-1 ring-cyan-200/70 dark:ring-cyan-700/70">
+                    <svg
+                      className={`w-2.5 h-2.5 text-cyan-700 dark:text-cyan-300 transition-transform duration-200 ${openQuickPicker === 'month' ? 'rotate-180' : ''}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </span>
+                </span>
+              </button>
+
+              {openQuickPicker === 'month' && (
+                <div
+                  className="absolute z-40 mt-1.5 w-full max-h-40 overflow-auto rounded-xl border border-cyan-300 dark:border-cyan-700 bg-white dark:bg-slate-900 shadow-xl shadow-cyan-900/15 dark:shadow-black/35"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {monthOptions.map((opt) => {
+                    const active = hasSelectedMonth && draftMonth !== null && opt.value === draftMonth;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleQuickPickMonth(opt.value);
+                        }}
+                        className={`w-full text-left px-3 py-1.5 text-xs border-l-2 ${
+                          active
+                            ? 'bg-cyan-50 dark:bg-cyan-900/30 border-cyan-500 text-cyan-800 dark:text-cyan-200 font-semibold'
+                            : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-slate-800/90'
+                        }`}
+                      >
+                        <span className="block truncate">{opt.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="relative">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpenQuickPicker((prev) => (prev === 'year' ? null : 'year'));
+                }}
+                className={`w-full h-8 text-left pl-2.5 pr-8 rounded-xl border bg-white dark:bg-slate-800 text-xs shadow-sm ${
+                  openQuickPicker === 'year'
+                    ? 'border-cyan-500/80 dark:border-cyan-500 ring-2 ring-cyan-400/40 dark:ring-cyan-500/35 text-slate-900 dark:text-slate-100'
+                    : 'border-cyan-300/70 dark:border-cyan-700/80 hover:border-cyan-500/70 dark:hover:border-cyan-500/80 text-slate-800 dark:text-slate-100'
+                }`}
+                aria-label="Seleccionar año"
+              >
+                <span className="block truncate font-semibold">{hasSelectedYear && draftYear !== null ? draftYear : 'Seleccione'}</span>
+                <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center">
+                  <span className="inline-flex h-4 w-4 items-center justify-center rounded-md bg-cyan-50 dark:bg-cyan-900/30 ring-1 ring-cyan-200/70 dark:ring-cyan-700/70">
+                    <svg
+                      className={`w-2.5 h-2.5 text-cyan-700 dark:text-cyan-300 transition-transform duration-200 ${openQuickPicker === 'year' ? 'rotate-180' : ''}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </span>
+                </span>
+              </button>
+
+              {openQuickPicker === 'year' && (
+                <div
+                  ref={yearMenuRef}
+                  className="absolute z-40 mt-1.5 w-full max-h-40 overflow-auto rounded-xl border border-cyan-300 dark:border-cyan-700 bg-white dark:bg-slate-900 shadow-xl shadow-cyan-900/15 dark:shadow-black/35"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {yearOptions.map((y) => {
+                    const active = hasSelectedYear && draftYear !== null && y === draftYear;
+                    const isCurrentSystemYear = y === currentYearRef;
+                    return (
+                      <button
+                        key={y}
+                        ref={isCurrentSystemYear ? currentYearOptionRef : null}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleQuickPickYear(y);
+                        }}
+                        className={`w-full text-left px-3 py-1.5 text-xs border-l-2 ${
+                          active
+                            ? 'bg-cyan-50 dark:bg-cyan-900/30 border-cyan-500 text-cyan-800 dark:text-cyan-200 font-semibold'
+                            : isCurrentSystemYear
+                              ? 'bg-blue-50 dark:bg-blue-900/25 border-blue-400 text-blue-800 dark:text-blue-200 font-semibold hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-slate-800/90'
+                              : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-slate-800/90'
+                        }`}
+                      >
+                        <span className="flex items-center justify-between gap-2">
+                          <span className="block truncate">{y}</span>
+                          {isCurrentSystemYear && !active && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-200/80 dark:bg-blue-800/50 text-blue-900 dark:text-blue-100">
+                              Actual
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-7 gap-0.5 mb-1">
+            {weekDays.map((wd) => (
+              <div key={wd} className="text-center text-[10px] font-semibold text-slate-200/85 py-0.5">
+                {wd}
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-7 gap-0.5">
+            {calendarCells.map((cellDate, idx) => {
+              if (!cellDate) {
+                return <div key={`empty-${idx}`} className="h-8" />;
+              }
+
+              const isToday = isSameDate(cellDate, today);
+              const isSelected = draftDay !== null && cellDate.getDate() === draftDay;
+              const isDisabledByMinDate = Boolean(minAllowedDate && cellDate < minAllowedDate);
+
+              return (
+                <button
+                  key={toIsoDate(cellDate)}
+                  type="button"
+                  onClick={() => handlePickDate(cellDate)}
+                  className={`h-8 rounded-lg text-xs ${
+                    isSelected
+                      ? 'bg-[#4654E8] text-white font-semibold'
+                      : isDisabledByMinDate
+                        ? 'text-slate-300/50 cursor-not-allowed'
+                        : 'text-slate-100 hover:bg-white/15'
+                  } ${isToday && !isSelected ? 'border border-white/55' : 'border border-transparent'}`}
+                >
+                  {cellDate.getDate()}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {error && showErrorText && <p className="text-xs text-red-600 mt-1">{error}</p>}
+    </div>
+  );
+};
+
 function ListaCalendarios() {
+  const PROJECT_RANGE_TOAST_ID = 'project-range-validation';
+  const PROJECT_ORDER_TOAST_ID = 'project-order-validation';
+  const lastProjectRangeInvalidRef = useRef(false);
+  const lastProjectOrderInvalidRef = useRef(false);
   const [calendarios, setCalendarios] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -47,10 +1338,187 @@ function ListaCalendarios() {
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [calendarioToDelete, setCalendarioToDelete] = useState(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleteImpact, setDeleteImpact] = useState({
+    loading: false,
+    planificaciones: 0,
+    informes: 0,
+    cargas_horarias: 0,
+    failed: false,
+    detail: '',
+  });
+  const [showDependencyWarningModal, setShowDependencyWarningModal] = useState(false);
+
+  const [showToggleModal, setShowToggleModal] = useState(false);
+  const [calendarioToToggle, setCalendarioToToggle] = useState(null);
 
   const [formData, setFormData] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
+
+  const periodoOptions = [
+    { value: '1', label: 'Primer Semestre' },
+    { value: '2', label: 'Segundo Semestre' },
+    { value: 'anual', label: 'Anual' },
+  ];
+
+  const currentYear = new Date().getFullYear();
+
+  const buildInitialFormData = () => ({
+    gestion: new Date().getFullYear(),
+    periodo: '1',
+    fecha_inicio: '',
+    fecha_fin: '',
+    fecha_inicio_presentacion_proyectos: '',
+    fecha_limite_presentacion_proyectos: '',
+    semanas_efectivas: 16,
+    activo: false,
+  });
+
+  const parseDateValue = (rawValue) => {
+    if (!rawValue || typeof rawValue !== 'string') return null;
+
+    const isoMatch = rawValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (isoMatch) {
+      const [, yyyy, mm, dd] = isoMatch;
+      const date = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+      if (
+        date.getFullYear() === Number(yyyy)
+        && date.getMonth() === Number(mm) - 1
+        && date.getDate() === Number(dd)
+      ) {
+        return date;
+      }
+      return null;
+    }
+
+    const displayMatch = rawValue.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (displayMatch) {
+      const [, dd, mm, yyyy] = displayMatch;
+      const date = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+      if (
+        date.getFullYear() === Number(yyyy)
+        && date.getMonth() === Number(mm) - 1
+        && date.getDate() === Number(dd)
+      ) {
+        return date;
+      }
+      return null;
+    }
+
+    return null;
+  };
+
+  const toIsoString = (dateObj) => {
+    const y = dateObj.getFullYear();
+    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const d = String(dateObj.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+
+  const sortCalendarios = (items) => (
+    [...items].sort((a, b) => b.gestion - a.gestion || b.periodo.localeCompare(a.periodo))
+  );
+
+  const extractValidationMessage = (data) => {
+    if (!data) return 'Datos inválidos.';
+    if (typeof data === 'string') return data;
+    if (typeof data?.error === 'string') return data.error;
+    if (typeof data?.detail === 'string') return data.detail;
+    if (Array.isArray(data?.non_field_errors) && data.non_field_errors.length > 0) {
+      return String(data.non_field_errors[0]);
+    }
+
+    if (typeof data === 'object') {
+      const firstKey = Object.keys(data)[0];
+      const firstValue = data[firstKey];
+      if (Array.isArray(firstValue) && firstValue.length > 0) return String(firstValue[0]);
+      if (typeof firstValue === 'string') return firstValue;
+      if (typeof firstValue === 'object' && firstValue !== null) {
+        const nested = Object.values(firstValue)[0];
+        if (Array.isArray(nested) && nested.length > 0) return String(nested[0]);
+        if (typeof nested === 'string') return nested;
+      }
+    }
+
+    return 'Datos inválidos.';
+  };
+
+  const fechaInicioDate = parseDateValue(formData.fecha_inicio);
+  const fechaFinDate = parseDateValue(formData.fecha_fin);
+  const proyectoInicioDate = parseDateValue(formData.fecha_inicio_presentacion_proyectos);
+  const proyectoFinDate = parseDateValue(formData.fecha_limite_presentacion_proyectos);
+
+  const endDateErrorMessage = 'La fecha de finalización no puede ser anterior a la de inicio';
+  const activeCalendarEditWarning = 'ATENCIÓN: Estás editando un calendario en uso. Cambiar las fechas límite puede afectar la visibilidad de los formularios para los docentes.';
+  const criticalProjectRangeMessage = 'Error Crítico: el rango del semestre deja fechas de proyectos fuera del periodo académico. Corrige las fechas antes de guardar.';
+
+  const isDateRangeInvalid = Boolean(
+    fechaInicioDate
+    && fechaFinDate
+    && fechaFinDate.getTime() < fechaInicioDate.getTime()
+  );
+  const projectRangeWarning = 'La presentación de proyectos debe ocurrir dentro del periodo académico seleccionado';
+  const projectOrderErrorMessage = 'La fecha límite de proyectos debe ser posterior a la fecha de inicio';
+  const isProjectOrderInvalid = Boolean(
+    proyectoInicioDate
+    && proyectoFinDate
+    && proyectoFinDate.getTime() <= proyectoInicioDate.getTime()
+  );
+  const projectStartOutOfRange = Boolean(
+    fechaInicioDate
+    && fechaFinDate
+    && proyectoInicioDate
+    && (
+      proyectoInicioDate.getTime() < fechaInicioDate.getTime()
+      || proyectoInicioDate.getTime() > fechaFinDate.getTime()
+    )
+  );
+  const projectEndOutOfRange = Boolean(
+    fechaInicioDate
+    && fechaFinDate
+    && proyectoFinDate
+    && (
+      proyectoFinDate.getTime() < fechaInicioDate.getTime()
+      || proyectoFinDate.getTime() > fechaFinDate.getTime()
+    )
+  );
+  const isProjectRangeInvalid = Boolean(projectStartOutOfRange || projectEndOutOfRange);
+  const isEditingActiveCalendar = Boolean(calendarioSeleccionado?.activo);
+  const isCriticalProjectRangeConflict = Boolean(isEditingActiveCalendar && isProjectRangeInvalid);
+  const isFormReady = Boolean(
+    formData.gestion
+    && formData.periodo
+    && formData.fecha_inicio
+    && formData.fecha_fin
+    && formData.fecha_inicio_presentacion_proyectos
+    && formData.fecha_limite_presentacion_proyectos
+    && formData.semanas_efectivas !== ''
+    && formData.semanas_efectivas !== null
+    && formData.semanas_efectivas !== undefined
+    && !isDateRangeInvalid
+    && !isProjectRangeInvalid
+    && !isProjectOrderInvalid
+  );
+  const isSaveBlocked = Boolean(isSubmitting || !isFormReady || isProjectOrderInvalid);
+
+  useEffect(() => {
+    const startDate = parseDateValue(formData.fecha_inicio);
+    const endDate = parseDateValue(formData.fecha_fin);
+    if (!startDate || !endDate) return;
+
+    const startMs = startDate.getTime();
+    const endMs = endDate.getTime();
+    if (Number.isNaN(startMs) || Number.isNaN(endMs) || endMs < startMs) return;
+
+    const autoWeeks = Math.ceil((endMs - startMs) / (1000 * 60 * 60 * 24 * 7));
+
+    setFormData((prev) => {
+      const currentWeeks = Number(prev.semanas_efectivas);
+      if (currentWeeks === autoWeeks) return prev;
+      return { ...prev, semanas_efectivas: autoWeeks };
+    });
+  }, [formData.fecha_inicio, formData.fecha_fin]);
 
   useEffect(() => {
     cargarCalendarios();
@@ -72,16 +1540,16 @@ function ListaCalendarios() {
 
   const abrirModal = (calendario = null) => {
     setCalendarioSeleccionado(calendario);
-    setFormData({
-      gestion: calendario?.gestion || new Date().getFullYear(),
-      periodo: calendario?.periodo || '1',
-      fecha_inicio: calendario?.fecha_inicio || '',
-      fecha_fin: calendario?.fecha_fin || '',
-      fecha_inicio_presentacion_proyectos: calendario?.fecha_inicio_presentacion_proyectos || '',
-      fecha_limite_presentacion_proyectos: calendario?.fecha_limite_presentacion_proyectos || '',
-      semanas_efectivas: calendario?.semanas_efectivas || 16,
-      activo: calendario?.activo || false,
-    });
+    setFormData(calendario ? {
+      gestion: calendario.gestion,
+      periodo: calendario.periodo,
+      fecha_inicio: calendario.fecha_inicio,
+      fecha_fin: calendario.fecha_fin,
+      fecha_inicio_presentacion_proyectos: calendario.fecha_inicio_presentacion_proyectos,
+      fecha_limite_presentacion_proyectos: calendario.fecha_limite_presentacion_proyectos,
+      semanas_efectivas: calendario.semanas_efectivas,
+      activo: calendario.activo,
+    } : buildInitialFormData());
     setErrors({});
     setShowModal(true);
   };
@@ -94,30 +1562,235 @@ function ListaCalendarios() {
     }));
   };
 
+  const handlePeriodoChange = (periodo) => {
+    setFormData((prev) => ({ ...prev, periodo }));
+  };
+
+  const handleGestionChange = (gestion) => {
+    setFormData((prev) => ({ ...prev, gestion }));
+  };
+
+  const handleDateFieldChange = (name, isoDate, options = {}) => {
+    const { skipRangeToast = false } = options;
+    const normalized = isoDate
+      ? (() => {
+          const parsed = parseDateValue(isoDate);
+          return parsed ? toIsoString(parsed) : '';
+        })()
+      : '';
+    let accepted = true;
+
+    setFormData((prev) => {
+      if (
+        name === 'fecha_fin'
+        && normalized
+        && prev.fecha_inicio
+      ) {
+        const nextEnd = parseDateValue(normalized);
+        const currentStart = parseDateValue(prev.fecha_inicio);
+        if (nextEnd && currentStart && nextEnd.getTime() < currentStart.getTime()) {
+          accepted = false;
+          return prev;
+        }
+      }
+
+      return {
+        ...prev,
+        [name]: normalized,
+      };
+    });
+
+    if (!accepted) {
+      if (!skipRangeToast) {
+        toast.error(endDateErrorMessage);
+      }
+      setErrors((prev) => ({
+        ...prev,
+        fecha_fin: endDateErrorMessage,
+        fecha_inicio: endDateErrorMessage,
+      }));
+      return false;
+    }
+
+    setErrors((prev) => {
+      if (!prev.fecha_fin && !prev.fecha_inicio) return prev;
+      const next = { ...prev };
+      delete next.fecha_fin;
+      delete next.fecha_inicio;
+      return next;
+    });
+
+    if (
+      name === 'fecha_inicio_presentacion_proyectos'
+      || name === 'fecha_limite_presentacion_proyectos'
+    ) {
+      const nextProjectDate = parseDateValue(normalized);
+      const currentStart = parseDateValue(formData.fecha_inicio);
+      const currentEnd = parseDateValue(formData.fecha_fin);
+      if (
+        nextProjectDate
+        && currentStart
+        && currentEnd
+        && (
+          nextProjectDate.getTime() < currentStart.getTime()
+          || nextProjectDate.getTime() > currentEnd.getTime()
+        )
+      ) {
+        toast.error(projectRangeWarning, { id: PROJECT_RANGE_TOAST_ID });
+      } else {
+        toast.dismiss(PROJECT_RANGE_TOAST_ID);
+      }
+    }
+
+    return true;
+  };
+
+  const notifyProjectRangeIfInvalid = (fieldName) => {
+    // Limpia cualquier notificación anterior mientras el usuario vuelve a elegir fecha.
+    toast.dismiss(PROJECT_RANGE_TOAST_ID);
+  };
+
+  useEffect(() => {
+    if (isProjectRangeInvalid && !lastProjectRangeInvalidRef.current) {
+      toast.error(projectRangeWarning, { id: PROJECT_RANGE_TOAST_ID });
+    }
+    if (!isProjectRangeInvalid) {
+      toast.dismiss(PROJECT_RANGE_TOAST_ID);
+    }
+
+    if (isProjectOrderInvalid && !lastProjectOrderInvalidRef.current) {
+      toast.error('Error: El cierre de proyectos no puede ser antes de la apertura', { id: PROJECT_ORDER_TOAST_ID });
+    }
+    if (!isProjectOrderInvalid) {
+      toast.dismiss(PROJECT_ORDER_TOAST_ID);
+    }
+
+    if (!isProjectRangeInvalid && !isProjectOrderInvalid) {
+      setErrors((prev) => {
+        if (!prev.fecha_inicio_presentacion_proyectos && !prev.fecha_limite_presentacion_proyectos) {
+          return prev;
+        }
+        const next = { ...prev };
+        delete next.fecha_inicio_presentacion_proyectos;
+        delete next.fecha_limite_presentacion_proyectos;
+        return next;
+      });
+    }
+
+    lastProjectRangeInvalidRef.current = isProjectRangeInvalid;
+    lastProjectOrderInvalidRef.current = isProjectOrderInvalid;
+  }, [isProjectRangeInvalid, isProjectOrderInvalid]);
+
+  const handleActivoSwitchChange = () => {
+    setFormData((prev) => ({ ...prev, activo: !prev.activo }));
+  };
+
+  const resetAndCloseModal = () => {
+    setFormData(buildInitialFormData());
+    setErrors({});
+    setCalendarioSeleccionado(null);
+    setShowModal(false);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (isProjectOrderInvalid) {
+      toast.error('Error: El cierre de proyectos no puede ser antes de la apertura');
+      setErrors((prev) => ({
+        ...prev,
+        fecha_inicio_presentacion_proyectos: projectOrderErrorMessage,
+        fecha_limite_presentacion_proyectos: projectOrderErrorMessage,
+      }));
+      return;
+    }
+
+    if (isCriticalProjectRangeConflict) {
+      toast.error(criticalProjectRangeMessage);
+      setErrors((prev) => ({
+        ...prev,
+        fecha_inicio_presentacion_proyectos: criticalProjectRangeMessage,
+        fecha_limite_presentacion_proyectos: criticalProjectRangeMessage,
+      }));
+      return;
+    }
+
+    if (!isFormReady) {
+      toast.error('Revisa los errores en las fechas antes de continuar');
+    }
+
+    if (isDateRangeInvalid) {
+      setErrors((prev) => ({
+        ...prev,
+        fecha_inicio: endDateErrorMessage,
+        fecha_fin: endDateErrorMessage,
+      }));
+      return;
+    }
+
+    if (isProjectRangeInvalid) {
+      toast.error(projectRangeWarning);
+      return;
+    }
+
     setIsSubmitting(true);
     setErrors({});
     
     const payload = { ...formData, gestion: parseInt(formData.gestion), semanas_efectivas: parseInt(formData.semanas_efectivas) };
 
+    const duplicateExists = calendarios.some((cal) => (
+      Number(cal.gestion) === Number(payload.gestion)
+      && String(cal.periodo) === String(payload.periodo)
+      && Number(cal.id) !== Number(calendarioSeleccionado?.id || 0)
+    ));
+
+    if (duplicateExists) {
+      const duplicateMsg = 'Ya existe un calendario para este periodo';
+      setErrors((prev) => ({ ...prev, gestion: duplicateMsg, periodo: duplicateMsg }));
+      toast.error(duplicateMsg);
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
       if (calendarioSeleccionado) {
         await api.put(`/calendarios/${calendarioSeleccionado.id}/`, payload);
+        await cargarCalendarios();
         toast.success('Calendario actualizado correctamente');
+        resetAndCloseModal();
       } else {
         await api.post('/calendarios/', payload);
-        toast.success('Calendario creado correctamente');
+        await cargarCalendarios();
+        toast.success(`Calendario Académico ${payload.gestion}-${payload.periodo} creado exitosamente. Ahora puedes asignar Fondos de Tiempo.`);
+        resetAndCloseModal();
       }
-      setShowModal(false);
-      cargarCalendarios();
     } catch (err) {
       console.error(err);
+      const statusCode = err.response?.status;
       const apiErrors = err.response?.data;
       if (apiErrors) {
-        setErrors(apiErrors);
-        const errorMsg = Object.values(apiErrors).flat().join(' ');
-        toast.error(`Error: ${errorMsg}`);
+        if (statusCode === 400) {
+          const validationMessage = extractValidationMessage(apiErrors);
+          const duplicateText = validationMessage.toLowerCase();
+          if (duplicateText.includes('unique') || duplicateText.includes('already exists') || duplicateText.includes('ya existe')) {
+            const duplicateMsg = 'Ya existe un calendario para este periodo';
+            setErrors((prev) => ({ ...prev, gestion: duplicateMsg, periodo: duplicateMsg }));
+            toast.error(`ERROR DE VALIDACIÓN: ${duplicateMsg}`);
+            return;
+          }
+
+          if (apiErrors?.details && typeof apiErrors.details === 'object') {
+            setErrors(apiErrors.details);
+          } else if (typeof apiErrors === 'object') {
+            setErrors(apiErrors);
+          }
+
+          toast.error(`ERROR DE VALIDACIÓN: ${validationMessage}`);
+          return;
+        }
+
+        const fallbackError = extractValidationMessage(apiErrors);
+        toast.error(`Error: ${fallbackError}`);
       } else {
         toast.error('Ocurrió un error inesperado.');
       }
@@ -126,36 +1799,121 @@ function ListaCalendarios() {
     }
   };
 
-  const handleSetActivo = async (calendarioId) => {
-    toast.loading('Activando calendario...');
+  const handleToggleActivo = (calendario) => {
+    setCalendarioToToggle(calendario);
+    setShowToggleModal(true);
+  };
+
+  const openDependencyWarning = (calendario, impactData, customDetail) => {
+    setCalendarioToDelete(calendario);
+    setDeleteImpact({
+      loading: false,
+      planificaciones: impactData?.planificaciones || 0,
+      informes: impactData?.informes || 0,
+      cargas_horarias: impactData?.cargas_horarias || 0,
+      failed: false,
+      detail: customDetail || '',
+    });
+    setShowDependencyWarningModal(true);
+  };
+
+  const closeDeleteModal = () => {
+    setShowDeleteModal(false);
+    setCalendarioToDelete(null);
+    setDeleteConfirmText('');
+    setDeleteImpact({
+      loading: false,
+      planificaciones: 0,
+      informes: 0,
+      cargas_horarias: 0,
+      failed: false,
+      detail: '',
+    });
+  };
+
+  const confirmarToggleActivo = async () => {
+    if (!calendarioToToggle) return;
+    toast.loading(calendarioToToggle.activo ? 'Desactivando calendario...' : 'Activando calendario...');
     try {
-      await api.patch(`/calendarios/${calendarioId}/`, { activo: true });
+      await api.patch(`/calendarios/${calendarioToToggle.id}/`, { activo: !calendarioToToggle.activo });
       toast.dismiss();
-      toast.success('Calendario activado correctamente.');
+      toast.success(`Calendario ${calendarioToToggle.activo ? 'desactivado' : 'activado'} correctamente.`);
+      setShowToggleModal(false);
+      setCalendarioToToggle(null);
       cargarCalendarios();
     } catch (err) {
       toast.dismiss();
-      toast.error('Error al activar el calendario.');
+      toast.error('Error al cambiar el estado del calendario.');
       console.error(err);
     }
   };
 
-  const eliminarCalendario = (calendario) => {
-    setCalendarioToDelete(calendario);
-    setShowDeleteModal(true);
+  const eliminarCalendario = async (calendario) => {
+    if (!calendario?.id) return;
+
+    try {
+      const response = await api.get(`/calendarios/${calendario.id}/dependencias/`);
+      const deps = response.data || {};
+
+      if (deps.can_delete) {
+        setCalendarioToDelete(calendario);
+        setDeleteConfirmText('');
+        setDeleteImpact({
+          loading: false,
+          planificaciones: deps.planificaciones || 0,
+          informes: deps.informes || 0,
+          cargas_horarias: deps.cargas_horarias || 0,
+          failed: false,
+          detail: '',
+        });
+        setShowDeleteModal(true);
+        return;
+      }
+
+      openDependencyWarning(
+        calendario,
+        deps,
+        `ERROR DE INTEGRIDAD: No se puede eliminar el calendario ${calendario.gestion}-${calendario.periodo_display} porque aún tiene ${deps.planificaciones || 0} planificaciones y ${deps.informes || 0} informes vinculados.`
+      );
+    } catch (err) {
+      console.error('Error verificando dependencias del calendario:', err);
+      toast.error('No se pudo verificar dependencias del calendario. Intenta nuevamente.');
+    }
   };
 
   const confirmarEliminar = async () => {
     if (!calendarioToDelete) return;
+
+    const calendarioLabel = `${calendarioToDelete?.gestion || ''} - ${calendarioToDelete?.periodo_display || ''}`;
+    if (deleteConfirmText !== calendarioLabel) {
+      toast.error('Debes escribir exactamente el nombre del calendario para confirmar');
+      return;
+    }
+
+    const existeEnEstado = calendarios.some((cal) => cal.id === calendarioToDelete.id);
+    if (!existeEnEstado) {
+      toast.error('El calendario ya no existe en la lista actual.');
+      closeDeleteModal();
+      return;
+    }
+
     try {
       await api.delete(`/calendarios/${calendarioToDelete.id}/`);
+
+      // Sincronización inmediata de UI para evitar doble borrado sobre un elemento ya eliminado.
+      setCalendarios((prev) => prev.filter((cal) => cal.id !== calendarioToDelete.id));
       toast.success('Calendario eliminado correctamente');
-      cargarCalendarios();
-      setShowDeleteModal(false);
-      setCalendarioToDelete(null);
+      closeDeleteModal();
     } catch (err) {
       console.error(err);
-      toast.error('Error al eliminar: ' + (err.response?.data?.detail || err.message));
+      const apiData = err.response?.data;
+      if (apiData?.code === 'protected_error') {
+        const deps = apiData?.dependencias || {};
+        closeDeleteModal();
+        openDependencyWarning(calendarioToDelete, deps, apiData?.detail);
+        return;
+      }
+      toast.error('Error al eliminar: ' + (apiData?.detail || err.message));
     }
   };
 
@@ -192,7 +1950,7 @@ function ListaCalendarios() {
 
         <div className="space-y-4">
           {calendarios.map((cal) => (
-            <div key={cal.id} className={`bg-white dark:bg-slate-800 rounded-2xl border-2 shadow-md hover:shadow-xl transition-all duration-200 ${cal.activo ? 'border-green-500 dark:border-green-600 ring-4 ring-green-500/20' : 'border-slate-300 dark:border-slate-700'}`}>
+            <div key={cal.id} className={`rounded-2xl border backdrop-blur-sm shadow-md transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl ${cal.activo ? 'bg-white/90 dark:bg-slate-800/85 border-green-400/70 dark:border-green-500/70 ring-2 ring-green-400/30' : 'bg-white/80 dark:bg-slate-800/75 border-slate-300/80 dark:border-slate-700/70 hover:border-[#3D6DE0]/45'}`}>
               <div className="p-5">
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                   <div className="flex items-center gap-4 flex-1">
@@ -200,9 +1958,16 @@ function ListaCalendarios() {
                       {cal.gestion}
                     </div>
                     <div>
-                      <h3 className="text-lg font-bold text-blue-600 dark:text-white">
-                        Gestión {cal.gestion} - {cal.periodo_display}
-                      </h3>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-lg font-bold text-blue-600 dark:text-white">
+                          Gestión {cal.gestion} - {cal.periodo_display}
+                        </h3>
+                        {cal.activo && (
+                          <span className="px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wide bg-emerald-500 text-white shadow-md shadow-emerald-500/40">
+                            Activo
+                          </span>
+                        )}
+                      </div>
                       <div className="flex flex-wrap items-center gap-2 mt-2 text-sm text-slate-600 dark:text-slate-400">
                         <span>🗓️ {new Date(cal.fecha_inicio).toLocaleDateString()} - {new Date(cal.fecha_fin).toLocaleDateString()}</span>
                         <span>|</span>
@@ -210,18 +1975,33 @@ function ListaCalendarios() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {cal.activo ? (
-                      <span className="px-4 py-2 rounded-lg text-sm font-bold bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-2 border-green-300 dark:border-green-700 flex items-center gap-2">
-                        <CheckCircleIcon className="w-5 h-5" /> Activo
+                  <div className="flex items-center gap-2 flex-wrap justify-end">
+                    <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-[#263F8A]/10 dark:bg-[#263F8A]/25 border-2 border-[#263F8A]/40 dark:border-[#3A56AF]/55">
+                      <ToggleSwitch
+                        isActive={cal.activo}
+                        onChange={() => handleToggleActivo(cal)}
+                      />
+                      <span className="text-sm font-semibold">
+                        {cal.activo
+                          ? <span className="text-emerald-600 dark:text-emerald-400">Activo</span>
+                          : <span className="text-amber-600 dark:text-amber-400">Inactivo</span>
+                        }
                       </span>
-                    ) : (
-                      <button onClick={() => handleSetActivo(cal.id)} className="px-4 py-2 rounded-lg text-sm font-semibold bg-slate-200 dark:bg-slate-700 hover:bg-green-100 dark:hover:bg-green-900/30 text-slate-700 dark:text-slate-300 hover:text-green-700 dark:hover:text-green-300 transition-colors">
-                        Activar
-                      </button>
-                    )}
-                    <button onClick={() => abrirModal(cal)} className="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700"><PencilIcon className="w-5 h-5 text-slate-600 dark:text-slate-400" /></button>
-                    <button onClick={() => eliminarCalendario(cal)} className="p-2 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30"><TrashIcon className="w-5 h-5 text-red-500" /></button>
+                    </div>
+                    <button
+                      onClick={() => abrirModal(cal)}
+                      className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 text-white text-sm font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105"
+                    >
+                      <PencilIcon className="w-4 h-4" />
+                      <span>Editar</span>
+                    </button>
+                    <button
+                      onClick={() => eliminarCalendario(cal)}
+                      className="flex items-center justify-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 dark:bg-amber-700 dark:hover:bg-amber-800 text-white text-sm font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105"
+                    >
+                      <TrashIcon className="w-4 h-4" />
+                      <span>Eliminar</span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -231,39 +2011,129 @@ function ListaCalendarios() {
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="px-6 py-4 border-b-2 border-slate-300 dark:border-slate-700">
-              <h3 className="text-xl font-bold text-blue-600 dark:text-white">
-                {calendarioSeleccionado ? 'Editar Calendario' : 'Nuevo Calendario'}
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in" style={{ animationDuration: '160ms' }}>
+          <div className="bg-white/75 dark:bg-slate-900/70 backdrop-blur-xl rounded-2xl border border-white/50 dark:border-slate-600/50 shadow-2xl max-w-3xl w-full max-h-[98vh] md:max-h-[95vh] overflow-visible animate-slide-up" style={{ animationDuration: '180ms' }}>
+            <div className="px-6 py-4 border-b border-[#7F97E8]/45 bg-[#2C4AAE] rounded-t-2xl">
+              <h3 className="text-xl font-bold text-slate-100 flex items-center gap-2">
+                {calendarioSeleccionado ? '✏️ Editar Calendario' : '➕ Nuevo Calendario'}
               </h3>
             </div>
-            <form onSubmit={handleSubmit} className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <InputField label="Gestión (Año)" name="gestion" type="number" value={formData.gestion} onChange={handleChange} required error={errors.gestion} />
+            <form onSubmit={handleSubmit} className="p-5 md:p-6">
+              {isEditingActiveCalendar && (
+                <div className="mb-4 rounded-xl border border-red-700/70 bg-red-200/70 dark:bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-900 dark:text-red-200">
+                  {activeCalendarEditWarning}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
+                <div>
+                  <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Gestión (Año)</label>
+                  <YearPickerField
+                    value={Number(formData.gestion || currentYear)}
+                    onChange={handleGestionChange}
+                    currentYear={currentYear}
+                  />
+                  {errors.gestion && <p className="text-xs text-red-600 mt-1">{errors.gestion}</p>}
+                </div>
                 <div>
                   <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Periodo</label>
-                  <select name="periodo" value={formData.periodo} onChange={handleChange} className="w-full px-4 py-2.5 rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white border-slate-300 dark:border-slate-600">
-                    <option value="1">Primer Semestre</option>
-                    <option value="2">Segundo Semestre</option>
-                    <option value="anual">Anual</option>
-                  </select>
+                  <SegmentedOptions
+                    options={periodoOptions}
+                    value={formData.periodo}
+                    onChange={handlePeriodoChange}
+                    className="grid-cols-3"
+                  />
                   {errors.periodo && <p className="text-xs text-red-600 mt-1">{errors.periodo}</p>}
                 </div>
-                <InputField label="Fecha de Inicio" name="fecha_inicio" type="date" value={formData.fecha_inicio} onChange={handleChange} required error={errors.fecha_inicio} />
-                <InputField label="Fecha de Fin" name="fecha_fin" type="date" value={formData.fecha_fin} onChange={handleChange} required error={errors.fecha_fin} />
-                <InputField label="Inicio Presentación Proyectos" name="fecha_inicio_presentacion_proyectos" type="date" value={formData.fecha_inicio_presentacion_proyectos} onChange={handleChange} required error={errors.fecha_inicio_presentacion_proyectos} />
-                <InputField label="Límite Presentación Proyectos" name="fecha_limite_presentacion_proyectos" type="date" value={formData.fecha_limite_presentacion_proyectos} onChange={handleChange} required error={errors.fecha_limite_presentacion_proyectos} />
+
+                <div className="md:col-span-2 rounded-xl border border-[#3D6DE0]/30 dark:border-[#4B67C0]/40 bg-gradient-to-r from-white/60 via-[#3D6DE0]/5 to-cyan-400/10 dark:from-slate-800/55 dark:to-cyan-900/20 p-4 shadow-sm hover:shadow-md transition-all duration-200">
+                  <h4 className="text-sm font-bold text-[#263F8A] dark:text-[#B6C3EC] mb-3">Rango del Periodo Académico</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <DatePickerField
+                      label="Fecha de Inicio"
+                      name="fecha_inicio"
+                      value={formData.fecha_inicio}
+                      onDateChange={handleDateFieldChange}
+                      required
+                      error={errors.fecha_inicio || (isDateRangeInvalid ? endDateErrorMessage : '')}
+                    />
+                    <DatePickerField
+                      label="Fecha de Fin"
+                      name="fecha_fin"
+                      value={formData.fecha_fin}
+                      onDateChange={handleDateFieldChange}
+                      minDate={formData.fecha_inicio}
+                      invalidSelectionMessage={endDateErrorMessage}
+                      onInvalidSelection={() => {
+                        setErrors((prev) => ({
+                          ...prev,
+                          fecha_inicio: endDateErrorMessage,
+                          fecha_fin: endDateErrorMessage,
+                        }));
+                      }}
+                      required
+                      error={errors.fecha_fin || (isDateRangeInvalid ? endDateErrorMessage : '')}
+                    />
+                  </div>
+                </div>
+
+                {isDateRangeInvalid && (
+                  <div className="md:col-span-2 rounded-lg border border-amber-400/40 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
+                    {endDateErrorMessage}
+                  </div>
+                )}
+
+                {isCriticalProjectRangeConflict && (
+                  <div className="md:col-span-2 rounded-lg border border-red-600/60 bg-red-100 dark:bg-red-900/25 px-3 py-2 text-sm font-semibold text-red-800 dark:text-red-300">
+                    {criticalProjectRangeMessage}
+                  </div>
+                )}
+
+                <DatePickerField
+                  label="Inicio Presentación Proyectos"
+                  name="fecha_inicio_presentacion_proyectos"
+                  value={formData.fecha_inicio_presentacion_proyectos}
+                  onDateChange={handleDateFieldChange}
+                  required
+                  error={errors.fecha_inicio_presentacion_proyectos || (isProjectOrderInvalid ? projectOrderErrorMessage : '') || (projectStartOutOfRange ? projectRangeWarning : '')}
+                  onFieldInteraction={() => notifyProjectRangeIfInvalid('fecha_inicio_presentacion_proyectos')}
+                />
+                <DatePickerField
+                  label="Límite Presentación Proyectos"
+                  name="fecha_limite_presentacion_proyectos"
+                  value={formData.fecha_limite_presentacion_proyectos}
+                  onDateChange={handleDateFieldChange}
+                  required
+                  error={errors.fecha_limite_presentacion_proyectos || (isProjectOrderInvalid ? projectOrderErrorMessage : '') || (projectEndOutOfRange ? projectRangeWarning : '')}
+                  onFieldInteraction={() => notifyProjectRangeIfInvalid('fecha_limite_presentacion_proyectos')}
+                />
                 <InputField label="Semanas Efectivas" name="semanas_efectivas" type="number" value={formData.semanas_efectivas} onChange={handleChange} required error={errors.semanas_efectivas} />
-                <div className="flex items-center gap-2 mt-4">
-                    <input type="checkbox" id="activo" name="activo" checked={formData.activo} onChange={handleChange} className="w-4 h-4" />
-                    <label htmlFor="activo" className="text-sm font-medium text-slate-800 dark:text-slate-300">Marcar como calendario activo</label>
+                <div className="mt-1 bg-white/70 dark:bg-slate-800/60 rounded-xl p-3 border border-[#3D6DE0]/25 dark:border-[#4B67C0]/40 md:self-end">
+                  <div className="flex items-center gap-3">
+                    <ToggleSwitch
+                      isActive={Boolean(formData.activo)}
+                      onChange={handleActivoSwitchChange}
+                    />
+                    <span className="text-sm font-medium text-slate-800 dark:text-slate-300">
+                      ✅ Calendario activo
+                    </span>
+                  </div>
                 </div>
               </div>
-              <div className="mt-6 pt-4 border-t-2 border-slate-300 dark:border-slate-700 flex gap-3 justify-end">
-                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2.5 bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl font-semibold">Cancelar</button>
-                <button type="submit" disabled={isSubmitting} className="px-4 py-2.5 bg-blue-600 text-white rounded-xl font-semibold disabled:opacity-50">
-                  {isSubmitting ? 'Guardando...' : 'Guardar'}
+              <div className="mt-5 pt-3 border-t-2 border-slate-300 dark:border-slate-700 flex gap-3 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  className="px-4 py-2.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-xl font-semibold transition-all duration-200 border-2 border-slate-300 dark:border-slate-600 shadow-sm hover:shadow-md hover:scale-105"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSaveBlocked}
+                  className={`px-5 py-2.5 text-white rounded-xl font-semibold transition-all duration-200 shadow-md disabled:opacity-100 disabled:hover:scale-100 ${isSaveBlocked ? 'bg-slate-400 cursor-not-allowed' : 'bg-gradient-to-r from-blue-600 to-cyan-500 hover:shadow-xl hover:-translate-y-0.5 animate-pulse'}`}
+                >
+                  {isSubmitting ? 'Guardando...' : '💾 Guardar'}
                 </button>
               </div>
             </form>
@@ -271,27 +2141,146 @@ function ListaCalendarios() {
         </div>
       )}
 
+      {showToggleModal && calendarioToToggle && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px]" onClick={() => setShowToggleModal(false)} />
+          <div
+            className={`relative w-full max-w-lg rounded-2xl border bg-slate-900 shadow-2xl overflow-hidden animate-slide-up ${
+              calendarioToToggle.activo
+                ? 'border-uab-gold-300/40 dark:border-uab-gold-700/50'
+                : 'border-uab-green-300/40 dark:border-uab-green-700/50'
+            }`}
+            style={{ animationDuration: '160ms' }}
+          >
+            <div className={`px-5 py-4 border-b border-slate-700/70 bg-gradient-to-r ${calendarioToToggle.activo ? 'from-uab-gold-900/30 to-slate-900' : 'from-uab-green-900/30 to-slate-900'}`}>
+              <h4 className={`text-lg font-bold flex items-center gap-2 ${calendarioToToggle.activo ? 'text-uab-gold-300' : 'text-uab-green-300'}`}>
+                {calendarioToToggle.activo ? <PauseIcon className="w-5 h-5" /> : <PlayIcon className="w-5 h-5" />}
+                {calendarioToToggle.activo ? 'Confirmar Desactivación' : 'Confirmar Activación'}
+              </h4>
+            </div>
+            <div className="px-5 py-4 space-y-3 text-slate-200">
+              <p className="text-sm leading-relaxed">
+                {calendarioToToggle.activo
+                  ? `Se desactivará el calendario ${calendarioToToggle.gestion} - ${calendarioToToggle.periodo_display}.`
+                  : `Se activará el calendario ${calendarioToToggle.gestion} - ${calendarioToToggle.periodo_display}.`}
+              </p>
+              <div className={`rounded-lg border px-3 py-2 text-sm ${calendarioToToggle.activo ? 'border-uab-gold-500/40 bg-uab-gold-500/10' : 'border-uab-green-500/40 bg-uab-green-500/10'}`}>
+                Calendario: <strong className={calendarioToToggle.activo ? 'text-uab-gold-300' : 'text-uab-green-300'}>{calendarioToToggle.gestion} - {calendarioToToggle.periodo_display}</strong>
+              </div>
+              {calendarioToToggle.activo && (
+                <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+                  Advertencia: si desactiva el calendario activo, algunos procesos pueden quedarse sin periodo vigente (registro, seguimiento y reportes hasta activar otro calendario).
+                </div>
+              )}
+              <p className="text-xs text-slate-400">
+                Esta acción se puede revertir desde el interruptor de estado.
+              </p>
+            </div>
+            <div className="px-5 py-4 border-t border-slate-700/70 flex justify-end gap-3 bg-slate-950/70">
+              <button
+                type="button"
+                onClick={() => setShowToggleModal(false)}
+                className="px-4 py-2 rounded-lg font-semibold text-slate-300 border border-slate-600 hover:bg-slate-800"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmarToggleActivo}
+                className={`px-4 py-2 rounded-lg font-bold text-white ${calendarioToToggle.activo ? 'bg-uab-gold-600 hover:bg-uab-gold-700' : 'bg-uab-green-600 hover:bg-uab-green-700'}`}
+              >
+                {calendarioToToggle.activo ? '⏸️ Confirmar Desactivación' : '▶️ Confirmar Activación'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal de Confirmación de Eliminación */}
       {showDeleteModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
-            <div className="bg-gradient-to-r from-red-500 to-red-600 px-6 py-4">
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <TrashIcon className="w-6 h-6 text-white" />
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px]" onClick={closeDeleteModal} />
+          <div className="relative w-full max-w-lg rounded-2xl border border-red-600/80 dark:border-red-700/50 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden animate-slide-up" style={{ animationDuration: '160ms' }}>
+            <div className="px-5 py-4 border-b border-red-400 dark:border-slate-700/70 bg-gradient-to-r from-red-400 via-red-200 to-red-50 dark:from-red-900/30 dark:via-slate-900 dark:to-slate-900">
+              <h4 className="text-lg font-bold text-red-900 dark:text-red-300 flex items-center gap-2">
+                <span>🗑️</span>
                 Confirmar Eliminación
-              </h2>
+              </h4>
             </div>
-            <div className="p-6">
-              <p className="text-slate-700 dark:text-slate-300 mb-4">
-                ¿Estás seguro de que deseas eliminar el calendario <strong>{calendarioToDelete?.gestion} - {calendarioToDelete?.periodo}</strong>?
+            <div className="px-5 py-4 space-y-3 text-slate-700 dark:text-slate-200">
+              <p className="text-sm leading-relaxed">
+                Se eliminará el calendario <strong className="text-slate-900 dark:text-white">{calendarioToDelete?.gestion} - {calendarioToDelete?.periodo_display}</strong> del sistema de forma permanente.
               </p>
-              <p className="text-sm text-slate-500 dark:text-slate-400">
-                Esta acción no se puede deshacer.
+              <div className="rounded-lg border border-red-700/70 bg-red-200/70 dark:bg-red-500/10 px-3 py-2 text-sm text-red-900 dark:text-red-200">
+                Acción irreversible: <strong className="text-red-900 dark:text-red-300">se perderá el periodo y sus fechas de referencia para este calendario.</strong>
+              </div>
+              <div className="rounded-lg border border-amber-500/40 bg-amber-100 dark:bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
+                Dependencias actuales: {deleteImpact.planificaciones} planificaciones, {deleteImpact.informes} informes, {deleteImpact.cargas_horarias} cargas horarias.
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                  Escribe el nombre exacto del calendario para habilitar la eliminación:
+                </label>
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  placeholder="Escribe el nombre del calendario para confirmar"
+                  className="w-full px-3 py-2 rounded-lg border border-red-400/40 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500/60"
+                />
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Esta operación no se puede deshacer.
               </p>
             </div>
-            <div className="px-6 py-4 bg-slate-50 dark:bg-slate-700/50 flex justify-end gap-3">
-              <button onClick={() => setShowDeleteModal(false)} className="px-4 py-2 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 font-semibold transition-colors">Cancelar</button>
-              <button onClick={confirmarEliminar} className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold shadow-md transition-colors">Eliminar</button>
+            <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-700/70 flex justify-end gap-3 bg-slate-50 dark:bg-slate-950/70">
+              <button
+                onClick={closeDeleteModal}
+                className="px-4 py-2 rounded-lg font-semibold text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmarEliminar}
+                disabled={deleteConfirmText !== `${calendarioToDelete?.gestion || ''} - ${calendarioToDelete?.periodo_display || ''}`}
+                className="px-4 py-2 rounded-lg font-bold text-white bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800 disabled:bg-red-900/40 disabled:text-slate-300 disabled:cursor-not-allowed"
+              >
+                🗑️ Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDependencyWarningModal && calendarioToDelete && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px]" onClick={() => setShowDependencyWarningModal(false)} />
+          <div className="relative w-full max-w-lg rounded-2xl border border-red-600/80 dark:border-red-700/50 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden animate-slide-up" style={{ animationDuration: '160ms' }}>
+            <div className="px-5 py-4 border-b border-red-400 dark:border-slate-700/70 bg-gradient-to-r from-red-400 via-red-200 to-red-50 dark:from-red-900/30 dark:via-slate-900 dark:to-slate-900">
+              <h4 className="text-lg font-bold text-red-900 dark:text-red-300 flex items-center gap-2">
+                <span>⛔</span>
+                Error de Integridad
+              </h4>
+            </div>
+            <div className="px-5 py-4 space-y-3 text-slate-700 dark:text-slate-200">
+              <p className="text-sm leading-relaxed">
+                {deleteImpact.detail || `ERROR DE INTEGRIDAD: No se puede eliminar el calendario ${calendarioToDelete.gestion}-${calendarioToDelete.periodo_display} porque aún tiene dependencias vinculadas.`}
+              </p>
+              <div className="rounded-lg border border-red-700/70 bg-red-200/70 dark:bg-red-500/10 px-3 py-2 text-sm text-red-900 dark:text-red-100">
+                Dependencias detectadas: {deleteImpact.planificaciones} planificaciones, {deleteImpact.informes} informes, {deleteImpact.cargas_horarias} cargas horarias.
+              </div>
+              <div className="rounded-lg border border-amber-500/40 bg-amber-100 dark:bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
+                Para eliminar este calendario, primero debes mover o eliminar manualmente sus registros asociados.
+              </div>
+            </div>
+            <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-700/70 flex justify-end bg-slate-50 dark:bg-slate-950/70">
+              <button
+                type="button"
+                onClick={() => setShowDependencyWarningModal(false)}
+                className="px-4 py-2 rounded-lg font-semibold text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                Entendido
+              </button>
             </div>
           </div>
         </div>

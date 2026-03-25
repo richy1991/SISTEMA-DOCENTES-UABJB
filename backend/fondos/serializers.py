@@ -640,6 +640,44 @@ class CalendarioAcademicoSerializer(serializers.ModelSerializer):
             'semanas_efectivas', 'activo'
         ]
 
+    def validate(self, attrs):
+        instance = getattr(self, 'instance', None)
+
+        fecha_inicio = attrs.get('fecha_inicio', getattr(instance, 'fecha_inicio', None))
+        fecha_fin = attrs.get('fecha_fin', getattr(instance, 'fecha_fin', None))
+        fecha_inicio_proy = attrs.get(
+            'fecha_inicio_presentacion_proyectos',
+            getattr(instance, 'fecha_inicio_presentacion_proyectos', None)
+        )
+        fecha_fin_proy = attrs.get(
+            'fecha_limite_presentacion_proyectos',
+            getattr(instance, 'fecha_limite_presentacion_proyectos', None)
+        )
+
+        if fecha_inicio and fecha_fin and fecha_fin < fecha_inicio:
+            raise serializers.ValidationError({
+                'fecha_fin': 'La fecha de finalización no puede ser anterior a la de inicio.'
+            })
+
+        if fecha_inicio_proy and fecha_fin_proy and fecha_fin_proy <= fecha_inicio_proy:
+            raise serializers.ValidationError({
+                'fecha_limite_presentacion_proyectos': 'La fecha límite de proyectos debe ser posterior a la fecha de inicio.'
+            })
+
+        if fecha_inicio and fecha_fin and fecha_inicio_proy:
+            if fecha_inicio_proy < fecha_inicio or fecha_inicio_proy > fecha_fin:
+                raise serializers.ValidationError({
+                    'fecha_inicio_presentacion_proyectos': 'Error Crítico: la fecha de inicio de presentación de proyectos debe estar dentro del rango del periodo académico.'
+                })
+
+        if fecha_inicio and fecha_fin and fecha_fin_proy:
+            if fecha_fin_proy < fecha_inicio or fecha_fin_proy > fecha_fin:
+                raise serializers.ValidationError({
+                    'fecha_limite_presentacion_proyectos': 'Error Crítico: la fecha límite de presentación de proyectos debe estar dentro del rango del periodo académico.'
+                })
+
+        return attrs
+
 
 # =====================================================
 # PROYECTO SERIALIZER

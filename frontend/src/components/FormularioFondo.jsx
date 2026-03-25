@@ -234,6 +234,30 @@ function FormularioFondo({ isDark, editar = false }) {
     return mensaje;
   };
 
+  const extraerMensajeValidacion = (data) => {
+    if (!data) return 'Datos inválidos.';
+    if (typeof data === 'string') return data;
+    if (data.error && typeof data.error === 'string') return data.error;
+    if (data.detail && typeof data.detail === 'string') return data.detail;
+    if (data.non_field_errors && Array.isArray(data.non_field_errors) && data.non_field_errors.length > 0) {
+      return data.non_field_errors[0];
+    }
+
+    if (typeof data === 'object') {
+      const primerCampo = Object.keys(data)[0];
+      const primerError = data[primerCampo];
+      if (Array.isArray(primerError) && primerError.length > 0) return String(primerError[0]);
+      if (typeof primerError === 'string') return primerError;
+      if (typeof primerError === 'object' && primerError !== null) {
+        const subValor = Object.values(primerError)[0];
+        if (Array.isArray(subValor) && subValor.length > 0) return String(subValor[0]);
+        if (typeof subValor === 'string') return subValor;
+      }
+    }
+
+    return 'Datos inválidos.';
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -296,34 +320,16 @@ function FormularioFondo({ isDark, editar = false }) {
         const data = err.response.data;
 
         if (status === 400) {
-          if (data.error) {
-            mensajeError = data.error;
-          } 
-          else if (data.non_field_errors && Array.isArray(data.non_field_errors)) {
-            mensajeError = data.non_field_errors[0];
-            
-            if (mensajeError.toLowerCase().includes('unique') || 
-                mensajeError.toLowerCase().includes('conjunto único') ||
-                mensajeError.toLowerCase().includes('ya existe')) {
-              mensajeError = '⚠️ Ya existe un fondo de tiempo con estos datos (mismo docente, gestión, periodo y asignatura). No se permiten duplicados.';
-            }
-          } 
-          else if (data.detail) {
-            mensajeError = data.detail;
-          }
-          else if (typeof data === 'object' && Object.keys(data).length > 0) {
-            const primerCampo = Object.keys(data)[0];
-            const primerError = data[primerCampo];
-            
-            if (Array.isArray(primerError)) {
-              mensajeError = `${primerCampo}: ${primerError[0]}`;
-            } else if (typeof primerError === 'string') {
-              mensajeError = `${primerCampo}: ${primerError}`;
-            } else if (typeof primerError === 'object' && primerError !== null) {
-              const subError = Object.values(primerError)[0];
-              mensajeError = Array.isArray(subError) ? subError[0] : subError;
-            }
-          }
+          const mensajeEspecifico = simplificarMensajeError(extraerMensajeValidacion(data));
+          const mensajeValidacion = `ERROR DE VALIDACIÓN: ${mensajeEspecifico}`;
+          setError(mensajeValidacion);
+          toast.error(mensajeValidacion, {
+            duration: 7000,
+            icon: '⛔',
+            position: 'top-right',
+          });
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          return;
         } else if (status === 403) {
           mensajeError = '🚫 No tienes permisos para realizar esta acción';
         } else if (status === 404) {

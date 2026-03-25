@@ -181,7 +181,7 @@ class Carrera(models.Model):
 class Materia(models.Model):
     nombre = models.CharField(max_length=200)
     sigla = models.CharField(max_length=20, unique=True)
-    carrera = models.ForeignKey(Carrera, on_delete=models.CASCADE, related_name='materias')
+    carrera = models.ForeignKey(Carrera, on_delete=models.PROTECT, related_name='materias')
     semestre = models.IntegerField()
     horas_teoricas = models.IntegerField(default=0)
     horas_practicas = models.IntegerField(default=0)
@@ -272,10 +272,10 @@ class FondoTiempo(models.Model):
     ]
     
     docente = models.ForeignKey(Docente, on_delete=models.CASCADE, related_name='fondos_tiempo')
-    carrera = models.ForeignKey(Carrera, on_delete=models.CASCADE, related_name='fondos_tiempo')
+    carrera = models.ForeignKey(Carrera, on_delete=models.PROTECT, related_name='fondos_tiempo')
     calendario_academico = models.ForeignKey(
         CalendarioAcademico,
-        on_delete=models.SET_NULL,
+        on_delete=models.PROTECT,
         related_name='fondos',
         null=True,
         blank=True,

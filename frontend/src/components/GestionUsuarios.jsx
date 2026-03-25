@@ -112,6 +112,7 @@ function GestionUsuarios({ isDark }) {
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [usuarioToDelete, setUsuarioToDelete] = useState(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
   const [showToggleModal, setShowToggleModal] = useState(false);
   const [usuarioToToggle, setUsuarioToToggle] = useState(null);
@@ -186,17 +187,27 @@ function GestionUsuarios({ isDark }) {
 
   const handleEliminar = (usuario) => {
     setUsuarioToDelete(usuario);
+    setDeleteConfirmText('');
     setShowDeleteModal(true);
+  };
+
+  const closeDeleteModal = () => {
+    setShowDeleteModal(false);
+    setUsuarioToDelete(null);
+    setDeleteConfirmText('');
   };
 
   const confirmarEliminar = async () => {
     if (!usuarioToDelete) return;
+    if (deleteConfirmText !== usuarioToDelete.username) {
+      toast.error('Debes escribir exactamente el nombre de usuario para confirmar');
+      return;
+    }
     try {
       await api.delete(`/usuarios/${usuarioToDelete.id}/`);
       toast.success('Usuario eliminado con éxito');
       cargarDatos();
-      setShowDeleteModal(false);
-      setUsuarioToDelete(null);
+      closeDeleteModal();
     } catch (err) {
       console.error('Error:', err);
       toast.error('Error al eliminar el usuario');
@@ -701,37 +712,50 @@ function GestionUsuarios({ isDark }) {
         {/* Modal de Confirmación de Eliminación */}
         {showDeleteModal && (
           <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px]" onClick={() => setShowDeleteModal(false)} />
-            <div className="relative w-full max-w-lg rounded-2xl border border-red-300/40 dark:border-red-700/50 bg-slate-900 shadow-2xl overflow-hidden animate-slide-up" style={{ animationDuration: '160ms' }}>
-              <div className="px-5 py-4 border-b border-slate-700/70 bg-gradient-to-r from-red-900/30 to-slate-900">
-                <h4 className="text-lg font-bold text-red-300 flex items-center gap-2">
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px]" onClick={closeDeleteModal} />
+            <div className="relative w-full max-w-lg rounded-2xl border border-red-600/80 dark:border-red-700/50 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden animate-slide-up" style={{ animationDuration: '160ms' }}>
+              <div className="px-5 py-4 border-b border-red-400 dark:border-slate-700/70 bg-gradient-to-r from-red-400 via-red-200 to-red-50 dark:from-red-900/30 dark:via-slate-900 dark:to-slate-900">
+                <h4 className="text-lg font-bold text-red-900 dark:text-red-300 flex items-center gap-2">
                   <span>🗑️</span>
                   Confirmar Eliminación
                 </h4>
               </div>
-              <div className="px-5 py-4 space-y-3 text-slate-200">
+              <div className="px-5 py-4 space-y-3 text-slate-700 dark:text-slate-200">
                 <p className="text-sm leading-relaxed">
-                  Se eliminará el usuario <strong className="text-white">{usuarioToDelete?.username}</strong> del sistema de forma permanente.
+                  Se eliminará el usuario <strong className="text-slate-900 dark:text-white">{usuarioToDelete?.username}</strong> del sistema de forma permanente.
                 </p>
-                <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm">
-                  Acción irreversible: <strong className="text-red-300">El usuario perderá su acceso definitivamente.</strong>
+                <div className="rounded-lg border border-red-700/70 bg-red-200/70 dark:bg-red-500/10 px-3 py-2 text-sm text-red-900 dark:text-red-200">
+                  Acción irreversible: <strong className="text-red-900 dark:text-red-300">El usuario perderá su acceso definitivamente.</strong>
                 </div>
-                <p className="text-xs text-slate-400">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                    Escribe el nombre exacto de usuario para habilitar la eliminación:
+                  </label>
+                  <input
+                    type="text"
+                    value={deleteConfirmText}
+                    onChange={(e) => setDeleteConfirmText(e.target.value)}
+                    placeholder="Escribe el nombre de usuario para confirmar"
+                    className="w-full px-3 py-2 rounded-lg border border-red-400/40 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500/60"
+                  />
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
                   Esta operación no se puede deshacer.
                 </p>
               </div>
-              <div className="px-5 py-4 border-t border-slate-700/70 flex justify-end gap-3 bg-slate-950/70">
+              <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-700/70 flex justify-end gap-3 bg-slate-50 dark:bg-slate-950/70">
                 <button
                   type="button"
-                  onClick={() => setShowDeleteModal(false)}
-                  className="px-4 py-2 rounded-lg font-semibold text-slate-300 border border-slate-600 hover:bg-slate-800"
+                  onClick={closeDeleteModal}
+                  className="px-4 py-2 rounded-lg font-semibold text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800"
                 >
                   Cancelar
                 </button>
                 <button
                   type="button"
                   onClick={confirmarEliminar}
-                  className="px-4 py-2 rounded-lg font-bold text-white bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800"
+                  disabled={deleteConfirmText !== (usuarioToDelete?.username || '')}
+                  className="px-4 py-2 rounded-lg font-bold text-white bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800 disabled:bg-red-900/40 disabled:text-slate-300 disabled:cursor-not-allowed"
                 >
                   🗑️ Eliminar
                 </button>

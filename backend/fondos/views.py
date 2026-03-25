@@ -1,4 +1,4 @@
-from rest_framework import viewsets, filters, status, generics
+from rest_framework import viewsets, filters, status, generics, serializers as drf_serializers
 from rest_framework.decorators import action, api_view, permission_classes, renderer_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, BasePermission
@@ -8,8 +8,9 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied
 from django.http import HttpResponse, JsonResponse, FileResponse
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from django.db.models import Prefetch, ProtectedError, prefetch_related_objects
+from django.core.exceptions import ValidationError as DjangoValidationError
 from .utils.pdf_generator import FondoPDFGenerator
 from rest_framework_simplejwt.views import TokenObtainPairView
 
@@ -195,18 +196,40 @@ class CarreraViewSet(viewsets.ModelViewSet):
             return [IsFullAdmin()]
         return [IsAuthenticated()]
 
-    def destroy(self, request, *args, **kwargs):
-        """
-        Evita borrado fisico de carreras para no disparar cascadas sobre
-        materias y fondos relacionados. Se realiza desactivacion logica.
-        """
-        carrera = self.get_object()
-        if not carrera.activo:
-            return Response({'detail': 'La carrera ya estaba desactivada.'}, status=status.HTTP_200_OK)
+    def _build_dependency_counts(self, carrera):
+        materias_qs = Materia.objects.filter(carrera=carrera)
+        materias_count = materias_qs.count()
+        semestres_count = materias_qs.values('semestre').distinct().count()
+        fondos_qs = FondoTiempo.objects.filter(carrera=carrera)
+        informes_count = InformeFondo.objects.filter(fondo_tiempo__in=fondos_qs).count()
+        return {
+            'materias': materias_count,
+            'semestres': semestres_count,
+            'informes': informes_count,
+            'can_delete': materias_count == 0 and informes_count == 0,
+        }
 
-        carrera.activo = False
-        carrera.save(update_fields=['activo'])
-        return Response({'detail': 'Carrera desactivada correctamente.'}, status=status.HTTP_200_OK)
+    @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated])
+    def dependencias(self, request, pk=None):
+        carrera = self.get_object()
+        counts = self._build_dependency_counts(carrera)
+        return Response(counts, status=status.HTTP_200_OK)
+
+    def destroy(self, request, *args, **kwargs):
+        carrera = self.get_object()
+        try:
+            carrera.delete()
+            return Response({'detail': 'Carrera eliminada correctamente.'}, status=status.HTTP_200_OK)
+        except ProtectedError:
+            counts = self._build_dependency_counts(carrera)
+            return Response(
+                {
+                    'code': 'protected_error',
+                    'detail': f"ERROR DE INTEGRIDAD: No se puede eliminar la carrera {carrera.nombre} porque aún tiene {counts['materias']} materias e informes vinculados.",
+                    'dependencias': counts,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
 
 
 class MateriaViewSet(viewsets.ModelViewSet):
@@ -324,14 +347,53 @@ class CalendarioAcademicoViewSet(viewsets.ModelViewSet):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
             return [IsFullAdmin()]
         return [IsAuthenticated()]
+
+    def _build_dependency_counts(self, calendario):
+        fondos_qs = FondoTiempo.objects.filter(calendario_academico=calendario)
+        fondos_count = fondos_qs.count()
+        informes_count = InformeFondo.objects.filter(fondo_tiempo__in=fondos_qs).count()
+        cargas_horarias_count = CargaHoraria.objects.filter(calendario=calendario).count()
+
+        return {
+            'planificaciones': fondos_count,
+            'informes': informes_count,
+            'cargas_horarias': cargas_horarias_count,
+            'can_delete': fondos_count == 0 and informes_count == 0 and cargas_horarias_count == 0,
+        }
+
+    @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated])
+    def dependencias(self, request, pk=None):
+        calendario = self.get_object()
+        counts = self._build_dependency_counts(calendario)
+        return Response(counts, status=status.HTTP_200_OK)
     
     def destroy(self, request, *args, **kwargs):
-        """Eliminar calendario controlando errores de protección (CargaHoraria)"""
+        """Eliminar calendario respetando integridad referencial (PROTECT)."""
+        instance = self.get_object()
         try:
-            return super().destroy(request, *args, **kwargs)
+            instance.delete()
+            return Response({'detail': 'Calendario eliminado correctamente.'}, status=status.HTTP_200_OK)
         except ProtectedError:
+            counts = self._build_dependency_counts(instance)
             return Response(
-                {'error': 'No se puede eliminar el calendario porque tiene Cargas Horarias asignadas a docentes. Debe eliminar esas cargas primero.'},
+                {
+                    'code': 'protected_error',
+                    'detail': (
+                        f"ERROR DE INTEGRIDAD: No se puede eliminar el calendario {instance.gestion}-{instance.get_periodo_display()} "
+                        f"porque tiene {counts['planificaciones']} planificaciones y {counts['informes']} informes vinculados."
+                    ),
+                    'dependencias': counts,
+                },
+                status=status.HTTP_409_CONFLICT
+            )
+        except IntegrityError:
+            counts = self._build_dependency_counts(instance)
+            return Response(
+                {
+                    'code': 'integrity_error',
+                    'detail': 'No se puede eliminar el calendario por integridad referencial.',
+                    'dependencias': counts,
+                },
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -480,6 +542,23 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         elif self.action == 'retrieve':
             return FondoTiempoDetalleSerializer
         return FondoTiempoSerializer
+
+    def _flatten_validation_messages(self, detail):
+        if isinstance(detail, dict):
+            messages = []
+            for value in detail.values():
+                nested = self._flatten_validation_messages(value)
+                if nested:
+                    messages.append(nested)
+            return ' '.join([m for m in messages if m]).strip()
+        if isinstance(detail, list):
+            messages = [self._flatten_validation_messages(item) for item in detail]
+            return ' '.join([m for m in messages if m]).strip()
+        return str(detail) if detail is not None else ''
+
+    def _validation_error_response(self, detail):
+        message = self._flatten_validation_messages(detail) or 'Error de validación en los datos enviados.'
+        return Response({'error': message, 'details': detail}, status=status.HTTP_400_BAD_REQUEST)
     
     def create(self, request, *args, **kwargs):
         """
@@ -509,7 +588,20 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        return super().create(request, *args, **kwargs)
+        serializer = self.get_serializer(data=request.data)
+        try:
+            serializer.is_valid(raise_exception=True)
+            self.perform_create(serializer)
+        except drf_serializers.ValidationError as exc:
+            return self._validation_error_response(exc.detail)
+        except DjangoValidationError as exc:
+            detail = getattr(exc, 'message_dict', None) or getattr(exc, 'messages', None) or str(exc)
+            return self._validation_error_response(detail)
+        except IntegrityError as exc:
+            return self._validation_error_response(str(exc))
+
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     def perform_create(self, serializer):
         """Al crear un fondo, se asocia al calendario activo. El docente viene en el payload."""
@@ -536,7 +628,20 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
                 "Acción no permitida. Solo el docente dueño (en estado borrador/observado/en_ejecucion) o un administrador pueden editar."
             )
         
-        return super().update(request, *args, **kwargs)
+        partial = kwargs.pop('partial', False)
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        try:
+            serializer.is_valid(raise_exception=True)
+            self.perform_update(serializer)
+        except drf_serializers.ValidationError as exc:
+            return self._validation_error_response(exc.detail)
+        except DjangoValidationError as exc:
+            detail = getattr(exc, 'message_dict', None) or getattr(exc, 'messages', None) or str(exc)
+            return self._validation_error_response(detail)
+        except IntegrityError as exc:
+            return self._validation_error_response(str(exc))
+
+        return Response(serializer.data)
     
     def partial_update(self, request, *args, **kwargs):
         """Verificar permisos de edición parcial"""
@@ -547,7 +652,8 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
                 "Acción no permitida. Solo el docente dueño (en estado borrador/observado/en_ejecucion) o un administrador pueden editar."
             )
         
-        return super().partial_update(request, *args, **kwargs)
+        kwargs['partial'] = True
+        return self.update(request, *args, **kwargs)
     
     def destroy(self, request, *args, **kwargs):
         """

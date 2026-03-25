@@ -129,6 +129,29 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
     const [semestre, setSemestre] = useState('');
     const [materias, setMaterias] = useState([]);
     const [loadingMaterias, setLoadingMaterias] = useState(false);
+    const extractValidationMessage = (data) => {
+        if (!data) return 'Datos inválidos.';
+        if (typeof data === 'string') return data;
+        if (typeof data?.error === 'string') return data.error;
+        if (typeof data?.detail === 'string') return data.detail;
+        if (Array.isArray(data?.non_field_errors) && data.non_field_errors.length > 0) {
+            return String(data.non_field_errors[0]);
+        }
+
+        if (typeof data === 'object') {
+            const firstKey = Object.keys(data)[0];
+            const firstValue = data[firstKey];
+            if (Array.isArray(firstValue) && firstValue.length > 0) return String(firstValue[0]);
+            if (typeof firstValue === 'string') return firstValue;
+            if (typeof firstValue === 'object' && firstValue !== null) {
+                const nested = Object.values(firstValue)[0];
+                if (Array.isArray(nested) && nested.length > 0) return String(nested[0]);
+                if (typeof nested === 'string') return nested;
+            }
+        }
+
+        return 'Datos inválidos.';
+    };
     const [allMaterias, setAllMaterias] = useState([]);
     const [semestresDisponibles, setSemestresDisponibles] = useState([]);
     const [formData, setFormData] = useState({
@@ -251,7 +274,14 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
             if (onCargaUpdate) onCargaUpdate();
         } catch (error) {
             console.error(error);
-            toast.error("Error al guardar");
+            const statusCode = error.response?.status;
+            const data = error.response?.data;
+            if (statusCode === 400) {
+                const validationMessage = extractValidationMessage(data);
+                toast.error(`ERROR DE VALIDACIÓN: ${validationMessage}`);
+            } else {
+                toast.error("Error al guardar");
+            }
         } finally {
             setIsSubmitting(false);
         }
@@ -266,7 +296,14 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
             if (onCargaUpdate) onCargaUpdate();
         } catch (error) {
             console.error(error);
-            toast.error("Error al eliminar");
+            const statusCode = error.response?.status;
+            const data = error.response?.data;
+            if (statusCode === 400) {
+                const validationMessage = extractValidationMessage(data);
+                toast.error(`ERROR DE VALIDACIÓN: ${validationMessage}`);
+            } else {
+                toast.error("Error al eliminar");
+            }
         }
     };
 
