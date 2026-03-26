@@ -1,17 +1,10 @@
 from django.contrib import admin
-from catalogos.models import PartidaPresupuestaria, ItemCatalogo, OperacionCatalogo
-
-
-
-@admin.register(PartidaPresupuestaria)
-class PartidaPresupuestariaAdmin(admin.ModelAdmin):
-	list_display = ("codigo", "nombre")
-	search_fields = ("codigo", "nombre")
+from catalogos.models import ItemCatalogo, OperacionCatalogo
 
 @admin.register(ItemCatalogo)
 class ItemCatalogoAdmin(admin.ModelAdmin):
-	list_display = ("descripcion", "unidad_medida", "partida")
-	search_fields = ("descripcion",)
+	list_display = ("detalle", "unidad_medida", "partida")
+	search_fields = ("detalle", "partida", "unidad_medida")
 	list_filter = ("partida",)
 
 @admin.register(OperacionCatalogo)

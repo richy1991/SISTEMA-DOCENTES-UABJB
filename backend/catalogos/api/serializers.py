@@ -1,22 +1,23 @@
-from catalogos.models import ItemCatalogo, OperacionCatalogo, Direccion, PartidaPresupuestaria
+from catalogos.models import ItemCatalogo, OperacionCatalogo, Direccion
 from rest_framework import serializers
 from django.db import transaction
 
-class PartidaPresupuestariaSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = PartidaPresupuestaria
-        fields = ['id', 'codigo', 'nombre']
-        read_only_fields = ['id']
+
+class PartidaCatalogoSerializer(serializers.Serializer):
+    id = serializers.CharField()
+    codigo = serializers.CharField()
+    nombre = serializers.CharField()
 
 
 class ItemCatalogoSerializer(serializers.ModelSerializer):
-    # Mostrar datos de la partida en lectura y aceptar partida_id en escritura
-    partida = PartidaPresupuestariaSerializer(read_only=True)
-    partida_id = serializers.PrimaryKeyRelatedField(queryset=PartidaPresupuestaria.objects.all(), source='partida', write_only=True, required=False)
-
     class Meta:
         model = ItemCatalogo
-        fields = ['id', 'descripcion', 'unidad_medida', 'partida', 'partida_id']
+        fields = [
+            'id',
+            'detalle',
+            'unidad_medida',
+            'partida',
+        ]
         read_only_fields = ['id']
 
 
@@ -24,13 +25,6 @@ class DireccionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Direccion
         fields = ['id', 'nombre']
-
-
-class PartidaPresupuestariaSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = PartidaPresupuestaria
-        fields = ['id', 'codigo', 'nombre']
-        read_only_fields = ['id']
 
 class OperacionCatalogoSerializer(serializers.ModelSerializer):
     direccion = DireccionSerializer(read_only=True)

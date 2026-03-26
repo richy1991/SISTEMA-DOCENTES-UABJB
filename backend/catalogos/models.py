@@ -1,19 +1,17 @@
 from django.db import models
 
-class PartidaPresupuestaria(models.Model):
-    nombre = models.CharField(max_length=255)
-    codigo = models.CharField(max_length=50, unique=True)
-
-    def __str__(self):
-        return f"{self.codigo} - {self.nombre}"
-
 class ItemCatalogo(models.Model):
-    descripcion = models.CharField(max_length=255, default="Sin descripción")
+    detalle = models.CharField(max_length=255, default='')
     unidad_medida = models.CharField(max_length=50, default="Sin unidad")
-    partida = models.ForeignKey(PartidaPresupuestaria, on_delete=models.CASCADE, related_name='items', default=1)
+    partida = models.CharField(max_length=50, db_index=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['partida']),
+        ]
 
     def __str__(self):
-        return self.descripcion
+        return self.detalle
 
 class Direccion(models.Model):
     nombre = models.CharField(max_length=200, unique=True)

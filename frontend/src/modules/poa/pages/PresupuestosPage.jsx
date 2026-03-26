@@ -162,7 +162,7 @@ const PresupuestosPage = () => {
 
   // Actualizar los montos en la actividad del backend cuando cambie el detalle
   useEffect(() => {
-    if (!actividad || !actividad.id) return;
+    if (!actividad || !actividad.id || !canEdit) return;
     
     const actualizarMontos = async () => {
       try {
@@ -172,12 +172,15 @@ const PresupuestosPage = () => {
         });
         console.log('Montos actualizados en actividad:', { monto_funcion: montoFuncionamiento, monto_inversion: montoInversion });
       } catch (err) {
+        if (err?.response?.status === 403) {
+          return;
+        }
         console.error('Error actualizando montos de actividad:', err);
       }
     };
 
     actualizarMontos();
-  }, [montoFuncionamiento, montoInversion, actividad]);
+  }, [montoFuncionamiento, montoInversion, actividad, canEdit]);
 
   // Si no viene actividad, mostrar explicación
   return (

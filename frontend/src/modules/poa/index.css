@@ -1,4 +1,6 @@
-﻿/* ═══════════════════════════════════════════════════════════
+﻿@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
+
+/* ═══════════════════════════════════════════════════════════
    COMPONENTES DE FORMULARIO - INPUT, SELECT, TEXTAREA
    Soporte completo para temas claro/oscuro
    ═══════════════════════════════════════════════════════════ */
@@ -279,8 +281,6 @@
   border: 1px solid rgba(239,68,68,0.6); /* red-500/60 */
   box-shadow: 0 2px 8px rgba(239,68,68,0.22);
 }
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
-
 /* ============================================
    ESTILOS GLOBALES - MODO CLARO Y OSCURO
    ============================================ */

@@ -270,6 +270,15 @@ export const getCatalogoItemPorId = (id) => api.get(`/api/catalogos/items/${id}/
 export const createCatalogoItem = (payload) => api.post('/api/catalogos/items/', payload);
 export const updateCatalogoItem = (id, payload) => api.patch(`/api/catalogos/items/${id}/`, payload);
 export const deleteCatalogoItem = (id) => api.delete(`/api/catalogos/items/${id}/`);
+export const importarCatalogoItemsExcel = (formData) =>
+	api.post('/api/catalogos/items/importar-excel/', formData, {
+		headers: { 'Content-Type': 'multipart/form-data' },
+	});
+export const descargarCatalogoItemsExcel = (options = {}) =>
+	api.get('/api/catalogos/items-catalogo/exportar-excel/', {
+		responseType: 'blob',
+		...options,
+	});
 
 // Partidas presupuestarias (app catalogos)
 // Endpoint: GET /api/catalogos/partidas/

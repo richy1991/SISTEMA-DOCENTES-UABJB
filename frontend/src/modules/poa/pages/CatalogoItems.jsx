@@ -1,193 +1,171 @@
-import React, { useEffect, useState } from 'react';
-import { FaChevronDown, FaTrash, FaEdit, FaPlus } from 'react-icons/fa';
-import { getCatalogoPartidas, getCatalogoItems, deleteCatalogoItem } from '../../../apis/poa.api';
+import React, { useEffect, useRef, useState } from 'react';
+import { FaTrash, FaEdit, FaFileUpload } from 'react-icons/fa';
+import { getItemsCatalogo, deleteCatalogoItem, importarCatalogoItemsExcel, descargarCatalogoItemsExcel } from '../../../apis/poa.api';
 import NuevoCatalogoItemModal from '../components/NuevoCatalogoItemModal';
 import IconButton from '../components/IconButton';
 import toast from 'react-hot-toast';
 
 const CatalogoItems = () => {
-	const [partidas, setPartidas] = useState([]);
+	const [items, setItems] = useState([]);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState(null);
-
-	// estado para expandir una partida y cachear items por partida
-	const [openPartidaId, setOpenPartidaId] = useState(null);
-	const [itemsByPartida, setItemsByPartida] = useState({});
-	const [loadingPartida, setLoadingPartida] = useState({});
-	const [errorPartida, setErrorPartida] = useState({});
+	const [selectedItem, setSelectedItem] = useState(null);
+	const [page, setPage] = useState(1);
+	const [totalCount, setTotalCount] = useState(0);
+	const [hasNextPage, setHasNextPage] = useState(false);
+	const [hasPrevPage, setHasPrevPage] = useState(false);
 
 	// modal para crear/editar items
 	const [showItemModal, setShowItemModal] = useState(false);
-	const [modalPartida, setModalPartida] = useState(null);
 	const [modalItem, setModalItem] = useState(null);
+	const [importing, setImporting] = useState(false);
+	const [downloading, setDownloading] = useState(false);
+	const [downloadProgress, setDownloadProgress] = useState(0);
+	const [downloadIndeterminate, setDownloadIndeterminate] = useState(false);
+	const [importResumen, setImportResumen] = useState(null);
+	const [importErrores, setImportErrores] = useState([]);
+	const [importArchivoNombre, setImportArchivoNombre] = useState('');
+	const [searchQuery, setSearchQuery] = useState('');
+	const [appliedSearch, setAppliedSearch] = useState('');
+	const [stickyTop, setStickyTop] = useState(72);
+	const [controlsHeight, setControlsHeight] = useState(0);
+	const fileInputRef = useRef(null);
+	const stickyControlsRef = useRef(null);
 
 	useEffect(() => {
-		let mounted = true;
-		setLoading(true);
-		setError(null);
-		getCatalogoPartidas()
-			.then(res => {
-				if (!mounted) return;
-				// Normalizar distintas formas de respuesta del backend
-				// Puede ser: []  OR { results: [] } OR { data: [] } OR { partidas: [] }
-				const d = res?.data;
-				let list = [];
-				if (Array.isArray(d)) {
-					list = d;
-				} else if (d && Array.isArray(d.results)) {
-					list = d.results;
-				} else if (d && Array.isArray(d.data)) {
-					list = d.data;
-				} else if (d && Array.isArray(d.partidas)) {
-					list = d.partidas;
-				} else {
-					// intentar buscar la primera propiedad que sea un array
-					for (const k of Object.keys(d || {})) {
-						if (Array.isArray(d[k])) { list = d[k]; break; }
-					}
+		const detectHeaderOffset = () => {
+			const candidates = document.querySelectorAll('header, .app-header, .main-header, .navbar, [data-app-header]');
+			let offset = 0;
+			candidates.forEach((el) => {
+				const style = window.getComputedStyle(el);
+				if (style.position !== 'fixed' && style.position !== 'sticky') return;
+				const rect = el.getBoundingClientRect();
+				if (rect.bottom > 0 && rect.top <= 2) {
+					offset = Math.max(offset, Math.ceil(rect.height));
 				}
-				console.debug('getCatalogoPartidas response normalized length:', list.length, 'raw:', d);
-				setPartidas(list);
-			})
-			.catch(err => {
-				if (!mounted) return;
-				console.error('Error cargando partidas:', err);
-				setError(err?.response?.data || err?.message || 'Error desconocido');
-			})
-			.finally(() => {
-				if (!mounted) return;
-				setLoading(false);
 			});
-		return () => { mounted = false; };
+			setStickyTop(offset || 72);
+		};
+
+		detectHeaderOffset();
+		window.addEventListener('resize', detectHeaderOffset);
+		return () => window.removeEventListener('resize', detectHeaderOffset);
 	}, []);
 
-	const togglePartida = (p) => {
-		// normalizar id a string para evitar keys duplicadas/ambigüedad
-		const idRaw = p?.id ?? p?.pk ?? p?.codigo ?? null;
-		if (!idRaw) return;
-		const id = String(idRaw);
-		const isOpen = openPartidaId === id;
-		if (isOpen) {
-			setOpenPartidaId(null);
-			return;
+	useEffect(() => {
+		const el = stickyControlsRef.current;
+		if (!el) return;
+		const measure = () => setControlsHeight(Math.ceil(el.getBoundingClientRect().height));
+		measure();
+		const observer = new ResizeObserver(measure);
+		observer.observe(el);
+		window.addEventListener('resize', measure);
+		return () => {
+			observer.disconnect();
+			window.removeEventListener('resize', measure);
+		};
+	}, [importing, selectedItem]);
+
+	const cargarItems = async ({ targetPage = page, search = appliedSearch } = {}) => {
+		setLoading(true);
+		setError(null);
+		try {
+			const params = { page: targetPage };
+			if (String(search || '').trim().length >= 2) {
+				params.q = String(search).trim();
+			}
+			const res = await getItemsCatalogo(params);
+			const d = res?.data;
+			let list = [];
+			let count = 0;
+			let hasNext = false;
+			let hasPrev = false;
+
+			if (Array.isArray(d)) {
+				list = d;
+				count = d.length;
+			} else if (d && Array.isArray(d.results)) {
+				list = d.results;
+				count = Number(d.count || d.results.length || 0);
+				hasNext = Boolean(d.next);
+				hasPrev = Boolean(d.previous);
+			} else if (d && Array.isArray(d.data)) {
+				list = d.data;
+				count = d.data.length;
+			}
+
+			setItems(list);
+			setTotalCount(count);
+			setHasNextPage(hasNext);
+			setHasPrevPage(hasPrev);
+			if (selectedItem && !list.some(it => String(it.id) === String(selectedItem.id))) {
+				setSelectedItem(null);
+			}
+		} catch (err) {
+			setError(err?.response?.data?.detail || err?.message || 'Error cargando items.');
+			setItems([]);
+		} finally {
+			setLoading(false);
 		}
-		// abrir
-		setOpenPartidaId(id);
-		// si ya tenemos items en cache, no volver a pedir
-		if (itemsByPartida[id]) return;
-
-		// marcar carga
-		setLoadingPartida(prev => ({ ...prev, [id]: true }));
-		setErrorPartida(prev => ({ ...prev, [id]: null }));
-
-		// Intentar solicitar al endpoint pasando el id de la partida en varias claves
-		// para maximizar compatibilidad con lo que el backend espere.
-		const params = { partida_id: idRaw, partida: idRaw, partida_codigo: p.codigo ?? undefined };
-		getCatalogoItems(params)
-			.then(res => {
-				// Normalizar la respuesta del endpoint de items: puede devolver [] o { results: [] } etc.
-				const d = res?.data;
-				let items = [];
-				if (Array.isArray(d)) items = d;
-				else if (d && Array.isArray(d.results)) items = d.results;
-				else if (d && Array.isArray(d.data)) items = d.data;
-				else if (d && Array.isArray(d.items)) items = d.items;
-				else {
-					for (const k of Object.keys(d || {})) { if (Array.isArray(d[k])) { items = d[k]; break; } }
-				}
-				// Si el endpoint ya devolvió items (filtrados por la partida), los usamos directamente.
-				if (items.length > 0) {
-					console.debug('getCatalogoItems returned items for partida', id, 'len', items.length);
-					setItemsByPartida(prev => ({ ...prev, [id]: items }));
-					return;
-				}
-				// Si no devolvió nada, caemos al fallback: intentar filtrar localmente sobre d (si es array)
-				const data = Array.isArray(d) ? d : [];
-				if (data.length === 0) {
-					console.debug('getCatalogoItems no devolvió array; raw:', d);
-					setItemsByPartida(prev => ({ ...prev, [id]: [] }));
-					return;
-				}
-				// Fallback: filtrar localmente usando la lógica robusta anterior
-				const partidaValuesFromItem = (it) => {
-					const vals = [];
-					if (it.partida_id !== undefined && it.partida_id !== null) vals.push(String(it.partida_id));
-					if (it.partida !== undefined && it.partida !== null) {
-						if (typeof it.partida === 'object') {
-							if (it.partida.id !== undefined) vals.push(String(it.partida.id));
-							if (it.partida.pk !== undefined) vals.push(String(it.partida.pk));
-							if (it.partida.codigo !== undefined) vals.push(String(it.partida.codigo));
-						} else {
-							vals.push(String(it.partida));
-						}
-					}
-					if (it.codigo_partida !== undefined && it.codigo_partida !== null) vals.push(String(it.codigo_partida));
-					if (it.partida_codigo !== undefined && it.partida_codigo !== null) vals.push(String(it.partida_codigo));
-					return vals.map(v => v.trim());
-				};
-				const candidates = [String(id), String(p.codigo ?? ''), String(p.partida ?? '')].map(v => v.trim()).filter(v => v !== '');
-				let filtered = data.filter(it => {
-					const vals = partidaValuesFromItem(it);
-					for (const c of candidates) {
-						for (const v of vals) {
-							if (v === c) return true;
-							if (v.includes && c && v.includes(c)) return true;
-							if (c.includes && v && c.includes(v)) return true;
-						}
-					}
-					return false;
-				});
-				console.debug('fallback filtered items for partida', id, 'filteredLen', filtered.length);
-				setItemsByPartida(prev => ({ ...prev, [id]: filtered }));
-			})
-			.catch(err => {
-				console.error('Error cargando items para partida', id, err);
-				setErrorPartida(prev => ({ ...prev, [id]: err?.response?.data || err?.message || 'Error desconocido' }));
-			})
-			.finally(() => {
-				setLoadingPartida(prev => ({ ...prev, [id]: false }));
-			});
 	};
 
-	const openNuevoItem = (p) => {
-		setModalPartida(p);
-		setModalItem(null);
-		setShowItemModal(true);
+	useEffect(() => {
+		cargarItems({ targetPage: page, search: appliedSearch });
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [page, appliedSearch]);
+
+	const handleBuscarItems = () => {
+		const q = String(searchQuery || '').trim();
+		setPage(1);
+		setAppliedSearch(q);
 	};
 
-	const openEditarItem = (p, it) => {
-		setModalPartida(p);
+	const handleLimpiarBusqueda = () => {
+		setSearchQuery('');
+		setAppliedSearch('');
+		setPage(1);
+	};
+
+	const openEditarItem = (it) => {
 		setModalItem(it);
 		setShowItemModal(true);
 	};
 
-	const handleItemCreated = (created) => {
-		// agregar al listado de la partida correspondiente
-		const id = String(modalPartida?.id ?? modalPartida?.pk ?? modalPartida?.codigo ?? '');
-		setItemsByPartida(prev => {
-			const list = Array.isArray(prev[id]) ? [...prev[id]] : [];
-			list.unshift(created);
-			return { ...prev, [id]: list };
-		});
+	const openNuevoItem = () => {
+		setModalItem(null);
+		setShowItemModal(true);
+	};
+
+	const handleItemCreated = async () => {
+		await cargarItems({ targetPage: page, search: appliedSearch });
 		setShowItemModal(false);
 	};
 
 	const handleItemUpdated = (updated) => {
-		const id = String(modalPartida?.id ?? modalPartida?.pk ?? modalPartida?.codigo ?? '');
-		setItemsByPartida(prev => {
-			const list = Array.isArray(prev[id]) ? prev[id].map(it => (String(it.id) === String(updated.id) ? updated : it)) : [updated];
-			return { ...prev, [id]: list };
-		});
+		setItems(prev => prev.map(it => (String(it.id) === String(updated.id) ? updated : it)));
+		setSelectedItem(updated);
 		setShowItemModal(false);
 	};
 
-	const handleEliminarItem = async (p, it) => {
-		const ok = window.confirm(`Eliminar item ${it.id || it.codigo || it.descripcion || ''}?`);
+	const handleEditarSeleccionado = () => {
+		if (!selectedItem) {
+			toast.error('Selecciona un item para editar.');
+			return;
+		}
+		openEditarItem(selectedItem);
+	};
+
+	const handleEliminarSeleccionado = async () => {
+		if (!selectedItem) {
+			toast.error('Selecciona un item para eliminar.');
+			return;
+		}
+		const ok = window.confirm(`Eliminar item ${selectedItem.id || selectedItem.detalle || ''}?`);
 		if (!ok) return;
 		try {
-			await deleteCatalogoItem(it.id);
-			const id = String(p?.id ?? p?.pk ?? p?.codigo ?? '');
-			setItemsByPartida(prev => ({ ...prev, [id]: (prev[id] || []).filter(x => String(x.id) !== String(it.id)) }));
+			await deleteCatalogoItem(selectedItem.id);
+			setItems(prev => prev.filter(x => String(x.id) !== String(selectedItem.id)));
+			setSelectedItem(null);
 			toast.success('Item eliminado');
 		} catch (err) {
 			console.error('Error eliminando item', err);
@@ -195,98 +173,401 @@ const CatalogoItems = () => {
 		}
 	};
 
+	const handleOpenImportPicker = () => {
+		if (importing) return;
+		fileInputRef.current?.click();
+	};
+
+	const handleDescargarCatalogoExcel = async () => {
+		setDownloading(true);
+		setDownloadProgress(0);
+		setDownloadIndeterminate(false);
+		try {
+			const res = await descargarCatalogoItemsExcel({
+				onDownloadProgress: (progressEvent) => {
+					const total = Number(progressEvent?.total || 0);
+					const loaded = Number(progressEvent?.loaded || 0);
+					if (!total || total <= 0) {
+						setDownloadIndeterminate(true);
+						return;
+					}
+					setDownloadIndeterminate(false);
+					const percent = Math.min(100, Math.max(0, Math.round((loaded * 100) / total)));
+					setDownloadProgress(percent);
+				},
+			});
+			const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = 'catalogo_items.xlsx';
+			document.body.appendChild(a);
+			a.click();
+			document.body.removeChild(a);
+			URL.revokeObjectURL(url);
+			setDownloadProgress(100);
+			toast.success('Descarga completada.');
+		} catch (err) {
+			toast.error(err?.response?.data?.detail || 'No se pudo descargar el catálogo.');
+		} finally {
+			setTimeout(() => {
+				setDownloading(false);
+				setDownloadProgress(0);
+				setDownloadIndeterminate(false);
+			}, 250);
+		}
+	};
+
+	const descargarErroresCSV = () => {
+		if (!Array.isArray(importErrores) || importErrores.length === 0) return;
+		const headers = ['fila', 'error'];
+		const lines = [headers.join(',')];
+		for (const err of importErrores) {
+			const fila = String(err?.fila ?? '').replace(/"/g, '""');
+			const errorText = String(err?.error ?? '').replace(/"/g, '""');
+			lines.push(`"${fila}","${errorText}"`);
+		}
+		const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = 'errores_importacion_items.csv';
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
+		URL.revokeObjectURL(url);
+	};
+
+	const descargarPlantillaExcel = () => {
+		const headers = ['DETALLE', 'partida', 'UNIDAD_MEDIDA'];
+		const ejemplo1 = ['MOTOR TRIFASICO ROTOR BOBINADO 15.000 W', '43200', 'UNIDAD'];
+		const ejemplo2 = ['MOTOR TRIFASICO ROTOR BOBINADO 22.000 W', '43200', 'UNIDAD'];
+		const rows = [headers, ejemplo1, ejemplo2];
+		const csv = rows
+			.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+			.join('\n');
+		const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = 'plantilla_items_poa.csv';
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
+		URL.revokeObjectURL(url);
+	};
+
+	const handleImportExcel = async (event) => {
+		const file = event.target.files?.[0];
+		if (!file) return;
+
+		const formData = new FormData();
+		formData.append('archivo', file);
+		formData.append('dry_run', 'false');
+
+		setImporting(true);
+		setImportArchivoNombre(file.name || '');
+		try {
+			let res;
+			try {
+				res = await importarCatalogoItemsExcel(formData);
+			} catch (err) {
+				if (err?.response?.status === 409 && err?.response?.data?.requires_confirmation) {
+					const okReplace = window.confirm('Se detectaron DETALLE duplicados. ¿Deseas reemplazar los existentes?');
+					if (!okReplace) {
+						toast('Importación cancelada por el usuario.');
+						return;
+					}
+					formData.append('replace_duplicates', 'true');
+					res = await importarCatalogoItemsExcel(formData);
+				} else {
+					throw err;
+				}
+			}
+
+			const resumen = res?.data?.resumen || null;
+			const errores = Array.isArray(res?.data?.errores) ? res.data.errores : [];
+			setImportResumen(resumen);
+			setImportErrores(errores);
+
+			toast.success(
+				`Importación completada. Items creados: ${resumen?.items_creados || 0}, ` +
+				`Actualizados: ${resumen?.items_actualizados || 0}, ` +
+				`Partidas únicas: ${resumen?.partidas_unicas_detectadas || 0}, ` +
+				`Errores: ${resumen?.errores || 0}`
+			);
+			setSelectedItem(null);
+			await cargarItems({ targetPage: 1, search: appliedSearch });
+			setPage(1);
+		} catch (err) {
+			const detail = err?.response?.data?.detail || err?.message || 'No se pudo importar el archivo.';
+			toast.error(String(detail));
+		} finally {
+			setImporting(false);
+			event.target.value = '';
+		}
+	};
+
 	return (
-		<div className="catalogo-card w-full max-w-6xl mx-auto p-6 bg-white rounded shadow">
-			{loading && <div className="text-blue-600">Cargando partidas...</div>}
-			{error && <div className="text-red-600">Error al cargar partidas: {typeof error === 'string' ? error : JSON.stringify(error)}</div>}
+		<div className="catalogo-card w-full max-w-6xl mx-auto p-6 rounded shadow border border-slate-200 bg-white text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+			<div
+				ref={stickyControlsRef}
+				className="sticky z-30 mb-4 rounded-lg p-3 shadow-sm border border-slate-200 bg-white/95 backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/95"
+				style={{ top: `${stickyTop}px` }}
+			>
+				<div className="mb-3 rounded-lg p-3 border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
+					<div className="text-sm font-semibold text-slate-700 mb-2 dark:text-slate-200">Tabla de items (estilo Excel): DETALLE, partida, UNIDAD_MEDIDA</div>
+					<div className="flex flex-wrap items-center gap-2">
+						<input
+							type="text"
+							value={searchQuery}
+							onChange={(e) => setSearchQuery(e.target.value)}
+							onKeyDown={(e) => { if (e.key === 'Enter') handleBuscarItems(); }}
+							placeholder="Ejemplo: AZULEJO / 43200 / UNIDAD"
+							className="px-3 py-2 rounded w-full md:w-[420px] border border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
+						/>
+						<button type="button" onClick={handleBuscarItems} className="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">
+							Buscar
+						</button>
+						<button type="button" onClick={handleLimpiarBusqueda} className="px-3 py-2 rounded bg-slate-200 text-slate-800 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600">
+							Limpiar
+						</button>
+					</div>
+				</div>
+
+				<div className="flex justify-end gap-3">
+					<IconButton
+						showIcon
+						icon={<FaFileUpload />}
+						onClick={openNuevoItem}
+						className="btn-futuristic font-bold py-2 px-4 rounded"
+						title="Crear nuevo item"
+					>
+						Nuevo item
+					</IconButton>
+					{selectedItem && (
+						<>
+							<IconButton
+								showIcon
+								icon={<FaEdit />}
+								onClick={handleEditarSeleccionado}
+								className="btn-futuristic font-bold py-2 px-4 rounded"
+								title="Editar item seleccionado"
+							>
+								Editar seleccionado
+							</IconButton>
+							<IconButton
+								showIcon
+								icon={<FaTrash />}
+								onClick={handleEliminarSeleccionado}
+								className="btn-futuristic font-bold py-2 px-4 rounded"
+								title="Eliminar item seleccionado"
+							>
+								Eliminar seleccionado
+							</IconButton>
+						</>
+					)}
+					<button
+						type="button"
+						onClick={handleDescargarCatalogoExcel}
+						disabled={downloading}
+						className="px-4 py-2 rounded bg-emerald-600 text-white font-semibold hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed"
+					>
+						{downloading ? 'Descargando...' : 'Descargar catálogo'}
+					</button>
+					<input
+						type="file"
+						ref={fileInputRef}
+						onChange={handleImportExcel}
+						accept=".xlsx,.xls"
+						className="hidden"
+					/>
+					<IconButton
+						showIcon
+						icon={<FaFileUpload />}
+						onClick={handleOpenImportPicker}
+						className="btn-futuristic font-bold py-2 px-4 rounded"
+						title="Importar items desde Excel"
+					>
+						{importing ? 'Importando...' : 'Importar Excel'}
+					</IconButton>
+				</div>
+			</div>
+
+			{importing && (
+				<div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+					<div className="flex items-center gap-3 mb-2">
+						<div className="text-sm font-semibold text-blue-900">
+							Importando items...
+						</div>
+					</div>
+					<div className="w-full h-2 bg-blue-200 rounded-full overflow-hidden">
+						<div
+							className="h-full bg-gradient-to-r from-blue-400 to-blue-600 rounded-full"
+							style={{
+								animation: 'progress-bar 1.5s ease-in-out infinite',
+								width: '30%',
+							}}
+						/>
+					</div>
+					<div className="text-xs text-blue-700 mt-2">Por favor espera, esto puede tomar algunos minutos...</div>
+					<style>{`
+						@keyframes progress-bar {
+							0% { transform: translateX(-100%); }
+							100% { transform: translateX(1000%); }
+						}
+					`}</style>
+				</div>
+			)}
+
+			{downloading && (
+				<div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-lg dark:bg-emerald-900/30 dark:border-emerald-700">
+					<div className="text-sm font-semibold text-emerald-900 dark:text-emerald-200 mb-2">
+						Descargando catálogo... {downloadIndeterminate ? '' : `${downloadProgress}%`}
+					</div>
+					<div className="w-full h-2 bg-emerald-200 rounded-full overflow-hidden dark:bg-emerald-800/60">
+						{downloadIndeterminate ? (
+							<div
+								className="h-full bg-gradient-to-r from-emerald-400 to-emerald-600 rounded-full"
+								style={{
+									animation: 'download-progress-indeterminate 1.4s ease-in-out infinite',
+									width: '30%',
+								}}
+							/>
+						) : (
+							<div
+								className="h-full bg-gradient-to-r from-emerald-400 to-emerald-600 rounded-full transition-all duration-200"
+								style={{ width: `${downloadProgress}%` }}
+							/>
+						)}
+					</div>
+					<div className="text-xs text-emerald-800 dark:text-emerald-300 mt-2">Generando archivo Excel, por favor espera...</div>
+					<style>{`
+						@keyframes download-progress-indeterminate {
+							0% { transform: translateX(-100%); }
+							100% { transform: translateX(400%); }
+						}
+					`}</style>
+				</div>
+			)}
+
+			{importResumen && (
+				<div className="mb-4 border border-blue-200 rounded-lg p-4 bg-blue-50">
+					<div className="flex items-center justify-between gap-3 mb-2">
+						<div className="font-semibold text-blue-900">Resultado de {importResumen?.dry_run ? 'vista previa' : 'importación'}</div>
+						{importArchivoNombre && <div className="text-xs text-blue-700">Archivo: {importArchivoNombre}</div>}
+					</div>
+					<div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm text-blue-900">
+						<div>Procesadas: <b>{importResumen.filas_procesadas || 0}</b></div>
+						<div>Errores: <b>{importResumen.errores || 0}</b></div>
+						<div>Items creados: <b>{importResumen.items_creados || 0}</b></div>
+						<div>Partidas únicas: <b>{importResumen.partidas_unicas_detectadas || 0}</b></div>
+					</div>
+					{importErrores.length > 0 && (
+						<div className="mt-3">
+							<div className="flex items-center justify-between mb-2">
+								<div className="text-sm font-medium text-red-700">Errores detectados: {importErrores.length}</div>
+								<button type="button" onClick={descargarErroresCSV} className="text-xs px-3 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200">
+									Descargar CSV de errores
+								</button>
+							</div>
+							<div className="max-h-40 overflow-auto border border-red-200 rounded bg-white text-xs">
+								<table className="min-w-full">
+									<thead className="bg-red-50">
+										<tr>
+											<th className="text-left px-2 py-1">Fila</th>
+											<th className="text-left px-2 py-1">Error</th>
+										</tr>
+									</thead>
+									<tbody>
+										{importErrores.slice(0, 100).map((e, i) => (
+											<tr key={`imp-err-${i}`} className="border-t">
+												<td className="px-2 py-1">{e?.fila ?? '-'}</td>
+												<td className="px-2 py-1">{e?.error ?? 'Error desconocido'}</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+							</div>
+						</div>
+					)}
+				</div>
+			)}
+
+			{loading && <div className="text-blue-600 dark:text-blue-400">Cargando items...</div>}
+			{error && <div className="text-red-600 dark:text-red-400">Error al cargar items: {typeof error === 'string' ? error : JSON.stringify(error)}</div>}
 
 			{!loading && !error && (
-				<div className="space-y-3">
-						{partidas.length === 0 && (
-							<div className="text-gray-500">No se encontraron partidas.</div>
-						)}
-						{/* Mostrar conteo de partidas para depuración rápida */}
-						<div className="text-sm text-gray-400">Partidas encontradas: {partidas.length}</div>
-
-					{partidas.map((p, idx) => {
-						const idRaw = p?.id ?? p?.pk ?? p?.codigo ?? '';
-						const id = String(idRaw);
-						const isOpen = openPartidaId === id;
-						const partidaItems = itemsByPartida[id] ?? [];
-						const partidaLoading = loadingPartida[id];
-						const partidaError = errorPartida[id];
-
-						return (
-							<div key={`partida-${id}-${idx}`} className="catalogo-item border rounded">
-								<button type="button" onClick={() => togglePartida(p)} className="catalogo-item-header w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100">
-									<div className="flex items-center gap-4">
-										<div className="catalogo-code font-mono text-sm text-gray-700">{p.codigo ?? p.partida ?? id}</div>
-										<div className="catalogo-name font-semibold text-gray-800">{p.nombre ?? p.titulo ?? '—'}</div>
-									</div>
-									<FaChevronDown className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-								</button>
-
-								<div className={`catalogo-item-body px-4 overflow-hidden transition-all duration-300 ${isOpen ? 'max-h-96 py-4' : 'max-h-0'}`}>
-									{isOpen && (
-										<div className="flex justify-end mb-3">
-											<IconButton showIcon icon={<FaPlus />} onClick={() => openNuevoItem(p)} className="btn-futuristic font-bold py-1 px-3 rounded" title="Nuevo ítem">Nuevo</IconButton>
-										</div>
-									)}
-									{partidaLoading && <div className="text-blue-600">Cargando items...</div>}
-									{partidaError && <div className="text-red-600">Error: {typeof partidaError === 'string' ? partidaError : JSON.stringify(partidaError)}</div>}
-
-									{!partidaLoading && !partidaError && (
-										<div>
-											{partidaItems.length === 0 ? (
-												<div className="text-gray-500">No se encontraron items para esta partida.</div>
-											) : (
-												<div className="overflow-x-auto">
-
-								{showItemModal && (
-									<NuevoCatalogoItemModal
-										partida={modalPartida}
-										item={modalItem}
-										onClose={() => setShowItemModal(false)}
-										onCreated={handleItemCreated}
-										onUpdated={handleItemUpdated}
-									/>
+				<div>
+					<div className="text-sm text-slate-500 dark:text-slate-400 mb-2">Total de registros: {totalCount}</div>
+					<div className="overflow-auto max-h-[68vh] border rounded border-slate-300 dark:border-slate-700">
+						<table className="min-w-full table-auto border-collapse font-sans text-sm leading-snug text-blue-900 dark:text-white">
+							<thead>
+								<tr className="text-left">
+									<th className="sticky top-0 z-20 px-3 py-2 border border-blue-300 dark:border-gray-600 font-medium bg-blue-100 text-blue-900 dark:bg-slate-900 dark:text-slate-100 shadow-sm">Partida</th>
+									<th className="sticky top-0 z-20 px-3 py-2 border border-blue-300 dark:border-gray-600 font-medium bg-blue-100 text-blue-900 dark:bg-slate-900 dark:text-slate-100 shadow-sm">DETALLE</th>
+									<th className="sticky top-0 z-20 px-3 py-2 border border-blue-300 dark:border-gray-600 font-medium bg-blue-100 text-blue-900 dark:bg-slate-900 dark:text-slate-100 shadow-sm">UNIDAD_MEDIDA</th>
+								</tr>
+							</thead>
+							<tbody>
+								{items.length === 0 && (
+									<tr>
+										<td className="px-3 py-3 text-slate-500 dark:text-slate-400" colSpan={3}>No hay registros para mostrar.</td>
+									</tr>
 								)}
-													<table className="min-w-full table-auto border-collapse font-sans text-base leading-snug text-blue-900 dark:text-white poa-borders-ultra">
-														<thead>
-															<tr className="text-left bg-blue-100 dark:bg-transparent text-blue-900 dark:text-white">
-																<th className="px-4 py-2 border border-blue-300 dark:border-gray-600 font-medium">Descripción</th>
-																<th className="px-4 py-2 border border-blue-300 dark:border-gray-600 font-medium">Unidad de medida</th>
-																<th className="px-4 py-2 border border-blue-300 dark:border-gray-600 w-24 font-medium">&nbsp;</th>
-																</tr>
-														</thead>
-														<tbody>
-															{partidaItems.map((it, idx) => {
-																const desc = it.descripcion ?? it.detalle ?? it.nombre ?? it.titulo ?? '';
-																const unidad = it.unidad_medida ?? it.unidad ?? it.uom ?? it.medida ?? it.unidadMedida ?? '';
-																return (
-																	<tr key={`item-${it?.id ?? idx}`} className="odd:bg-white even:bg-blue-50 text-blue-900 dark:text-white">
-																		<td className="px-4 py-2 border border-blue-300 dark:border-gray-600 align-top"><div className="table-cell-clamp">{desc}</div></td>
-																		<td className="px-4 py-2 border border-blue-300 dark:border-gray-600 align-top">{unidad}</td>
-																		<td className="px-4 py-2 border border-blue-300 dark:border-gray-600 align-top">
-																			<div className="flex items-center gap-2 justify-end">
-																				<IconButton icon={<FaEdit />} onClick={() => openEditarItem(p, it)} title="Editar" />
-																				<IconButton icon={<FaTrash />} onClick={() => handleEliminarItem(p, it)} title="Eliminar" />
-																			</div>
-																		</td>
-																	</tr>
-																);
-															})}
-														</tbody>
-													</table>
-												</div>
-											)}
-										</div>
-									)}
-								</div>
-							</div>
-						);
-					})}
+								{items.map((it, idx) => {
+									const isSelected = selectedItem && String(selectedItem.id) === String(it.id);
+									const rowBase = 'px-3 py-2 border border-blue-300 dark:border-gray-600 align-top';
+									const cellStateClass = isSelected
+										? 'bg-amber-300 text-slate-950 font-semibold dark:bg-cyan-700 dark:text-white'
+										: 'odd:bg-white even:bg-blue-50 dark:odd:bg-slate-900 dark:even:bg-slate-800 dark:text-slate-100';
+									return (
+										<tr
+											key={`item-${it?.id ?? idx}`}
+											onClick={() => setSelectedItem(it)}
+											className={`cursor-pointer border-t transition-colors ${isSelected ? 'ring-1 ring-inset ring-amber-500 dark:ring-cyan-400' : ''}`}
+										>
+											<td className={`${rowBase} ${cellStateClass}`}>{it?.partida || '-'}</td>
+											<td className={`${rowBase} ${cellStateClass}`}><div className="table-cell-clamp">{it?.detalle || '-'}</div></td>
+											<td className={`${rowBase} ${cellStateClass}`}>{it?.unidad_medida || '-'}</td>
+										</tr>
+									);
+								})}
+							</tbody>
+						</table>
+					</div>
+					<div className="mt-3 flex items-center justify-between">
+						<div className="text-sm text-slate-600">Página: {page}</div>
+						<div className="flex items-center gap-2">
+							<button
+								type="button"
+								onClick={() => setPage((p) => Math.max(1, p - 1))}
+								disabled={!hasPrevPage}
+								className="px-3 py-1 rounded border disabled:opacity-50"
+							>
+								Anterior
+							</button>
+							<button
+								type="button"
+								onClick={() => setPage((p) => p + 1)}
+								disabled={!hasNextPage}
+								className="px-3 py-1 rounded border disabled:opacity-50"
+							>
+								Siguiente
+							</button>
+						</div>
+					</div>
 				</div>
+			)}
+
+			{showItemModal && (
+				<NuevoCatalogoItemModal
+					partida={modalItem ? { codigo: modalItem.partida } : null}
+					item={modalItem}
+					onClose={() => setShowItemModal(false)}
+					onCreated={handleItemCreated}
+					onUpdated={handleItemUpdated}
+				/>
 			)}
 		</div>
 	);
