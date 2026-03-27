@@ -381,7 +381,7 @@ class PerfilUsuarioSerializer(serializers.ModelSerializer):
     class Meta:
         model = PerfilUsuario
         fields = ['id', 'rol', 'carrera', 'carrera_nombre', 'docente', 'docente_nombre', 
-                  'telefono', 'activo', 'foto_perfil', 'debe_cambiar_password']
+                  'ci', 'telefono', 'activo', 'foto_perfil', 'debe_cambiar_password']
 
     def get_carrera_nombre(self, obj):
         """Retorna el nombre de la carrera si existe, si no, None."""
@@ -468,6 +468,7 @@ class UsuarioSerializer(serializers.ModelSerializer):
 class CrearUsuarioSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=True, min_length=8)
     password_confirm = serializers.CharField(write_only=True, required=True)
+    ci = serializers.CharField(required=True, allow_blank=False)
     # Se definen los roles explícitamente para evitar problemas de carga
     # en el servidor de desarrollo que puedan mostrar una lista incompleta.
     rol = serializers.ChoiceField(choices=[
@@ -491,7 +492,7 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['username', 'email', 'password', 'password_confirm', 'first_name',
-                  'last_name', 'rol', 'carrera', 'docente', 'docente_data']
+                  'last_name', 'ci', 'rol', 'carrera', 'docente', 'docente_data']
         extra_kwargs = {
             'first_name': {'required': True, 'allow_blank': False},
             'last_name': {'required': True, 'allow_blank': False},
@@ -503,6 +504,17 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
         if data['password'] != data['password_confirm']:
             raise serializers.ValidationError({
                 'password_confirm': 'Las contraseñas no coinciden'
+            })
+
+        submitted_ci = (data.get('ci') or '').strip()
+        if not submitted_ci:
+            raise serializers.ValidationError({
+                'ci': 'La cédula de identidad es obligatoria.'
+            })
+
+        if PerfilUsuario.objects.filter(ci__iexact=submitted_ci).exists():
+            raise serializers.ValidationError({
+                'ci': 'Ya existe un usuario con este CI.'
             })
         
         # Validar que el director tenga carrera asignada
@@ -523,16 +535,22 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
         # Validar los datos del nuevo docente si se proporcionan
         if data.get('docente_data'):
             docente_data = data.get('docente_data')
+            docente_data['ci'] = submitted_ci
             docente_serializer = DocenteSerializer(data=docente_data)
             docente_serializer.is_valid(raise_exception=True)
             if 'ci' in docente_data and Docente.objects.filter(ci=docente_data['ci']).exists():
                 raise serializers.ValidationError({'docente_data': {'ci': 'Ya existe un docente con este CI.'}})
+        elif data.get('docente') and getattr(data.get('docente'), 'ci', '').strip().upper() != submitted_ci.upper():
+            raise serializers.ValidationError({
+                'ci': 'El CI debe coincidir con el del docente existente seleccionado.'
+            })
         
         return data
     
     def create(self, validated_data):
         # Extraer datos del perfil
         validated_data.pop('password_confirm')
+        ci = validated_data.pop('ci')
         rol = validated_data.pop('rol')
         carrera = validated_data.pop('carrera', None)
         docente = validated_data.pop('docente', None)
@@ -566,6 +584,7 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
         user.perfil.rol = rol
         user.perfil.carrera = carrera
         user.perfil.docente = docente_obj
+        user.perfil.ci = ci
 
         # Guardamos el usuario. La señal 'guardar_perfil_usuario' se encargará de guardar el perfil.
         user.save()

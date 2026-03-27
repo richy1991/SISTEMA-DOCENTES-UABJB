@@ -149,6 +149,7 @@ function GestionUsuarios({ isDark }) {
         email: '',
         first_name: '',
         last_name: '',
+        ci: '',
         rol: 'docente',
         carrera: '',
         docente: '',
@@ -158,7 +159,6 @@ function GestionUsuarios({ isDark }) {
           nombres: '',
           apellido_paterno: '',
           apellido_materno: '',
-          ci: '',
           categoria: 'catedratico',
           dedicacion: 'tiempo_completo',
         }
@@ -241,6 +241,15 @@ function GestionUsuarios({ isDark }) {
             apellido_materno: materno 
           };
         }
+        if (name === 'ci') {
+          updated.docente_data = { ...updated.docente_data, ci: value };
+        }
+      }
+      if (name === 'docente' && value) {
+        const docenteSeleccionado = docentes.find((docente) => String(docente.id) === String(value));
+        if (docenteSeleccionado?.ci) {
+          updated.ci = docenteSeleccionado.ci;
+        }
       }
       return updated;
     });
@@ -278,11 +287,47 @@ function GestionUsuarios({ isDark }) {
     setIsSubmitting(true);
     setErrors({});
 
+    const normalizeCi = (value) => String(value || '').trim().replace(/\s+/g, '').toUpperCase();
+    const submittedCi = normalizeCi(formData.ci);
+
+    if (!submittedCi) {
+      setErrors({ ci: ['La cédula de identidad es obligatoria.'] });
+      toast.error('Debe ingresar la cédula de identidad.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    const docenteExistenteSeleccionado = docentes.find((docente) => String(docente.id) === String(formData.docente));
+    const ciDuplicadoEnDocentes = docentes.some((docente) => {
+      const mismoCi = normalizeCi(docente?.ci) === submittedCi;
+      if (!mismoCi) return false;
+      if (formData.rol === 'docente' && !crearNuevoDocente && docenteExistenteSeleccionado) {
+        return String(docente.id) !== String(docenteExistenteSeleccionado.id);
+      }
+      return true;
+    });
+    const ciDuplicadoEnUsuarios = usuarios.some((usuario) => {
+      const mismoCi = normalizeCi(usuario?.perfil?.ci) === submittedCi;
+      if (!mismoCi) return false;
+      if (formData.rol === 'docente' && !crearNuevoDocente && docenteExistenteSeleccionado) {
+        return String(usuario?.perfil?.docente) !== String(docenteExistenteSeleccionado.id);
+      }
+      return true;
+    });
+
+    if (ciDuplicadoEnDocentes || ciDuplicadoEnUsuarios) {
+      setErrors({ ci: ['Ya existe una persona registrada con esta cédula de identidad.'] });
+      toast.error('La persona ya está registrada con ese CI.');
+      setIsSubmitting(false);
+      return;
+    }
+
     let payload = {
       username: formData.username,
       email: formData.email,
       first_name: formData.first_name,
       last_name: formData.last_name,
+      ci: formData.ci,
       rol: formData.rol,
       password: formData.password,
       password_confirm: formData.password_confirm,
@@ -292,7 +337,10 @@ function GestionUsuarios({ isDark }) {
       payload.carrera = formData.carrera;
     } else if (formData.rol === 'docente') {
       if (crearNuevoDocente) {
-        payload.docente_data = formData.docente_data;
+        payload.docente_data = {
+          ...formData.docente_data,
+          ci: formData.ci,
+        };
       } else {
         payload.docente = formData.docente;
       }
@@ -307,7 +355,13 @@ function GestionUsuarios({ isDark }) {
       console.error('Error al crear usuario:', err.response);
       const apiErrors = err.response?.data;
       if (apiErrors) {
-        setErrors(apiErrors);
+        const normalizedErrors = { ...apiErrors };
+        if (apiErrors?.docente_data?.ci) {
+          normalizedErrors.ci = Array.isArray(apiErrors.docente_data.ci)
+            ? apiErrors.docente_data.ci
+            : [apiErrors.docente_data.ci];
+        }
+        setErrors(normalizedErrors);
         const errorMsg = Object.values(apiErrors).flat().join(' ');
         toast.error(`Error: ${errorMsg}`);
       } else {
@@ -368,6 +422,7 @@ function GestionUsuarios({ isDark }) {
                   <div className="space-y-4">
                     <InputField label="Usuario" name="username" value={formData.username || ''} onChange={handleChange} required error={errors.username} />
                     <InputField label="Email" name="email" type="email" value={formData.email || ''} onChange={handleChange} error={errors.email} />
+                    <InputField label="Cédula de Identidad (CI)" name="ci" value={formData.ci || ''} onChange={handleChange} required error={errors.ci} />
                     <InputField label="Nombres" name="first_name" value={formData.first_name || ''} onChange={handleChange} required error={errors.first_name} />
                     <InputField label="Apellidos" name="last_name" value={formData.last_name || ''} onChange={handleChange} required error={errors.last_name} />
                     <div className="pt-1">
@@ -432,6 +487,7 @@ function GestionUsuarios({ isDark }) {
                                         ...prev,
                                         docente_data: {
                                           ...prev.docente_data,
+                                          ci: prev.ci || '',
                                           nombres: prev.first_name || '',
                                           apellido_paterno: paterno,
                                           apellido_materno: materno
@@ -456,7 +512,6 @@ function GestionUsuarios({ isDark }) {
                                       </div>
                                       <InputField label="Apellido Paterno" name="apellido_paterno" value={formData.docente_data.apellido_paterno} onChange={handleDocenteDataChange} required error={errors.docente_data?.apellido_paterno} />
                                       <InputField label="Apellido Materno" name="apellido_materno" value={formData.docente_data.apellido_materno} onChange={handleDocenteDataChange} error={errors.docente_data?.apellido_materno} />
-                                      <InputField label="Cédula de Identidad (CI)" name="ci" value={formData.docente_data.ci} onChange={handleDocenteDataChange} required error={errors.docente_data?.ci} />
                                       <div>
                                           <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Categoría</label>
                                           <select name="categoria" value={formData.docente_data.categoria} onChange={handleDocenteDataChange} className="w-full px-4 py-3 rounded-xl border-2 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white border-slate-300 dark:border-slate-600">
