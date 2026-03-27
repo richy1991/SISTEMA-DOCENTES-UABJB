@@ -3,6 +3,79 @@ import api from '../apis/api';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
+// Componente Select con diseño personalizado (mismo estilo que ListaDocentes)
+const SelectConDropdown = ({ label, value, onChange, options, name }) => {
+  const [open, setOpen] = useState(false);
+  const containerRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const handleOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    if (open) {
+      document.addEventListener('mousedown', handleOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+    };
+  }, [open]);
+
+  const selectedLabel = value && options.find(opt => opt.value === value)?.label;
+  const displayLabel = selectedLabel || 'Seleccione...';
+  const isPlaceholder = !value || value === 'todas' || value === 'todos';
+
+  const handleSelect = (optionValue) => {
+    onChange({ target: { name, value: optionValue } });
+    setOpen(false);
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      {label && <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label}</label>}
+      
+      {/* Botón principal */}
+      <div className={`relative w-full min-w-[200px] rounded-xl border-2 bg-slate-50 dark:bg-slate-700 shadow-sm border-slate-300 dark:border-slate-600`}>
+        <button
+          type="button"
+          onClick={() => setOpen((prev) => !prev)}
+          className="w-full text-left px-4 py-2.5 rounded-xl bg-transparent text-slate-800 dark:text-white flex items-center justify-between gap-2"
+        >
+          <span className={`truncate ${isPlaceholder ? 'text-slate-400/70 dark:text-slate-400/60' : 'text-slate-800 dark:text-white'}`}>{displayLabel}</span>
+          <span className="flex items-center justify-center h-6 w-6 rounded-md bg-[#2C4AAE] ring-1 ring-[#2C4AAE]">
+            <svg className={`w-3.5 h-3.5 text-white transition-transform duration-200 ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+            </svg>
+          </span>
+        </button>
+      </div>
+
+      {/* Menú desplegable */}
+      {open && (
+        <div className="absolute z-50 mt-2 w-full rounded-xl border-2 border-[#3A56AF] bg-white dark:bg-slate-900 shadow-xl">
+          <div className="max-h-40 overflow-auto p-2">
+            {options.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => handleSelect(option.value)}
+                className={`w-full text-left px-3 py-1.5 text-xs border-l-2 rounded-lg transition-colors ${
+                  option.value === value
+                    ? 'bg-cyan-50 dark:bg-cyan-900/30 border-cyan-500 text-cyan-800 dark:text-cyan-200 font-semibold'
+                    : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-slate-800/90'
+                }`}
+              >
+                <span className="block truncate">{option.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // --- ICONOS ---
 const BookOpenIcon = (props) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
@@ -40,17 +113,13 @@ const TrashIcon = (props) => (
     </svg>
 );
 
-const FilterIcon = (props) => (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z" />
-    </svg>
-);
-
 const MateriaList = ({ isDark }) => {
     const [materias, setMaterias] = useState([]);
+    const [carreras, setCarreras] = useState([]);
     const [loading, setLoading] = useState(true);
     const [user, setUser] = useState(null);
     const [semestreSeleccionado, setSemestreSeleccionado] = useState('todos');
+    const [carreraSeleccionada, setCarreraSeleccionada] = useState('todas');
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [materiaToDelete, setMateriaToDelete] = useState(null);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
@@ -58,8 +127,14 @@ const MateriaList = ({ isDark }) => {
     useEffect(() => {
         const userData = JSON.parse(localStorage.getItem('user') || 'null');
         setUser(userData);
-        const fetchMaterias = async () => {
+        const fetchDatos = async () => {
             try {
+                // Cargar carreras
+                const resCarreras = await api.get('/carreras/');
+                const carrerasData = resCarreras.data.results || resCarreras.data || [];
+                setCarreras(carrerasData);
+                
+                // Cargar materias
                 let allMaterias = [];
                 let nextUrl = '/materias/';
 
@@ -76,13 +151,13 @@ const MateriaList = ({ isDark }) => {
                 }
                 setMaterias(allMaterias);
             } catch (error) {
-                console.error("Error cargando materias:", error);
-                toast.error("Error al cargar materias");
+                console.error("Error cargando datos:", error);
+                toast.error("Error al cargar datos");
             } finally {
                 setLoading(false);
             }
         };
-        fetchMaterias();
+        fetchDatos();
     }, []);
 
     const handleDelete = (materia) => {
@@ -116,13 +191,20 @@ const MateriaList = ({ isDark }) => {
 
     const canEdit = user?.is_superuser || user?.perfil?.rol === 'admin' || user?.perfil?.rol === 'director';
 
-    // Obtener lista de semestres únicos para el filtro
+    // Obtener carreras desde la API
+    const carrerasDisponibles = carreras.map(c => c.nombre || c.nombre_corto || c.codigo).filter(Boolean).sort();
+    
+    // Obtener semestres disponibles desde las materias
     const semestresDisponibles = [...new Set(materias.map(m => m.semestre))].sort((a, b) => a - b);
 
-    // Filtrar materias
-    const materiasFiltradas = semestreSeleccionado === 'todos'
-        ? materias
-        : materias.filter(m => m.semestre.toString() === semestreSeleccionado);
+    // Filtrar materias por semestre y carrera seleccionada
+    const materiasFiltradas = materias.filter(m => {
+        const coincideSemestre = semestreSeleccionado === 'todos' || m.semestre.toString() === semestreSeleccionado;
+        const coincideCarrera = carreraSeleccionada === 'todas' || 
+                                m.carrera?.toString() === carreraSeleccionada || 
+                                m.carrera_id?.toString() === carreraSeleccionada;
+        return coincideSemestre && coincideCarrera;
+    });
 
     if (loading) {
         return (
@@ -152,29 +234,35 @@ const MateriaList = ({ isDark }) => {
                         </div>
                         
                         <div className="flex flex-col sm:flex-row gap-3 items-center">
+                            {/* Filtro por Carrera */}
+                            <div className="w-full sm:flex-1">
+                                <SelectConDropdown
+                                  name="carrera"
+                                  value={carreraSeleccionada}
+                                  onChange={(e) => setCarreraSeleccionada(e.target.value)}
+                                  options={[
+                                    { value: 'todas', label: 'Todas las Carreras' },
+                                    ...carreras.map(c => ({ value: c.id?.toString() || c.codigo, label: c.nombre || c.nombre_corto || c.codigo })),
+                                  ]}
+                                />
+                            </div>
+
                             {/* Filtro por Semestre */}
-                            <div className="relative w-full sm:w-auto">
-                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                    <FilterIcon className="h-5 w-5 text-slate-400" />
-                                </div>
-                                <select
-                                    value={semestreSeleccionado}
-                                    onChange={(e) => setSemestreSeleccionado(e.target.value)}
-                                    className="w-full sm:w-auto appearance-none bg-slate-50 dark:bg-slate-700 border-2 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 py-2.5 pl-10 pr-10 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium transition-shadow cursor-pointer"
-                                >
-                                    <option value="todos">Todos los Semestres</option>
-                                    {semestresDisponibles.map(s => (
-                                        <option key={s} value={s}>{s}º Semestre</option>
-                                    ))}
-                                </select>
-                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
-                                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-                                </div>
+                            <div className="w-full sm:w-auto">
+                                <SelectConDropdown
+                                  name="semestre"
+                                  value={semestreSeleccionado}
+                                  onChange={(e) => setSemestreSeleccionado(e.target.value)}
+                                  options={[
+                                    { value: 'todos', label: 'Todos los Semestres' },
+                                    ...semestresDisponibles.map(s => ({ value: s.toString(), label: `${s}º Semestre` })),
+                                  ]}
+                                />
                             </div>
 
                             {canEdit && (
-                                <Link 
-                                    to="/fondo-tiempo/materias/nueva" 
+                                <Link
+                                    to="/fondo-tiempo/materias/nueva"
                                     className="w-full sm:w-auto px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center justify-center gap-2"
                                 >
                                     <PlusIcon className="w-5 h-5" />

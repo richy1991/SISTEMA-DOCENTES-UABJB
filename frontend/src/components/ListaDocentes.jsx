@@ -1,7 +1,390 @@
 import React, { useState, useEffect } from 'react';
+
 import { getDocentes } from '../apis/api';
 import api from '../apis/api';
 import toast from 'react-hot-toast';
+
+// ============================================================================
+// COMPONENTE INTERNO: FechaIngresoPicker (Calendario personalizado)
+// ============================================================================
+const weekDays = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+const monthNames = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+];
+
+function parseIsoDate(iso) {
+  if (!iso || typeof iso !== 'string') return null;
+  const parts = iso.split('-').map(Number);
+  if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return null;
+  const [year, month, day] = parts;
+  const d = new Date(year, month - 1, day);
+  if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) return null;
+  return d;
+}
+function toIsoDate(dateObj) {
+  const y = dateObj.getFullYear();
+  const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const d = String(dateObj.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+function formatDisplayDate(iso) {
+  const dateObj = parseIsoDate(iso);
+  if (!dateObj) return '';
+  const dd = String(dateObj.getDate()).padStart(2, '0');
+  const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const yyyy = dateObj.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
+function parseDisplayDate(display) {
+  if (!display || typeof display !== 'string') return null;
+  const match = display.match(/^\d{2}\/\d{2}\/\d{4}$/);
+  if (!match) return null;
+  const [dd, mm, yyyy] = display.split('/').map(Number);
+  const d = new Date(yyyy, mm - 1, dd);
+  if (d.getFullYear() !== yyyy || d.getMonth() !== mm - 1 || d.getDate() !== dd) return null;
+  return d;
+}
+
+function FechaIngresoPicker({ value, onChange, error }) {
+  const [open, setOpen] = useState(false);
+  const [openQuickPicker, setOpenQuickPicker] = useState(null);
+  const [inputValue, setInputValue] = useState(formatDisplayDate(value));
+  const [visibleMonth, setVisibleMonth] = useState(() => {
+    const selectedDate = parseIsoDate(value);
+    const today = new Date();
+    return selectedDate ? new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1) : new Date(today.getFullYear(), today.getMonth(), 1);
+  });
+  const [draftDay, setDraftDay] = useState(null);
+  const [draftMonth, setDraftMonth] = useState(null);
+  const [draftYear, setDraftYear] = useState(null);
+  const [hasSelectedMonth, setHasSelectedMonth] = useState(false);
+  const [hasSelectedYear, setHasSelectedYear] = useState(false);
+  const containerRef = React.useRef(null);
+  const yearMenuRef = React.useRef(null);
+  const currentYearOptionRef = React.useRef(null);
+
+  React.useEffect(() => {
+    setInputValue(formatDisplayDate(value));
+  }, [value]);
+
+  React.useEffect(() => {
+    const handleOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    if (open) {
+      document.addEventListener('mousedown', handleOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+    };
+  }, [open]);
+
+  const year = visibleMonth.getFullYear();
+  const month = visibleMonth.getMonth();
+  const today = new Date();
+  const currentYearRef = today.getFullYear();
+  const startYear = currentYearRef - 25;
+  const endYear = currentYearRef + 25;
+  const yearOptions = Array.from({ length: endYear - startYear + 1 }, (_, idx) => startYear + idx);
+  const monthOptions = monthNames.map((label, valueIndex) => ({ value: valueIndex, label }));
+  const firstDay = new Date(year, month, 1);
+  const offset = (firstDay.getDay() + 6) % 7;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const calendarCells = [];
+  for (let i = 0; i < offset; i += 1) calendarCells.push(null);
+  for (let d = 1; d <= daysInMonth; d += 1) {
+    calendarCells.push(new Date(year, month, d));
+  }
+  while (calendarCells.length % 7 !== 0) calendarCells.push(null);
+
+  const isSameDate = (a, b) => (
+    a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+  );
+
+  const handlePickDate = (dateObj) => {
+    setDraftDay(dateObj.getDate());
+    setHasSelectedMonth(true);
+    setHasSelectedYear(true);
+    const iso = toIsoDate(dateObj);
+    onChange(iso);
+    setInputValue(formatDisplayDate(iso));
+    setOpen(false);
+  };
+
+  const handleManualInputChange = (e) => {
+    const rawValue = e.target.value;
+    const onlyDigits = rawValue.replace(/\D/g, '').slice(0, 8);
+    let formatted = onlyDigits;
+    if (onlyDigits.length > 2) {
+      formatted = `${onlyDigits.slice(0, 2)}/${onlyDigits.slice(2)}`;
+    }
+    if (onlyDigits.length > 4) {
+      formatted = `${onlyDigits.slice(0, 2)}/${onlyDigits.slice(2, 4)}/${onlyDigits.slice(4)}`;
+    }
+    setInputValue(formatted);
+    if (formatted.length === 10) {
+      const parsed = parseDisplayDate(formatted);
+      if (parsed) {
+        onChange(toIsoDate(parsed));
+        setVisibleMonth(new Date(parsed.getFullYear(), parsed.getMonth(), 1));
+      }
+    }
+    if (!formatted) {
+      onChange('');
+    }
+  };
+
+  const handleManualInputBlur = () => {
+    if (!inputValue) {
+      onChange('');
+      return;
+    }
+    const parsed = parseDisplayDate(inputValue);
+    if (parsed) {
+      const iso = toIsoDate(parsed);
+      onChange(iso);
+      setInputValue(formatDisplayDate(iso));
+      setVisibleMonth(new Date(parsed.getFullYear(), parsed.getMonth(), 1));
+      return;
+    }
+    onChange('');
+    setInputValue('');
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Fecha de Ingreso <span className="text-red-500">*</span></label>
+      <div className={`relative w-full rounded-xl border-2 bg-slate-50 dark:bg-slate-700 shadow-sm ${error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'} focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent`}>
+        <input
+          type="text"
+          inputMode="numeric"
+          placeholder="dd/mm/aaaa"
+          value={inputValue}
+          onChange={handleManualInputChange}
+          onBlur={handleManualInputBlur}
+          className="w-full bg-transparent text-slate-800 dark:text-white px-4 py-2.5 pr-12 rounded-xl focus:outline-none"
+          aria-label="Fecha de Ingreso"
+        />
+        <button
+          type="button"
+          onClick={() => setOpen((prev) => !prev)}
+          className="absolute right-1.5 top-1/2 h-8 w-8 rounded-lg border border-[#3A56AF]/40 bg-[#2C4AAE] text-white hover:bg-[#233C8F] transition-colors"
+          style={{ transform: 'translateY(-50%)' }}
+          aria-label="Abrir calendario de Fecha de Ingreso"
+        >
+          <svg className="w-4 h-4 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10m-13 9h16a1 1 0 001-1V7a1 1 0 00-1-1H4a1 1 0 00-1 1v12a1 1 0 001 1z" />
+          </svg>
+        </button>
+      </div>
+      {open && (
+        <div
+          className="absolute z-50 mt-2 w-[268px] max-w-[calc(100vw-2rem)] rounded-xl border border-[#7F97E8]/45 bg-[#2C4AAE] backdrop-blur-xl shadow-2xl p-2.5"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="grid grid-cols-2 gap-1.5 mb-2">
+            <div className="relative">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpenQuickPicker((prev) => (prev === 'month' ? null : 'month'));
+                }}
+                className={`w-full h-8 text-left pl-2.5 pr-8 rounded-xl border bg-white dark:bg-slate-800 text-xs shadow-sm ${openQuickPicker === 'month' ? 'border-cyan-500/80 dark:border-cyan-500 ring-2 ring-cyan-400/40 dark:ring-cyan-500/35 text-slate-900 dark:text-slate-100' : 'border-cyan-300/70 dark:border-cyan-700/80 hover:border-cyan-500/70 dark:hover:border-cyan-500/80 text-slate-800 dark:text-slate-100'}`}
+                aria-label="Seleccionar mes"
+              >
+                <span className="block truncate font-semibold">{hasSelectedMonth && draftMonth !== null ? monthNames[draftMonth] : monthNames[month]}</span>
+                <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center">
+                  <span className="inline-flex h-4 w-4 items-center justify-center rounded-md bg-cyan-50 dark:bg-cyan-900/30 ring-1 ring-cyan-200/70 dark:ring-cyan-700/70">
+                    <svg className={`w-2.5 h-2.5 text-cyan-700 dark:text-cyan-300 transition-transform duration-200 ${openQuickPicker === 'month' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </span>
+                </span>
+              </button>
+              {openQuickPicker === 'month' && (
+                <div className="absolute z-40 mt-1.5 w-full max-h-40 overflow-auto rounded-xl border border-cyan-300 dark:border-cyan-700 bg-white dark:bg-slate-900 shadow-xl shadow-cyan-900/15 dark:shadow-black/35" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+                  {monthOptions.map((opt) => {
+                    const active = hasSelectedMonth && draftMonth !== null && opt.value === draftMonth;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDraftMonth(opt.value);
+                          setHasSelectedMonth(true);
+                          setVisibleMonth(new Date(year, opt.value, 1));
+                          setOpenQuickPicker(null);
+                        }}
+                        className={`w-full text-left px-3 py-1.5 text-xs border-l-2 ${active ? 'bg-cyan-50 dark:bg-cyan-900/30 border-cyan-500 text-cyan-800 dark:text-cyan-200 font-semibold' : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-slate-800/90'}`}
+                      >
+                        <span className="block truncate">{opt.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpenQuickPicker((prev) => (prev === 'year' ? null : 'year'));
+                }}
+                className={`w-full h-8 text-left pl-2.5 pr-8 rounded-xl border bg-white dark:bg-slate-800 text-xs shadow-sm ${openQuickPicker === 'year' ? 'border-cyan-500/80 dark:border-cyan-500 ring-2 ring-cyan-400/40 dark:ring-cyan-500/35 text-slate-900 dark:text-slate-100' : 'border-cyan-300/70 dark:border-cyan-700/80 hover:border-cyan-500/70 dark:hover:border-cyan-500/80 text-slate-800 dark:text-slate-100'}`}
+                aria-label="Seleccionar año"
+              >
+                <span className="block truncate font-semibold">{hasSelectedYear && draftYear !== null ? draftYear : year}</span>
+                <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center">
+                  <span className="inline-flex h-4 w-4 items-center justify-center rounded-md bg-cyan-50 dark:bg-cyan-900/30 ring-1 ring-cyan-200/70 dark:ring-cyan-700/70">
+                    <svg className={`w-2.5 h-2.5 text-cyan-700 dark:text-cyan-300 transition-transform duration-200 ${openQuickPicker === 'year' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </span>
+                </span>
+              </button>
+              {openQuickPicker === 'year' && (
+                <div ref={yearMenuRef} className="absolute z-40 mt-1.5 w-full max-h-40 overflow-auto rounded-xl border border-cyan-300 dark:border-cyan-700 bg-white dark:bg-slate-900 shadow-xl shadow-cyan-900/15 dark:shadow-black/35" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+                  {yearOptions.map((y) => {
+                    const active = hasSelectedYear && draftYear !== null && y === draftYear;
+                    const isCurrentSystemYear = y === currentYearRef;
+                    return (
+                      <button
+                        key={y}
+                        ref={isCurrentSystemYear ? currentYearOptionRef : null}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDraftYear(y);
+                          setHasSelectedYear(true);
+                          setVisibleMonth(new Date(y, draftMonth ?? month, 1));
+                          setOpenQuickPicker(null);
+                        }}
+                        className={`w-full text-left px-3 py-1.5 text-xs border-l-2 ${active ? 'bg-cyan-50 dark:bg-cyan-900/30 border-cyan-500 text-cyan-800 dark:text-cyan-200 font-semibold' : isCurrentSystemYear ? 'bg-blue-50 dark:bg-blue-900/25 border-blue-400 text-blue-800 dark:text-blue-200 font-semibold hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-slate-800/90' : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-slate-800/90'}`}
+                      >
+                        <span className="flex items-center justify-between gap-2">
+                          <span className="block truncate">{y}</span>
+                          {isCurrentSystemYear && !active && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-200/80 dark:bg-blue-800/50 text-blue-900 dark:text-blue-100">Actual</span>
+                          )}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="grid grid-cols-7 gap-0.5 mb-1">
+            {weekDays.map((wd) => (
+              <div key={wd} className="text-center text-[10px] font-semibold text-slate-200/85 py-0.5">{wd}</div>
+            ))}
+          </div>
+          <div className="grid grid-cols-7 gap-0.5">
+            {calendarCells.map((cellDate, idx) => {
+              if (!cellDate) {
+                return <div key={`empty-${idx}`} className="h-8" />;
+              }
+              const isToday = isSameDate(cellDate, today);
+              const isSelected = draftDay !== null && cellDate.getDate() === draftDay;
+              return (
+                <button
+                  key={toIsoDate(cellDate)}
+                  type="button"
+                  onClick={() => handlePickDate(cellDate)}
+                  className={`h-8 rounded-lg text-xs ${isSelected ? 'bg-[#4654E8] text-white font-semibold' : 'text-slate-100 hover:bg-white/15'} ${isToday && !isSelected ? 'border border-white/55' : 'border border-transparent'}`}
+                >
+                  {cellDate.getDate()}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+    </div>
+  );
+}
+
+// Componente Select con diseño personalizado (mismo estilo que FechaIngresoPicker)
+const SelectConDropdown = ({ label, value, onChange, options, error, name }) => {
+  const [open, setOpen] = useState(false);
+  const containerRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const handleOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    if (open) {
+      document.addEventListener('mousedown', handleOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+    };
+  }, [open]);
+
+  const selectedLabel = value && options.find(opt => opt.value === value)?.label;
+  const displayLabel = selectedLabel || 'Seleccione...';
+
+  const handleSelect = (optionValue) => {
+    onChange({ target: { name, value: optionValue } });
+    setOpen(false);
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label}</label>
+      
+      {/* Botón principal */}
+      <div className={`relative w-full rounded-xl border-2 bg-slate-50 dark:bg-slate-700 shadow-sm ${error ? 'border-red-500' : open ? 'border-[#3A56AF] dark:border-[#3A56AF]' : 'border-slate-300 dark:border-slate-600'}`}>
+        <button
+          type="button"
+          onClick={() => setOpen((prev) => !prev)}
+          className="w-full text-left px-4 py-2.5 rounded-xl bg-transparent text-slate-800 dark:text-white flex items-center justify-between gap-2"
+        >
+          <span className={`truncate ${!value ? 'text-slate-400 dark:text-slate-500' : ''}`}>{displayLabel}</span>
+          <span className="flex items-center justify-center h-6 w-6 rounded-md bg-[#2C4AAE] ring-1 ring-[#2C4AAE]">
+            <svg className={`w-3.5 h-3.5 text-white transition-transform duration-200 ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+            </svg>
+          </span>
+        </button>
+      </div>
+
+      {/* Menú desplegable */}
+      {open && (
+        <div className="absolute z-50 mt-2 w-full rounded-xl border-2 border-[#3A56AF] bg-white dark:bg-slate-900 shadow-xl">
+          <div className="max-h-40 overflow-auto p-2">
+            {options.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => handleSelect(option.value)}
+                className={`w-full text-left px-3 py-1.5 text-xs border-l-2 rounded-lg transition-colors ${
+                  option.value === value
+                    ? 'bg-cyan-50 dark:bg-cyan-900/30 border-cyan-500 text-cyan-800 dark:text-cyan-200 font-semibold'
+                    : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-slate-800/90'
+                }`}
+              >
+                <span className="block truncate">{option.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+    </div>
+  );
+};
 
 const PencilIcon = (props) => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
@@ -76,8 +459,8 @@ function ListaDocentes({ isDark }) {
     apellido_paterno: '',
     apellido_materno: '',
     ci: '',
-    categoria: 'catedratico',
-    dedicacion: 'tiempo_completo',
+    categoria: '',
+    dedicacion: '',
     fecha_ingreso: new Date().toISOString().split('T')[0],
     email: '',
     telefono: '',
@@ -120,8 +503,8 @@ function ListaDocentes({ isDark }) {
       apellido_paterno: '',
       apellido_materno: '',
       ci: '',
-      categoria: 'catedratico',
-      dedicacion: 'tiempo_completo',
+      categoria: '',
+      dedicacion: '',
       fecha_ingreso: new Date().toISOString().split('T')[0],
       email: '',
       telefono: '',
@@ -296,147 +679,106 @@ function ListaDocentes({ isDark }) {
           </div>
         </div>
 
-        {/* FORMULARIO DE CREACIÓN EN LÍNEA */}
+        {/* MODAL DE CREACIÓN DE DOCENTE */}
         {isCreating && (
-          <div className="mt-6 animate-fade-in">
-            {/* Header degradado */}
-            <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-t-2xl px-5 py-3.5 flex items-center gap-3 shadow-lg">
-              <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center backdrop-blur-sm flex-shrink-0">
-                <span className="text-base">👨‍🏫</span>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+              {/* Header */}
+              <div className="bg-[#2C4AAE] px-6 py-4">
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  Nuevo Docente
+                </h2>
               </div>
-              <div>
-                <h2 className="text-sm font-bold text-white leading-tight">Nuevo Docente</h2>
-                <p className="text-blue-200 text-xs">Complete los datos del docente</p>
-              </div>
-            </div>
-
-            <form onSubmit={handleCreateSubmit} className="bg-white dark:bg-slate-800 rounded-b-2xl border-2 border-t-0 border-slate-200 dark:border-slate-700 shadow-xl">
-              <div className="p-4 space-y-3">
-
-                {/* Sección: Datos personales */}
-                <div className="bg-slate-50 dark:bg-slate-700/40 rounded-xl px-3 py-2.5 border border-slate-200 dark:border-slate-600">
-                  <p className="text-xs font-bold uppercase tracking-wider text-blue-500 dark:text-blue-400 mb-2 flex items-center gap-1">
-                    <span>👤</span> Datos Personales
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <div className="sm:col-span-2">
-                      <InputField label="Nombres" name="nombres" value={formData.nombres} onChange={handleChange} required error={errors.nombres} />
-                    </div>
-                    <InputField label="Apellido Paterno" name="apellido_paterno" value={formData.apellido_paterno} onChange={handleChange} required error={errors.apellido_paterno} />
-                    <InputField label="Apellido Materno" name="apellido_materno" value={formData.apellido_materno} onChange={handleChange} error={errors.apellido_materno} />
-                    <InputField label="Cédula de Identidad (CI)" name="ci" value={formData.ci} onChange={handleChange} required error={errors.ci} />
-                    {/* Fecha de ingreso */}
-                    <div>
-                      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
-                        📅 Fecha de Ingreso <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="date"
-                        name="fecha_ingreso"
-                        value={formData.fecha_ingreso}
-                        onChange={handleChange}
-                        required
-                        className="w-full px-4 py-2.5 rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md border-slate-300 dark:border-slate-600 cursor-pointer"
-                        style={{ colorScheme: 'auto' }}
-                      />
-                      {errors.fecha_ingreso && <p className="text-xs text-red-600 mt-1">{errors.fecha_ingreso}</p>}
-                    </div>
+              {/* Body */}
+              <form onSubmit={handleCreateSubmit} className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 dark:bg-slate-900">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div className="md:col-span-2 rounded-xl border border-[#3D6DE0]/30 dark:border-[#4B67C0]/40 bg-gradient-to-r from-white/60 via-[#3D6DE0]/5 to-cyan-400/10 dark:from-slate-800/55 dark:to-cyan-900/20 p-4 shadow-sm">
+                    <InputField label="Nombres" name="nombres" value={formData.nombres} onChange={handleChange} required error={errors.nombres} />
                   </div>
-                </div>
-
-                {/* Sección: Cargo y Dedicación */}
-                <div className="bg-slate-50 dark:bg-slate-700/40 rounded-xl px-3 py-2.5 border border-slate-200 dark:border-slate-600">
-                  <p className="text-xs font-bold uppercase tracking-wider text-indigo-500 dark:text-indigo-400 mb-2 flex items-center gap-1">
-                    <span>🏫</span> Cargo y Dedicación
-                  </p>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  <InputField label="Apellido Paterno" name="apellido_paterno" value={formData.apellido_paterno} onChange={handleChange} required error={errors.apellido_paterno} />
+                  <InputField label="Apellido Materno" name="apellido_materno" value={formData.apellido_materno} onChange={handleChange} error={errors.apellido_materno} />
+                  <InputField label="Cédula de Identidad (CI)" name="ci" value={formData.ci} onChange={handleChange} required error={errors.ci} />
+                  <FechaIngresoPicker
+                    value={formData.fecha_ingreso}
+                    onChange={(val) => setFormData(prev => ({ ...prev, fecha_ingreso: val }))}
+                    error={errors.fecha_ingreso}
+                  />
+                  <InputField label="Email" name="email" type="email" value={formData.email} onChange={handleChange} error={errors.email} />
+                  <InputField label="Teléfono" name="telefono" value={formData.telefono} onChange={handleChange} error={errors.telefono} />
+                  <SelectConDropdown
+                    label="Categoría"
+                    name="categoria"
+                    value={formData.categoria}
+                    onChange={handleChange}
+                    options={[
+                      { value: 'catedratico', label: 'Catedrático' },
+                      { value: 'adjunto', label: 'Adjunto' },
+                      { value: 'asistente', label: 'Asistente' },
+                    ]}
+                    error={errors.categoria}
+                  />
+                  <SelectConDropdown
+                    label="Dedicación"
+                    name="dedicacion"
+                    value={formData.dedicacion}
+                    onChange={handleChange}
+                    options={[
+                      { value: 'tiempo_completo', label: 'Tiempo Completo' },
+                      { value: 'medio_tiempo', label: 'Medio Tiempo' },
+                      { value: 'horario', label: 'Horario' },
+                    ]}
+                    error={errors.dedicacion}
+                  />
+                  {formData.dedicacion === 'horario' ? (
+                    <InputField
+                      label="Horas / Semana"
+                      name="horas_contrato_semanales"
+                      type="number"
+                      value={formData.horas_contrato_semanales || ''}
+                      onChange={handleChange}
+                      required
+                      error={errors.horas_contrato_semanales}
+                    />
+                  ) : (
                     <div>
-                      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Categoría</label>
-                      <select name="categoria" value={formData.categoria} onChange={handleChange} className="w-full px-3 py-2.5 rounded-xl border-2 bg-white dark:bg-slate-700 text-slate-800 dark:text-white border-slate-300 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all shadow-sm">
-                        <option value="catedratico">Catedrático</option>
-                        <option value="adjunto">Adjunto</option>
-                        <option value="asistente">Asistente</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Dedicación</label>
-                      <select name="dedicacion" value={formData.dedicacion} onChange={handleChange} className="w-full px-3 py-2.5 rounded-xl border-2 bg-white dark:bg-slate-700 text-slate-800 dark:text-white border-slate-300 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all shadow-sm">
-                        <option value="tiempo_completo">Tiempo Completo</option>
-                        <option value="medio_tiempo">Medio Tiempo</option>
-                        <option value="horario">Horario</option>
-                      </select>
-                    </div>
-                    {formData.dedicacion === 'horario' ? (
-                      <InputField
-                        label="Horas / Semana"
-                        name="horas_contrato_semanales"
-                        type="number"
-                        value={formData.horas_contrato_semanales || ''}
-                        onChange={handleChange}
-                        required
-                        error={errors.horas_contrato_semanales}
-                      />
-                    ) : (
-                      <div>
-                        <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Horas / Semana</label>
-                        <div className="w-full px-3 py-2.5 rounded-xl border-2 bg-gradient-to-r from-slate-100 to-slate-50 dark:from-slate-700 dark:to-slate-700/50 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600 flex items-center justify-between">
-                          <span className="font-bold text-lg text-slate-700 dark:text-slate-300">
-                            {formData.dedicacion === 'tiempo_completo' ? 40 : 20}
-                          </span>
-                          <span className="text-xs text-slate-400 dark:text-slate-500">hrs</span>
-                        </div>
+                      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Horas / Semana</label>
+                      <div className="w-full px-3 py-2.5 rounded-xl border-2 bg-gradient-to-r from-slate-100 to-slate-50 dark:from-slate-700 dark:to-slate-700/50 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600 flex items-center justify-between">
+                        <span className="font-bold text-lg text-slate-700 dark:text-slate-300">
+                          {formData.dedicacion === 'tiempo_completo' ? 40 : 20}
+                        </span>
+                        <span className="text-xs text-slate-400 dark:text-slate-500">hrs</span>
                       </div>
-                    )}
-                  </div>
-                  {/* Banner info dedicación */}
-                  <div className={`mt-3 px-3 py-2 rounded-lg ${dedicacionStyles[formData.dedicacion]?.bg} border-l-4 ${dedicacionStyles[formData.dedicacion]?.border} flex items-center gap-2`}>
-                    <InfoIcon className={`w-4 h-4 ${dedicacionStyles[formData.dedicacion]?.icon} flex-shrink-0`} />
-                    <p className={`text-xs ${dedicacionStyles[formData.dedicacion]?.text}`}>
-                      {formData.dedicacion === 'tiempo_completo' && '40 horas semanales — Tiempo Completo'}
-                      {formData.dedicacion === 'medio_tiempo' && '20 horas semanales — Medio Tiempo'}
-                      {formData.dedicacion === 'horario' && 'Ingrese las horas según el contrato vigente'}
-                    </p>
-                  </div>
+                    </div>
+                  )}
                 </div>
-
-                {/* Sección: Contacto */}
-                <div className="bg-slate-50 dark:bg-slate-700/40 rounded-xl px-3 py-2.5 border border-slate-200 dark:border-slate-600">
-                  <p className="text-xs font-bold uppercase tracking-wider text-purple-500 dark:text-purple-400 mb-2 flex items-center gap-1">
-                    <span>📞</span> Contacto
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <InputField label="Email" name="email" type="email" value={formData.email} onChange={handleChange} error={errors.email} />
-                    <InputField label="Teléfono" name="telefono" value={formData.telefono} onChange={handleChange} error={errors.telefono} />
-                  </div>
-                </div>
-              </div>
-
-              {/* Footer con botones */}
-              <div className="px-4 py-3 bg-slate-50 dark:bg-slate-700/30 rounded-b-2xl border-t border-slate-200 dark:border-slate-700 flex items-center justify-end gap-3">
+              </form>
+              {/* Footer */}
+              <div className="px-6 py-4 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setIsCreating(false)}
-                  disabled={isSubmitting}
-                  className="px-5 py-2.5 rounded-xl font-semibold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-700 border-2 border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-600 transition-all shadow-sm disabled:opacity-50 text-sm"
+                  className="px-6 py-2.5 rounded-xl font-bold text-slate-700 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 transition-all"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="px-6 py-2.5 rounded-xl text-white font-bold transition-all shadow-lg hover:shadow-xl flex items-center gap-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 hover:scale-105 text-sm disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
+                  className="px-6 py-2.5 rounded-xl font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg hover:shadow-xl transition-all flex items-center gap-2 disabled:opacity-50"
                 >
                   {isSubmitting ? (
                     <>
-                      <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"></div>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
                       Guardando...
                     </>
                   ) : (
-                    <>✅ Crear Docente</>
+                    <>
+                      💾 Guardar
+                    </>
                   )}
                 </button>
               </div>
-            </form>
+            </div>
           </div>
         )}
 
@@ -543,22 +885,30 @@ function ListaDocentes({ isDark }) {
                 <InputField label="Apellido Paterno" name="apellido_paterno" value={formData.apellido_paterno} onChange={handleChange} required error={errors.apellido_paterno} />
                 <InputField label="Apellido Materno" name="apellido_materno" value={formData.apellido_materno} onChange={handleChange} error={errors.apellido_materno} />
                 <InputField label="Cédula de Identidad (CI)" name="ci" value={formData.ci} onChange={handleChange} required error={errors.ci} />
-                <div>
-                  <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Categoría</label>
-                  <select name="categoria" value={formData.categoria} onChange={handleChange} className="w-full px-4 py-2.5 rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white border-slate-300 dark:border-slate-600">
-                    <option value="catedratico">Catedrático</option>
-                    <option value="adjunto">Adjunto</option>
-                    <option value="asistente">Asistente</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Dedicación</label>
-                  <select name="dedicacion" value={formData.dedicacion} onChange={handleChange} className="w-full px-4 py-2.5 rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white border-slate-300 dark:border-slate-600">
-                    <option value="tiempo_completo">Tiempo Completo</option>
-                    <option value="medio_tiempo">Medio Tiempo</option>
-                    <option value="horario">Horario</option>
-                  </select>
-                </div>
+                <SelectConDropdown
+                  label="Categoría"
+                  name="categoria"
+                  value={formData.categoria}
+                  onChange={handleChange}
+                  options={[
+                    { value: 'catedratico', label: 'Catedrático' },
+                    { value: 'adjunto', label: 'Adjunto' },
+                    { value: 'asistente', label: 'Asistente' },
+                  ]}
+                  error={errors.categoria}
+                />
+                <SelectConDropdown
+                  label="Dedicación"
+                  name="dedicacion"
+                  value={formData.dedicacion}
+                  onChange={handleChange}
+                  options={[
+                    { value: 'tiempo_completo', label: 'Tiempo Completo' },
+                    { value: 'medio_tiempo', label: 'Medio Tiempo' },
+                    { value: 'horario', label: 'Horario' },
+                  ]}
+                  error={errors.dedicacion}
+                />
                 {formData.dedicacion === 'horario' ? (
                   <InputField
                     label="Horas Semanales por Contrato"

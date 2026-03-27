@@ -316,29 +316,43 @@ function ListaCarreras({ isDark }) {
           </div>
         </div>
 
-        {/* FORMULARIO DE CREACIÓN EN LÍNEA */}
+        {/* MODAL DE CREACIÓN DE CARRERA */}
         {isCreating && (
-          <div className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-lg mt-6 animate-fade-in">
-            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700">
-              <h2 className="text-xl font-bold text-slate-800 dark:text-white">
-                Crear Nueva Carrera
-              </h2>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in" style={{ animationDuration: '160ms' }}>
+            <div className="max-w-2xl w-full">
+              <div className="bg-white/75 dark:bg-slate-900/70 backdrop-blur-xl rounded-2xl border border-white/50 dark:border-slate-600/50 shadow-2xl overflow-hidden animate-slide-up" style={{ animationDuration: '180ms' }}>
+                <div className="px-6 py-4 border-b border-[#7F97E8]/45 bg-[#2C4AAE]">
+                  <h2 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
+                    ➕ Nueva Carrera
+                  </h2>
+                </div>
+                <form onSubmit={handleCreateSubmit} className="p-5 md:p-6 space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div className="md:col-span-2 rounded-xl border border-[#3D6DE0]/30 dark:border-[#4B67C0]/40 bg-gradient-to-r from-white/60 via-[#3D6DE0]/5 to-cyan-400/10 dark:from-slate-800/55 dark:to-cyan-900/20 p-4 shadow-sm">
+                      <InputField label="Nombre de la Carrera" name="nombre" value={formData.nombre} onChange={handleChange} required error={errors.nombre} />
+                    </div>
+                    <InputField label="Código" name="codigo" value={formData.codigo} onChange={handleChange} required error={errors.codigo} />
+                    <InputField label="Facultad" name="facultad" value={formData.facultad} onChange={handleChange} required error={errors.facultad} />
+                  </div>
+                  <div className="pt-4 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setIsCreating(false)}
+                      className="px-6 py-2.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-xl font-semibold transition-colors border border-slate-300 dark:border-slate-600"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-xl shadow-lg transition-all disabled:opacity-50"
+                    >
+                      {isSubmitting ? 'Guardando...' : '💾 Guardar'}
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
-            <form onSubmit={handleCreateSubmit}>
-              <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-                <InputField label="Nombre de la Carrera" name="nombre" value={formData.nombre} onChange={handleChange} required error={errors.nombre} />
-                <InputField label="Código" name="codigo" value={formData.codigo} onChange={handleChange} required error={errors.codigo} />
-                <InputField label="Facultad" name="facultad" value={formData.facultad} onChange={handleChange} required error={errors.facultad} />
-              </div>
-              <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
-                <button type="button" onClick={() => setIsCreating(false)} disabled={isSubmitting} className="px-6 py-2.5 rounded-xl font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm disabled:opacity-50">
-                  Cancelar
-                </button>
-                <button type="submit" disabled={isSubmitting} className="px-6 py-2.5 rounded-xl text-white font-bold transition-all shadow-lg hover:shadow-xl flex items-center gap-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 hover:scale-105">
-                  {isSubmitting ? 'Guardando...' : 'Crear Carrera'}
-                </button>
-              </div>
-            </form>
           </div>
         )}
 
