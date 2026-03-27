@@ -1,7 +1,456 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import api from '../apis/api';
 import toast from 'react-hot-toast';
+import { AnimatePresence, motion } from 'framer-motion';
+
+// Componente selector de semestre (1-10) con ruleta vertical
+const SemesterPicker = ({ value, onChange, error }) => {
+  const [open, setOpen] = useState(false);
+  const [draftSemester, setDraftSemester] = useState(Number(value || 1));
+  const [pickerOpenToken, setPickerOpenToken] = useState(0);
+
+  const minSemester = 1;
+  const maxSemester = 10;
+
+  const clampSemester = (sem) => Math.max(minSemester, Math.min(maxSemester, sem));
+
+  useEffect(() => {
+    if (!open) {
+      setDraftSemester(Number(value || 1));
+    }
+  }, [value, open]);
+
+  const commitDraftAndClose = () => {
+    onChange({ target: { name: 'semestre', value: clampSemester(Number(draftSemester || 1)) } });
+    setOpen(false);
+  };
+
+  const openSemesterSelector = () => {
+    setDraftSemester(Number(value || 1));
+    setPickerOpenToken((prev) => prev + 1);
+    setOpen(true);
+  };
+
+  return (
+    <>
+      <div>
+        <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
+          Semestre <span className="text-red-500">*</span>
+        </label>
+        
+        <button
+          type="button"
+          onClick={openSemesterSelector}
+          className={`w-full px-4 py-3 rounded-xl border bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-left flex items-center justify-between transition-all ${
+            error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600 hover:border-[#3D6DE0]/70'
+          }`}
+        >
+          <span className="font-semibold">{draftSemester || 'Seleccione...'}</span>
+        </button>
+        {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+      </div>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            className="fixed inset-0 z-[90] flex items-center justify-center p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.14 }}
+          >
+            <div className="absolute inset-0 bg-black/35 backdrop-blur-[1px]" onClick={commitDraftAndClose} />
+            <motion.div
+              className="relative w-full max-w-xs rounded-2xl border border-[#3D6DE0]/35 dark:border-[#5B75CD]/55 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl shadow-2xl overflow-hidden"
+              initial={{ y: 14, scale: 0.98, opacity: 0 }}
+              animate={{ y: 0, scale: 1, opacity: 1 }}
+              exit={{ y: 10, scale: 0.99, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+            >
+              <div className="p-4">
+                <VerticalSemesterWheelPicker
+                  key={`semester-wheel-${pickerOpenToken}`}
+                  value={Number(draftSemester || 1)}
+                  onChange={(sem) => setDraftSemester(Number(sem))}
+                  onSettled={(sem) => onChange({ target: { name: 'semestre', value: Number(sem) } })}
+                  onConfirm={commitDraftAndClose}
+                  wheelResetToken={pickerOpenToken}
+                  minSemester={minSemester}
+                  maxSemester={maxSemester}
+                  visibleCount={5}
+                  itemHeight={44}
+                />
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
+  );
+};
+
+// Ruleta vertical para semestres (similar a VerticalYearWheelPicker del calendario)
+const VerticalSemesterWheelPicker = ({ 
+  value, 
+  onChange, 
+  onSettled, 
+  onConfirm,
+  wheelResetToken,
+  minSemester = 1, 
+  maxSemester = 10, 
+  visibleCount = 5, 
+  itemHeight = 52 // Igual que el selector de año
+}) => {
+  const iosWheelTransition = {
+    type: 'spring',
+    stiffness: 240,
+    damping: 30,
+    mass: 0.9,
+    restDelta: 0.2,
+    restSpeed: 0.2,
+  };
+
+  const getIndexFromSemester = (semValue) => {
+    const numeric = Number(semValue);
+    const fallbackSemester = Math.round((minSemester + maxSemester) / 2);
+    const safeSemester = Number.isFinite(numeric) ? numeric : fallbackSemester;
+    const clampedSemester = Math.max(minSemester, Math.min(maxSemester, safeSemester));
+    return clampedSemester - minSemester;
+  };
+
+  const initialIndex = getIndexFromSemester(value ?? minSemester);
+
+  const viewportRef = useRef(null);
+  const padSlots = 3;
+  const [targetIndex, setTargetIndex] = useState(initialIndex);
+  const [centeredIndex, setCenteredIndex] = useState(initialIndex);
+  const [centerFloatIndex, setCenterFloatIndex] = useState(initialIndex);
+  const centeredIndexRef = useRef(initialIndex);
+  const centerFloatRef = useRef(initialIndex);
+  const lastInternalSemesterRef = useRef(null);
+  const wheelDeltaAccumRef = useRef(0);
+  const wheelLastStepAtRef = useRef(0);
+  const wheelIdleResetTimerRef = useRef(null);
+  const wheelIgnoreUntilRef = useRef(0);
+
+  const semesters = useMemo(() => {
+    const list = [];
+    for (let s = minSemester; s <= maxSemester; s += 1) list.push(s);
+    return list;
+  }, [minSemester, maxSemester]);
+
+  const clampIndex = (idx) => Math.max(0, Math.min(semesters.length - 1, idx));
+  const wheelHeight = visibleCount * itemHeight;
+  const centerOffset = Math.floor(visibleCount / 2);
+
+  const displaySemesters = useMemo(() => {
+    const top = new Array(padSlots).fill(null);
+    const bottom = new Array(padSlots).fill(null);
+    return [...top, ...semesters, ...bottom];
+  }, [semesters]);
+
+  const targetDisplayIndex = targetIndex + padSlots;
+  const targetY = (centerOffset - targetDisplayIndex) * itemHeight;
+  const clampedFloatIndex = Math.max(0, Math.min(semesters.length - 1, centerFloatIndex));
+  const visualDisplayIndex = clampedFloatIndex + padSlots;
+
+  const stepSelection = (steps) => {
+    if (!semesters.length || steps === 0) return;
+    setTargetIndex((prev) => {
+      const min = 0;
+      const max = semesters.length - 1;
+      let next = prev + steps;
+      if (next < min) next = min;
+      if (next > max) next = max;
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (!semesters.length) return;
+    
+    // Solo sincronizar al abrir el modal (wheelResetToken > 0)
+    if (wheelResetToken === 0) return;
+    
+    const sourceSemester = Number.isFinite(Number(value)) ? value : minSemester;
+    const idx = semesters.findIndex((s) => Number(s) === Number(sourceSemester));
+    const syncIndex = idx >= 0 ? idx : Math.floor(semesters.length / 2);
+    const syncSemester = semesters[syncIndex];
+
+    // Evitar sincronización si ya estamos en el mismo semestre (previene rebote)
+    if (semesters[centeredIndexRef.current] === syncSemester) return;
+
+    setTargetIndex(syncIndex);
+    setCenteredIndex(syncIndex);
+    setCenterFloatIndex(syncIndex);
+    centeredIndexRef.current = syncIndex;
+    centerFloatRef.current = syncIndex;
+    if (syncSemester !== undefined) {
+      lastInternalSemesterRef.current = Number(syncSemester);
+    }
+  }, [wheelResetToken, semesters.length]);
+
+  useEffect(() => {
+    if (centeredIndex !== targetIndex) return;
+
+    const selectedSemester = semesters[centeredIndex];
+    if (selectedSemester === undefined) return;
+
+    if (Number(selectedSemester) === lastInternalSemesterRef.current) return;
+    lastInternalSemesterRef.current = Number(selectedSemester);
+    onChange(selectedSemester);
+    onSettled?.(selectedSemester);
+  }, [centeredIndex, targetIndex, semesters]);
+
+  useEffect(() => {
+    const node = viewportRef.current;
+    if (!node) return;
+
+    wheelIgnoreUntilRef.current = Date.now() + 360;
+    wheelDeltaAccumRef.current = 0;
+    wheelLastStepAtRef.current = 0;
+
+    const handleWheelNative = (event) => {
+      event.preventDefault();
+
+      const now = Date.now();
+      if (now < wheelIgnoreUntilRef.current) return;
+
+      const normalizedDelta =
+        event.deltaMode === 1
+          ? event.deltaY * 16
+          : event.deltaMode === 2
+            ? event.deltaY * wheelHeight
+            : event.deltaY;
+
+      if (event.deltaMode === 0 && Math.abs(normalizedDelta) < 8) return;
+
+      wheelDeltaAccumRef.current += normalizedDelta;
+
+      const threshold = 48;
+      if (Math.abs(wheelDeltaAccumRef.current) < threshold) return;
+
+      const cooldownMs = 95;
+      if (now - wheelLastStepAtRef.current < cooldownMs) return;
+
+      const direction = wheelDeltaAccumRef.current > 0 ? 1 : -1;
+      stepSelection(direction);
+      wheelLastStepAtRef.current = now;
+      wheelDeltaAccumRef.current = 0;
+
+      if (wheelIdleResetTimerRef.current) clearTimeout(wheelIdleResetTimerRef.current);
+      wheelIdleResetTimerRef.current = setTimeout(() => {
+        wheelDeltaAccumRef.current = 0;
+      }, 140);
+    };
+
+    node.addEventListener('wheel', handleWheelNative, { passive: false });
+    return () => node.removeEventListener('wheel', handleWheelNative);
+  }, [semesters.length, wheelResetToken]);
+
+  useEffect(() => {
+    return () => {
+      wheelDeltaAccumRef.current = 0;
+      wheelLastStepAtRef.current = 0;
+      wheelIgnoreUntilRef.current = 0;
+      if (wheelIdleResetTimerRef.current) clearTimeout(wheelIdleResetTimerRef.current);
+    };
+  }, []);
+
+  return (
+    <div
+      className="relative rounded-xl border border-[#3D6DE0]/35 dark:border-[#4B67C0]/45 bg-white/70 dark:bg-slate-800/60 overflow-hidden transition-all duration-100"
+      style={{
+        height: `${wheelHeight}px`,
+        perspective: '1000px',
+        perspectiveOrigin: '50% 50%',
+        transformStyle: 'preserve-3d',
+      }}
+    >
+      {/* Franja central de selección */}
+      <div
+        className="pointer-events-none absolute inset-x-0 z-10 border-y-2 border-[#3D6DE0]/60 dark:border-[#6B86DE]/70 bg-gradient-to-r from-[#3D6DE0]/15 to-[#3D6DE0]/15"
+        style={{
+          top: `${centerOffset * itemHeight}px`,
+          height: `${itemHeight}px`,
+        }}
+      />
+
+      {/* Gradientes superior e inferior */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-white/70 via-white/30 to-transparent dark:from-slate-900/70 dark:via-slate-900/25 z-10" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-white/70 via-white/30 to-transparent dark:from-slate-900/70 dark:via-slate-900/25 z-10" />
+
+      <div
+        ref={viewportRef}
+        className="relative select-none overflow-hidden cursor-default"
+        style={{
+          height: '100%',
+          scrollSnapType: 'y mandatory',
+          scrollSnapStop: 'always',
+          touchAction: 'auto',
+        }}
+        tabIndex={0}
+        onKeyDown={(event) => {
+          if (event.repeat) return;
+          const key = event.key.toLowerCase();
+          if (key === 'w') {
+            event.preventDefault();
+            stepSelection(-1);
+          } else if (key === 's') {
+            event.preventDefault();
+            stepSelection(1);
+          } else if (key === 'enter') {
+            event.preventDefault();
+            const selectedSemester = semesters[centeredIndex];
+            if (selectedSemester !== undefined) onConfirm?.(selectedSemester);
+          }
+        }}
+        onPointerDown={(event) => {
+          event.currentTarget.focus();
+        }}
+      >
+        <motion.div
+          className="flex flex-col"
+          initial={{ y: targetY }}
+          animate={{ y: targetY }}
+          transition={iosWheelTransition}
+          style={{ willChange: 'transform' }}
+          onUpdate={(latest) => {
+            const y = typeof latest === 'number' ? latest : latest?.y;
+            if (!Number.isFinite(y)) return;
+
+            const floatDisplayIndex = centerOffset - y / itemHeight;
+            const floatIndex = floatDisplayIndex - padSlots;
+            const boundedFloat = Math.max(0, Math.min(semesters.length - 1, floatIndex));
+            if (Math.abs(boundedFloat - centerFloatRef.current) > 0.005) {
+              centerFloatRef.current = boundedFloat;
+              setCenterFloatIndex(boundedFloat);
+            }
+
+            const displayIndex = Math.round(centerOffset - y / itemHeight);
+            const idx = clampIndex(displayIndex - padSlots);
+            if (idx === centeredIndexRef.current) return;
+
+            const current = centeredIndexRef.current;
+            const directionToTarget = Math.sign(targetIndex - current);
+            if (directionToTarget > 0 && idx <= current) return;
+            if (directionToTarget < 0 && idx >= current) return;
+            if (directionToTarget === 0) return;
+
+            centeredIndexRef.current = idx;
+            setCenteredIndex(idx);
+          }}
+        >
+          {displaySemesters.map((sem, idx) => {
+            const isTopBottomPlaceholder = sem === null;
+            const distance = idx - visualDisplayIndex;
+            const clamped = Math.max(-4, Math.min(4, distance));
+            const abs = Math.abs(clamped);
+            const curvedDistance = Math.sign(clamped) * Math.pow(abs, 1.08);
+            const rotationX = Math.max(-62, Math.min(62, curvedDistance * 16));
+            const stepScale = abs < 0.35 ? 1 : 0.97;
+            const opacity = abs < 0.35 ? 1 : Math.max(0.4, 1 - abs * 0.2);
+            const translateZ = -Math.min(58, abs * 16);
+
+            return (
+              <div
+                key={`semester-${sem !== null ? sem : 'placeholder'}-${idx}`}
+                className="flex items-center justify-center flex-shrink-0"
+                style={{
+                  height: `${itemHeight}px`,
+                  width: '100%',
+                  transformStyle: 'preserve-3d',
+                  transform: `translateY(${Math.sign(clamped) * abs * 0.35}px) rotateX(${rotationX}deg) translateZ(${translateZ}px) scale(${stepScale})`,
+                  transformOrigin: 'center center',
+                  opacity: isTopBottomPlaceholder ? 0 : opacity,
+                }}
+                onClick={() => {
+                  if (Math.abs(distance) < 0.35) {
+                    onConfirm?.(sem);
+                  }
+                }}
+              >
+                {isTopBottomPlaceholder ? null : (
+                  abs < 0.35 ? (
+                    <span className="tracking-wide font-extrabold text-[#1F3274] dark:text-white text-lg">
+                      {sem}º Semestre
+                    </span>
+                  ) : (
+                    <span className="tracking-wide font-semibold text-slate-700 dark:text-slate-300 text-sm" style={{ opacity: 1 }}>
+                      {sem}º
+                    </span>
+                  )
+                )}
+              </div>
+            );
+          })}
+        </motion.div>
+      </div>
+    </div>
+  );
+};
+
+// Componente Input numérico con botones personalizados
+const NumberInput = ({ label, name, value, onChange, required, error }) => {
+  const handleIncrement = () => {
+    onChange({ target: { name, value: String(Number(value || 0) + 1) } });
+  };
+
+  const handleDecrement = () => {
+    const newValue = Math.max(0, Number(value || 0) - 1);
+    onChange({ target: { name, value: String(newValue) } });
+  };
+
+  return (
+    <div>
+      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
+        {label} {required && <span className="text-red-500">*</span>}
+      </label>
+      <div className="flex items-center gap-2">
+        {/* Input numérico */}
+        <input
+          type="number"
+          name={name}
+          value={value}
+          onChange={onChange}
+          required={required}
+          className={`w-20 px-2 py-3 text-center rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${
+            error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'
+          } [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
+        />
+
+        {/* Botones verticales */}
+        <div className="flex flex-col gap-1">
+          {/* Botón más (arriba) */}
+          <button
+            type="button"
+            onClick={handleIncrement}
+            className="flex items-center justify-center w-8 h-6 rounded-lg bg-[#3D56B5] hover:bg-[#2C4AAE] text-white font-bold transition-all active:scale-95"
+            title="Aumentar"
+          >
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M7 14l5-5 5 5z"/>
+            </svg>
+          </button>
+
+          {/* Botón menos (abajo) */}
+          <button
+            type="button"
+            onClick={handleDecrement}
+            className="flex items-center justify-center w-8 h-6 rounded-lg bg-[#3D56B5] hover:bg-[#2C4AAE] text-white font-bold transition-all active:scale-95"
+            title="Disminuir"
+          >
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M7 10l5 5 5-5z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+    </div>
+  );
+};
 
 const InputField = ({ label, name, type = 'text', value, onChange, required, error }) => (
   <div>
@@ -12,7 +461,9 @@ const InputField = ({ label, name, type = 'text', value, onChange, required, err
       value={value}
       onChange={onChange}
       required={required}
-            className={`w-full px-4 py-2.5 rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md ${error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'}`}
+            className={`w-full px-4 py-3 rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md ${
+        error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'
+      } [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
     />
         {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
   </div>
@@ -291,9 +742,29 @@ const MateriaForm = () => {
                                 {errors.carrera && <p className="text-xs text-red-600 mt-1">{errors.carrera}</p>}
                             </div>
 
-                            <InputField label="Semestre" name="semestre" type="number" value={formData.semestre} onChange={handleChange} required error={errors.semestre} />
-                            <InputField label="Horas Teóricas" name="horas_teoricas" type="number" value={formData.horas_teoricas} onChange={handleChange} required error={errors.horas_teoricas} />
-                            <InputField label="Horas Prácticas" name="horas_practicas" type="number" value={formData.horas_practicas} onChange={handleChange} required error={errors.horas_practicas} />
+                            <div className="grid grid-cols-3 gap-3">
+                              <SemesterPicker
+                                value={formData.semestre}
+                                onChange={handleChange}
+                                error={errors.semestre}
+                              />
+                              <NumberInput
+                                label="Horas T."
+                                name="horas_teoricas"
+                                value={formData.horas_teoricas}
+                                onChange={handleChange}
+                                required
+                                error={errors.horas_teoricas}
+                              />
+                              <NumberInput
+                                label="Horas P."
+                                name="horas_practicas"
+                                value={formData.horas_practicas}
+                                onChange={handleChange}
+                                required
+                                error={errors.horas_practicas}
+                              />
+                            </div>
                         </div>
 
                         <div className="pt-4 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
