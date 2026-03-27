@@ -682,7 +682,7 @@ function ListaDocentes({ isDark }) {
         {/* MODAL DE CREACIÓN DE DOCENTE */}
         {isCreating && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden">
               {/* Header */}
               <div className="bg-[#2C4AAE] px-6 py-4">
                 <h2 className="text-xl font-bold text-white flex items-center gap-2">
@@ -729,27 +729,51 @@ function ListaDocentes({ isDark }) {
                     ]}
                     error={errors.dedicacion}
                   />
-                  {formData.dedicacion === 'horario' ? (
-                    <InputField
-                      label="Horas / Semana"
-                      name="horas_contrato_semanales"
-                      type="number"
-                      value={formData.horas_contrato_semanales || ''}
-                      onChange={handleChange}
-                      required
-                      error={errors.horas_contrato_semanales}
-                    />
-                  ) : (
-                    <div>
-                      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Horas / Semana</label>
-                      <div className="w-full px-3 py-2.5 rounded-xl border-2 bg-gradient-to-r from-slate-100 to-slate-50 dark:from-slate-700 dark:to-slate-700/50 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600 flex items-center justify-between">
-                        <span className="font-bold text-lg text-slate-700 dark:text-slate-300">
-                          {formData.dedicacion === 'tiempo_completo' ? 40 : 20}
-                        </span>
-                        <span className="text-xs text-slate-400 dark:text-slate-500">hrs</span>
+                  <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-[minmax(0,380px)_1fr] gap-4 items-start">
+                    {formData.dedicacion === 'horario' ? (
+                      <InputField
+                        label="Horas / Semana"
+                        name="horas_contrato_semanales"
+                        type="number"
+                        value={formData.horas_contrato_semanales || ''}
+                        onChange={handleChange}
+                        required={Boolean(formData.dedicacion)}
+                        error={errors.horas_contrato_semanales}
+                      />
+                    ) : (
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Horas / Semana</label>
+                        <div className="w-full px-3 py-2.5 rounded-xl border-2 bg-gradient-to-r from-slate-100 to-slate-50 dark:from-slate-700 dark:to-slate-700/50 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600 flex items-center justify-between min-h-[46px]">
+                          <span className="font-bold text-lg text-slate-700 dark:text-slate-300">
+                            {formData.dedicacion === 'tiempo_completo' ? 40 : formData.dedicacion === 'medio_tiempo' ? 20 : ''}
+                          </span>
+                          <span className="text-xs text-slate-400 dark:text-slate-500">hrs</span>
+                        </div>
                       </div>
+                    )}
+
+                    <div
+                      className={`rounded-xl border-l-4 p-3.5 shadow-sm min-h-[92px] transition-opacity ${
+                        formData.dedicacion
+                          ? `${dedicacionStyles[formData.dedicacion]?.bg} ${dedicacionStyles[formData.dedicacion]?.border} opacity-100`
+                          : 'bg-transparent border-transparent opacity-0'
+                      }`}
+                    >
+                      {formData.dedicacion && (
+                        <div className="flex items-start gap-3">
+                          <InfoIcon className={`w-5 h-5 flex-shrink-0 mt-0.5 ${dedicacionStyles[formData.dedicacion]?.icon}`} />
+                          <div>
+                            <h5 className={`text-sm font-semibold ${dedicacionStyles[formData.dedicacion]?.title}`}>Información sobre Dedicación</h5>
+                            <p className={`text-xs leading-5 mt-1 ${dedicacionStyles[formData.dedicacion]?.text}`}>
+                              {formData.dedicacion === 'tiempo_completo' && 'La dedicación a Tiempo Completo implica un total de 40 horas semanales.'}
+                              {formData.dedicacion === 'medio_tiempo' && 'La dedicación a Medio Tiempo implica un total de 20 horas semanales.'}
+                              {formData.dedicacion === 'horario' && 'Para la dedicación por Horario, debe especificar el número de horas semanales según el contrato.'}
+                            </p>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )}
+                  </div>
                 </div>
               </form>
               {/* Footer */}

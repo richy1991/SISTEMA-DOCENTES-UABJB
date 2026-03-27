@@ -42,7 +42,7 @@ const SemesterPicker = ({ value, onChange, error }) => {
         <button
           type="button"
           onClick={openSemesterSelector}
-          className={`w-full px-4 py-3 rounded-xl border bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-left flex items-center justify-between transition-all ${
+          className={`w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-left flex items-center justify-between transition-all ${
             error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600 hover:border-[#3D6DE0]/70'
           }`}
         >
@@ -62,7 +62,7 @@ const SemesterPicker = ({ value, onChange, error }) => {
           >
             <div className="absolute inset-0 bg-black/35 backdrop-blur-[1px]" onClick={commitDraftAndClose} />
             <motion.div
-              className="relative w-full max-w-xs rounded-2xl border border-[#3D6DE0]/35 dark:border-[#5B75CD]/55 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl shadow-2xl overflow-hidden"
+              className="relative w-full max-w-xs rounded-2xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl shadow-2xl overflow-hidden border border-[#7F97E8]/45"
               initial={{ y: 14, scale: 0.98, opacity: 0 }}
               animate={{ y: 0, scale: 1, opacity: 1 }}
               exit={{ y: 10, scale: 0.99, opacity: 0 }}
@@ -414,6 +414,8 @@ const NumberInput = ({ label, name, value, onChange, required, error }) => {
           name={name}
           value={value}
           onChange={onChange}
+          min="0"
+          max="12"
           required={required}
           className={`w-20 px-2 py-3 text-center rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${
             error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'
@@ -582,7 +584,7 @@ const MateriaForm = () => {
     const [formData, setFormData] = useState({
         nombre: '',
         sigla: '',
-        semestre: '',
+        semestre: 1,
         carrera: '',
         horas_teoricas: 0,
         horas_practicas: 0,
@@ -668,6 +670,55 @@ const MateriaForm = () => {
         setLoading(true);
         setErrors({});
 
+        // Validaciones de horas
+        const horasTeoricas = Number(formData.horas_teoricas) || 0;
+        const horasPracticas = Number(formData.horas_practicas) || 0;
+        const horasTotales = horasTeoricas + horasPracticas;
+
+        // Validar semestre
+        const semestreValue = Number(formData.semestre);
+        if (!formData.semestre || isNaN(semestreValue) || semestreValue < 1 || semestreValue > 10) {
+            setErrors({
+                semestre: 'Introduzca un número entero válido entre 1 y 10'
+            });
+            toast.error('Semestre inválido: Debe seleccionar un semestre entre 1 y 10');
+            setLoading(false);
+            return;
+        }
+
+        // Validar mínimo de horas
+        if (horasTotales < 2) {
+            setErrors({
+                horas_teoricas: 'La suma de horas teóricas y prácticas debe ser mínimo 2 horas',
+                horas_practicas: 'La suma de horas teóricas y prácticas debe ser mínimo 2 horas'
+            });
+            toast.error('Horas insuficientes: La materia debe tener al menos 2 horas semanales en total');
+            setLoading(false);
+            return;
+        }
+
+        // Validar máximo de horas
+        if (horasTotales > 12) {
+            setErrors({
+                horas_teoricas: 'La suma de horas teóricas y prácticas no puede exceder 12 horas',
+                horas_practicas: 'La suma de horas teóricas y prácticas no puede exceder 12 horas'
+            });
+            toast.error('Horas excedidas: La materia no puede tener más de 12 horas semanales en total');
+            setLoading(false);
+            return;
+        }
+
+        // Validar números negativos
+        if (horasTeoricas < 0 || horasPracticas < 0) {
+            setErrors({
+                horas_teoricas: horasTeoricas < 0 ? 'Las horas no pueden ser negativas' : '',
+                horas_practicas: horasPracticas < 0 ? 'Las horas no pueden ser negativas' : ''
+            });
+            toast.error('Valores inválidos: Las horas no pueden ser negativas');
+            setLoading(false);
+            return;
+        }
+
         try {
             let response;
             if (id) {
@@ -711,9 +762,9 @@ const MateriaForm = () => {
     };
 
     return (
-        <div className="min-h-screen bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 md:p-6">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-fade-in" style={{ animationDuration: '160ms' }}>
             <div className="max-w-4xl w-full">
-                <div className="bg-white/75 dark:bg-slate-900/70 backdrop-blur-xl rounded-2xl border border-white/50 dark:border-slate-600/50 shadow-2xl overflow-hidden animate-slide-up" style={{ animationDuration: '180ms' }}>
+                <div className="bg-white/75 dark:bg-slate-900 backdrop-blur-xl dark:backdrop-blur-none rounded-2xl border border-white/50 dark:border-slate-600/50 shadow-2xl overflow-hidden animate-slide-up" style={{ animationDuration: '180ms' }}>
                     <div className="px-6 py-4 border-b border-[#7F97E8]/45 bg-[#2C4AAE]">
                         <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
                             {id ? '✏️ Editar Materia' : '➕ Nueva Materia'}
@@ -765,6 +816,9 @@ const MateriaForm = () => {
                                 error={errors.horas_practicas}
                               />
                             </div>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                              ℹ️ La suma de horas teóricas y prácticas debe estar entre 2 y 12 horas semanales
+                            </p>
                         </div>
 
                         <div className="pt-4 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">

@@ -187,9 +187,10 @@ function App() {
               <Route path="docentes" element={<AnimatedRoute><ListaDocentes isDark={isDark} /></AnimatedRoute>} />
               <Route path="calendarios" element={<AnimatedRoute><ListaCalendarios /></AnimatedRoute>} />
               <Route path="carreras" element={<AnimatedRoute><ListaCarreras isDark={isDark} /></AnimatedRoute>} />
-              <Route path="materias" element={<AnimatedRoute><MateriaList isDark={isDark} /></AnimatedRoute>} />
-              <Route path="materias/nueva" element={<AnimatedRoute><MateriaForm /></AnimatedRoute>} />
-              <Route path="materias/editar/:id" element={<AnimatedRoute><MateriaForm /></AnimatedRoute>} />
+              <Route path="materias" element={<AnimatedRoute><MateriaList isDark={isDark} /></AnimatedRoute>}>
+                <Route path="nueva" element={<MateriaForm />} />
+                <Route path="editar/:id" element={<MateriaForm />} />
+              </Route>
 
               <Route path="*" element={<Navigate to="/fondo-tiempo" replace />} />
             </Route>

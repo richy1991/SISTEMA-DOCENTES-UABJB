@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../apis/api';
-import { Link } from 'react-router-dom';
+import { Link, Outlet } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
 // Componente Select con diseño personalizado (mismo estilo que ListaDocentes)
@@ -418,6 +418,7 @@ const MateriaList = ({ isDark }) => {
                     </div>
                 </div>
             )}
+            <Outlet />
         </div>
     );
 };
