@@ -7,13 +7,14 @@ from openpyxl.utils import get_column_letter
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, BasePermission, SAFE_METHODS, IsAuthenticated
 from rest_framework.response import Response
 from django.db import transaction
 from django.db.models import Q
 from django.http import HttpResponse
 
 from catalogos.models import ItemCatalogo, OperacionCatalogo, Direccion
+from poa_document.models import UsuarioPOA
 from catalogos.api.serializers import (
     ItemCatalogoSerializer,
     OperacionCatalogoSerializer,
@@ -22,9 +23,29 @@ from catalogos.api.serializers import (
 )
 
 
+class IsElaboradorOrReadOnly(BasePermission):
+    """Permite lectura a usuarios autenticados y escritura solo a rol elaborador."""
+
+    message = 'Solo usuarios con rol elaborador pueden modificar el catálogo de items.'
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+
+        if request.method in SAFE_METHODS:
+            return True
+
+        return UsuarioPOA.objects.filter(
+            user=user,
+            activo=True,
+            rol='elaborador',
+        ).exists()
+
+
 class ItemCatalogoViewSet(viewsets.ModelViewSet):
     serializer_class = ItemCatalogoSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsElaboradorOrReadOnly]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     @staticmethod
@@ -324,7 +345,7 @@ class ItemCatalogoReadOnlyViewSet(viewsets.ReadOnlyModelViewSet):
     """
     queryset = ItemCatalogo.objects.all()
     serializer_class = ItemCatalogoSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         qs = super().get_queryset()

@@ -1,4 +1,4 @@
-import { Routes, Route, Outlet } from 'react-router-dom';
+﻿import { Routes, Route, Outlet } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
@@ -142,7 +142,7 @@ function POAApp({ user }) {
     return () => window.removeEventListener('header-actions', onHeaderActions);
   }, []);
 
-  // Escuchar selección de dirección desde DireccionesPage
+  // Escuchar selecciÃ³n de direcciÃ³n desde DireccionesPage
   useEffect(() => {
     const h = (e) => {
       const dir = e?.detail ?? null;
@@ -152,7 +152,7 @@ function POAApp({ user }) {
     return () => window.removeEventListener('direccion-selected', h);
   }, []);
 
-  // Escuchar selección de operación desde DireccionesPage
+  // Escuchar selecciÃ³n de operaciÃ³n desde DireccionesPage
   useEffect(() => {
     const h = (e) => {
       const op = e?.detail ?? null;
@@ -162,7 +162,7 @@ function POAApp({ user }) {
     return () => window.removeEventListener('operacion-selected', h);
   }, []);
 
-  // Escuchar petición para abrir modal en modo edición
+  // Escuchar peticiÃ³n para abrir modal en modo ediciÃ³n
   useEffect(() => {
     const h = (e) => {
       const op = e?.detail ?? null;
@@ -196,7 +196,7 @@ function POAApp({ user }) {
         poaRoles={poaRoles}
       />
 
-      {/* Modal de gestión */}
+      {/* Modal de gestiÃ³n */}
       {showGestionModal && (
         <GestionSelectorModal
           onClose={() => setShowGestionModal(false)}
@@ -235,7 +235,7 @@ function POAApp({ user }) {
         />
 
         {/* Contenido central */}
-        <section className={`flex flex-col items-stretch justify-start flex-1 ${isHome ? 'py-12' : 'pt-28 md:pt-24 pb-6'} ${(isActividadesPage || isPresupuestosPage || isObjetivosPage) ? 'px-2 md:px-4' : 'px-4 md:px-20'} w-full`}>
+        <section className={`poa-main-surface flex flex-col items-stretch justify-start flex-1 ${isHome ? 'pt-2 md:pt-2 pb-6' : 'pt-28 md:pt-24 pb-6'} ${(isActividadesPage || isPresupuestosPage || isObjetivosPage) ? 'px-2 md:px-4' : 'px-4 md:px-20'} w-full`}>
           <Outlet context={{ user, poaRoles, poaPermissions }} />
         </section>
       </main>
@@ -244,3 +244,5 @@ function POAApp({ user }) {
 }
 
 export default POAApp;
+
+

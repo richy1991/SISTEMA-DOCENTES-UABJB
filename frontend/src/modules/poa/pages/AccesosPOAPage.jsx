@@ -110,7 +110,7 @@ export default function AccesosPOAPage() {
   if (!canManageAccess) {
     return (
       <div className="max-w-5xl mx-auto px-4 py-8">
-        <div className="rounded-2xl border border-amber-300 bg-amber-50 px-5 py-4 text-amber-800">
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 px-5 py-4 text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
           No tiene permisos para administrar accesos del modulo POA.
         </div>
       </div>
@@ -119,14 +119,15 @@ export default function AccesosPOAPage() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
+      <div className="accesos-panel rounded-3xl border border-slate-200/90 bg-white/80 p-5 shadow-xl backdrop-blur-sm dark:border-sky-900/40 dark:bg-slate-900/65">
       {/* Header */}
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
+          <h1 className="text-2xl font-bold flex items-center gap-2 text-slate-900 dark:text-slate-100">
             <FaUserShield className="text-blue-500" />
             Accesos al Módulo POA
           </h1>
-          <p className="text-sm text-gray-500 mt-0.5">
+          <p className="text-sm text-gray-500 mt-0.5 dark:text-slate-300">
             Gestiona qué usuarios tienen permisos y qué pueden hacer en el módulo POA.
           </p>
         </div>
@@ -144,7 +145,7 @@ export default function AccesosPOAPage() {
           <button
             key={r.value}
             onClick={() => setFilterRol(prev => prev === r.value ? 'todos' : r.value)}
-            className={`rounded-xl border px-3 py-2.5 text-left transition-all text-xs font-semibold
+            className={`accesos-kpi rounded-xl border px-3 py-2.5 text-left transition-all text-xs font-semibold
               ${filterRol === r.value ? 'ring-2 ring-blue-500 shadow-md' : 'hover:shadow-sm'}
               ${ROL_COLOR[r.value]} ${ROL_DARK[r.value]}`}
           >
@@ -162,13 +163,13 @@ export default function AccesosPOAPage() {
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Buscar por nombre, usuario o entidad..."
-            className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+            className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white text-slate-900 dark:border-slate-700 dark:bg-slate-900/75 dark:text-slate-100"
           />
         </div>
         <select
           value={filterRol}
           onChange={e => setFilterRol(e.target.value)}
-          className="border border-gray-300 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+          className="border border-gray-300 rounded-xl px-3 py-2 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-400 dark:border-slate-700 dark:bg-slate-900/75 dark:text-slate-100"
         >
           <option value="todos">Todos los roles</option>
           {ROL_POA_CHOICES.map(r => (
@@ -179,22 +180,22 @@ export default function AccesosPOAPage() {
 
       {/* Tabla */}
       {loading ? (
-        <div className="flex items-center justify-center py-16 text-blue-500">
+        <div className="flex items-center justify-center py-16 text-blue-500 dark:text-sky-300">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mr-3" />
           Cargando...
         </div>
       ) : filtered.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">
+        <div className="text-center py-16 text-gray-400 dark:text-slate-400">
           <FaUserShield className="mx-auto text-4xl mb-3 opacity-30" />
           <p className="text-sm">
             {accesos.length === 0 ? 'No hay accesos asignados todavía.' : 'Sin resultados para los filtros aplicados.'}
           </p>
         </div>
       ) : (
-        <div className="bg-white rounded-2xl shadow border border-gray-100 overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="accesos-table-shell bg-white rounded-2xl shadow border border-gray-100 overflow-hidden dark:border-slate-700 dark:bg-slate-900/70">
+          <table className="accesos-table w-full text-sm">
             <thead>
-              <tr className="bg-gradient-to-r from-blue-900 to-blue-950 text-white text-xs uppercase tracking-wider">
+              <tr className="accesos-table-head text-xs uppercase tracking-wider">
                 <th className="px-4 py-3 text-left">Usuario</th>
                 <th className="px-4 py-3 text-left">Rol POA</th>
                 <th className="px-4 py-3 text-left">Entidad</th>
@@ -204,11 +205,11 @@ export default function AccesosPOAPage() {
             </thead>
             <tbody>
               {filtered.map((a, idx) => (
-                <tr key={a.id} className={`border-t border-gray-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-blue-50/30 transition`}>
-                  <td className="px-4 py-3 font-semibold text-gray-800">
+                <tr key={a.id} className={`border-t border-gray-100 dark:border-slate-700/70 ${idx % 2 === 0 ? 'bg-white dark:bg-slate-900/55' : 'bg-gray-50/50 dark:bg-slate-800/35'} hover:bg-blue-50/30 dark:hover:bg-sky-900/20 transition`}>
+                  <td className="px-4 py-3 font-semibold text-gray-800 dark:text-slate-100">
                     <div>{a.nombre_display || a.user_detalle?.nombre_completo || a.docente_detalle?.nombre_completo || '—'}</div>
                     {a.user_detalle?.username && (
-                      <div className="text-xs text-gray-400 font-normal">@{a.user_detalle.username}</div>
+                      <div className="text-xs text-gray-400 dark:text-slate-400 font-normal">@{a.user_detalle.username}</div>
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -216,28 +217,28 @@ export default function AccesosPOAPage() {
                       {a.rol_display || getRolLabel(a.rol)}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-gray-600">
-                    {a.nombre_entidad || <span className="text-gray-300">—</span>}
+                  <td className="px-4 py-3 text-gray-600 dark:text-slate-300">
+                    {a.nombre_entidad || <span className="text-gray-300 dark:text-slate-500">—</span>}
                   </td>
                   <td className="px-4 py-3 text-center">
                     <button onClick={() => handleToggleActivo(a)} title={a.activo ? 'Desactivar' : 'Activar'}>
                       {a.activo
                         ? <FaToggleOn className="text-green-500 text-xl mx-auto" />
-                        : <FaToggleOff className="text-gray-400 text-xl mx-auto" />}
+                        : <FaToggleOff className="text-gray-400 dark:text-slate-500 text-xl mx-auto" />}
                     </button>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-center gap-2">
                       <button
                         onClick={() => { setEditTarget(a); setShowModal(true); }}
-                        className="text-blue-500 hover:text-blue-700 p-1.5 rounded-lg hover:bg-blue-50 transition"
+                        className="text-blue-500 hover:text-blue-700 p-1.5 rounded-lg hover:bg-blue-50 dark:hover:bg-sky-900/25 transition"
                         title="Editar"
                       >
                         <FaEdit size={14} />
                       </button>
                       <button
                         onClick={() => setConfirmDelete(a)}
-                        className="text-red-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition"
+                        className="text-red-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition"
                         title="Eliminar"
                       >
                         <FaTrash size={13} />
@@ -268,15 +269,15 @@ export default function AccesosPOAPage() {
       {confirmDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60" onClick={() => setConfirmDelete(null)} />
-          <div className="relative z-10 bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
-            <h3 className="font-bold text-lg mb-2 text-gray-800">¿Eliminar acceso?</h3>
-            <p className="text-sm text-gray-600 mb-5">
+          <div className="relative z-10 bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 dark:border dark:border-slate-700 dark:bg-slate-900">
+            <h3 className="font-bold text-lg mb-2 text-gray-800 dark:text-slate-100">¿Eliminar acceso?</h3>
+            <p className="text-sm text-gray-600 dark:text-slate-300 mb-5">
               Se eliminará el acceso de <strong>{confirmDelete.docente_detalle?.nombre_completo}</strong> como{' '}
               <strong>{confirmDelete.rol_display}</strong>. Esta acción no se puede deshacer.
             </p>
             <div className="flex justify-end gap-3">
               <button onClick={() => setConfirmDelete(null)}
-                className="border border-gray-300 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition font-medium">
+                className="border border-gray-300 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 dark:border-slate-600 dark:text-slate-100 dark:hover:bg-slate-800 transition font-medium">
                 Cancelar
               </button>
               <button onClick={() => handleDelete(confirmDelete.id)}
@@ -287,6 +288,7 @@ export default function AccesosPOAPage() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

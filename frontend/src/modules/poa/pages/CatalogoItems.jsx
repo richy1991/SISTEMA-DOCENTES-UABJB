@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import { FaTrash, FaEdit, FaFileUpload } from 'react-icons/fa';
 import { getItemsCatalogo, deleteCatalogoItem, importarCatalogoItemsExcel, descargarCatalogoItemsExcel } from '../../../apis/poa.api';
 import NuevoCatalogoItemModal from '../components/NuevoCatalogoItemModal';
@@ -6,6 +7,10 @@ import IconButton from '../components/IconButton';
 import toast from 'react-hot-toast';
 
 const CatalogoItems = () => {
+	const outletContext = useOutletContext() || {};
+	const poaPermissions = outletContext.poaPermissions || {};
+	const canEdit = !!poaPermissions.canEdit;
+
 	const [items, setItems] = useState([]);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState(null);
@@ -127,11 +132,19 @@ const CatalogoItems = () => {
 	};
 
 	const openEditarItem = (it) => {
+		if (!canEdit) {
+			toast.error('Solo el elaborador puede editar items.');
+			return;
+		}
 		setModalItem(it);
 		setShowItemModal(true);
 	};
 
 	const openNuevoItem = () => {
+		if (!canEdit) {
+			toast.error('Solo el elaborador puede crear items.');
+			return;
+		}
 		setModalItem(null);
 		setShowItemModal(true);
 	};
@@ -156,6 +169,10 @@ const CatalogoItems = () => {
 	};
 
 	const handleEliminarSeleccionado = async () => {
+		if (!canEdit) {
+			toast.error('Solo el elaborador puede eliminar items.');
+			return;
+		}
 		if (!selectedItem) {
 			toast.error('Selecciona un item para eliminar.');
 			return;
@@ -174,6 +191,10 @@ const CatalogoItems = () => {
 	};
 
 	const handleOpenImportPicker = () => {
+		if (!canEdit) {
+			toast.error('Solo el elaborador puede importar items.');
+			return;
+		}
 		if (importing) return;
 		fileInputRef.current?.click();
 	};
@@ -258,6 +279,11 @@ const CatalogoItems = () => {
 	};
 
 	const handleImportExcel = async (event) => {
+		if (!canEdit) {
+			event.target.value = '';
+			toast.error('Solo el elaborador puede importar items.');
+			return;
+		}
 		const file = event.target.files?.[0];
 		if (!file) return;
 
@@ -309,14 +335,20 @@ const CatalogoItems = () => {
 	};
 
 	return (
-		<div className="catalogo-card w-full max-w-6xl mx-auto p-6 rounded shadow border border-slate-200 bg-white text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+		<div className="relative w-full max-w-6xl mx-auto">
+			<div className="catalogo-card w-full p-6 rounded shadow border border-slate-200 bg-white/90 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+			{!canEdit && (
+				<div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
+					Modo solo lectura: puedes ver y descargar el catálogo. Solo el encargado de elavorar el POA puede crear o modificar items.
+				</div>
+			)}
 			<div
 				ref={stickyControlsRef}
-				className="sticky z-30 mb-4 rounded-lg p-3 shadow-sm border border-slate-200 bg-white/95 backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/95"
+				className="sticky z-30 mb-4 rounded-lg p-3 shadow-sm border border-sky-200 bg-sky-50/95 backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/95"
 				style={{ top: `${stickyTop}px` }}
 			>
-				<div className="mb-3 rounded-lg p-3 border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
-					<div className="text-sm font-semibold text-slate-700 mb-2 dark:text-slate-200">Tabla de items (estilo Excel): DETALLE, partida, UNIDAD_MEDIDA</div>
+				<div className="mb-3 rounded-lg p-3 border border-sky-200 bg-white/80 dark:border-slate-700 dark:bg-slate-800">
+					<div className="text-sm font-semibold text-slate-700 mb-2 dark:text-slate-200">Ingresa un término de búsqueda: (DETALLE, PARTIDA)</div>
 					<div className="flex flex-wrap items-center gap-2">
 						<input
 							type="text"
@@ -336,35 +368,39 @@ const CatalogoItems = () => {
 				</div>
 
 				<div className="flex justify-end gap-3">
-					<IconButton
-						showIcon
-						icon={<FaFileUpload />}
-						onClick={openNuevoItem}
-						className="btn-futuristic font-bold py-2 px-4 rounded"
-						title="Crear nuevo item"
-					>
-						Nuevo item
-					</IconButton>
-					{selectedItem && (
+					{canEdit && (
 						<>
 							<IconButton
 								showIcon
-								icon={<FaEdit />}
-								onClick={handleEditarSeleccionado}
+								icon={<FaFileUpload />}
+								onClick={openNuevoItem}
 								className="btn-futuristic font-bold py-2 px-4 rounded"
-								title="Editar item seleccionado"
+								title="Crear nuevo item"
 							>
-								Editar seleccionado
+								Nuevo item
 							</IconButton>
-							<IconButton
-								showIcon
-								icon={<FaTrash />}
-								onClick={handleEliminarSeleccionado}
-								className="btn-futuristic font-bold py-2 px-4 rounded"
-								title="Eliminar item seleccionado"
-							>
-								Eliminar seleccionado
-							</IconButton>
+							{selectedItem && (
+								<>
+									<IconButton
+										showIcon
+										icon={<FaEdit />}
+										onClick={handleEditarSeleccionado}
+										className="btn-futuristic font-bold py-2 px-4 rounded"
+										title="Editar item seleccionado"
+									>
+										Editar seleccionado
+									</IconButton>
+									<IconButton
+										showIcon
+										icon={<FaTrash />}
+										onClick={handleEliminarSeleccionado}
+										className="btn-futuristic font-bold py-2 px-4 rounded"
+										title="Eliminar item seleccionado"
+									>
+										Eliminar seleccionado
+									</IconButton>
+								</>
+							)}
 						</>
 					)}
 					<button
@@ -382,15 +418,17 @@ const CatalogoItems = () => {
 						accept=".xlsx,.xls"
 						className="hidden"
 					/>
-					<IconButton
-						showIcon
-						icon={<FaFileUpload />}
-						onClick={handleOpenImportPicker}
-						className="btn-futuristic font-bold py-2 px-4 rounded"
-						title="Importar items desde Excel"
-					>
-						{importing ? 'Importando...' : 'Importar Excel'}
-					</IconButton>
+					{canEdit && (
+						<IconButton
+							showIcon
+							icon={<FaFileUpload />}
+							onClick={handleOpenImportPicker}
+							className="btn-futuristic font-bold py-2 px-4 rounded"
+							title="Importar items desde Excel"
+						>
+							{importing ? 'Importando...' : 'Importar Excel'}
+						</IconButton>
+					)}
 				</div>
 			</div>
 
@@ -500,7 +538,7 @@ const CatalogoItems = () => {
 			{!loading && !error && (
 				<div>
 					<div className="text-sm text-slate-500 dark:text-slate-400 mb-2">Total de registros: {totalCount}</div>
-					<div className="overflow-auto max-h-[68vh] border rounded border-slate-300 dark:border-slate-700">
+					<div className="overflow-auto max-h-[68vh] border rounded border-sky-200 bg-white/75 dark:border-slate-700 dark:bg-transparent">
 						<table className="min-w-full table-auto border-collapse font-sans text-sm leading-snug text-blue-900 dark:text-white">
 							<thead>
 								<tr className="text-left">
@@ -569,6 +607,7 @@ const CatalogoItems = () => {
 					onUpdated={handleItemUpdated}
 				/>
 			)}
+			</div>
 		</div>
 	);
 };
