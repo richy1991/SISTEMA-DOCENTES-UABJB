@@ -96,6 +96,12 @@ class Docente(models.Model):
                 raise ValidationError({
                     'horas_contrato_semanales': 'Para dedicación "Horario", debe especificar un número de horas de contrato semanales mayor a cero.'
                 })
+            
+            # VALIDACIÓN DE RANGO MÁXIMO: 56 horas semanales
+            if self.horas_contrato_semanales > 56:
+                raise ValidationError({
+                    'horas_contrato_semanales': 'La carga horaria no puede superar las 56 horas semanales.'
+                })
         else:  # Para 'tiempo_completo' o 'medio_tiempo'
             # Este campo no es relevante, así que lo forzamos a None para mantener la consistencia.
             if self.horas_contrato_semanales is not None:
@@ -467,7 +473,9 @@ class FondoTiempo(models.Model):
                 gestion=self.gestion
             )
             dias_vacacion = saldo.dias_disponibles
-            return int(dias_vacacion) * 8
+            # Horas diarias según dedicación
+            horas_diarias = Decimal(self.docente.horas_semanales_maximas) / 5
+            return int(Decimal(dias_vacacion) * horas_diarias)
         except SaldoVacacionesGestion.DoesNotExist:
             pass
 
@@ -476,25 +484,85 @@ class FondoTiempo(models.Model):
         if dias_vacacion <= 0:
             dias_vacacion = self.docente.calcular_dias_vacacion(self.gestion)
 
-        return int(dias_vacacion) * 8
+        # Horas diarias según dedicación (horas_semanales / 5 días)
+        horas_diarias = Decimal(self.docente.horas_semanales_maximas) / 5
+        
+        # Horas de vacación = días × horas_diarias
+        return int(Decimal(dias_vacacion) * horas_diarias)
+
+    def _obtener_horas_feriados_docente(self):
+        """
+        Calcula horas de feriados PROPORCIONALES a la dedicación del docente.
+        
+        Según normativa UABJB:
+        - 16 días feriados al año (aproximadamente 128 horas para TC)
+        
+        CÁLCULO PROPORCIONAL:
+        - Tiempo Completo (40h/semana): 8 horas diarias → 16 × 8 = 128 horas
+        - Medio Tiempo (20h/semana): 4 horas diarias → 16 × 4 = 64 horas
+        - Horario (N h/semana): N/5 horas diarias → 16 × (N/5) horas
+        
+        Fórmula: 16 días × (horas_semanales / 5)
+        
+        Ejemplos:
+        - TC: 16 × (40/5) = 16 × 8 = 128 horas
+        - MT: 16 × (20/5) = 16 × 4 = 64 horas
+        - Horario 10h: 16 × (10/5) = 16 × 2 = 32 horas
+        """
+        if not self.docente:
+            return 0
+        
+        # Días de feriados estándar (16 días al año)
+        # Esto puede venir del campo horas_feriados_gestion si está personalizado
+        dias_feriados = self.docente.horas_feriados_gestion or 128
+        
+        # Si el valor es el default (128), calcular proporcionalmente
+        # Si es un valor personalizado, usarlo directamente
+        if dias_feriados == 128:
+            # Calcular horas diarias según dedicación
+            horas_diarias = Decimal(self.docente.horas_semanales_maximas) / 5
+            # 16 días feriados estándar
+            return int(Decimal(16) * horas_diarias)
+        else:
+            # Valor personalizado (ya está en horas)
+            return int(dias_feriados)
 
     def _recalcular_horas_automaticas(self):
         """
-        Regla UABJB:
-        horas_disponibles_reglamentarias = 2080 - horas_vacacion - horas_feriados
+        Regla UABJB - Cálculo PROPORCIONAL según dedicación del docente:
+        
+        FONDO DE TIEMPO DINÁMICO:
+        - Tiempo Completo (40h/semana): 40 × 52 = 2080 horas anuales
+        - Medio Tiempo (20h/semana): 20 × 52 = 1040 horas anuales
+        - Horario (N horas/semana): N × 52 horas anuales
+        
+        VACACIONES PROPORCIONALES:
+        - Se calculan en horas diarias según dedicación
+        - Tiempo Completo: 15 días × 8h = 120 horas
+        - Medio Tiempo: 15 días × 4h = 60 horas
+        
+        FERIADOS PROPORCIONALES:
+        - Se ajustan a la jornada diaria del docente
+        - Tiempo Completo: 16 días × 8h = 128 horas
+        - Medio Tiempo: 16 días × 4h = 64 horas
         """
         if not self.docente:
             return
 
+        # 1. Horas semanales según dedicación (40, 20, o horas_contrato)
         self.horas_semana = Decimal(self.docente.horas_semanales_maximas)
 
-        # El contrato reglamentario anual se trabaja sobre base 2080.
-        self.contrato_horas = 2080
+        # 2. CONTRATO HORAS DINÁMICO: horas_semanales × 52 semanas
+        # Esto elimina la base fija de 2080 y hace el cálculo proporcional
+        self.contrato_horas = int(self.horas_semana * 52)
 
-        # Fuente de datos: perfil/registro del docente.
+        # 3. Horas de vacación PROPORCIONALES a la dedicación
         self.horas_vacacion = self._obtener_horas_vacacion_docente()
-        self.horas_feriados = int(self.docente.horas_feriados_gestion or 0)
+        
+        # 4. Horas de feriados PROPORCIONALES a la dedicación
+        self.horas_feriados = self._obtener_horas_feriados_docente()
 
+        # 5. Cálculo final: contrato - vacacion - feriados
         horas_disponibles_reglamentarias = (
             Decimal(self.contrato_horas)
             - Decimal(self.horas_vacacion)
@@ -949,7 +1017,19 @@ class PerfilUsuario(models.Model):
     class Meta:
         verbose_name = "Perfil de Usuario"
         verbose_name_plural = "Perfiles de Usuarios"
-    
+        constraints = [
+            models.UniqueConstraint(
+                fields=['carrera', 'rol'],
+                name='unico_director_por_carrera',
+                condition=models.Q(rol='director')
+            ),
+            models.UniqueConstraint(
+                fields=['carrera', 'rol'],
+                name='unico_jefe_por_carrera',
+                condition=models.Q(rol='jefe_estudios')
+            ),
+        ]
+
     def __str__(self):
         return f"{self.user.username} - {self.get_rol_display()}"
 

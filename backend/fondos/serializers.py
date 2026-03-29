@@ -4,6 +4,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .models import Docente, Carrera, Materia, FondoTiempo, CategoriaFuncion, Actividad, PerfilUsuario, InformeFondo, ObservacionFondo, MensajeObservacion, HistorialFondo, CargaHoraria, SaldoVacacionesGestion
 from django.db.models import Sum
+from decimal import Decimal
     
 
 class CargaHorariaSerializer(serializers.ModelSerializer):
@@ -28,7 +29,7 @@ class CargaHorariaSerializer(serializers.ModelSerializer):
 class DocenteSerializer(serializers.ModelSerializer):
     nombre_completo = serializers.ReadOnlyField()
     usuario_email = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = Docente
         fields = '__all__'
@@ -38,6 +39,66 @@ class DocenteSerializer(serializers.ModelSerializer):
         if hasattr(obj, 'usuario') and obj.usuario and obj.usuario.user:
             return obj.usuario.user.email
         return None
+
+    def validate_horas_contrato_semanales(self, value):
+        """
+        🔒 BLINDAJE: Valida que las horas de contrato semanales estén dentro del rango permitido.
+        Límite máximo: 56 horas semanales (Art. 13 del reglamento)
+        """
+        if value is not None:
+            if value < 1:
+                raise serializers.ValidationError(
+                    'Las horas semanales deben ser al menos 1 hora.'
+                )
+            if value > 56:
+                raise serializers.ValidationError(
+                    '⚠️ Límite excedido: La carga horaria no puede superar las 56 horas semanales. '
+                    'Este es el máximo permitido por el reglamento para dedicación Horario.'
+                )
+        return value
+
+    def validate(self, data):
+        """
+        🔒 BLINDAJE: Validaciones adicionales para el docente.
+        - Verifica límite de 56 horas semanales
+        - Valida coherencia entre dedicación y horas
+        """
+        dedicacion = data.get('dedicacion', self.instance.dedicacion if self.instance else None)
+        horas_contrato = data.get('horas_contrato_semanales',
+                                   self.instance.horas_contrato_semanales if self.instance else None)
+
+        # Validar que Horario tenga horas de contrato
+        if dedicacion == 'horario':
+            if not horas_contrato or horas_contrato <= 0:
+                raise serializers.ValidationError({
+                    'horas_contrato_semanales': 'Para dedicación "Horario", debe especificar un número de horas de contrato semanales mayor a cero.'
+                })
+
+            # 🔒 VALIDACIÓN DE LÍMITE DE 56 HORAS
+            if horas_contrato > 56:
+                raise serializers.ValidationError({
+                    'horas_contrato_semanales': 
+                    f'⚠️ LÍMITE EXCEDIDO: Has ingresado {horas_contrato} horas semanales, pero el máximo permitido es 56 horas. '
+                    'Por favor, ajusta la carga horaria para cumplir con el reglamento.'
+                })
+
+        # Validar coherencia para Tiempo Completo (40 horas fijas)
+        if dedicacion == 'tiempo_completo':
+            if horas_contrato and horas_contrato > 40:
+                raise serializers.ValidationError({
+                    'horas_contrato_semanales': 
+                    f'⚠️ INCOHERENCIA: Para dedicación "Tiempo Completo" el máximo es 40 horas, pero has ingresado {horas_contrato} horas.'
+                })
+
+        # Validar coherencia para Medio Tiempo (20 horas fijas)
+        if dedicacion == 'medio_tiempo':
+            if horas_contrato and horas_contrato > 20:
+                raise serializers.ValidationError({
+                    'horas_contrato_semanales': 
+                    f'⚠️ INCOHERENCIA: Para dedicación "Medio Tiempo" el máximo es 20 horas, pero has ingresado {horas_contrato} horas.'
+                })
+
+        return data
 
 
 class SaldoVacacionesGestionSerializer(serializers.ModelSerializer):
@@ -312,6 +373,54 @@ class FondoTiempoSerializer(serializers.ModelSerializer):
             return 0
         return (total_asignado / obj.horas_efectivas) * 100
 
+    def validate(self, data):
+        """
+        🔒 BLINDAJE: Validación de horas acumuladas (Límite 56 horas semanales)
+        Verifica que la suma de todas las actividades no supere el límite del docente.
+        """
+        # Obtener el docente (puede venir en data o ya existir en la instancia)
+        docente = data.get('docente')
+        if not docente and hasattr(self, 'instance') and self.instance:
+            docente = self.instance.docente
+        
+        if not docente:
+            return data
+        
+        # Obtener horas máximas del docente según su dedicación
+        horas_maximas_semanales = docente.horas_semanales_maximas
+        
+        # Calcular total de horas asignadas en este fondo de tiempo
+        total_horas_asignadas = Decimal(0)
+        
+        # Si estamos actualizando, obtener las categorías existentes
+        if self.instance and hasattr(self.instance, 'categorias'):
+            for categoria in self.instance.categorias.all():
+                total_horas_asignadas += categoria.total_horas or Decimal(0)
+        
+        # Convertir a horas semanales (asumiendo 52 semanas por año)
+        horas_semanales_asignadas = total_horas_asignadas / Decimal(52)
+        
+        # 🔒 VALIDACIÓN DE LÍMITE DE 56 HORAS SEMANALES
+        if horas_semanales_asignadas > Decimal('56'):
+            raise serializers.ValidationError({
+                'horas_efectivas': 
+                f'⚠️ LÍMITE EXCEDIDO: La suma de todas las actividades ({horas_semanales_asignadas:.2f} horas/semana) '
+                f'supera el máximo permitido de 56 horas semanales. '
+                f'Total anual: {total_horas_asignadas:.2f} horas. '
+                f'Por favor, reduce la carga de actividades.'
+            })
+        
+        # Validación adicional: comparar con el límite específico del docente
+        if horas_semanales_asignadas > horas_maximas_semanales:
+            raise serializers.ValidationError({
+                'horas_efectivas': 
+                f'⚠️ LÍMITE PERSONAL EXCEDIDO: Tu dedicación ({docente.dedicacion}) tiene un límite de '
+                f'{horas_maximas_semanales} horas semanales, pero has asignado {horas_semanales_asignadas:.2f} horas. '
+                f'Por favor, ajusta las actividades para cumplir con tu dedicación.'
+            })
+        
+        return data
+
     def get_horas_disponibles(self, obj):
         total_asignado = self.get_total_asignado(obj)
         return obj.horas_efectivas - total_asignado
@@ -433,13 +542,22 @@ class UsuarioSerializer(serializers.ModelSerializer):
         """
         if hasattr(obj, 'perfil'):
             data = PerfilUsuarioSerializer(obj.perfil, context=self.context).data
+            
+            # 🔒 PROTECCIÓN INTEGRAL: Validar vínculo docente
+            if data.get('rol') == 'docente' and not data.get('docente'):
+                data['error_vinculo'] = True
+                data['mensaje_error'] = 'Usuario sin docente vinculado. Contacta al administrador.'
+            
             # GARANTÍA DE ACCESO: Si es superusuario, el frontend SIEMPRE debe verlo como admin
             if obj.is_superuser:
                 data['rol'] = 'admin'
                 # FIX: Forzar que al admin NUNCA se le pida cambio de contraseña, ignorando la BD
                 data['debe_cambiar_password'] = False
+                # Los superusuarios nunca tienen error de vínculo
+                data.pop('error_vinculo', None)
+                data.pop('mensaje_error', None)
             return data
-        
+
         # Fallback de seguridad: Si es superusuario pero NO tiene perfil creado (error de integridad),
         # devolvemos una estructura simulada de admin para no bloquear el acceso.
         if obj.is_superuser:

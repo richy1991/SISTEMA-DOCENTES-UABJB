@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-
+import { useNavigate } from 'react-router-dom';
 import { getDocentes } from '../apis/api';
 import api from '../apis/api';
 import toast from 'react-hot-toast';
@@ -444,6 +444,7 @@ const dedicacionStyles = {
 };
 
 function ListaDocentes({ isDark }) {
+  const navigate = useNavigate();
   const [docentes, setDocentes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -459,8 +460,8 @@ function ListaDocentes({ isDark }) {
     apellido_paterno: '',
     apellido_materno: '',
     ci: '',
-    categoria: '',
-    dedicacion: '',
+    categoria: 'catedratico',
+    dedicacion: 'tiempo_completo',
     fecha_ingreso: new Date().toISOString().split('T')[0],
     email: '',
     telefono: '',
@@ -476,11 +477,20 @@ function ListaDocentes({ isDark }) {
 
   // State for inline creation form
   const [isCreating, setIsCreating] = useState(false);
+  const [abrirDesdeUsuarios, setAbrirDesdeUsuarios] = useState(false);
 
   useEffect(() => {
     cargarDocentes();
     const userData = JSON.parse(localStorage.getItem('user') || 'null');
     setUser(userData);
+    
+    // 🔗 Detectar si venimos desde "Crear Usuario" para abrir modal
+    const abrirModal = sessionStorage.getItem('abrirModalDesdeUsuarios');
+    if (abrirModal === 'true') {
+      setAbrirDesdeUsuarios(true);
+      setIsCreating(true);
+      sessionStorage.removeItem('abrirModalDesdeUsuarios');
+    }
   }, []);
 
   const cargarDocentes = async () => {
@@ -556,18 +566,33 @@ function ListaDocentes({ isDark }) {
 
   const handleCreateSubmit = async (e) => {
     e.preventDefault();
+    console.log('Iniciando submit...', formData);
     setIsSubmitting(true);
     setErrors({});
     try {
       const payload = { ...formData };
       if (payload.email === '') payload.email = null;
       if (payload.telefono === '') payload.telefono = null;
+      
+      console.log('Enviando payload:', payload);
       await api.post('/docentes/', payload);
-      toast.success('Docente creado correctamente');
-      setIsCreating(false);
-      cargarDocentes();
+      console.log('Docente creado exitosamente');
+
+      // 🔗 Si venimos desde usuarios, volver automáticamente
+      if (abrirDesdeUsuarios) {
+        toast.success('✅ Docente creado. Volviendo a Crear Usuario...');
+        setTimeout(() => {
+          // Limpiar flag pero mantener datos en sessionStorage
+          sessionStorage.removeItem('abrirModalDesdeUsuarios');
+          navigate('/fondo-tiempo/usuarios');
+        }, 800);
+      } else {
+        toast.success('Docente creado correctamente');
+        setIsCreating(false);
+        cargarDocentes();
+      }
     } catch (err) {
-      console.error(err);
+      console.error('Error al crear docente:', err);
       const apiErrors = err.response?.data;
       if (apiErrors) {
         setErrors(apiErrors);
@@ -685,9 +710,17 @@ function ListaDocentes({ isDark }) {
             <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden">
               {/* Header */}
               <div className="bg-[#2C4AAE] px-6 py-4">
-                <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                  Nuevo Docente
-                </h2>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                    Nuevo Docente
+                  </h2>
+                  {abrirDesdeUsuarios && (
+                    <span className="px-3 py-1.5 bg-white/20 backdrop-blur-sm rounded-lg text-xs font-semibold text-white flex items-center gap-2">
+                      <span>🔗</span>
+                      Volviendo a Crear Usuario
+                    </span>
+                  )}
+                </div>
               </div>
               {/* Body */}
               <form onSubmit={handleCreateSubmit} className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 dark:bg-slate-900">
@@ -780,10 +813,18 @@ function ListaDocentes({ isDark }) {
               <div className="px-6 py-4 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
                 <button
                   type="button"
-                  onClick={() => setIsCreating(false)}
+                  onClick={() => {
+                    if (abrirDesdeUsuarios) {
+                      // Volver a usuarios si venimos desde allí
+                      // Los datos se recuperarán automáticamente en GestionUsuarios
+                      navigate('/fondo-tiempo/usuarios');
+                    } else {
+                      setIsCreating(false);
+                    }
+                  }}
                   className="px-6 py-2.5 rounded-xl font-bold text-slate-700 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 transition-all"
                 >
-                  Cancelar
+                  {abrirDesdeUsuarios ? 'Cancelar y volver' : 'Cancelar'}
                 </button>
                 <button
                   type="submit"
@@ -793,11 +834,11 @@ function ListaDocentes({ isDark }) {
                   {isSubmitting ? (
                     <>
                       <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                      Guardando...
+                      {abrirDesdeUsuarios ? 'Guardando y volviendo...' : 'Guardando...'}
                     </>
                   ) : (
                     <>
-                      💾 Guardar
+                      {abrirDesdeUsuarios ? '💾 Guardar y volver a Usuario' : '💾 Guardar'}
                     </>
                   )}
                 </button>

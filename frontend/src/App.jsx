@@ -42,6 +42,7 @@ import AdminDashboard from './components/AdminDashboard';
 import CambiarPassword from './components/CambiarPassword';
 import CargaHorariaGeneral from './components/CargaHorariaGeneral';
 import FondoTiempoDocente from './components/FondoTiempoDocente';
+import ErrorVinculoDocente from './components/ErrorVinculoDocente';
 import './App.css';
 
 // Componente wrapper para aplicar una animación de entrada a las páginas
@@ -90,6 +91,9 @@ function App() {
     }
   };
 
+  // 🔒 GUARDIÁN DE VÍNCULO DOCENTE: Verificar si el usuario tiene error de vínculo
+  const hasVinculoError = user && user.perfil?.error_vinculo === true;
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 to-blue-950">
@@ -110,6 +114,16 @@ function App() {
           <Route path="/cambiar-password" element={<CambiarPassword onPasswordChanged={handleLogin} />} />
           <Route path="*" element={<Navigate to="/cambiar-password" replace />} />
         </Routes>
+      </Router>
+    );
+  }
+
+  // 🔒 BLOQUEO POR ERROR DE VÍNCULO: Si el usuario no tiene docente vinculado
+  if (hasVinculoError) {
+    return (
+      <Router>
+        <Toaster position="top-right" />
+        <ErrorVinculoDocente onLogout={handleLogout} />
       </Router>
     );
   }

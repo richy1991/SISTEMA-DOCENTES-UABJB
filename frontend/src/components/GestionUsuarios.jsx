@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../apis/api';
 import ModalUsuario from './ModalUsuario';
 import toast from 'react-hot-toast';
@@ -43,7 +44,8 @@ const InputField = ({ label, name, type = 'text', value, onChange, required, dis
       onChange={onChange}
       required={required}
       disabled={disabled}
-      className={`w-full px-4 py-3 rounded-xl border-2 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm ${error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'}`}
+      placeholder={required ? '' : ' '}
+      className={`w-full px-4 py-3 rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm ${error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'}`}
     />
     {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
   </div>
@@ -54,8 +56,8 @@ const ToggleSwitch = ({ isActive, onChange }) => (
     type="button"
     onClick={onChange}
     className={`relative inline-flex h-6 w-12 items-center rounded-full transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 ${
-      isActive 
-        ? 'bg-emerald-500 dark:bg-emerald-600 focus:ring-emerald-400 dark:focus:ring-emerald-500' 
+      isActive
+        ? 'bg-emerald-500 dark:bg-emerald-600 focus:ring-emerald-400 dark:focus:ring-emerald-500'
         : 'bg-slate-300 dark:bg-slate-600 focus:ring-slate-400 dark:focus:ring-slate-500'
     }`}
   >
@@ -67,31 +69,8 @@ const ToggleSwitch = ({ isActive, onChange }) => (
   </button>
 );
 
-const dedicacionStyles = {
-  tiempo_completo: {
-      bg: 'bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20',
-      border: 'border-blue-500',
-      icon: 'text-blue-500',
-      title: 'text-blue-800 dark:text-blue-300',
-      text: 'text-blue-700 dark:text-blue-400',
-  },
-  medio_tiempo: {
-      bg: 'bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20',
-      border: 'border-green-500',
-      icon: 'text-green-500',
-      title: 'text-green-800 dark:text-green-300',
-      text: 'text-green-700 dark:text-green-400',
-  },
-  horario: {
-      bg: 'bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-900/20 dark:to-amber-900/20',
-      border: 'border-orange-500',
-      icon: 'text-orange-500',
-      title: 'text-orange-800 dark:text-orange-300',
-      text: 'text-orange-700 dark:text-orange-400',
-  },
-};
-
 function GestionUsuarios({ isDark }) {
+  const navigate = useNavigate();
   const [usuarios, setUsuarios] = useState([]);
   const [docentes, setDocentes] = useState([]);
   const [carreras, setCarreras] = useState([]);
@@ -109,6 +88,7 @@ function GestionUsuarios({ isDark }) {
   const [crearNuevoDocente, setCrearNuevoDocente] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
+  const [abrirModalAlVolver, setAbrirModalAlVolver] = useState(false);
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [usuarioToDelete, setUsuarioToDelete] = useState(null);
@@ -119,6 +99,23 @@ function GestionUsuarios({ isDark }) {
 
   useEffect(() => {
     cargarDatos();
+  }, []);
+
+  // 🔗 Recuperar datos del formulario al volver desde docentes
+  useEffect(() => {
+    const datosGuardados = sessionStorage.getItem('datosCrearUsuario');
+    if (datosGuardados) {
+      try {
+        const datos = JSON.parse(datosGuardados);
+        setFormData(datos);
+        sessionStorage.removeItem('datosCrearUsuario');
+        // Abrir el modal automáticamente con los datos recuperados
+        setIsCreating(true);
+        setAbrirModalAlVolver(false);
+      } catch (e) {
+        console.error('Error al recuperar datos:', e);
+      }
+    }
   }, []);
   const cargarDatos = async () => {
     try {
@@ -155,13 +152,6 @@ function GestionUsuarios({ isDark }) {
         docente: '',
         password: '',
         password_confirm: '',
-        docente_data: {
-          nombres: '',
-          apellido_paterno: '',
-          apellido_materno: '',
-          categoria: 'catedratico',
-          dedicacion: 'tiempo_completo',
-        }
       };
       setFormData(initialData);
       setCrearNuevoDocente(false);
@@ -216,7 +206,7 @@ function GestionUsuarios({ isDark }) {
   // --- FORM LOGIC FOR INLINE CREATION ---
   const handleChange = (e) => {
     const { name, value } = e.target;
-    
+
     setFormData(prev => {
       const updated = { ...prev, [name]: value };
 
@@ -226,25 +216,7 @@ function GestionUsuarios({ isDark }) {
         updated.password_confirm = value + 'UABJB';
       }
 
-      // AUTOMATIZACIÓN: Si estamos creando un docente nuevo, copiamos los datos del usuario
-      if (crearNuevoDocente) {
-        if (name === 'first_name') {
-          updated.docente_data = { ...updated.docente_data, nombres: value };
-        }
-        if (name === 'last_name') {
-          const parts = value.trim().split(' ');
-          const paterno = parts[0] || '';
-          const materno = parts.slice(1).join(' ') || '';
-          updated.docente_data = { 
-            ...updated.docente_data, 
-            apellido_paterno: paterno,
-            apellido_materno: materno 
-          };
-        }
-        if (name === 'ci') {
-          updated.docente_data = { ...updated.docente_data, ci: value };
-        }
-      }
+      // Si selecciona un docente existente, copiar el CI
       if (name === 'docente' && value) {
         const docenteSeleccionado = docentes.find((docente) => String(docente.id) === String(value));
         if (docenteSeleccionado?.ci) {
@@ -252,20 +224,6 @@ function GestionUsuarios({ isDark }) {
         }
       }
       return updated;
-    });
-  };
-
-  const handleDocenteDataChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => {
-        const newDocenteData = {
-            ...prev.docente_data,
-            [name]: value,
-        };
-        if (name === 'dedicacion' && value !== 'horario') {
-            newDocenteData.horas_contrato_semanales = null;
-        }
-        return { ...prev, docente_data: newDocenteData };
     });
   };
 
@@ -282,45 +240,20 @@ function GestionUsuarios({ isDark }) {
     }
   };
 
+  const handleCrearNuevoDocente = () => {
+    // 🔗 Al marcar checkbox, ir a /fondo-tiempo/docentes y abrir modal
+    // Guardar datos del formulario en sessionStorage para recuperarlos al volver
+    sessionStorage.setItem('datosCrearUsuario', JSON.stringify(formData));
+    sessionStorage.setItem('abrirModalDesdeUsuarios', 'true');
+    // Marcar para abrir modal al volver
+    setAbrirModalAlVolver(true);
+    navigate('/fondo-tiempo/docentes');
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
     setErrors({});
-
-    const normalizeCi = (value) => String(value || '').trim().replace(/\s+/g, '').toUpperCase();
-    const submittedCi = normalizeCi(formData.ci);
-
-    if (!submittedCi) {
-      setErrors({ ci: ['La cédula de identidad es obligatoria.'] });
-      toast.error('Debe ingresar la cédula de identidad.');
-      setIsSubmitting(false);
-      return;
-    }
-
-    const docenteExistenteSeleccionado = docentes.find((docente) => String(docente.id) === String(formData.docente));
-    const ciDuplicadoEnDocentes = docentes.some((docente) => {
-      const mismoCi = normalizeCi(docente?.ci) === submittedCi;
-      if (!mismoCi) return false;
-      if (formData.rol === 'docente' && !crearNuevoDocente && docenteExistenteSeleccionado) {
-        return String(docente.id) !== String(docenteExistenteSeleccionado.id);
-      }
-      return true;
-    });
-    const ciDuplicadoEnUsuarios = usuarios.some((usuario) => {
-      const mismoCi = normalizeCi(usuario?.perfil?.ci) === submittedCi;
-      if (!mismoCi) return false;
-      if (formData.rol === 'docente' && !crearNuevoDocente && docenteExistenteSeleccionado) {
-        return String(usuario?.perfil?.docente) !== String(docenteExistenteSeleccionado.id);
-      }
-      return true;
-    });
-
-    if (ciDuplicadoEnDocentes || ciDuplicadoEnUsuarios) {
-      setErrors({ ci: ['Ya existe una persona registrada con esta cédula de identidad.'] });
-      toast.error('La persona ya está registrada con ese CI.');
-      setIsSubmitting(false);
-      return;
-    }
 
     let payload = {
       username: formData.username,
@@ -336,32 +269,19 @@ function GestionUsuarios({ isDark }) {
     if (formData.rol === 'director' || formData.rol === 'jefe_estudios') {
       payload.carrera = formData.carrera;
     } else if (formData.rol === 'docente') {
-      if (crearNuevoDocente) {
-        payload.docente_data = {
-          ...formData.docente_data,
-          ci: formData.ci,
-        };
-      } else {
-        payload.docente = formData.docente;
-      }
+      payload.docente = formData.docente;
     }
 
     try {
       await api.post('/usuarios/', payload);
       toast.success('Usuario creado correctamente');
-      setIsCreating(false); // Hide form on success
-      cargarDatos(); // Refresh list
+      setIsCreating(false);
+      cargarDatos();
     } catch (err) {
       console.error('Error al crear usuario:', err.response);
       const apiErrors = err.response?.data;
       if (apiErrors) {
-        const normalizedErrors = { ...apiErrors };
-        if (apiErrors?.docente_data?.ci) {
-          normalizedErrors.ci = Array.isArray(apiErrors.docente_data.ci)
-            ? apiErrors.docente_data.ci
-            : [apiErrors.docente_data.ci];
-        }
-        setErrors(normalizedErrors);
+        setErrors(apiErrors);
         const errorMsg = Object.values(apiErrors).flat().join(' ');
         toast.error(`Error: ${errorMsg}`);
       } else {
@@ -407,188 +327,140 @@ function GestionUsuarios({ isDark }) {
           </div>
         </div>
 
-        {/* FORMULARIO DE CREACIÓN EN LÍNEA */}
+        {/* MODAL DE CREACIÓN DE USUARIO */}
         {isCreating && (
-          <div className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-lg mt-6 animate-fade-in">
-            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700">
-              <h2 className="text-xl font-bold text-slate-800 dark:text-white">
-                Crear Nuevo Usuario
-              </h2>
-            </div>
-            <form onSubmit={handleSubmit}>
-              <div className="p-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Columna Izquierda */}
-                  <div className="space-y-4">
-                    <InputField label="Usuario" name="username" value={formData.username || ''} onChange={handleChange} required error={errors.username} />
-                    <InputField label="Email" name="email" type="email" value={formData.email || ''} onChange={handleChange} error={errors.email} />
-                    <InputField label="Cédula de Identidad (CI)" name="ci" value={formData.ci || ''} onChange={handleChange} required error={errors.ci} />
-                    <InputField label="Nombres" name="first_name" value={formData.first_name || ''} onChange={handleChange} required error={errors.first_name} />
-                    <InputField label="Apellidos" name="last_name" value={formData.last_name || ''} onChange={handleChange} required error={errors.last_name} />
-                    <div className="pt-1">
-                      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
-                        Contraseña inicial <span className="text-red-500">*</span>
-                      </label>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          value={formData.username ? `${formData.username}UABJB` : ''}
-                          readOnly
-                          placeholder="Se generará al ingresar el usuario"
-                          className="w-full px-4 py-3 rounded-xl border-2 bg-slate-100 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600 cursor-not-allowed font-mono tracking-wide"
-                        />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" title="Contraseña generada automáticamente">🔒</span>
-                      </div>
-                      <div className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2 mt-2">
-                        <InfoIcon className="w-4 h-4 shrink-0 mt-0.5" />
-                        <span>La contraseña por defecto será <strong>{formData.username ? `${formData.username}UABJB` : 'usuarioUABJB'}</strong>. El usuario deberá personalizarla al iniciar sesión por primera vez.</span>
-                      </div>
-                    </div>
-                  </div>
+          <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm transition-all duration-300 ${crearNuevoDocente && formData.rol === 'docente' ? '!justify-center' : ''}`}>
+            <div className={`flex items-center justify-center w-full h-full ${crearNuevoDocente && formData.rol === 'docente' ? 'gap-6' : ''}`}>
+              {/* Modal Usuario - mantiene su tamaño original */}
+              <div className={`bg-white dark:bg-slate-800 rounded-2xl shadow-2xl overflow-hidden animate-fade-in transition-all duration-300 ${crearNuevoDocente && formData.rol === 'docente' ? 'max-w-2xl w-full' : 'max-w-2xl w-full mx-4'}`}>
+                {/* Header azul */}
+                <div className="bg-[#2C4AAE] dark:bg-[#1a3a8a] px-6 py-4">
+                  <h2 className="text-xl font-bold text-white">
+                    Crear Nuevo Usuario
+                  </h2>
+                </div>
 
-                  {/* Columna Derecha */}
-                  <div className="space-y-4">
+              <form onSubmit={handleSubmit}>
+                <div className="p-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Fila 1 */}
+                    <InputField label="Usuario *" name="username" value={formData.username || ''} onChange={handleChange} error={errors.username} />
+                    <InputField label="Email" name="email" type="email" value={formData.email || ''} onChange={handleChange} error={errors.email} />
+
+                    {/* Fila 2 */}
+                    <InputField label="Nombres *" name="first_name" value={formData.first_name || ''} onChange={handleChange} error={errors.first_name} />
+                    <InputField label="Apellidos *" name="last_name" value={formData.last_name || ''} onChange={handleChange} error={errors.last_name} />
+
+                    {/* Fila 3 */}
+                    <InputField label="Cédula de Identidad (CI) *" name="ci" value={formData.ci || ''} onChange={handleChange} error={errors.ci} />
+
+                    {/* Rol */}
                     <div>
-                      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Rol</label>
-                      <select name="rol" value={formData.rol || 'docente'} onChange={handleRolChange} className="w-full px-4 py-3 rounded-xl border-2 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white border-slate-300 dark:border-slate-600">
+                      <label className="block text-sm font-semibold mb-2 text-slate-700 dark:text-slate-300">Rol</label>
+                      <select
+                        name="rol"
+                        value={formData.rol || 'docente'}
+                        onChange={handleRolChange}
+                        className="w-full px-4 py-2.5 rounded-xl border-2 bg-white dark:bg-slate-700 text-slate-800 dark:text-white border-slate-300 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
                         {roles.map(rol => (
                           <option key={rol.value} value={rol.value}>{rol.label}</option>
                         ))}
                       </select>
                     </div>
 
+                    {/* Contraseña */}
+                    <div className="md:col-span-2">
+                      <div className="rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-4 py-2.5">
+                        <span className="text-sm text-amber-800 dark:text-amber-300">
+                          Contraseña inicial: <strong className="font-mono">{formData.username ? `${formData.username}UABJB` : 'usuarioUABJB'}</strong>
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Carrera para director/jefe_estudios */}
                     {(formData.rol === 'director' || formData.rol === 'jefe_estudios') && (
-                      <div>
-                        <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Carrera</label>
-                        <select name="carrera" value={formData.carrera} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border-2 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white border-slate-300 dark:border-slate-600" required>
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-semibold mb-2 text-slate-700 dark:text-slate-300">Carrera</label>
+                        <select
+                          name="carrera"
+                          value={formData.carrera}
+                          onChange={handleChange}
+                          className="w-full px-4 py-2.5 rounded-xl border-2 bg-white dark:bg-slate-700 text-slate-800 dark:text-white border-slate-300 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
                           <option value="">Seleccione una carrera</option>
-                          {carreras.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                          {carreras.map(c => (
+                            <option key={c.id} value={c.id}>{c.nombre}</option>
+                          ))}
                         </select>
-                        {errors.carrera && <p className="text-xs text-red-600 mt-1">{errors.carrera}</p>}
                       </div>
                     )}
 
+                    {/* Opción para docente */}
                     {formData.rol === 'docente' && (
-                      <div className="md:col-span-2 p-4 border-2 border-slate-200 dark:border-slate-700 rounded-xl space-y-4 bg-slate-50 dark:bg-slate-800/30">
-                          <label className="flex items-center gap-3 cursor-pointer">
-                              <input 
-                                type="checkbox" 
-                                checked={crearNuevoDocente} 
-                                onChange={(e) => {
-                                  const isChecked = e.target.checked;
-                                  setCrearNuevoDocente(isChecked);
-                                  // Al activar, copiar lo que ya se haya escrito arriba
-                                  if (isChecked) {
-                                    setFormData(prev => {
-                                      const parts = (prev.last_name || '').trim().split(' ');
-                                      const paterno = parts[0] || '';
-                                      const materno = parts.slice(1).join(' ') || '';
-                                      return {
-                                        ...prev,
-                                        docente_data: {
-                                          ...prev.docente_data,
-                                          ci: prev.ci || '',
-                                          nombres: prev.first_name || '',
-                                          apellido_paterno: paterno,
-                                          apellido_materno: materno
-                                        }
-                                      };
-                                    });
-                                  }
-                                }} 
-                                className="w-5 h-5 text-blue-600 rounded border-slate-400 focus:ring-blue-500" 
-                              />
-                              <span className="font-semibold text-slate-800 dark:text-slate-200">Crear nuevo registro de docente</span>
-                          </label>
+                      <div className="md:col-span-2">
+                        <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={crearNuevoDocente}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                // 🔗 Ir a página de docentes y abrir modal
+                                handleCrearNuevoDocente();
+                              } else {
+                                setCrearNuevoDocente(false);
+                              }
+                            }}
+                            className="w-5 h-5 text-blue-600 rounded"
+                          />
+                          <span className="font-semibold text-slate-800 dark:text-slate-200">
+                            Crear nuevo registro de docente
+                          </span>
+                        </label>
 
-                          {crearNuevoDocente ? (
-                              <div className="p-5 bg-white dark:bg-slate-800 rounded-lg border-2 border-slate-300 dark:border-slate-600 space-y-4">
-                                  <h4 className="font-bold text-lg text-blue-600 dark:text-blue-400 border-b border-slate-200 dark:border-slate-700 pb-3 mb-4">
-                                    Datos del Nuevo Docente
-                                  </h4>
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
-                                      <div className="md:col-span-2">
-                                        <InputField label="Nombres" name="nombres" value={formData.docente_data.nombres} onChange={handleDocenteDataChange} required error={errors.docente_data?.nombres} />
-                                      </div>
-                                      <InputField label="Apellido Paterno" name="apellido_paterno" value={formData.docente_data.apellido_paterno} onChange={handleDocenteDataChange} required error={errors.docente_data?.apellido_paterno} />
-                                      <InputField label="Apellido Materno" name="apellido_materno" value={formData.docente_data.apellido_materno} onChange={handleDocenteDataChange} error={errors.docente_data?.apellido_materno} />
-                                      <div>
-                                          <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Categoría</label>
-                                          <select name="categoria" value={formData.docente_data.categoria} onChange={handleDocenteDataChange} className="w-full px-4 py-3 rounded-xl border-2 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white border-slate-300 dark:border-slate-600">
-                                              <option value="catedratico">Catedrático</option>
-                                              <option value="adjunto">Adjunto</option>
-                                              <option value="asistente">Asistente</option>
-                                          </select>
-                                      </div>
-                                      <div>
-                                          <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Dedicación</label>
-                                          <select name="dedicacion" value={formData.docente_data.dedicacion} onChange={handleDocenteDataChange} className="w-full px-4 py-3 rounded-xl border-2 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white border-slate-300 dark:border-slate-600">
-                                              <option value="tiempo_completo">Tiempo Completo</option>
-                                              <option value="medio_tiempo">Medio Tiempo</option>
-                                              <option value="horario">Horario</option>
-                                          </select>
-                                      </div>
-                                      {formData.docente_data.dedicacion === 'horario' ? (
-                                          <InputField
-                                              label="Horas Semanales por Contrato"
-                                              name="horas_contrato_semanales"
-                                              type="number"
-                                              value={formData.docente_data.horas_contrato_semanales || ''}
-                                              onChange={handleDocenteDataChange}
-                                              required
-                                              error={errors.docente_data?.horas_contrato_semanales}
-                                              placeholder="Ej: 8, 12, 16"
-                                          />
-                                      ) : (
-                                          <div>
-                                              <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Horas Semanales Requeridas</label>
-                                              <input
-                                                  type="number"
-                                                  value={formData.docente_data.dedicacion === 'tiempo_completo' ? 40 : 20}
-                                                  disabled
-                                                  className="w-full px-4 py-3 rounded-xl border-2 bg-slate-100 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600"
-                                              />
-                                          </div>
-                                      )}
-                                  </div>
-                                  <div className={`mt-4 p-4 rounded-xl ${dedicacionStyles[formData.docente_data.dedicacion]?.bg} border-l-4 ${dedicacionStyles[formData.docente_data.dedicacion]?.border} shadow-sm`}>
-                                    <div className="flex items-start gap-3">
-                                        <InfoIcon className={`w-6 h-6 ${dedicacionStyles[formData.docente_data.dedicacion]?.icon} flex-shrink-0 mt-0.5`} />
-                                        <div>
-                                            <h5 className={`font-semibold ${dedicacionStyles[formData.docente_data.dedicacion]?.title}`}>Información sobre Dedicación</h5>
-                                            <p className={`text-sm ${dedicacionStyles[formData.docente_data.dedicacion]?.text} mt-1`}>
-                                                {formData.docente_data.dedicacion === 'tiempo_completo' && 'La dedicación a Tiempo Completo implica un total de 40 horas semanales.'}
-                                                {formData.docente_data.dedicacion === 'medio_tiempo' && 'La dedicación a Medio Tiempo implica un total de 20 horas semanales.'}
-                                                {formData.docente_data.dedicacion === 'horario' && 'Para la dedicación por Horario, debe especificar el número de horas semanales según el contrato.'}
-                                            </p>
-                                        </div>
-                                    </div>
-                                  </div>
-                              </div>
-                          ) : (
-                              <div>
-                                  <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Vincular a Docente Existente</label>
-                                  <select name="docente" value={formData.docente} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border-2 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white border-slate-300 dark:border-slate-600" required>
-                                      <option value="">Seleccione un docente</option>
-                                      {docentes.map(d => <option key={d.id} value={d.id}>{d.nombre_completo}</option>)}
-                                  </select>
-                                  {errors.docente && <p className="text-xs text-red-600 mt-1">{errors.docente}</p>}
-                              </div>
-                          )}
+                        {!crearNuevoDocente && (
+                          <div className="mt-3">
+                            <label className="block text-sm font-semibold mb-2 text-slate-700 dark:text-slate-300">
+                              Vincular a Docente Existente
+                            </label>
+                            <select
+                              name="docente"
+                              value={formData.docente}
+                              onChange={handleChange}
+                              className="w-full px-4 py-2.5 rounded-xl border-2 bg-white dark:bg-slate-700 text-slate-800 dark:text-white border-slate-300 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                              <option value="">Seleccione un docente</option>
+                              {docentes.map(d => (
+                                <option key={d.id} value={d.id}>{d.nombre_completo}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
                 </div>
+
+                {/* Footer con botones */}
+                <div className="px-6 py-4 bg-slate-50 dark:bg-slate-700 border-t border-slate-200 dark:border-slate-600 flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsCreating(false)}
+                    className="px-6 py-2.5 rounded-xl font-semibold text-slate-700 dark:text-slate-200 bg-slate-200 dark:bg-slate-600 hover:bg-slate-300 dark:hover:bg-slate-500 transition-all"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="px-6 py-2.5 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 transition-all disabled:opacity-50"
+                  >
+                    {isSubmitting ? 'Creando...' : 'Crear Usuario'}
+                  </button>
+                </div>
+              </form>
               </div>
-              <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
-                <button type="button" onClick={() => setIsCreating(false)} disabled={isSubmitting} className="px-6 py-2.5 rounded-xl font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm disabled:opacity-50">
-                  Cancelar
-                </button>
-                <button type="submit" disabled={isSubmitting} className="px-6 py-2.5 rounded-xl text-white font-bold transition-all shadow-lg hover:shadow-xl flex items-center gap-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 hover:scale-105">
-                  {isSubmitting ? 'Guardando...' : 'Crear Usuario'}
-                </button>
-              </div>
-            </form>
+            </div>
           </div>
         )}
  

@@ -49,8 +49,14 @@ function FormularioFondo({ isDark, editar = false }) {
       } else {
         // 2. Fallback: Usuario logueado (Docente auto-gestionando)
         const userResponse = await api.get('/usuario/');
-        const userData = userResponse.data;      
-        
+        const userData = userResponse.data;
+
+        // 🔒 PROTECCIÓN: Verificar error de vínculo
+        if (userData.perfil?.error_vinculo) {
+          toast.error('⚠️ Error: Tu usuario no tiene un docente vinculado');
+          return;
+        }
+
         if (userData.perfil?.docente_nombre) {
           setNombreDocenteMostrado(userData.perfil.docente_nombre);
         }
