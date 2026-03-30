@@ -480,6 +480,7 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
   // State for inline creation form
   const [isCreating, setIsCreating] = useState(false);
   const [abrirDesdeUsuarios, setAbrirDesdeUsuarios] = useState(false);
+  const [showOnlyOrphans, setShowOnlyOrphans] = useState(false);
 
   useEffect(() => {
     cargarDocentes();
@@ -678,6 +679,9 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
   };
 
   const esAdmin = () => user?.is_superuser || user?.perfil?.rol === 'admin';
+  const docentesFiltrados = showOnlyOrphans
+    ? docentes.filter((docente) => !docente.usuario_email)
+    : docentes;
 
   if (loading) {
     return (
@@ -717,6 +721,17 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
               </p>
             </div>
             <div className="flex items-center gap-4">
+              <button
+                type="button"
+                onClick={() => setShowOnlyOrphans((prev) => !prev)}
+                className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-all ${
+                  showOnlyOrphans
+                    ? 'bg-red-100 text-red-700 border-red-300 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700'
+                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-600 dark:hover:bg-slate-700'
+                }`}
+              >
+                {showOnlyOrphans ? 'Ver todos' : 'Ver huérfanos'}
+              </button>
               {esAdmin() && (
                 <button
                   onClick={handleToggleCreateForm}
@@ -878,9 +893,9 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
         ), document.body)}
 
         {/* Lista de docentes */}
-        {docentes.length > 0 ? (
+        {docentesFiltrados.length > 0 ? (
           <div className="space-y-4">
-            {docentes.map((docente) => (
+            {docentesFiltrados.map((docente) => (
               <div
                 key={docente.id}
                 className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-md hover:shadow-xl transition-all duration-200 hover:scale-[1.01]"
@@ -896,6 +911,11 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
                         <h3 className="text-lg font-bold text-blue-600 dark:text-white truncate">
                           {docente.nombres} {docente.apellido_paterno} {docente.apellido_materno}
                         </h3>
+                        {!docente.usuario_email && (
+                          <p className="mt-1 text-sm font-semibold text-red-600 dark:text-red-400">
+                            ⚠️ Sin Cuenta
+                          </p>
+                        )}
                         <div className="flex flex-wrap items-center gap-2 mt-2">
                           <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-slate-50 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border-2 border-slate-300 dark:border-slate-600 shadow-sm">
                             🆔 CI: {docente.ci}
