@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import api from '../apis/api';
 import ModalUsuario from './ModalUsuario';
@@ -71,6 +72,7 @@ const ToggleSwitch = ({ isActive, onChange }) => (
 
 function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
   const navigate = useNavigate();
+  const restoringFormRef = useRef(false);
   const [usuarios, setUsuarios] = useState([]);
   const [docentes, setDocentes] = useState([]);
   const [carreras, setCarreras] = useState([]);
@@ -85,8 +87,10 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
   // State for inline creation form
   const [isCreating, setIsCreating] = useState(false);
   const [formData, setFormData] = useState({});
+  const [crearNuevoDocente, setCrearNuevoDocente] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
+  const [abrirModalAlVolver, setAbrirModalAlVolver] = useState(false);
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [usuarioToDelete, setUsuarioToDelete] = useState(null);
@@ -98,6 +102,24 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
 
   useEffect(() => {
     cargarDatos();
+  }, []);
+
+  // 🔗 Recuperar datos del formulario al volver desde docentes
+  useEffect(() => {
+    const datosGuardados = sessionStorage.getItem('datosCrearUsuario');
+    if (datosGuardados) {
+      try {
+        const datos = JSON.parse(datosGuardados);
+        restoringFormRef.current = true;
+        setFormData(datos);
+        sessionStorage.removeItem('datosCrearUsuario');
+        // Abrir el modal automáticamente con los datos recuperados
+        setIsCreating(true);
+        setAbrirModalAlVolver(false);
+      } catch (e) {
+        console.error('Error al recuperar datos:', e);
+      }
+    }
   }, []);
 
   const cargarDatos = async () => {
@@ -127,6 +149,12 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
   // Initialize form when creation starts
   useEffect(() => {
     if (isCreating) {
+      if (restoringFormRef.current) {
+        restoringFormRef.current = false;
+        setCrearNuevoDocente(false);
+        setErrors({});
+        return;
+      }
       const initialData = {
         username: '',
         email: '',
@@ -139,6 +167,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
         password_confirm: '',
       };
       setFormData(initialData);
+      setCrearNuevoDocente(false);
       setErrors({});
     }
   }, [isCreating]);
@@ -212,6 +241,27 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
       carrera: (newRol === 'director' || newRol === 'jefe_estudios') ? prev.carrera : '',
       docente: newRol !== 'docente' ? '' : prev.docente,
     }));
+    if (newRol !== 'docente') {
+      setCrearNuevoDocente(false);
+    }
+  };
+
+  const handleCrearNuevoDocente = () => {
+    // 🔗 Al marcar checkbox, ir a /fondo-tiempo/docentes y abrir modal
+    // Guardar datos del formulario en sessionStorage para recuperarlos al volver
+    sessionStorage.setItem('datosCrearUsuario', JSON.stringify(formData));
+    const apellidos = (formData.last_name || '').trim().split(/\s+/).filter(Boolean);
+    sessionStorage.setItem('datosCrearDocente', JSON.stringify({
+      nombres: formData.first_name || '',
+      apellido_paterno: apellidos[0] || '',
+      apellido_materno: apellidos.slice(1).join(' '),
+      email: formData.email || '',
+      telefono: '',
+    }));
+    sessionStorage.setItem('abrirModalDesdeUsuarios', 'true');
+    // Marcar para abrir modal al volver
+    setAbrirModalAlVolver(true);
+    navigate('/fondo-tiempo/docentes');
   };
 
   const handleSubmit = async (e) => {
@@ -291,18 +341,20 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
         </div>
 
         {/* MODAL DE CREACIÓN DE USUARIO */}
-        {isCreating && (
+        {isCreating && createPortal((
           <div
-            className="fixed top-0 right-0 bottom-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+            className={`fixed top-0 right-0 bottom-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 ${crearNuevoDocente && formData.rol === 'docente' ? '!justify-center' : ''}`}
             style={{ left: sidebarCollapsed ? '5rem' : '18rem' }}
           >
-            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl overflow-hidden animate-fade-in transition-all duration-300 max-w-2xl w-full mx-4">
-              {/* Header azul */}
-              <div className="bg-[#2C4AAE] dark:bg-[#1a3a8a] px-6 py-4 rounded-t-2xl">
-                <h2 className="text-xl font-bold text-white">
-                  Crear Nuevo Usuario
-                </h2>
-              </div>
+            <div className={`flex items-center justify-center w-full h-full ${crearNuevoDocente && formData.rol === 'docente' ? 'gap-6' : ''}`}>
+              {/* Modal Usuario - mantiene su tamaño original */}
+              <div className={`bg-white dark:bg-slate-800 rounded-2xl shadow-2xl overflow-hidden animate-fade-in transition-all duration-300 ${crearNuevoDocente && formData.rol === 'docente' ? 'max-w-2xl w-full' : 'max-w-2xl w-full mx-4'}`}>
+                {/* Header azul */}
+                <div className="bg-[#2C4AAE] dark:bg-[#1a3a8a] px-6 py-4">
+                  <h2 className="text-xl font-bold text-white">
+                    Crear Nuevo Usuario
+                  </h2>
+                </div>
 
               <form onSubmit={handleSubmit}>
                 <div className="p-6">
@@ -331,7 +383,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
                     </div>
 
                     {/* Vincular a Docente Existente - solo para rol docente */}
-                    {formData.rol === 'docente' && (
+                    {formData.rol === 'docente' && !crearNuevoDocente && (
                       <div>
                         <label className="block text-sm font-semibold mb-2 text-slate-700 dark:text-slate-300">
                           Vincular a Docente Existente
@@ -370,8 +422,27 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
 
                     {/* Opción para docente */}
                     {formData.rol === 'docente' && (
-                      <div className="md:col-span-2">
-                        {/* Contraseña */}
+                      <div className="md:col-span-2 space-y-3">
+                        <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={crearNuevoDocente}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                // 🔗 Ir a página de docentes y abrir modal
+                                handleCrearNuevoDocente();
+                              } else {
+                                setCrearNuevoDocente(false);
+                              }
+                            }}
+                            className="w-5 h-5 text-blue-600 rounded"
+                          />
+                          <span className="font-semibold text-slate-800 dark:text-slate-200">
+                            Crear nuevo registro de docente
+                          </span>
+                        </label>
+
+                        {/* Contraseña - movido abajo del checkbox */}
                         <div className="rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-4 py-2.5">
                           <span className="text-sm text-amber-800 dark:text-amber-300">
                             Contraseña inicial: <strong className="font-mono">{formData.username ? `${formData.username}UABJB` : 'usuarioUABJB'}</strong>
@@ -400,9 +471,10 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
                   </button>
                 </div>
               </form>
+              </div>
             </div>
           </div>
-        )}
+        ), document.body)}
  
         {/* Modal for editing */}
         <ModalUsuario
