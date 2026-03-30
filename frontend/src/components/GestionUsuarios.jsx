@@ -73,6 +73,8 @@ const ToggleSwitch = ({ isActive, onChange }) => (
 function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
   const navigate = useNavigate();
   const restoringFormRef = useRef(false);
+  const restoringEditModalRef = useRef(false);
+  const restoringLinkRef = useRef(false);
   const [usuarios, setUsuarios] = useState([]);
   const [docentes, setDocentes] = useState([]);
   const [carreras, setCarreras] = useState([]);
@@ -103,6 +105,64 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
   useEffect(() => {
     cargarDatos();
   }, []);
+
+  useEffect(() => {
+    if (restoringEditModalRef.current || usuarios.length === 0) return;
+
+    const datosEditarGuardados = sessionStorage.getItem('datosEditarUsuario');
+    if (!datosEditarGuardados) return;
+
+    try {
+      const { userId } = JSON.parse(datosEditarGuardados);
+      const usuario = usuarios.find((item) => item.id === userId);
+
+      if (usuario) {
+        restoringEditModalRef.current = true;
+        setUsuarioEditando(usuario);
+        setShowModal(true);
+        setIsCreating(false);
+      }
+    } catch (e) {
+      console.error('Error al recuperar edición de usuario:', e);
+      sessionStorage.removeItem('datosEditarUsuario');
+    }
+  }, [usuarios]);
+
+  useEffect(() => {
+    if (restoringLinkRef.current || docentes.length === 0) return;
+
+    const vincularDocentePendiente = sessionStorage.getItem('vincularDocentePendiente');
+    if (!vincularDocentePendiente) return;
+
+    try {
+      const datos = JSON.parse(vincularDocentePendiente);
+      const docente = docentes.find((item) => item.id === datos.docenteId);
+
+      if (docente) {
+        restoringLinkRef.current = true;
+        restoringFormRef.current = true;
+        setFormData({
+          username: '',
+          email: datos.email || '',
+          first_name: datos.first_name || '',
+          last_name: datos.last_name || '',
+          rol: 'docente',
+          carrera: '',
+          docente: docente.id,
+          password: '',
+          password_confirm: '',
+        });
+        setCrearNuevoDocente(false);
+        setErrors({});
+        setUsuarioEditando(null);
+        setIsCreating(true);
+        sessionStorage.removeItem('vincularDocentePendiente');
+      }
+    } catch (e) {
+      console.error('Error al preparar vínculo rápido de docente:', e);
+      sessionStorage.removeItem('vincularDocentePendiente');
+    }
+  }, [docentes]);
 
   // 🔗 Recuperar datos del formulario al volver desde docentes
   useEffect(() => {
@@ -173,11 +233,14 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
   }, [isCreating]);
 
   const handleToggleCreateForm = () => {
+    sessionStorage.removeItem('datosEditarUsuario');
     setIsCreating(!isCreating);
     setUsuarioEditando(null); // Ensure we are not in edit mode
   };
 
   const abrirModalEditar = (usuario) => {
+    sessionStorage.removeItem('datosEditarUsuario');
+    restoringEditModalRef.current = false;
     setUsuarioEditando(usuario);
     setShowModal(true);
     setIsCreating(false); // Hide create form if it was open

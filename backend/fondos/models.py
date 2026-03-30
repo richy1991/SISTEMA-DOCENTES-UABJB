@@ -114,7 +114,7 @@ class SaldoVacacionesGestion(models.Model):
     Permite especificar de forma granular los días de vacación disponibles
     para cada docente en cada año/gestión.
     """
-    docente = models.ForeignKey(Docente, on_delete=models.CASCADE, related_name='saldos_vacaciones')
+    docente = models.ForeignKey(Docente, on_delete=models.PROTECT, related_name='saldos_vacaciones')
     gestion = models.IntegerField(
         validators=[MinValueValidator(2020), MaxValueValidator(2100)],
         help_text="Año/Gestión académica"
@@ -277,7 +277,7 @@ class FondoTiempo(models.Model):
         ('largo_plazo', 'Largo Plazo'),
     ]
     
-    docente = models.ForeignKey(Docente, on_delete=models.CASCADE, related_name='fondos_tiempo')
+    docente = models.ForeignKey(Docente, on_delete=models.PROTECT, related_name='fondos_tiempo')
     carrera = models.ForeignKey(Carrera, on_delete=models.PROTECT, related_name='fondos_tiempo')
     calendario_academico = models.ForeignKey(
         CalendarioAcademico,
@@ -764,7 +764,7 @@ class CargaHoraria(models.Model):
     
     CATEGORIA_CHOICES = CategoriaFuncion.TIPO_CHOICES
 
-    docente = models.ForeignKey(Docente, on_delete=models.CASCADE, related_name='cargas_horarias')
+    docente = models.ForeignKey(Docente, on_delete=models.PROTECT, related_name='cargas_horarias')
     calendario = models.ForeignKey(CalendarioAcademico, on_delete=models.PROTECT, related_name='cargas_horarias')
     categoria = models.CharField(max_length=30, choices=CATEGORIA_CHOICES)
     titulo_actividad = models.CharField(

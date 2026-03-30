@@ -95,8 +95,17 @@ class DocenteViewSet(viewsets.ModelViewSet):
         """
         Eliminación segura de docente con manejo de errores de integridad.
         """
+        docente = self.get_object()
+        estados_bloqueantes = ['aprobado_director', 'en_ejecucion', 'finalizado']
+
+        if FondoTiempo.objects.filter(docente=docente, estado__in=estados_bloqueantes).exists():
+            raise drf_serializers.ValidationError(
+                'No se puede eliminar al docente porque tiene historial académico vinculado. Considere desactivar su usuario en su lugar'
+            )
+
         try:
-            return super().destroy(request, *args, **kwargs)
+            self.perform_destroy(docente)
+            return Response(status=status.HTTP_204_NO_CONTENT)
         except ProtectedError:
             return Response(
                 {'error': 'No se puede eliminar el docente porque tiene registros protegidos asociados (ej. Cargas Horarias en calendarios cerrados).'},

@@ -601,8 +601,17 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
       if (payload.telefono === '') payload.telefono = null;
       
       console.log('Enviando payload:', payload);
-      await api.post('/docentes/', payload);
+      const response = await api.post('/docentes/', payload);
       console.log('Docente creado exitosamente');
+      if (abrirDesdeUsuarios) {
+        const docenteCreado = response?.data;
+        if (docenteCreado?.id) {
+          sessionStorage.setItem('docenteRetornadoDesdeUsuarios', JSON.stringify({
+            id: docenteCreado.id,
+            ci: docenteCreado.ci || payload.ci || '',
+          }));
+        }
+      }
 
       // 🔗 Si venimos desde usuarios, volver automáticamente
       if (abrirDesdeUsuarios) {
@@ -631,6 +640,19 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleCrearCuentaParaDocente = (docente) => {
+    sessionStorage.setItem(
+      'vincularDocentePendiente',
+      JSON.stringify({
+        docenteId: docente.id,
+        first_name: docente.nombres || '',
+        last_name: [docente.apellido_paterno, docente.apellido_materno].filter(Boolean).join(' '),
+        email: docente.email || '',
+      })
+    );
+    navigate('/fondo-tiempo/usuarios');
   };
 
   const handleUpdateSubmit = async (e) => {
@@ -912,9 +934,13 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
                           {docente.nombres} {docente.apellido_paterno} {docente.apellido_materno}
                         </h3>
                         {!docente.usuario_email && (
-                          <p className="mt-1 text-sm font-semibold text-red-600 dark:text-red-400">
+                          <button
+                            type="button"
+                            onClick={() => handleCrearCuentaParaDocente(docente)}
+                            className="mt-1 text-sm font-semibold text-red-600 transition-colors hover:text-red-700 hover:underline dark:text-red-400 dark:hover:text-red-300"
+                          >
                             ⚠️ Sin Cuenta
-                          </p>
+                          </button>
                         )}
                         <div className="flex flex-wrap items-center gap-2 mt-2">
                           <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-slate-50 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border-2 border-slate-300 dark:border-slate-600 shadow-sm">
