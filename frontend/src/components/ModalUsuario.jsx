@@ -23,7 +23,6 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
         nombres: '',
         apellido_paterno: '',
         apellido_materno: '',
-        ci: '',
         categoria: 'catedratico',
         dedicacion: 'tiempo_completo',
         horas_contrato_semanales: null,
@@ -239,7 +238,6 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
                       <InputField label="Nombres Docente" name="nombres" value={formData.docente_data.nombres} onChange={handleDocenteDataChange} required error={errors.docente_data?.nombres} />
                       <InputField label="Apellido Paterno Docente" name="apellido_paterno" value={formData.docente_data.apellido_paterno} onChange={handleDocenteDataChange} required error={errors.docente_data?.apellido_paterno} />
                       <InputField label="Apellido Materno Docente" name="apellido_materno" value={formData.docente_data.apellido_materno} onChange={handleDocenteDataChange} error={errors.docente_data?.apellido_materno} />
-                      <InputField label="CI Docente" name="ci" value={formData.docente_data.ci} onChange={handleDocenteDataChange} required error={errors.docente_data?.ci} />
                       <div className="form-group">
                         <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Categoría</label>
                         <select name="categoria" value={formData.docente_data.categoria} onChange={handleDocenteDataChange} className="w-full px-4 py-3 rounded-xl border-2 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white border-slate-300 dark:border-slate-600">

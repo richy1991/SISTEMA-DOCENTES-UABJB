@@ -31,7 +31,7 @@ function ThemeToggle({ theme, setTheme }) {
   return (
     <button
       onClick={toggleTheme}
-      className={`fixed ${slotPosition} right-16 w-14 h-14 rounded-full shadow-2xl transition-all duration-500 ease-out hover:scale-110 flex items-center justify-center text-white z-40 group overflow-hidden border-2
+      className={`fixed ${slotPosition} right-16 w-14 h-14 rounded-full shadow-2xl transition-all duration-500 ease-out hover:scale-110 flex items-center justify-center text-white z-[120] group overflow-hidden border-2
         ${isDarkMode
           ? 'bg-gradient-to-br from-slate-700 via-blue-800 to-indigo-900 border-blue-500/30 hover:shadow-indigo-500/40'
           : 'bg-gradient-to-br from-blue-400 via-blue-500 to-indigo-500 border-white/30 hover:shadow-blue-500/40'

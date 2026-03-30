@@ -197,13 +197,13 @@ function App() {
               <Route path="archivados" element={<AnimatedRoute><FondosArchivados isDark={isDark} /></AnimatedRoute>} />
 
               {/* Rutas de Administración (Integradas en el Sidebar) */}
-              <Route path="usuarios" element={<AnimatedRoute><GestionUsuarios isDark={isDark} /></AnimatedRoute>} />
-              <Route path="docentes" element={<AnimatedRoute><ListaDocentes isDark={isDark} /></AnimatedRoute>} />
+              <Route path="usuarios" element={<AnimatedRoute><GestionUsuarios isDark={isDark} sidebarCollapsed={sidebarCollapsed} /></AnimatedRoute>} />
+              <Route path="docentes" element={<AnimatedRoute><ListaDocentes isDark={isDark} sidebarCollapsed={sidebarCollapsed} /></AnimatedRoute>} />
               <Route path="calendarios" element={<AnimatedRoute><ListaCalendarios /></AnimatedRoute>} />
-              <Route path="carreras" element={<AnimatedRoute><ListaCarreras isDark={isDark} /></AnimatedRoute>} />
-              <Route path="materias" element={<AnimatedRoute><MateriaList isDark={isDark} /></AnimatedRoute>}>
-                <Route path="nueva" element={<MateriaForm />} />
-                <Route path="editar/:id" element={<MateriaForm />} />
+              <Route path="carreras" element={<AnimatedRoute><ListaCarreras isDark={isDark} sidebarCollapsed={sidebarCollapsed} /></AnimatedRoute>} />
+              <Route path="materias" element={<AnimatedRoute><MateriaList isDark={isDark} sidebarCollapsed={sidebarCollapsed} /></AnimatedRoute>}>
+                <Route path="nueva" element={<MateriaForm sidebarCollapsed={sidebarCollapsed} />} />
+                <Route path="editar/:id" element={<MateriaForm sidebarCollapsed={sidebarCollapsed} />} />
               </Route>
 
               <Route path="*" element={<Navigate to="/fondo-tiempo" replace />} />

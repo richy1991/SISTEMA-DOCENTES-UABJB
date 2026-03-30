@@ -113,7 +113,7 @@ const TrashIcon = (props) => (
     </svg>
 );
 
-const MateriaList = ({ isDark }) => {
+const MateriaList = ({ isDark, sidebarCollapsed = false }) => {
     const [materias, setMaterias] = useState([]);
     const [carreras, setCarreras] = useState([]);
     const [loading, setLoading] = useState(true);

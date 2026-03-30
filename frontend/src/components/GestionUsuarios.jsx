@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import api from '../apis/api';
 import ModalUsuario from './ModalUsuario';
@@ -69,8 +70,9 @@ const ToggleSwitch = ({ isActive, onChange }) => (
   </button>
 );
 
-function GestionUsuarios({ isDark }) {
+function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
   const navigate = useNavigate();
+  const restoringFormRef = useRef(false);
   const [usuarios, setUsuarios] = useState([]);
   const [docentes, setDocentes] = useState([]);
   const [carreras, setCarreras] = useState([]);
@@ -107,6 +109,7 @@ function GestionUsuarios({ isDark }) {
     if (datosGuardados) {
       try {
         const datos = JSON.parse(datosGuardados);
+        restoringFormRef.current = true;
         setFormData(datos);
         sessionStorage.removeItem('datosCrearUsuario');
         // Abrir el modal automáticamente con los datos recuperados
@@ -141,12 +144,17 @@ function GestionUsuarios({ isDark }) {
   // Initialize form when creation starts
   useEffect(() => {
     if (isCreating) {
+      if (restoringFormRef.current) {
+        restoringFormRef.current = false;
+        setCrearNuevoDocente(false);
+        setErrors({});
+        return;
+      }
       const initialData = {
         username: '',
         email: '',
         first_name: '',
         last_name: '',
-        ci: '',
         rol: 'docente',
         carrera: '',
         docente: '',
@@ -216,13 +224,6 @@ function GestionUsuarios({ isDark }) {
         updated.password_confirm = value + 'UABJB';
       }
 
-      // Si selecciona un docente existente, copiar el CI
-      if (name === 'docente' && value) {
-        const docenteSeleccionado = docentes.find((docente) => String(docente.id) === String(value));
-        if (docenteSeleccionado?.ci) {
-          updated.ci = docenteSeleccionado.ci;
-        }
-      }
       return updated;
     });
   };
@@ -244,6 +245,14 @@ function GestionUsuarios({ isDark }) {
     // 🔗 Al marcar checkbox, ir a /fondo-tiempo/docentes y abrir modal
     // Guardar datos del formulario en sessionStorage para recuperarlos al volver
     sessionStorage.setItem('datosCrearUsuario', JSON.stringify(formData));
+    const apellidos = (formData.last_name || '').trim().split(/\s+/).filter(Boolean);
+    sessionStorage.setItem('datosCrearDocente', JSON.stringify({
+      nombres: formData.first_name || '',
+      apellido_paterno: apellidos[0] || '',
+      apellido_materno: apellidos.slice(1).join(' '),
+      email: formData.email || '',
+      telefono: '',
+    }));
     sessionStorage.setItem('abrirModalDesdeUsuarios', 'true');
     // Marcar para abrir modal al volver
     setAbrirModalAlVolver(true);
@@ -260,7 +269,6 @@ function GestionUsuarios({ isDark }) {
       email: formData.email,
       first_name: formData.first_name,
       last_name: formData.last_name,
-      ci: formData.ci,
       rol: formData.rol,
       password: formData.password,
       password_confirm: formData.password_confirm,
@@ -328,13 +336,16 @@ function GestionUsuarios({ isDark }) {
         </div>
 
         {/* MODAL DE CREACIÓN DE USUARIO */}
-        {isCreating && (
-          <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm transition-all duration-300 ${crearNuevoDocente && formData.rol === 'docente' ? '!justify-center' : ''}`}>
+        {isCreating && createPortal((
+          <div
+            className={`fixed top-0 right-0 bottom-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 ${crearNuevoDocente && formData.rol === 'docente' ? '!justify-center' : ''}`}
+            style={{ left: sidebarCollapsed ? '5rem' : '18rem' }}
+          >
             <div className={`flex items-center justify-center w-full h-full ${crearNuevoDocente && formData.rol === 'docente' ? 'gap-6' : ''}`}>
               {/* Modal Usuario - mantiene su tamaño original */}
               <div className={`bg-white dark:bg-slate-800 rounded-2xl shadow-2xl overflow-hidden animate-fade-in transition-all duration-300 ${crearNuevoDocente && formData.rol === 'docente' ? 'max-w-2xl w-full' : 'max-w-2xl w-full mx-4'}`}>
                 {/* Header azul */}
-                <div className="bg-[#2C4AAE] dark:bg-[#1a3a8a] px-6 py-4">
+                <div className="bg-[#2C4AAE] dark:bg-[#1a3a8a] px-6 py-4 rounded-t-2xl">
                   <h2 className="text-xl font-bold text-white">
                     Crear Nuevo Usuario
                   </h2>
@@ -351,9 +362,6 @@ function GestionUsuarios({ isDark }) {
                     <InputField label="Nombres *" name="first_name" value={formData.first_name || ''} onChange={handleChange} error={errors.first_name} />
                     <InputField label="Apellidos *" name="last_name" value={formData.last_name || ''} onChange={handleChange} error={errors.last_name} />
 
-                    {/* Fila 3 */}
-                    <InputField label="Cédula de Identidad (CI) *" name="ci" value={formData.ci || ''} onChange={handleChange} error={errors.ci} />
-
                     {/* Rol */}
                     <div>
                       <label className="block text-sm font-semibold mb-2 text-slate-700 dark:text-slate-300">Rol</label>
@@ -369,14 +377,25 @@ function GestionUsuarios({ isDark }) {
                       </select>
                     </div>
 
-                    {/* Contraseña */}
-                    <div className="md:col-span-2">
-                      <div className="rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-4 py-2.5">
-                        <span className="text-sm text-amber-800 dark:text-amber-300">
-                          Contraseña inicial: <strong className="font-mono">{formData.username ? `${formData.username}UABJB` : 'usuarioUABJB'}</strong>
-                        </span>
+                    {/* Vincular a Docente Existente - solo para rol docente */}
+                    {formData.rol === 'docente' && !crearNuevoDocente && (
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-slate-700 dark:text-slate-300">
+                          Vincular a Docente Existente
+                        </label>
+                        <select
+                          name="docente"
+                          value={formData.docente}
+                          onChange={handleChange}
+                          className="w-full px-4 py-2.5 rounded-xl border-2 bg-white dark:bg-slate-700 text-slate-800 dark:text-white border-slate-300 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="">Seleccione un docente</option>
+                          {docentes.map(d => (
+                            <option key={d.id} value={d.id}>{d.nombre_completo}</option>
+                          ))}
+                        </select>
                       </div>
-                    </div>
+                    )}
 
                     {/* Carrera para director/jefe_estudios */}
                     {(formData.rol === 'director' || formData.rol === 'jefe_estudios') && (
@@ -398,7 +417,7 @@ function GestionUsuarios({ isDark }) {
 
                     {/* Opción para docente */}
                     {formData.rol === 'docente' && (
-                      <div className="md:col-span-2">
+                      <div className="md:col-span-2 space-y-3">
                         <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 cursor-pointer">
                           <input
                             type="checkbox"
@@ -418,24 +437,12 @@ function GestionUsuarios({ isDark }) {
                           </span>
                         </label>
 
-                        {!crearNuevoDocente && (
-                          <div className="mt-3">
-                            <label className="block text-sm font-semibold mb-2 text-slate-700 dark:text-slate-300">
-                              Vincular a Docente Existente
-                            </label>
-                            <select
-                              name="docente"
-                              value={formData.docente}
-                              onChange={handleChange}
-                              className="w-full px-4 py-2.5 rounded-xl border-2 bg-white dark:bg-slate-700 text-slate-800 dark:text-white border-slate-300 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            >
-                              <option value="">Seleccione un docente</option>
-                              {docentes.map(d => (
-                                <option key={d.id} value={d.id}>{d.nombre_completo}</option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
+                        {/* Contraseña - movido abajo del checkbox */}
+                        <div className="rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-4 py-2.5">
+                          <span className="text-sm text-amber-800 dark:text-amber-300">
+                            Contraseña inicial: <strong className="font-mono">{formData.username ? `${formData.username}UABJB` : 'usuarioUABJB'}</strong>
+                          </span>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -462,7 +469,7 @@ function GestionUsuarios({ isDark }) {
               </div>
             </div>
           </div>
-        )}
+        ), document.body)}
  
         {/* Modal for editing */}
         <ModalUsuario

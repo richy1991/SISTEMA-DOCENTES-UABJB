@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { getCarreras } from '../apis/api';
 import api from '../apis/api';
 import toast from 'react-hot-toast';
@@ -48,7 +49,7 @@ const ToggleSwitch = ({ isActive, onChange }) => (
   </button>
 );
 
-function ListaCarreras({ isDark }) {
+function ListaCarreras({ isDark, sidebarCollapsed = false }) {
   const [carreras, setCarreras] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -317,8 +318,11 @@ function ListaCarreras({ isDark }) {
         </div>
 
         {/* MODAL DE CREACIÓN DE CARRERA */}
-        {isCreating && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in" style={{ animationDuration: '160ms' }}>
+        {isCreating && createPortal((
+          <div
+            className="fixed top-0 right-0 bottom-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in"
+            style={{ left: sidebarCollapsed ? '5rem' : '18rem', animationDuration: '160ms' }}
+          >
             <div className="max-w-2xl w-full">
               <div className="bg-white/75 dark:bg-slate-900/70 backdrop-blur-xl rounded-2xl border border-white/50 dark:border-slate-600/50 shadow-2xl overflow-hidden animate-slide-up" style={{ animationDuration: '180ms' }}>
                 <div className="px-6 py-4 border-b border-[#7F97E8]/45 bg-[#2C4AAE]">
@@ -354,7 +358,7 @@ function ListaCarreras({ isDark }) {
               </div>
             </div>
           </div>
-        )}
+        ), document.body)}
 
         {carreras.length > 0 ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

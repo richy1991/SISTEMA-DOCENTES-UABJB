@@ -993,19 +993,18 @@ class HistorialFondo(models.Model):
 
 class PerfilUsuario(models.Model):
     """Perfil extendido para usuarios del sistema"""
-    
+
     ROLES = [
         ('admin', 'Administrador'),
         ('director', 'Director de Carrera'),
         ('jefe_estudios', 'Jefe de Estudios'),
         ('docente', 'Docente'),
     ]
-    
+
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='perfil')
     docente = models.OneToOneField(Docente, on_delete=models.SET_NULL, null=True, blank=True, related_name='usuario')
     rol = models.CharField(max_length=20, choices=ROLES, default='docente')
     carrera = models.ForeignKey(Carrera, on_delete=models.SET_NULL, null=True, blank=True)
-    ci = models.CharField(max_length=20, unique=True, null=True, blank=True, verbose_name="Cédula de Identidad")
     telefono = models.CharField(max_length=20, blank=True)
     foto_perfil = models.ImageField(upload_to='perfiles/', null=True, blank=True)
     foto_perfil_cifrada = models.BinaryField(null=True, blank=True, editable=False)

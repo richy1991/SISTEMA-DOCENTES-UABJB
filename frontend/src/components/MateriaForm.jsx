@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import api from '../apis/api';
 import toast from 'react-hot-toast';
@@ -575,7 +576,7 @@ const CustomSelect = ({
     );
 };
 
-const MateriaForm = () => {
+const MateriaForm = ({ sidebarCollapsed = false }) => {
     const { id } = useParams();
     const location = useLocation();
     const navigate = useNavigate();
@@ -761,8 +762,11 @@ const MateriaForm = () => {
         }
     };
 
-    return (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-fade-in" style={{ animationDuration: '160ms' }}>
+    return createPortal(
+        <div
+            className="fixed top-0 right-0 bottom-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-fade-in"
+            style={{ left: sidebarCollapsed ? '5rem' : '18rem', animationDuration: '160ms' }}
+        >
             <div className="max-w-4xl w-full">
                 <div className="bg-white/75 dark:bg-slate-900 backdrop-blur-xl dark:backdrop-blur-none rounded-2xl border border-white/50 dark:border-slate-600/50 shadow-2xl overflow-hidden animate-slide-up" style={{ animationDuration: '180ms' }}>
                     <div className="px-6 py-4 border-b border-[#7F97E8]/45 bg-[#2C4AAE]">
@@ -840,7 +844,8 @@ const MateriaForm = () => {
                     </form>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 

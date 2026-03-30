@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { getDocentes } from '../apis/api';
 import api from '../apis/api';
@@ -443,8 +444,9 @@ const dedicacionStyles = {
   },
 };
 
-function ListaDocentes({ isDark }) {
+function ListaDocentes({ isDark, sidebarCollapsed = false }) {
   const navigate = useNavigate();
+  const restoringCreateFormRef = React.useRef(false);
   const [docentes, setDocentes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -487,6 +489,15 @@ function ListaDocentes({ isDark }) {
     // 🔗 Detectar si venimos desde "Crear Usuario" para abrir modal
     const abrirModal = sessionStorage.getItem('abrirModalDesdeUsuarios');
     if (abrirModal === 'true') {
+      const datosDocenteGuardados = sessionStorage.getItem('datosCrearDocente');
+      if (datosDocenteGuardados) {
+        try {
+          restoringCreateFormRef.current = true;
+          setFormData((prev) => ({ ...prev, ...JSON.parse(datosDocenteGuardados) }));
+        } catch (e) {
+          console.error('Error al recuperar datos de docente:', e);
+        }
+      }
       setAbrirDesdeUsuarios(true);
       setIsCreating(true);
       sessionStorage.removeItem('abrirModalDesdeUsuarios');
@@ -522,6 +533,11 @@ function ListaDocentes({ isDark }) {
       activo: true,
     };
     if (isCreating) {
+      if (restoringCreateFormRef.current) {
+        restoringCreateFormRef.current = false;
+        setErrors({});
+        return;
+      }
       setFormData(initialData);
       setErrors({});
     }
@@ -560,6 +576,15 @@ function ListaDocentes({ isDark }) {
       if (name === 'dedicacion' && value !== 'horario') {
         newState.horas_contrato_semanales = null;
       }
+      if (isCreating && abrirDesdeUsuarios) {
+        sessionStorage.setItem('datosCrearDocente', JSON.stringify({
+          nombres: newState.nombres,
+          apellido_paterno: newState.apellido_paterno,
+          apellido_materno: newState.apellido_materno,
+          email: newState.email,
+          telefono: newState.telefono,
+        }));
+      }
       return newState;
     });
   };
@@ -584,6 +609,7 @@ function ListaDocentes({ isDark }) {
         setTimeout(() => {
           // Limpiar flag pero mantener datos en sessionStorage
           sessionStorage.removeItem('abrirModalDesdeUsuarios');
+          sessionStorage.removeItem('datosCrearDocente');
           navigate('/fondo-tiempo/usuarios');
         }, 800);
       } else {
@@ -705,8 +731,11 @@ function ListaDocentes({ isDark }) {
         </div>
 
         {/* MODAL DE CREACIÓN DE DOCENTE */}
-        {isCreating && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+        {isCreating && createPortal((
+          <div
+            className="fixed top-0 right-0 bottom-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in"
+            style={{ left: sidebarCollapsed ? '5rem' : '18rem' }}
+          >
             <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden">
               {/* Header */}
               <div className="bg-[#2C4AAE] px-6 py-4">
@@ -723,7 +752,7 @@ function ListaDocentes({ isDark }) {
                 </div>
               </div>
               {/* Body */}
-              <form onSubmit={handleCreateSubmit} className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 dark:bg-slate-900">
+              <form id="crear-docente-form" onSubmit={handleCreateSubmit} className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 dark:bg-slate-900">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div className="md:col-span-2 rounded-xl border border-[#3D6DE0]/30 dark:border-[#4B67C0]/40 bg-gradient-to-r from-white/60 via-[#3D6DE0]/5 to-cyan-400/10 dark:from-slate-800/55 dark:to-cyan-900/20 p-4 shadow-sm">
                     <InputField label="Nombres" name="nombres" value={formData.nombres} onChange={handleChange} required error={errors.nombres} />
@@ -828,6 +857,7 @@ function ListaDocentes({ isDark }) {
                 </button>
                 <button
                   type="submit"
+                  form="crear-docente-form"
                   disabled={isSubmitting}
                   className="px-6 py-2.5 rounded-xl font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg hover:shadow-xl transition-all flex items-center gap-2 disabled:opacity-50"
                 >
@@ -845,7 +875,7 @@ function ListaDocentes({ isDark }) {
               </div>
             </div>
           </div>
-        )}
+        ), document.body)}
 
         {/* Lista de docentes */}
         {docentes.length > 0 ? (
@@ -931,8 +961,11 @@ function ListaDocentes({ isDark }) {
       </div>
 
       {/* Modal Crear/Editar */}
-      {showModal && docenteSeleccionado && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      {showModal && docenteSeleccionado && createPortal((
+        <div
+          className="fixed top-0 right-0 bottom-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          style={{ left: sidebarCollapsed ? '5rem' : '18rem' }}
+        >
           <div className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             {/* Header Modal */}
             <div className="px-6 py-4 border-b-2 border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-700/50">
@@ -1049,11 +1082,14 @@ function ListaDocentes({ isDark }) {
             </form>
           </div>
         </div>
-      )}
+      ), document.body)}
 
       {/* Modal de Confirmación de Eliminación */}
-      {showDeleteModal && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+      {showDeleteModal && createPortal((
+        <div
+          className="fixed top-0 right-0 bottom-0 z-[70] flex items-center justify-center p-4"
+          style={{ left: sidebarCollapsed ? '5rem' : '18rem' }}
+        >
           <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px]" onClick={closeDeleteModal} />
           <div className="relative w-full max-w-lg rounded-2xl border border-red-600/80 dark:border-red-700/50 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden animate-slide-up" style={{ animationDuration: '160ms' }}>
             <div className="px-5 py-4 border-b border-red-400 dark:border-slate-700/70 bg-gradient-to-r from-red-400 via-red-200 to-red-50 dark:from-red-900/30 dark:via-slate-900 dark:to-slate-900">
@@ -1104,7 +1140,7 @@ function ListaDocentes({ isDark }) {
             </div>
           </div>
         </div>
-      )}
+      ), document.body)}
     </div>
   );
 }
