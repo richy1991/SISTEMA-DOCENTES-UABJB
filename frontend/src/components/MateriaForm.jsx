@@ -561,7 +561,7 @@ const CustomSelect = ({
                                     className={`w-full text-left px-3 py-1.5 text-sm transition-colors border-l-2 ${
                                         active
                                             ? 'bg-[#263F8A]/10 dark:bg-[#263F8A]/30 border-[#263F8A] dark:border-[#5C77CC] text-[#263F8A] dark:text-[#B6C3EC] font-semibold'
-                                            : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/90'
+                                            : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-[#2C4AAE]'
                                     }`}
                                     title={opt.label}
                                 >

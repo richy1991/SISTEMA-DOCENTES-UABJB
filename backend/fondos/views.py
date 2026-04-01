@@ -80,41 +80,97 @@ class DocenteViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        # Permitir a Staff (Admin) O al Jefe de Estudios ver todos los docentes
-        es_jefe_estudios = hasattr(user, 'perfil') and user.perfil.rol == 'jefe_estudios'
         
-        if user.is_staff or es_jefe_estudios:
+        # Superusuario ve todos los docentes sin restricciones
+        if user.is_superuser:
             return Docente.objects.all()
         
+        # Admin de carrera solo ve docentes de su misma carrera
+        if hasattr(user, 'perfil') and user.perfil.rol == 'admin' and user.perfil.carrera:
+            return Docente.objects.filter(carrera=user.perfil.carrera)
+        
+        # Jefe de Estudios ve todos los docentes (para gestión general)
+        es_jefe_estudios = hasattr(user, 'perfil') and user.perfil.rol == 'jefe_estudios'
+        if es_jefe_estudios:
+            return Docente.objects.all()
+
+        # Docente normal solo ve su propio perfil
         if hasattr(user, 'perfil') and user.perfil.docente:
             return Docente.objects.filter(id=user.perfil.docente.id)
-            
+
         return Docente.objects.none()
 
     def destroy(self, request, *args, **kwargs):
         """
-        Eliminación segura de docente con manejo de errores de integridad.
+        BORRADO INTELIGENTE DE DOCENTE
+        PROHIBIDO borrar si tiene registros activos.
+        Si está limpio, borra Docente y limpia User/Perfil si existen.
         """
+        from .models import SaldoVacacionesGestion, CargaHoraria, PerfilUsuario
+        
         docente = self.get_object()
-        estados_bloqueantes = ['aprobado_director', 'en_ejecucion', 'finalizado']
-
-        if FondoTiempo.objects.filter(docente=docente, estado__in=estados_bloqueantes).exists():
-            raise drf_serializers.ValidationError(
-                'No se puede eliminar al docente porque tiene historial académico vinculado. Considere desactivar su usuario en su lugar'
-            )
-
-        try:
-            self.perform_destroy(docente)
-            return Response(status=status.HTTP_204_NO_CONTENT)
-        except ProtectedError:
+        
+        # ============================================
+        # CHEQUEO DE ACTIVIDAD - Tablas Hijas
+        # ============================================
+        
+        # 1. Verificar Fondos de Tiempo (cualquier estado)
+        fondos_count = FondoTiempo.objects.filter(docente=docente).count()
+        if fondos_count > 0:
             return Response(
-                {'error': 'No se puede eliminar el docente porque tiene registros protegidos asociados (ej. Cargas Horarias en calendarios cerrados).'},
+                {'error': f'No se puede eliminar: El docente tiene {fondos_count} Fondo(s) de Tiempo vinculados. Desactívelo en su lugar.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        
+        # 2. Verificar Saldos de Vacaciones
+        saldos_count = SaldoVacacionesGestion.objects.filter(docente=docente).count()
+        if saldos_count > 0:
+            return Response(
+                {'error': f'No se puede eliminar: El docente tiene {saldos_count} registro(s) de saldo de vacaciones. Desactívelo en su lugar.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # 3. Verificar Cargas Horarias
+        cargas_count = CargaHoraria.objects.filter(docente=docente).count()
+        if cargas_count > 0:
+            return Response(
+                {'error': f'No se puede eliminar: El docente tiene {cargas_count} Carga(s) Horaria(s) asignada(s). Desactívelo en su lugar.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # ============================================
+        # CASO A: DOCENTE LIMPIO - BORRADO SEGURO
+        # ============================================
+        try:
+            with transaction.atomic():
+                # Obtener usuario vinculado (si existe) ANTES de borrar
+                user = None
+                if hasattr(docente, 'usuario'):
+                    user = docente.usuario
+                
+                # 1. Si tiene usuario, limpiar el PerfilUsuario primero
+                if user and hasattr(user, 'perfil'):
+                    user.perfil.docente = None
+                    user.perfil.save(update_fields=['docente'])
+                    PerfilUsuario.objects.filter(user=user).delete()
+                
+                # 2. Borrar el docente
+                docente_id = docente.id
+                docente.delete()
+                
+                # 3. Si tenía usuario, borrar también el User (para no dejar huérfanos)
+                if user:
+                    user.delete()
+                
+                return Response(
+                    {'success': f'Docente {docente_id} eliminado correctamente'},
+                    status=status.HTTP_204_NO_CONTENT
+                )
+                
         except Exception as e:
             return Response(
                 {'error': f'Error interno al eliminar docente: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                status=status.HTTP_400_BAD_REQUEST
             )
 
 
@@ -253,8 +309,19 @@ class MateriaViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset()
         user = self.request.user
+        
+        # Superusuario ve todas las materias sin restricciones
+        if user.is_superuser:
+            return queryset
+        
+        # Admin de carrera solo ve materias de su misma carrera
+        if hasattr(user, 'perfil') and user.perfil.rol == 'admin' and user.perfil.carrera:
+            return queryset.filter(carrera=user.perfil.carrera)
+        
+        # Jefe de Estudios y Director ven materias de su carrera
         if hasattr(user, 'perfil') and user.perfil.carrera and user.perfil.rol in ['jefe_estudios', 'director']:
             queryset = queryset.filter(carrera=user.perfil.carrera)
+        
         return queryset
 
     def get_permissions(self):
@@ -328,14 +395,17 @@ class CargaHorariaViewSet(viewsets.ModelViewSet):
         return queryset.none()
     
     def _validar_estado_fondo(self, docente, calendario):
-        """Valida que el fondo esté en estado editable (borrador/observado)"""
+        """Valida que el fondo esté en estado editable (borrador/observado) y que exista"""
         fondo = FondoTiempo.objects.filter(
-            docente=docente, 
+            docente=docente,
             calendario_academico=calendario,
             archivado=False
         ).first()
-        
-        if fondo and fondo.estado not in ['borrador', 'observado']:
+
+        if not fondo:
+            raise PermissionDenied("No se puede crear carga horaria. El docente no tiene un Fondo de Tiempo registrado para este calendario.")
+
+        if fondo.estado not in ['borrador', 'observado']:
             raise PermissionDenied(f"No se puede modificar la carga horaria. El fondo está en estado '{fondo.get_estado_display()}'.")
 
     def perform_create(self, serializer):
@@ -1731,11 +1801,11 @@ class UsuarioViewSet(viewsets.ModelViewSet):
     ViewSet para gestión completa de usuarios.
     Solo usuarios administradores pueden crear, editar y eliminar usuarios.
     """
-    queryset = User.objects.select_related('perfil').all()
+    queryset = User.objects.select_related('perfil', 'perfil__carrera', 'perfil__docente').all()
     permission_classes = [IsAuthenticated]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['username', 'email', 'first_name', 'last_name']
-    ordering_fields = ['username', 'date_joined']
+    search_fields = ['username', 'email', 'first_name', 'last_name', 'perfil__docente__ci']
+    ordering_fields = ['username', 'date_joined', 'last_name']
     ordering = ['-date_joined']
 
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
@@ -1773,30 +1843,36 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         user = self.request.user
         queryset = User.objects.select_related('perfil').all()
 
-        if hasattr(user, 'perfil') and user.perfil.rol == 'admin':
+        # Superusuario ve todos los usuarios sin restricciones
+        if user.is_superuser:
             return queryset
-            
+
+        # Admin de carrera solo ve usuarios de su misma carrera
+        if hasattr(user, 'perfil') and user.perfil.rol == 'admin' and user.perfil.carrera:
+            return queryset.filter(perfil__carrera=user.perfil.carrera)
+
+        # Usuario normal solo ve su propio perfil
         return queryset.filter(id=user.id)
 
     def create(self, request, *args, **kwargs):
         """Crear nuevo usuario con perfil"""
-        serializer = self.get_serializer(data=request.data)
+        serializer = self.get_serializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-        
+
         # Retornar con el serializer de lectura
         output_serializer = UsuarioSerializer(user)
         output_serializer = UsuarioSerializer(user, context={'request': request})
         return Response(output_serializer.data, status=status.HTTP_201_CREATED)
-    
+
     def update(self, request, *args, **kwargs):
         """Actualizar usuario y perfil"""
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer = self.get_serializer(instance, data=request.data, partial=partial, context={'request': request})
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-        
+
         # Retornar con el serializer de lectura
         output_serializer = UsuarioSerializer(user)
         output_serializer = UsuarioSerializer(user, context={'request': request})
@@ -1804,11 +1880,17 @@ class UsuarioViewSet(viewsets.ModelViewSet):
     
     def destroy(self, request, *args, **kwargs):
         """
-        Eliminar usuario.
-        Si el usuario tiene registros protegidos (Historial, Informes), se eliminan
-        manualmente para permitir el borrado del usuario.
+        BORRADO INTELIGENTE DE USUARIO
+        Verifica si el docente vinculado tiene registros activos antes de eliminar.
+        NUNCA borra al Docente, solo lo desvincula para que quede HUÉRFANO.
         """
+        from .models import PerfilUsuario, Docente, HistorialFondo, InformeFondo, MensajeObservacion, SaldoVacacionesGestion, CargaHoraria
+        
         user = self.get_object()
+        
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Intentando eliminar usuario: {user.username} (ID: {user.id})")
         
         # 0. Validación de Seguridad: Impedir eliminar superusuarios
         if user.is_superuser:
@@ -1817,19 +1899,96 @@ class UsuarioViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Se ha eliminado la restricción que impedía borrar usuarios vinculados a docentes.
+        # ============================================
+        # CHEQUEO DE ACTIVIDAD - Tablas Hijas del Docente
+        # ============================================
         
-        # 2. Eliminación forzada de dependencias (Superar PROTECT)
+        # Obtener el docente vinculado al usuario (si existe)
+        docente = None
+        if hasattr(user, 'perfil') and user.perfil:
+            docente = user.perfil.docente
+            logger.info(f"Usuario {user.username} tiene docente: {docente.id if docente else None}")
+
+        if docente:
+            # 1. Verificar Fondos de Tiempo (cualquier estado)
+            fondos_count = FondoTiempo.objects.filter(docente=docente).count()
+            logger.info(f"Fondos de Tiempo: {fondos_count}")
+            if fondos_count > 0:
+                return Response(
+                    {'error': f'No se puede eliminar: El docente vinculado tiene {fondos_count} Fondo(s) de Tiempo. Desactívelo en su lugar.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # 2. Verificar Saldos de Vacaciones
+            saldos_count = SaldoVacacionesGestion.objects.filter(docente=docente).count()
+            logger.info(f"Saldos de Vacaciones: {saldos_count}")
+            if saldos_count > 0:
+                return Response(
+                    {'error': f'No se puede eliminar: El docente tiene {saldos_count} registro(s) de saldo de vacaciones. Desactívelo en su lugar.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # 3. Verificar Cargas Horarias
+            cargas_count = CargaHoraria.objects.filter(docente=docente).count()
+            logger.info(f"Cargas Horarias: {cargas_count}")
+            if cargas_count > 0:
+                return Response(
+                    {'error': f'No se puede eliminar: El docente tiene {cargas_count} Carga(s) Horaria(s). Desactívelo en su lugar.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            logger.info("Usuario no tiene docente vinculado")
+
+        # ============================================
+        # CASO A: USUARIO LIMPIO - BORRADO SEGURO
+        # ============================================
         try:
             with transaction.atomic():
-                # Eliminar registros que impiden el borrado por integridad referencial
-                HistorialFondo.objects.filter(usuario=user).delete()
-                MensajeObservacion.objects.filter(autor=user).delete()
-                InformeFondo.objects.filter(elaborado_por=user).delete()
+                logger.info(f"Iniciando borrado de usuario {user.username}")
                 
-                # Ahora sí, eliminar el usuario
-                return super().destroy(request, *args, **kwargs)
+                # PASO A: Borrar registros de POA (PROTECT)
+                from poa_document.models import HistorialDocumentoPOA
+                poa_count = HistorialDocumentoPOA.objects.filter(usuario=user).count()
+                if poa_count > 0:
+                    logger.info(f"Eliminando {poa_count} registros de HistorialDocumentoPOA")
+                    HistorialDocumentoPOA.objects.filter(usuario=user).delete()
+                
+                # PASO B: Borrar Mensajes de Observación (PROTECT)
+                MensajeObservacion.objects.filter(autor=user).delete()
+
+                # PASO C: Borrar Informes elaborados (PROTECT)
+                InformeFondo.objects.filter(elaborado_por=user).delete()
+
+                # PASO D: Borrar Historial de Fondo (PROTECT)
+                HistorialFondo.objects.filter(usuario=user).delete()
+
+                # PASO E: DESVINCULAR Docente (NO BORRAR) - Solo poner en NULL
+                if docente:
+                    # Actualizar el perfil para que docente quede como huérfano
+                    user.perfil.docente = None
+                    user.perfil.save(update_fields=['docente'])
+                    # También limpiar la relación inversa en Docente si existe
+                    if hasattr(docente, 'usuario'):
+                        docente.usuario = None
+                        docente.save(update_fields=['usuario'])
+                    logger.info(f"Docente {docente.id} desvinculado")
+
+                # PASO F: Borrar PerfilUsuario
+                PerfilUsuario.objects.filter(user=user).delete()
+                logger.info(f"PerfilUsuario de {user.username} eliminado")
+
+                # PASO G: Ahora sí, borrar el usuario
+                user_id = user.id
+                user.delete()
+                logger.info(f"Usuario {user.username} (ID: {user_id}) eliminado exitosamente")
+
+                return Response(
+                    {'success': 'Usuario eliminado correctamente. El docente quedó desvinculado.'},
+                    status=status.HTTP_204_NO_CONTENT
+                )
+
         except Exception as e:
+            logger.error(f"Error al eliminar usuario {user.username}: {str(e)}", exc_info=True)
             return Response(
                 {'error': f'Error interno al eliminar usuario: {str(e)}'},
                 status=status.HTTP_400_BAD_REQUEST

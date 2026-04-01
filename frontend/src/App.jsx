@@ -130,15 +130,38 @@ function App() {
 
   return (
     <Router>
-      <Toaster 
+      <Toaster
         position="top-right"
         toastOptions={{
           style: {
             background: isDark ? '#1e293b' : '#ffffff',
             color: isDark ? '#f1f5f9' : '#0f172a',
+            borderRadius: '12px',
+            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+            fontFamily: "'Inter', system-ui, sans-serif",
+            fontSize: '14px',
+            fontWeight: '500',
           },
-          success: { style: { background: '#10b981', color: 'white' } },
-          error: { style: { background: '#ef4444', color: 'white' } },
+          success: { 
+            style: { 
+              background: isDark ? '#064e3b' : '#f0fdf4', 
+              color: isDark ? '#a7f3d0' : '#166534',
+              border: '2px solid #10b981',
+              borderLeft: '4px solid #059669',
+            },
+            icon: '✅',
+            duration: 4000,
+          },
+          error: { 
+            style: { 
+              background: isDark ? '#7f1d1d' : '#fef2f2', 
+              color: isDark ? '#fecaca' : '#991b1b',
+              border: '2px solid #ef4444',
+              borderLeft: '4px solid #f59e0b',
+            },
+            icon: '⚠️',
+            duration: 6000,
+          },
         }}
       />
       <style>{`
@@ -197,7 +220,7 @@ function App() {
               <Route path="archivados" element={<AnimatedRoute><FondosArchivados isDark={isDark} /></AnimatedRoute>} />
 
               {/* Rutas de Administración (Integradas en el Sidebar) */}
-              <Route path="usuarios" element={<AnimatedRoute><GestionUsuarios isDark={isDark} sidebarCollapsed={sidebarCollapsed} /></AnimatedRoute>} />
+              <Route path="usuarios" element={<AnimatedRoute><GestionUsuarios isDark={isDark} sidebarCollapsed={sidebarCollapsed} user={user} /></AnimatedRoute>} />
               <Route path="docentes" element={<AnimatedRoute><ListaDocentes isDark={isDark} sidebarCollapsed={sidebarCollapsed} /></AnimatedRoute>} />
               <Route path="calendarios" element={<AnimatedRoute><ListaCalendarios /></AnimatedRoute>} />
               <Route path="carreras" element={<AnimatedRoute><ListaCarreras isDark={isDark} sidebarCollapsed={sidebarCollapsed} /></AnimatedRoute>} />

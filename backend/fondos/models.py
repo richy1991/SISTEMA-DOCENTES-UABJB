@@ -940,7 +940,7 @@ class ObservacionFondo(models.Model):
 
 class MensajeObservacion(models.Model):
     """Mensaje individual dentro de un hilo de observación"""
-    
+
     observacion = models.ForeignKey(ObservacionFondo, on_delete=models.CASCADE, related_name='mensajes')
     autor = models.ForeignKey(User, on_delete=models.PROTECT, related_name='mensajes_observacion')
     texto = models.TextField()
@@ -958,7 +958,7 @@ class MensajeObservacion(models.Model):
 
 class HistorialFondo(models.Model):
     """Historial de cambios para auditoría"""
-    
+
     TIPO_CAMBIO_CHOICES = [
         ('creacion', 'Creación'),
         ('edicion', 'Edición'),
@@ -972,7 +972,7 @@ class HistorialFondo(models.Model):
         ('finalizacion', 'Finalización'),
         ('archivado', 'Archivado'),
     ]
-    
+
     fondo_tiempo = models.ForeignKey(FondoTiempo, on_delete=models.CASCADE, related_name='historial')
     usuario = models.ForeignKey(User, on_delete=models.PROTECT)
     fecha = models.DateTimeField(auto_now_add=True)
@@ -981,7 +981,7 @@ class HistorialFondo(models.Model):
     estado_anterior = models.CharField(max_length=30, blank=True)
     estado_nuevo = models.CharField(max_length=30, blank=True)
     datos_cambio = models.JSONField(default=dict, blank=True, help_text="Snapshot de los datos modificados")
-    
+
     class Meta:
         verbose_name = "Historial"
         verbose_name_plural = "Historiales"
@@ -1003,6 +1003,7 @@ class PerfilUsuario(models.Model):
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='perfil')
     docente = models.OneToOneField(Docente, on_delete=models.SET_NULL, null=True, blank=True, related_name='usuario')
+    ci = models.CharField(max_length=20, blank=True, null=True, unique=True, verbose_name='Cedula de Identidad')
     rol = models.CharField(max_length=20, choices=ROLES, default='docente')
     carrera = models.ForeignKey(Carrera, on_delete=models.SET_NULL, null=True, blank=True)
     telefono = models.CharField(max_length=20, blank=True)
@@ -1019,13 +1020,18 @@ class PerfilUsuario(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=['carrera', 'rol'],
+                name='unico_admin_por_carrera',
+                condition=models.Q(rol='admin', activo=True)
+            ),
+            models.UniqueConstraint(
+                fields=['carrera', 'rol'],
                 name='unico_director_por_carrera',
-                condition=models.Q(rol='director')
+                condition=models.Q(rol='director', activo=True)
             ),
             models.UniqueConstraint(
                 fields=['carrera', 'rol'],
                 name='unico_jefe_por_carrera',
-                condition=models.Q(rol='jefe_estudios')
+                condition=models.Q(rol='jefe_estudios', activo=True)
             ),
         ]
 
@@ -1090,6 +1096,7 @@ def crear_perfil_usuario(sender, instance, created, **kwargs):
 @receiver(post_save, sender=User)
 def guardar_perfil_usuario(sender, instance, **kwargs):
     if hasattr(instance, 'perfil'):
+        instance.perfil.activo = instance.is_active
         instance.perfil.save()
 
 @receiver(post_save, sender=Actividad)

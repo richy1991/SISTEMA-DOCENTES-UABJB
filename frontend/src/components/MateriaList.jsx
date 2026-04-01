@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { FaEdit, FaTrash } from 'react-icons/fa';
 import api from '../apis/api';
 import { Link, Outlet } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -8,7 +9,7 @@ const SelectConDropdown = ({ label, value, onChange, options, name }) => {
   const [open, setOpen] = useState(false);
   const containerRef = React.useRef(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const handleOutside = (event) => {
       if (containerRef.current && !containerRef.current.contains(event.target)) {
         setOpen(false);
@@ -63,7 +64,7 @@ const SelectConDropdown = ({ label, value, onChange, options, name }) => {
                 className={`w-full text-left px-3 py-1.5 text-xs border-l-2 rounded-lg transition-colors ${
                   option.value === value
                     ? 'bg-cyan-50 dark:bg-cyan-900/30 border-cyan-500 text-cyan-800 dark:text-cyan-200 font-semibold'
-                    : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-slate-800/90'
+                    : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-[#2C4AAE]'
                 }`}
               >
                 <span className="block truncate">{option.label}</span>
@@ -318,20 +319,20 @@ const MateriaList = ({ isDark, sidebarCollapsed = false }) => {
                                             </span>
                                         </div>
                                         {canEdit && (
-                                            <div className="flex gap-2 ml-4">
-                                                <Link 
+                                            <div className="flex gap-3 ml-4">
+                                                <Link
                                                     to={`/fondo-tiempo/materias/editar/${materia.id}`}
-                                                    className="p-2 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"
+                                                    className="text-blue-500 hover:text-blue-400 dark:text-blue-400 dark:hover:text-blue-300 transition-all duration-200 hover:scale-110"
                                                     title="Editar"
                                                 >
-                                                    <PencilIcon className="w-4 h-4" />
+                                                    <FaEdit size={18} />
                                                 </Link>
-                                                <button 
+                                                <button
                                                     onClick={() => handleDelete(materia)}
-                                                    className="p-2 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-colors"
+                                                    className="text-red-500 hover:text-red-400 dark:text-red-400 dark:hover:text-red-300 transition-all duration-200 hover:scale-110"
                                                     title="Eliminar"
                                                 >
-                                                    <TrashIcon className="w-4 h-4" />
+                                                    <FaTrash size={18} />
                                                 </button>
                                             </div>
                                         )}

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
+import { FaEdit, FaTrash } from 'react-icons/fa';
 import { getDocentes } from '../apis/api';
 import api from '../apis/api';
 import toast from 'react-hot-toast';
@@ -222,7 +223,7 @@ function FechaIngresoPicker({ value, onChange, error }) {
                           setVisibleMonth(new Date(year, opt.value, 1));
                           setOpenQuickPicker(null);
                         }}
-                        className={`w-full text-left px-3 py-1.5 text-xs border-l-2 ${active ? 'bg-cyan-50 dark:bg-cyan-900/30 border-cyan-500 text-cyan-800 dark:text-cyan-200 font-semibold' : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-slate-800/90'}`}
+                        className={`w-full text-left px-3 py-1.5 text-xs border-l-2 ${active ? 'bg-cyan-50 dark:bg-cyan-900/30 border-cyan-500 text-cyan-800 dark:text-cyan-200 font-semibold' : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-[#2C4AAE]'}`}
                       >
                         <span className="block truncate">{opt.label}</span>
                       </button>
@@ -267,7 +268,7 @@ function FechaIngresoPicker({ value, onChange, error }) {
                           setVisibleMonth(new Date(y, draftMonth ?? month, 1));
                           setOpenQuickPicker(null);
                         }}
-                        className={`w-full text-left px-3 py-1.5 text-xs border-l-2 ${active ? 'bg-cyan-50 dark:bg-cyan-900/30 border-cyan-500 text-cyan-800 dark:text-cyan-200 font-semibold' : isCurrentSystemYear ? 'bg-blue-50 dark:bg-blue-900/25 border-blue-400 text-blue-800 dark:text-blue-200 font-semibold hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-slate-800/90' : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-slate-800/90'}`}
+                        className={`w-full text-left px-3 py-1.5 text-xs border-l-2 ${active ? 'bg-cyan-50 dark:bg-cyan-900/30 border-cyan-500 text-cyan-800 dark:text-cyan-200 font-semibold' : isCurrentSystemYear ? 'bg-blue-50 dark:bg-blue-900/25 border-blue-400 text-blue-800 dark:text-blue-200 font-semibold hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-[#2C4AAE]' : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-[#2C4AAE]'}`}
                       >
                         <span className="flex items-center justify-between gap-2">
                           <span className="block truncate">{y}</span>
@@ -372,7 +373,7 @@ const SelectConDropdown = ({ label, value, onChange, options, error, name }) => 
                 className={`w-full text-left px-3 py-1.5 text-xs border-l-2 rounded-lg transition-colors ${
                   option.value === value
                     ? 'bg-cyan-50 dark:bg-cyan-900/30 border-cyan-500 text-cyan-800 dark:text-cyan-200 font-semibold'
-                    : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-slate-800/90'
+                    : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-[#2C4AAE]'
                 }`}
               >
                 <span className="block truncate">{option.label}</span>
@@ -386,18 +387,6 @@ const SelectConDropdown = ({ label, value, onChange, options, error, name }) => 
     </div>
   );
 };
-
-const PencilIcon = (props) => (
-  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
-  </svg>
-);
-
-const TrashIcon = (props) => (
-  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-  </svg>
-);
 
 const InfoIcon = (props) => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
@@ -445,9 +434,33 @@ const dedicacionStyles = {
 };
 
 function ListaDocentes({ isDark, sidebarCollapsed = false }) {
+  const splitNombreCompleto = (nombreCompleto) => {
+    const partes = (nombreCompleto || '').trim().split(/\s+/).filter(Boolean);
+
+    if (partes.length === 0) {
+      return { nombres: '', apellido_paterno: '', apellido_materno: '' };
+    }
+    if (partes.length === 1) {
+      return { nombres: partes[0], apellido_paterno: '', apellido_materno: '' };
+    }
+    if (partes.length === 2) {
+      return { nombres: partes[0], apellido_paterno: partes[1], apellido_materno: '' };
+    }
+
+    return {
+      nombres: partes.slice(0, -2).join(' '),
+      apellido_paterno: partes[partes.length - 2],
+      apellido_materno: partes[partes.length - 1],
+    };
+  };
+
+  const buildNombreCompleto = (nombres, apellidoPaterno, apellidoMaterno) =>
+    [nombres, apellidoPaterno, apellidoMaterno].filter(Boolean).join(' ').trim();
+
   const navigate = useNavigate();
   const restoringCreateFormRef = React.useRef(false);
   const [docentes, setDocentes] = useState([]);
+  const [carreras, setCarreras] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [user, setUser] = useState(null);
@@ -458,9 +471,11 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
 
   // Formulario
   const [formData, setFormData] = useState({
+    nombre_completo: '',
     nombres: '',
     apellido_paterno: '',
     apellido_materno: '',
+    carrera: '',
     ci: '',
     categoria: 'catedratico',
     dedicacion: 'tiempo_completo',
@@ -493,8 +508,17 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
       const datosDocenteGuardados = sessionStorage.getItem('datosCrearDocente');
       if (datosDocenteGuardados) {
         try {
+          const datosDocente = JSON.parse(datosDocenteGuardados);
           restoringCreateFormRef.current = true;
-          setFormData((prev) => ({ ...prev, ...JSON.parse(datosDocenteGuardados) }));
+          setFormData((prev) => ({
+            ...prev,
+            ...datosDocente,
+            nombre_completo: buildNombreCompleto(
+              datosDocente.nombres,
+              datosDocente.apellido_paterno,
+              datosDocente.apellido_materno
+            ),
+          }));
         } catch (e) {
           console.error('Error al recuperar datos de docente:', e);
         }
@@ -508,9 +532,14 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
   const cargarDocentes = async () => {
     setLoading(true);
     try {
-      const response = await getDocentes();
-      const data = response.data.results || response.data;
-      setDocentes(Array.isArray(data) ? data : []);
+      const [docentesResponse, carrerasResponse] = await Promise.all([
+        getDocentes(),
+        api.get('/carreras/'),
+      ]);
+      const docentesData = docentesResponse.data.results || docentesResponse.data;
+      const carrerasData = carrerasResponse.data.results || carrerasResponse.data;
+      setDocentes(Array.isArray(docentesData) ? docentesData : []);
+      setCarreras(Array.isArray(carrerasData) ? carrerasData : []);
       setLoading(false);
     } catch (err) {
       setError('Error al cargar docentes');
@@ -521,9 +550,11 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
 
   useEffect(() => {
     const initialData = {
+      nombre_completo: '',
       nombres: '',
       apellido_paterno: '',
       apellido_materno: '',
+      carrera: '',
       ci: '',
       categoria: '',
       dedicacion: '',
@@ -570,10 +601,19 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData(prev => {
+      let nextValue = type === 'checkbox' ? checked : value;
       const newState = {
         ...prev,
-        [name]: type === 'checkbox' ? checked : value
+        [name]: nextValue
       };
+
+      if (name === 'nombre_completo') {
+        const nombresSplit = splitNombreCompleto(String(nextValue));
+        newState.nombres = nombresSplit.nombres;
+        newState.apellido_paterno = nombresSplit.apellido_paterno;
+        newState.apellido_materno = nombresSplit.apellido_materno;
+      }
+
       if (name === 'dedicacion' && value !== 'horario') {
         newState.horas_contrato_semanales = null;
       }
@@ -584,6 +624,7 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
           apellido_materno: newState.apellido_materno,
           email: newState.email,
           telefono: newState.telefono,
+          carrera: newState.carrera,
         }));
       }
       return newState;
@@ -596,7 +637,13 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
     setIsSubmitting(true);
     setErrors({});
     try {
+      const nombresSplit = splitNombreCompleto(formData.nombre_completo);
       const payload = { ...formData };
+      payload.nombres = nombresSplit.nombres;
+      payload.apellido_paterno = nombresSplit.apellido_paterno;
+      payload.apellido_materno = nombresSplit.apellido_materno;
+      delete payload.nombre_completo;
+      delete payload.carrera;
       if (payload.email === '') payload.email = null;
       if (payload.telefono === '') payload.telefono = null;
       
@@ -609,13 +656,14 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
           sessionStorage.setItem('docenteRetornadoDesdeUsuarios', JSON.stringify({
             id: docenteCreado.id,
             ci: docenteCreado.ci || payload.ci || '',
+            carrera: formData.carrera || '',
           }));
         }
       }
 
       // 🔗 Si venimos desde usuarios, volver automáticamente
       if (abrirDesdeUsuarios) {
-        toast.success('✅ Docente creado. Volviendo a Crear Usuario...');
+        toast.success('Docente creado. Volviendo a Crear Usuario...');
         setTimeout(() => {
           // Limpiar flag pero mantener datos en sessionStorage
           sessionStorage.removeItem('abrirModalDesdeUsuarios');
@@ -695,8 +743,21 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
       cargarDocentes();
       closeDeleteModal();
     } catch (err) {
-      console.error(err);
-      toast.error('Error al eliminar: ' + (err.response?.data?.detail || err.message));
+      console.error('Error al eliminar docente:', err);
+      
+      // Capturar mensaje de error específico del backend
+      let errorMessage = 'Error al eliminar el docente';
+      
+      if (err.response && err.response.data && err.response.data.error) {
+        // Backend devolvió un error específico
+        errorMessage = err.response.data.error;
+      } else if (err.response && err.response.data && err.response.data.detail) {
+        errorMessage = err.response.data.detail;
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      toast.error(errorMessage);
     }
   };
 
@@ -736,9 +797,9 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent">
-                👨 Docentes
+                Docentes
               </h1>
-              <p className="text-sm text-slate-700 dark:text-slate-400 mt-1">
+              <p className="text-sm text-slate-700 dark:text-slate-400 mt-1 italic">
                 Gestión del personal docente
               </p>
             </div>
@@ -791,12 +852,23 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
               {/* Body */}
               <form id="crear-docente-form" onSubmit={handleCreateSubmit} className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 dark:bg-slate-900">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div className="md:col-span-2 rounded-xl border border-[#3D6DE0]/30 dark:border-[#4B67C0]/40 bg-gradient-to-r from-white/60 via-[#3D6DE0]/5 to-cyan-400/10 dark:from-slate-800/55 dark:to-cyan-900/20 p-4 shadow-sm">
-                    <InputField label="Nombres" name="nombres" value={formData.nombres} onChange={handleChange} required error={errors.nombres} />
-                  </div>
-                  <InputField label="Apellido Paterno" name="apellido_paterno" value={formData.apellido_paterno} onChange={handleChange} required error={errors.apellido_paterno} />
-                  <InputField label="Apellido Materno" name="apellido_materno" value={formData.apellido_materno} onChange={handleChange} error={errors.apellido_materno} />
+                  <InputField
+                    label="Nombre completo"
+                    name="nombre_completo"
+                    value={formData.nombre_completo}
+                    onChange={handleChange}
+                    required
+                    error={errors.nombre_completo || errors.nombres || errors.apellido_paterno || errors.apellido_materno}
+                  />
                   <InputField label="Cédula de Identidad (CI)" name="ci" value={formData.ci} onChange={handleChange} required error={errors.ci} />
+                  <SelectConDropdown
+                    label="Carrera"
+                    name="carrera"
+                    value={formData.carrera}
+                    onChange={handleChange}
+                    options={carreras.map((c) => ({ value: c.id, label: c.nombre }))}
+                    error={errors.carrera}
+                  />
                   <FechaIngresoPicker
                     value={formData.fecha_ingreso}
                     onChange={(val) => setFormData(prev => ({ ...prev, fecha_ingreso: val }))}
@@ -960,20 +1032,20 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
 
                     {/* Botones de acción - Solo admin */}
                     {esAdmin() && (
-                      <div className="flex gap-2">
+                      <div className="flex gap-3">
                         <button
                           onClick={() => abrirModalEditar(docente)}
-                          className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 text-white text-sm font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105"
+                          className="text-blue-500 hover:text-blue-400 dark:text-blue-400 dark:hover:text-blue-300 transition-all duration-200 hover:scale-110"
+                          title="Editar"
                         >
-                          <PencilIcon className="w-4 h-4" />
-                          <span>Editar</span>
+                          <FaEdit size={18} />
                         </button>
                         <button
                           onClick={() => eliminarDocente(docente)}
-                          className="flex items-center justify-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 dark:bg-amber-700 dark:hover:bg-amber-800 text-white text-sm font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105"
+                          className="text-red-500 hover:text-red-400 dark:text-red-400 dark:hover:text-red-300 transition-all duration-200 hover:scale-110"
+                          title="Eliminar"
                         >
-                          <TrashIcon className="w-4 h-4" />
-                          <span>Eliminar</span>
+                          <FaTrash size={18} />
                         </button>
                       </div>
                     )}
@@ -1016,7 +1088,7 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
             {/* Header Modal */}
             <div className="px-6 py-4 border-b-2 border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-700/50">
               <h3 className="text-xl font-bold text-blue-600 dark:text-white flex items-center gap-2">
-                ✏️ Editar Docente
+                  Editar Docente
               </h3>
             </div>
 

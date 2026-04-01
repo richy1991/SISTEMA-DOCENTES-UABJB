@@ -1,20 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { FaEdit, FaTrash } from 'react-icons/fa';
 import { getCarreras } from '../apis/api';
 import api from '../apis/api';
 import toast from 'react-hot-toast';
-
-const PencilIcon = (props) => (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
-    </svg>
-);
-
-const TrashIcon = (props) => (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-    </svg>
-);
 
 const InputField = ({ label, name, type = 'text', value, onChange, required, error }) => (
   <div>
@@ -299,9 +288,9 @@ function ListaCarreras({ isDark, sidebarCollapsed = false }) {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent">
-                🎓 Carreras
+                Carreras
               </h2>
-              <p className="text-sm text-slate-700 dark:text-slate-400 mt-1">
+              <p className="text-sm text-slate-700 dark:text-slate-400 mt-1 italic">
                 Gestión de carreras universitarias
               </p>
             </div>
@@ -327,7 +316,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false }) {
               <div className="bg-white/75 dark:bg-slate-900/70 backdrop-blur-xl rounded-2xl border border-white/50 dark:border-slate-600/50 shadow-2xl overflow-hidden animate-slide-up" style={{ animationDuration: '180ms' }}>
                 <div className="px-6 py-4 border-b border-[#7F97E8]/45 bg-[#2C4AAE]">
                   <h2 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-                    ➕ Nueva Carrera
+                    Nueva Carrera
                   </h2>
                 </div>
                 <form onSubmit={handleCreateSubmit} className="p-5 md:p-6 space-y-6">
@@ -389,20 +378,20 @@ function ListaCarreras({ isDark, sidebarCollapsed = false }) {
 
                   {/* Botones de acción - Solo admin */}
                   {esAdmin() && (
-                    <div className="flex gap-2 pt-3 border-t-2 border-slate-200 dark:border-slate-700">
+                    <div className="flex gap-3 pt-3 border-t-2 border-slate-200 dark:border-slate-700">
                       <button
                         onClick={() => abrirModalEditar(carrera)}
-                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 text-white text-sm font-semibold rounded-lg transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105"
+                        className="flex-1 text-blue-500 hover:text-blue-400 dark:text-blue-400 dark:hover:text-blue-300 transition-all duration-200 hover:scale-110"
+                        title="Editar"
                       >
-                        <PencilIcon className="w-4 h-4" />
-                        <span>Editar</span>
+                        <FaEdit size={18} />
                       </button>
                       <button
                         onClick={() => eliminarCarrera(carrera)}
-                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-amber-600 hover:bg-amber-700 dark:bg-amber-700 dark:hover:bg-amber-800 text-white text-sm font-semibold rounded-lg transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105"
+                        className="flex-1 text-red-500 hover:text-red-400 dark:text-red-400 dark:hover:text-red-300 transition-all duration-200 hover:scale-110"
+                        title="Eliminar"
                       >
-                        <TrashIcon className="w-4 h-4" />
-                        <span>Eliminar</span>
+                        <FaTrash size={18} />
                       </button>
                     </div>
                   )}
@@ -440,8 +429,8 @@ function ListaCarreras({ isDark, sidebarCollapsed = false }) {
           <div className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto animate-slide-up" style={{ animationDuration: '180ms' }}>
             {/* Header Modal */}
             <div className="px-6 py-4 border-b border-[#7F97E8]/45 bg-[#2C4AAE] rounded-t-2xl">
-              <h3 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-                ✏️ Editar Carrera
+                     <h3 className="text-xl font-bold text-slate-100 flex items-center gap-2">
+                       Editar Carrera
               </h3>
             </div>
 

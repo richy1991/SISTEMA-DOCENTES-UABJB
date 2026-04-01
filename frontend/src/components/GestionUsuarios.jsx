@@ -1,9 +1,28 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
+import { FaEdit, FaTrash } from 'react-icons/fa';
 import api from '../apis/api';
 import ModalUsuario from './ModalUsuario';
 import toast from 'react-hot-toast';
+
+// Animación para el search input
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes slideIn {
+    from {
+      width: 0;
+      opacity: 0;
+      transform: translateX(10px);
+    }
+    to {
+      width: 100%;
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+`;
+document.head.appendChild(style);
 
 const InfoIcon = (props) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
@@ -46,21 +65,102 @@ const InputField = ({ label, name, type = 'text', value, onChange, required, dis
       required={required}
       disabled={disabled}
       placeholder={required ? '' : ' '}
-      className={`w-full px-4 py-3 rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm ${error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'}`}
+      className={`w-full px-4 py-3 rounded-xl border-2 bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm ${error ? 'border-red-500' : 'border-slate-400 dark:border-slate-600'}`}
     />
     {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
   </div>
 );
 
-const ToggleSwitch = ({ isActive, onChange }) => (
+// Componente Select con Dropdown animado (igual que en ListaDocentes)
+const SelectConDropdown = ({ label, name, value, onChange, options, error, disabled = false, required = false, placeholder = 'Seleccione...' }) => {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    const handleOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    if (open) {
+      document.addEventListener('mousedown', handleOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [open]);
+
+  const selectedLabel = options.find(opt => opt.value === value)?.label;
+
+  return (
+    <div ref={containerRef} className="relative">
+      {label && (
+        <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
+          {label} {required && <span className="text-red-500">*</span>}
+        </label>
+      )}
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        disabled={disabled}
+        className={`w-full px-4 py-3 rounded-2xl text-left flex items-center justify-between transition-all ${
+          disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:shadow-md'
+        } ${
+          error 
+            ? 'border-2 border-red-500 bg-white dark:bg-slate-800' 
+            : open 
+              ? 'border-2 border-[#2C4AAE] bg-white dark:bg-slate-800' 
+                : 'border-2 border-slate-400 bg-slate-100 dark:bg-slate-700 hover:border-[#2C4AAE]'
+        }`}
+      >
+        <span className={`${selectedLabel ? 'text-slate-800 dark:text-white font-semibold' : 'text-slate-400 dark:text-slate-500'}`}>
+          {selectedLabel || placeholder}
+        </span>
+        <div className="w-8 h-8 bg-[#2C4AAE] hover:bg-[#1a3a8a] rounded-lg flex items-center justify-center transition-colors">
+          <svg
+            className={`w-4 h-4 text-white transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-full rounded-xl border-2 border-[#2C4AAE] bg-white dark:bg-slate-800 shadow-xl max-h-48 overflow-auto">
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => {
+                onChange({ target: { name, value: option.value } });
+                setOpen(false);
+              }}
+              className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                value === option.value
+                  ? 'bg-[#2C4AAE] text-white font-semibold'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-[#2C4AAE] hover:text-white'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+    </div>
+  );
+};
+
+const ToggleSwitch = ({ isActive, onChange, disabled = false }) => (
   <button
     type="button"
-    onClick={onChange}
+    onClick={() => !disabled && onChange()}
+    disabled={disabled}
     className={`relative inline-flex h-6 w-12 items-center rounded-full transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 ${
       isActive
         ? 'bg-emerald-500 dark:bg-emerald-600 focus:ring-emerald-400 dark:focus:ring-emerald-500'
-        : 'bg-slate-300 dark:bg-slate-600 focus:ring-slate-400 dark:focus:ring-slate-500'
-    }`}
+        : 'bg-slate-500 dark:bg-slate-600 focus:ring-slate-400 dark:focus:ring-slate-500'
+    } ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}
   >
     <span
       className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition-transform duration-300 ${
@@ -70,7 +170,118 @@ const ToggleSwitch = ({ isActive, onChange }) => (
   </button>
 );
 
-function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
+// Dropdown simple estilo "Seleccione..."
+const SimpleDropdown = ({ label, value, onChange, options, placeholder = 'Carreras' }) => {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    const handleOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    if (open) {
+      document.addEventListener('mousedown', handleOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [open]);
+
+  const selectedLabel = options.find(opt => opt.value === value)?.label;
+
+  return (
+    <div ref={containerRef} className="relative">
+      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
+        {label}
+      </label>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border-2 border-transparent focus:border-blue-500 rounded-2xl text-left flex items-center justify-between transition-all"
+      >
+        <span className={`${selectedLabel ? 'text-slate-800 dark:text-white font-semibold' : 'text-slate-400 dark:text-slate-500'}`}>
+          {selectedLabel || placeholder}
+        </span>
+        <div className="w-8 h-8 bg-[#2C4AAE] hover:bg-[#1a3a8a] rounded-lg flex items-center justify-center transition-colors">
+          <svg
+            className={`w-4 h-4 text-white transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </button>
+      {open && (
+        <div className="absolute z-40 mt-1 w-full rounded-xl border-2 border-[#2C4AAE] bg-white dark:bg-slate-800 shadow-xl max-h-48 overflow-auto">
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => {
+                onChange({ target: { value: option.value } });
+                setOpen(false);
+              }}
+              className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                value === option.value
+                  ? 'bg-[#2C4AAE] text-white font-semibold'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-[#2C4AAE] hover:text-white'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Componente de Búsqueda Animado
+const SearchInput = ({ value, onChange, placeholder = 'Buscar por nombre o C.I....' }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (isExpanded && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [isExpanded]);
+
+  const handleBlur = () => {
+    if (!value) {
+      setIsExpanded(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2 flex-row-reverse">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className={`p-2.5 bg-[#2C4AAE] hover:bg-[#1a3a8a] text-white rounded-xl transition-all duration-300 hover:scale-110 ${isExpanded ? 'rotate-0' : 'rotate-0'}`}
+        title="Buscar usuario"
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+      </button>
+      <div className={`transition-all duration-300 overflow-hidden ${isExpanded ? 'w-64 opacity-100' : 'w-0 opacity-0'}`}>
+        <input
+          ref={inputRef}
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onBlur={handleBlur}
+          placeholder={placeholder}
+          className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border-2 border-[#2C4AAE] rounded-xl text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none transition-all"
+        />
+      </div>
+    </div>
+  );
+};
+
+function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
   const navigate = useNavigate();
   const restoringFormRef = useRef(false);
   const restoringEditModalRef = useRef(false);
@@ -101,6 +312,13 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
   const [showToggleModal, setShowToggleModal] = useState(false);
   const [usuarioToToggle, setUsuarioToToggle] = useState(null);
   const [showOnlyOrphans, setShowOnlyOrphans] = useState(false);
+  const [sortField, setSortField] = useState('username');
+  const [sortDirection, setSortDirection] = useState('asc');
+  const [searchTerm, setSearchTerm] = useState('');
+  
+  // Usuarios huerfanos: sin perfil o con rol docente sin docente vinculado
+  const esUsuarioHuerfano = (u) => !u?.perfil || (u.perfil?.rol === 'docente' && !u.perfil?.docente_id);
+  const hayOrfanos = usuarios.length > 0 && usuarios.some(esUsuarioHuerfano);
 
   useEffect(() => {
     cargarDatos();
@@ -194,7 +412,15 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
       setUsuarios(usuariosRes.data.results || usuariosRes.data);
       setDocentes(docentesRes.data.results || docentesRes.data);
       setCarreras(carrerasRes.data.results || carrerasRes.data);
-      setRoles(rolesRes.data || []);
+      
+      // Filtrar roles: solo superuser puede ver y asignar rol 'admin'
+      const todosRoles = rolesRes.data || [];
+      const esSuperuser = user?.is_superuser === true;
+      const rolesFiltrados = todosRoles.filter(rol => 
+        esSuperuser ? true : rol.value !== 'admin'
+      );
+      setRoles(rolesFiltrados);
+      
       setLoading(false);
     } catch (err) {
       console.error('Error al cargar datos:', err);
@@ -202,9 +428,55 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
       setLoading(false);
     }
   };
-  const usuariosFiltrados = showOnlyOrphans
-    ? usuarios.filter((usuario) => usuario.perfil?.rol === 'docente' && !usuario.perfil?.docente)
-    : usuarios;
+
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const usuariosFiltrados = (() => {
+    let result = showOnlyOrphans ? usuarios.filter(esUsuarioHuerfano) : usuarios;
+
+    // Filtrar por término de búsqueda (nombre o C.I.)
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
+      result = result.filter((usuario) => {
+        const nombre = `${usuario.first_name || ''} ${usuario.last_name || ''}`.toLowerCase();
+        const ci = usuario.ci || '';
+        return nombre.includes(searchLower) || ci.includes(searchLower);
+      });
+    }
+
+    // Orden jerárquico: Admin → Director → Jefe Estudios → Docente
+    const ordenJerarquico = {
+      'admin': 0,
+      'director': 1,
+      'jefe_estudios': 2,
+      'docente': 3
+    };
+
+    result = [...result].sort((a, b) => {
+      const rolA = a.perfil?.rol || 'docente';
+      const rolB = b.perfil?.rol || 'docente';
+      const ordenA = ordenJerarquico[rolA] ?? 99;
+      const ordenB = ordenJerarquico[rolB] ?? 99;
+
+      if (ordenA !== ordenB) {
+        return ordenA - ordenB;
+      }
+
+      // Si mismo rol, ordenar por apellido
+      const apellidoA = (a.last_name || '').toLowerCase();
+      const apellidoB = (b.last_name || '').toLowerCase();
+      return apellidoA.localeCompare(apellidoB, 'es', { sensitivity: 'base' });
+    });
+
+    return result;
+  })();
 
   // Initialize form when creation starts
   useEffect(() => {
@@ -215,13 +487,18 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
         setErrors({});
         return;
       }
+      
+      // Admin de carrera: bloquear con su propia carrera
+      const esAdminCarrera = user?.perfil?.rol === 'admin' && !user?.is_superuser;
+      const carreraDefault = esAdminCarrera ? user?.perfil?.carrera : '';
+      
       const initialData = {
         username: '',
         email: '',
         first_name: '',
         last_name: '',
         rol: 'docente',
-        carrera: '',
+        carrera: carreraDefault,
         docente: '',
         password: '',
         password_confirm: '',
@@ -230,7 +507,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
       setCrearNuevoDocente(false);
       setErrors({});
     }
-  }, [isCreating]);
+  }, [isCreating, user]);
 
   const handleToggleCreateForm = () => {
     sessionStorage.removeItem('datosEditarUsuario');
@@ -247,6 +524,10 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
   };
 
   const handleToggleActivo = (usuario) => {
+    if (usuario?.is_superuser) {
+      toast.error('El Super Admin no puede desactivarse');
+      return;
+    }
     setUsuarioToToggle(usuario);
     setShowToggleModal(true);
   };
@@ -275,8 +556,27 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
       cargarDatos();
       closeDeleteModal();
     } catch (err) {
-      console.error('Error:', err);
-      toast.error('Error al eliminar el usuario');
+      console.error('Error al eliminar usuario:', err);
+      console.log('Error response:', err.response);
+      console.log('Error data:', err.response?.data);
+
+      // Capturar mensaje de error específico del backend
+      let errorMessage = 'Error al eliminar el usuario';
+
+      if (err.response && err.response.data) {
+        // Backend devolvió un error específico
+        if (typeof err.response.data === 'object') {
+          // Puede ser { error: 'mensaje' } o { detail: 'mensaje' }
+          errorMessage = err.response.data.error || err.response.data.detail || JSON.stringify(err.response.data);
+        } else if (typeof err.response.data === 'string') {
+          errorMessage = err.response.data;
+        }
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+
+      console.error('Error message:', errorMessage);
+      toast.error(errorMessage);
     }
   };
   // --- FORM LOGIC FOR INLINE CREATION ---
@@ -298,10 +598,16 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
 
   const handleRolChange = (e) => {
     const newRol = e.target.value;
+    const esAdminCarrera = user?.perfil?.rol === 'admin' && !user?.is_superuser;
+    const carreraDefault = esAdminCarrera ? user?.perfil?.carrera : '';
+    
     setFormData(prev => ({
       ...prev,
       rol: newRol,
-      carrera: (newRol === 'director' || newRol === 'jefe_estudios') ? prev.carrera : '',
+      // Admin de carrera siempre mantiene su carrera, otros roles la pierden al cambiar
+      carrera: (newRol === 'director' || newRol === 'jefe_estudios' || newRol === 'admin') 
+        ? (esAdminCarrera ? user?.perfil?.carrera : prev.carrera) 
+        : '',
       docente: newRol !== 'docente' ? '' : prev.docente,
     }));
     if (newRol !== 'docente') {
@@ -342,7 +648,8 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
       password_confirm: formData.password_confirm,
     };
 
-    if (formData.rol === 'director' || formData.rol === 'jefe_estudios') {
+    // Admin, Director y Jefe de Estudios deben enviar carrera
+    if (formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') {
       payload.carrera = formData.carrera;
     } else if (formData.rol === 'docente') {
       payload.docente = formData.docente;
@@ -387,19 +694,31 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent">
-                👥 Gestión de Usuarios
+                Gestión de Usuarios
               </h1>
-              <p className="text-slate-700 dark:text-slate-300 mt-1">
+              <p className="text-slate-700 dark:text-slate-300 mt-1 italic">
                 Administración de cuentas y permisos
               </p>
             </div>
-            <button
-              onClick={handleToggleCreateForm}
-              className="px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center gap-2"
-            >
-              <span>{isCreating ? '➖' : '➕'}</span>
-              {isCreating ? 'Cancelar Creación' : 'Crear Usuario'}
-            </button>
+            <div className="flex items-center gap-4">
+              <SearchInput value={searchTerm} onChange={setSearchTerm} />
+              <div className="w-48">
+                <SimpleDropdown
+                  label=""
+                  value=""
+                  onChange={() => {}}
+                  options={carreras.map(c => ({ value: c.id, label: c.nombre }))}
+                  placeholder="Carreras"
+                />
+              </div>
+              <button
+                onClick={handleToggleCreateForm}
+                className="px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center gap-2"
+              >
+                <span>{isCreating ? '➖' : '➕'}</span>
+                {isCreating ? 'Cancelar Creación' : 'Crear Usuario'}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -411,9 +730,9 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
           >
             <div className={`flex items-center justify-center w-full h-full ${crearNuevoDocente && formData.rol === 'docente' ? 'gap-6' : ''}`}>
               {/* Modal Usuario - mantiene su tamaño original */}
-              <div className={`bg-white dark:bg-slate-800 rounded-2xl shadow-2xl overflow-hidden animate-fade-in transition-all duration-300 ${crearNuevoDocente && formData.rol === 'docente' ? 'max-w-2xl w-full' : 'max-w-2xl w-full mx-4'}`}>
+              <div className={`bg-white dark:bg-slate-800 rounded-2xl shadow-2xl animate-fade-in transition-all duration-300 ${crearNuevoDocente && formData.rol === 'docente' ? 'max-w-2xl w-full' : 'max-w-2xl w-full mx-4'}`} style={{ overflow: 'visible' }}>
                 {/* Header azul */}
-                <div className="bg-[#2C4AAE] dark:bg-[#1a3a8a] px-6 py-4">
+                <div className="bg-[#2C4AAE] dark:bg-[#1a3a8a] px-6 py-4 rounded-t-2xl">
                   <h2 className="text-xl font-bold text-white">
                     Crear Nuevo Usuario
                   </h2>
@@ -432,84 +751,98 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
 
                     {/* Rol */}
                     <div>
-                      <label className="block text-sm font-semibold mb-2 text-slate-700 dark:text-slate-300">Rol</label>
-                      <select
+                      <SelectConDropdown
+                        label="Rol"
                         name="rol"
                         value={formData.rol || 'docente'}
                         onChange={handleRolChange}
-                        className="w-full px-4 py-2.5 rounded-xl border-2 bg-white dark:bg-slate-700 text-slate-800 dark:text-white border-slate-300 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      >
-                        {roles.map(rol => (
-                          <option key={rol.value} value={rol.value}>{rol.label}</option>
-                        ))}
-                      </select>
+                        options={roles.map(rol => ({ value: rol.value, label: rol.label }))}
+                        error={errors.rol}
+                        required
+                      />
                     </div>
+
+                    {/* Carrera para admin/director/jefe_estudios - a la derecha de Rol */}
+                    {(formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && (
+                      <div>
+                        <SelectConDropdown
+                          label="Carrera"
+                          name="carrera"
+                          value={formData.carrera}
+                          onChange={handleChange}
+                          options={carreras.map(c => ({ value: c.id, label: c.nombre }))}
+                          error={errors.carrera}
+                          disabled={user?.perfil?.rol === 'admin' && !user?.is_superuser}
+                          required
+                        />
+                      </div>
+                    )}
 
                     {/* Vincular a Docente Existente - solo para rol docente */}
                     {formData.rol === 'docente' && !crearNuevoDocente && (
                       <div>
-                        <label className="block text-sm font-semibold mb-2 text-slate-700 dark:text-slate-300">
-                          Vincular a Docente Existente
-                        </label>
-                        <select
+                        <SelectConDropdown
+                          label="Vincular a Docente Existente"
                           name="docente"
                           value={formData.docente}
                           onChange={handleChange}
-                          className="w-full px-4 py-2.5 rounded-xl border-2 bg-white dark:bg-slate-700 text-slate-800 dark:text-white border-slate-300 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="">Seleccione un docente</option>
-                          {docentes.map(d => (
-                            <option key={d.id} value={d.id}>{d.nombre_completo}</option>
-                          ))}
-                        </select>
+                          options={docentes.map(d => ({ value: d.id, label: d.nombre_completo }))}
+                          error={errors.docente}
+                          placeholder="Seleccione un docente"
+                        />
                       </div>
                     )}
 
-                    {/* Carrera para director/jefe_estudios */}
-                    {(formData.rol === 'director' || formData.rol === 'jefe_estudios') && (
+                    {/* C.I. para admin/director/jefe_estudios - abajo de Rol */}
+                    {(formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && (
                       <div className="md:col-span-2">
-                        <label className="block text-sm font-semibold mb-2 text-slate-700 dark:text-slate-300">Carrera</label>
-                        <select
-                          name="carrera"
-                          value={formData.carrera}
-                          onChange={handleChange}
-                          className="w-full px-4 py-2.5 rounded-xl border-2 bg-white dark:bg-slate-700 text-slate-800 dark:text-white border-slate-300 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="">Seleccione una carrera</option>
-                          {carreras.map(c => (
-                            <option key={c.id} value={c.id}>{c.nombre}</option>
-                          ))}
-                        </select>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">C.I.</label>
+                            <input
+                              type="text"
+                              name="ci"
+                              value={formData.ci || ''}
+                              onChange={handleChange}
+                              className="w-full px-4 py-3 rounded-xl border-2 border-slate-400 dark:border-slate-600 bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                            {errors.ci && <p className="text-xs text-red-600 mt-1">{errors.ci}</p>}
+                          </div>
+                          <div>
+                            <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Contraseña inicial</label>
+                            <div className="w-full px-4 py-3 rounded-xl border-2 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 font-mono font-semibold">
+                              {formData.username ? `${formData.username}UABJB` : 'usuarioUABJB'}
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     )}
 
                     {/* Opción para docente */}
                     {formData.rol === 'docente' && (
-                      <div className="md:col-span-2 space-y-3">
-                        <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={crearNuevoDocente}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                // 🔗 Ir a página de docentes y abrir modal
-                                handleCrearNuevoDocente();
-                              } else {
-                                setCrearNuevoDocente(false);
-                              }
-                            }}
-                            className="w-5 h-5 text-blue-600 rounded"
-                          />
-                          <span className="font-semibold text-slate-800 dark:text-slate-200">
-                            Crear nuevo registro de docente
-                          </span>
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
+                          Crear nuevo registro de docente
                         </label>
-
-                        {/* Contraseña - movido abajo del checkbox */}
-                        <div className="rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-4 py-2.5">
-                          <span className="text-sm text-amber-800 dark:text-amber-300">
-                            Contraseña inicial: <strong className="font-mono">{formData.username ? `${formData.username}UABJB` : 'usuarioUABJB'}</strong>
-                          </span>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="flex items-center justify-center rounded-xl border-2 border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-700/50 w-3/4 mx-auto">
+                            <ToggleSwitch
+                              isActive={crearNuevoDocente}
+                              onChange={() => {
+                                if (!crearNuevoDocente) {
+                                  handleCrearNuevoDocente();
+                                } else {
+                                  setCrearNuevoDocente(false);
+                                }
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Contraseña inicial</label>
+                            <div className="w-full px-4 py-3 rounded-xl border-2 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 font-mono font-semibold">
+                              {formData.username ? `${formData.username}UABJB` : 'usuarioUABJB'}
+                            </div>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -517,7 +850,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
                 </div>
 
                 {/* Footer con botones */}
-                <div className="px-6 py-4 bg-slate-50 dark:bg-slate-700 border-t border-slate-200 dark:border-slate-600 flex justify-end gap-3">
+                <div className="px-6 py-4 bg-slate-100 dark:bg-slate-700 border-t border-slate-300 dark:border-slate-600 flex justify-end gap-3 rounded-b-2xl">
                   <button
                     type="button"
                     onClick={() => setIsCreating(false)}
@@ -528,7 +861,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="px-6 py-2.5 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 transition-all disabled:opacity-50"
+                    className="px-6 py-2.5 rounded-xl font-bold text-white bg-[#2C4AAE] hover:bg-[#1a3a8a] transition-all disabled:opacity-50"
                   >
                     {isSubmitting ? 'Creando...' : 'Crear Usuario'}
                   </button>
@@ -551,41 +884,51 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
           docentes={docentes}
           carreras={carreras}
           roles={roles}
+          sidebarCollapsed={sidebarCollapsed}
+          currentUser={user}
         />
 
         <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={() => setShowOnlyOrphans((prev) => !prev)}
-            className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-all ${
-              showOnlyOrphans
-                ? 'bg-red-100 text-red-700 border-red-300 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700'
-                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-600 dark:hover:bg-slate-700'
-            }`}
-          >
-            {showOnlyOrphans ? 'Ver todos' : 'Ver huérfanos'}
-          </button>
+          {hayOrfanos && (
+            <button
+              type="button"
+              onClick={() => setShowOnlyOrphans((prev) => !prev)}
+              className={`px-4 py-2 rounded-xl text-sm font-bold border-2 transition-all shadow-md ${
+                showOnlyOrphans
+                  ? 'bg-red-700 text-white border-red-800 hover:bg-red-800 dark:bg-red-700 dark:border-red-900 animate-pulse-slow'
+                  : 'bg-red-600 text-white border-red-700 hover:bg-red-700 dark:bg-red-600 dark:border-red-800 animate-pulse-slow'
+              }`}
+            >
+              {showOnlyOrphans ? '⚠️ Mostrar Todos' : '⚠️ Urgente: Ver Huérfanos'}
+            </button>
+          )}
         </div>
         
         {/* Tabla de usuarios */}
         <div id="fondo-usuarios-tabla" className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-lg overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y-2 divide-slate-300 dark:divide-slate-700">
-              <thead className="bg-gradient-to-r from-blue-600 to-indigo-600">
+              <thead className="bg-blue-800 dark:bg-blue-900">
                 <tr>
                   <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">
                     Usuario
                   </th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">
-                    Nombre Completo
+                    Nombre
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">
+                    Apellidos
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">
+                    C.I.
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">
+                    Carrera
                   </th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">
                     Rol
                   </th>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">
-                    Email
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">
+                  <th className="px-6 py-4 text-center text-xs font-bold text-white uppercase tracking-wider">
                     Estado
                   </th>
                   <th className="px-6 py-4 text-center text-xs font-bold text-white uppercase tracking-wider">
@@ -599,7 +942,14 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="space-y-1">
                         <div className="font-bold text-slate-800 dark:text-white">{usuario.username}</div>
-                        {usuario.perfil?.rol === 'docente' && !usuario.perfil?.docente && (
+                        {/* Aviso si el usuario no tiene perfil */}
+                        {!usuario.perfil && (
+                          <div className="text-xs font-semibold text-amber-600 dark:text-amber-400">
+                            ⚠️ Sin Perfil
+                          </div>
+                        )}
+                        {/* Aviso si el usuario tiene rol docente pero no tiene docente vinculado */}
+                        {usuario.perfil?.rol === 'docente' && (!usuario.perfil?.docente_id || usuario.perfil.docente_id === null) && (
                           <div className="text-xs font-semibold text-red-600 dark:text-red-400">
                             ❌ Sin Vínculo Docente
                           </div>
@@ -608,32 +958,51 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-slate-700 dark:text-slate-300">
-                        {usuario.nombre_completo || `${usuario.first_name} ${usuario.last_name}`}
+                        {usuario.first_name || '-'}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-slate-700 dark:text-slate-300">
+                        {usuario.last_name || '-'}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-mono text-slate-700 dark:text-slate-300">
+                        {usuario.ci || '-'}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                        {usuario.carrera_codigo || '-'}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`px-3 py-1.5 inline-flex text-xs font-bold rounded-lg border-2 shadow-sm ${
+                        usuario.is_superuser ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 border-amber-400 dark:border-amber-600' :
                         usuario.perfil?.rol === 'admin' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-700' :
                         usuario.perfil?.rol === 'director' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700' :
                         usuario.perfil?.rol === 'jefe_estudios' ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 border-cyan-300 dark:border-cyan-700' :
                         'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700'
                       }`}>
-                        {usuario.perfil?.rol === 'admin' ? '🛡️ Admin' :
-                         usuario.perfil?.rol === 'director' ? '👔 Director' :
-                         usuario.perfil?.rol === 'jefe_estudios' ? '🧑‍⚖️ Jefe de Estudios' : '👨‍🏫 Docente'}
+                        {usuario.is_superuser ? '👑 Super Admin' :
+                         usuario.perfil?.rol === 'admin' ? '🛡️ Admin' :
+                         usuario.perfil?.rol === 'director' ? '🏛️ Director de Carrera' :
+                         usuario.perfil?.rol === 'jefe_estudios' ? '📚 Jefe de Estudios' : '👨‍🏫 Docente'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">
-                      {usuario.email || '-'}
-                    </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-3">
-                        <ToggleSwitch 
-                          isActive={usuario.is_active}
-                          onChange={() => handleToggleActivo(usuario)}
-                        />
+                      <div className="flex items-center justify-center gap-3">
+                        {!usuario.is_superuser && (
+                          <ToggleSwitch
+                            isActive={usuario.is_active}
+                            disabled={usuario.is_superuser}
+                            onChange={() => handleToggleActivo(usuario)}
+                          />
+                        )}
                         <span className="text-sm font-semibold">
-                          {usuario.is_active 
+                          {usuario.is_superuser
+                            ? <span className="text-amber-600 dark:text-amber-400 italic">protegido</span>
+                            : usuario.is_active
                             ? <span className="text-emerald-600 dark:text-emerald-400">Activo</span>
                             : <span className="text-amber-600 dark:text-amber-400">Inactivo</span>
                           }
@@ -641,20 +1010,21 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false }) {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <div className="flex justify-center gap-2">
+                      <div className="flex justify-center gap-3">
                         <button
                           onClick={() => abrirModalEditar(usuario)}
-                          className="flex items-center justify-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 text-white text-xs font-semibold rounded-lg transition-all duration-200 shadow-sm hover:shadow-md hover:scale-105"
+                          className="text-blue-500 hover:text-blue-400 dark:text-blue-400 dark:hover:text-blue-300 transition-all duration-200 hover:scale-110"
+                          title="Editar"
                         >
-                          <PencilIcon className="w-4 h-4" />
-                          <span>Editar</span>
+                          <FaEdit size={18} />
                         </button>
                         <button
                           onClick={() => handleEliminar(usuario)}
-                          className="flex items-center justify-center gap-1 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 dark:bg-amber-700 dark:hover:bg-amber-800 text-white text-xs font-semibold rounded-lg transition-all duration-200 shadow-sm hover:shadow-md hover:scale-105"
+                          disabled={usuario.is_superuser}
+                          className={`transition-all duration-200 ${usuario.is_superuser ? 'text-slate-400 dark:text-slate-600 cursor-not-allowed' : 'text-red-500 hover:text-red-400 dark:text-red-400 dark:hover:text-red-300 hover:scale-110'}`}
+                          title="Eliminar"
                         >
-                          <TrashIcon className="w-4 h-4" />
-                          <span>Eliminar</span>
+                          <FaTrash size={18} />
                         </button>
                       </div>
                     </td>
