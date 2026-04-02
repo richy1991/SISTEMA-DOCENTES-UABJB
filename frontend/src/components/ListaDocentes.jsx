@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { FaEdit, FaTrash } from 'react-icons/fa';
+import { FaEdit, FaTrash, FaExclamationTriangle } from 'react-icons/fa';
 import { getDocentes } from '../apis/api';
 import api from '../apis/api';
 import toast from 'react-hot-toast';
@@ -240,7 +240,7 @@ function FechaIngresoPicker({ value, onChange, error }) {
                   setOpenQuickPicker((prev) => (prev === 'year' ? null : 'year'));
                 }}
                 className={`w-full h-8 text-left pl-2.5 pr-8 rounded-xl border bg-white dark:bg-slate-800 text-xs shadow-sm ${openQuickPicker === 'year' ? 'border-cyan-500/80 dark:border-cyan-500 ring-2 ring-cyan-400/40 dark:ring-cyan-500/35 text-slate-900 dark:text-slate-100' : 'border-cyan-300/70 dark:border-cyan-700/80 hover:border-cyan-500/70 dark:hover:border-cyan-500/80 text-slate-800 dark:text-slate-100'}`}
-                aria-label="Seleccionar año"
+                aria-label="Seleccionar a+�o"
               >
                 <span className="block truncate font-semibold">{hasSelectedYear && draftYear !== null ? draftYear : year}</span>
                 <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center">
@@ -314,7 +314,7 @@ function FechaIngresoPicker({ value, onChange, error }) {
   );
 }
 
-// Componente Select con diseño personalizado (mismo estilo que FechaIngresoPicker)
+// Componente Select con dise+�o personalizado (mismo estilo que FechaIngresoPicker)
 const SelectConDropdown = ({ label, value, onChange, options, error, name }) => {
   const [open, setOpen] = useState(false);
   const containerRef = React.useRef(null);
@@ -345,7 +345,7 @@ const SelectConDropdown = ({ label, value, onChange, options, error, name }) => 
     <div ref={containerRef} className="relative">
       <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label}</label>
       
-      {/* Botón principal */}
+      {/* Bot+�n principal */}
       <div className={`relative w-full rounded-xl border-2 bg-slate-50 dark:bg-slate-700 shadow-sm ${error ? 'border-red-500' : open ? 'border-[#3A56AF] dark:border-[#3A56AF]' : 'border-slate-300 dark:border-slate-600'}`}>
         <button
           type="button"
@@ -361,7 +361,7 @@ const SelectConDropdown = ({ label, value, onChange, options, error, name }) => 
         </button>
       </div>
 
-      {/* Menú desplegable */}
+      {/* Men+� desplegable */}
       {open && (
         <div className="absolute z-50 mt-2 w-full rounded-xl border-2 border-[#3A56AF] bg-white dark:bg-slate-900 shadow-xl">
           <div className="max-h-40 overflow-auto p-2">
@@ -502,7 +502,7 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
     const userData = JSON.parse(localStorage.getItem('user') || 'null');
     setUser(userData);
     
-    // 🔗 Detectar si venimos desde "Crear Usuario" para abrir modal
+    // ���� Detectar si venimos desde "Crear Usuario" para abrir modal
     const abrirModal = sessionStorage.getItem('abrirModalDesdeUsuarios');
     if (abrirModal === 'true') {
       const datosDocenteGuardados = sessionStorage.getItem('datosCrearDocente');
@@ -582,9 +582,15 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
   const abrirModalEditar = (docente) => {
     setDocenteSeleccionado(docente);
     setFormData({
+      nombre_completo: buildNombreCompleto(
+        docente.nombres,
+        docente.apellido_paterno,
+        docente.apellido_materno
+      ),
       nombres: docente.nombres,
       apellido_paterno: docente.apellido_paterno,
       apellido_materno: docente.apellido_materno || '',
+      carrera: docente.carrera_id || '',
       ci: docente.ci,
       categoria: docente.categoria,
       dedicacion: docente.dedicacion,
@@ -636,6 +642,14 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
     console.log('Iniciando submit...', formData);
     setIsSubmitting(true);
     setErrors({});
+
+    if (!formData.carrera) {
+      setErrors((prev) => ({ ...prev, carrera: ['Debe seleccionar una carrera.'] }));
+      toast.error('Debe seleccionar una carrera para el docente.');
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
       const nombresSplit = splitNombreCompleto(formData.nombre_completo);
       const payload = { ...formData };
@@ -643,7 +657,6 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
       payload.apellido_paterno = nombresSplit.apellido_paterno;
       payload.apellido_materno = nombresSplit.apellido_materno;
       delete payload.nombre_completo;
-      delete payload.carrera;
       if (payload.email === '') payload.email = null;
       if (payload.telefono === '') payload.telefono = null;
       
@@ -661,7 +674,7 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
         }
       }
 
-      // 🔗 Si venimos desde usuarios, volver automáticamente
+      // ���� Si venimos desde usuarios, volver autom+�ticamente
       if (abrirDesdeUsuarios) {
         toast.success('Docente creado. Volviendo a Crear Usuario...');
         setTimeout(() => {
@@ -683,7 +696,7 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
         const errorMsg = Object.values(apiErrors).flat().join(' ');
         toast.error(`Error: ${errorMsg}`);
       } else {
-        toast.error('Ocurrió un error inesperado.');
+        toast.error('Ocurri+� un error inesperado.');
       }
     } finally {
       setIsSubmitting(false);
@@ -695,6 +708,7 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
       'vincularDocentePendiente',
       JSON.stringify({
         docenteId: docente.id,
+        carrera: docente.carrera_id || '',
         first_name: docente.nombres || '',
         last_name: [docente.apellido_paterno, docente.apellido_materno].filter(Boolean).join(' '),
         email: docente.email || '',
@@ -706,8 +720,31 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
   const handleUpdateSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
+
+    if (!formData.carrera) {
+      setErrors((prev) => ({ ...prev, carrera: ['Debe seleccionar una carrera.'] }));
+      toast.error('Debe seleccionar una carrera para el docente.');
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
-      await api.put(`/docentes/${docenteSeleccionado.id}/`, formData);
+      const nombresSplit = splitNombreCompleto(
+        formData.nombre_completo || buildNombreCompleto(
+          formData.nombres,
+          formData.apellido_paterno,
+          formData.apellido_materno
+        )
+      );
+      const payload = { ...formData };
+      payload.nombres = nombresSplit.nombres;
+      payload.apellido_paterno = nombresSplit.apellido_paterno;
+      payload.apellido_materno = nombresSplit.apellido_materno;
+      delete payload.nombre_completo;
+      if (payload.email === '') payload.email = null;
+      if (payload.telefono === '') payload.telefono = null;
+
+      await api.put(`/docentes/${docenteSeleccionado.id}/`, payload);
       toast.success('Docente actualizado correctamente');
       setShowModal(false);
       cargarDocentes();
@@ -745,11 +782,11 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
     } catch (err) {
       console.error('Error al eliminar docente:', err);
       
-      // Capturar mensaje de error específico del backend
+      // Capturar mensaje de error espec+�fico del backend
       let errorMessage = 'Error al eliminar el docente';
       
       if (err.response && err.response.data && err.response.data.error) {
-        // Backend devolvió un error específico
+        // Backend devolvi+� un error espec+�fico
         errorMessage = err.response.data.error;
       } else if (err.response && err.response.data && err.response.data.detail) {
         errorMessage = err.response.data.detail;
@@ -800,7 +837,7 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
                 Docentes
               </h1>
               <p className="text-sm text-slate-700 dark:text-slate-400 mt-1 italic">
-                Gestión del personal docente
+                Gestion del personal docente
               </p>
             </div>
             <div className="flex items-center gap-4">
@@ -813,14 +850,14 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
                     : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-600 dark:hover:bg-slate-700'
                 }`}
               >
-                {showOnlyOrphans ? 'Ver todos' : 'Ver huérfanos'}
+                {showOnlyOrphans ? 'Ver todos' : 'Ver huerfanos'}
               </button>
               {esAdmin() && (
                 <button
                   onClick={handleToggleCreateForm}
                   className="px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center gap-2"
                 >
-                  <span>{isCreating ? '➖' : '➕'}</span>
+                  <span>{isCreating ? '-' : '+'}</span>
                   {isCreating ? 'Cancelar' : 'Nuevo Docente'}
                 </button>
               )}
@@ -828,7 +865,7 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
           </div>
         </div>
 
-        {/* MODAL DE CREACIÓN DE DOCENTE */}
+        {/* MODAL DE CREACION DE DOCENTE */}
         {isCreating && createPortal((
           <div
             className="fixed top-0 right-0 bottom-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in"
@@ -843,7 +880,7 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
                   </h2>
                   {abrirDesdeUsuarios && (
                     <span className="px-3 py-1.5 bg-white/20 backdrop-blur-sm rounded-lg text-xs font-semibold text-white flex items-center gap-2">
-                      <span>🔗</span>
+                      <span>U</span>
                       Volviendo a Crear Usuario
                     </span>
                   )}
@@ -860,7 +897,7 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
                     required
                     error={errors.nombre_completo || errors.nombres || errors.apellido_paterno || errors.apellido_materno}
                   />
-                  <InputField label="Cédula de Identidad (CI)" name="ci" value={formData.ci} onChange={handleChange} required error={errors.ci} />
+                  <InputField label="Cedula de Identidad (CI)" name="ci" value={formData.ci} onChange={handleChange} required error={errors.ci} />
                   <SelectConDropdown
                     label="Carrera"
                     name="carrera"
@@ -875,21 +912,21 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
                     error={errors.fecha_ingreso}
                   />
                   <InputField label="Email" name="email" type="email" value={formData.email} onChange={handleChange} error={errors.email} />
-                  <InputField label="Teléfono" name="telefono" value={formData.telefono} onChange={handleChange} error={errors.telefono} />
+                  <InputField label="Telefono" name="telefono" value={formData.telefono} onChange={handleChange} error={errors.telefono} />
                   <SelectConDropdown
-                    label="Categoría"
+                    label="Categoria"
                     name="categoria"
                     value={formData.categoria}
                     onChange={handleChange}
                     options={[
-                      { value: 'catedratico', label: 'Catedrático' },
+                      { value: 'catedratico', label: 'Catedratico' },
                       { value: 'adjunto', label: 'Adjunto' },
                       { value: 'asistente', label: 'Asistente' },
                     ]}
                     error={errors.categoria}
                   />
                   <SelectConDropdown
-                    label="Dedicación"
+                    label="Dedicacion"
                     name="dedicacion"
                     value={formData.dedicacion}
                     onChange={handleChange}
@@ -934,11 +971,11 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
                         <div className="flex items-start gap-3">
                           <InfoIcon className={`w-5 h-5 flex-shrink-0 mt-0.5 ${dedicacionStyles[formData.dedicacion]?.icon}`} />
                           <div>
-                            <h5 className={`text-sm font-semibold ${dedicacionStyles[formData.dedicacion]?.title}`}>Información sobre Dedicación</h5>
+                            <h5 className={`text-sm font-semibold ${dedicacionStyles[formData.dedicacion]?.title}`}>Informacion sobre Dedicacion</h5>
                             <p className={`text-xs leading-5 mt-1 ${dedicacionStyles[formData.dedicacion]?.text}`}>
-                              {formData.dedicacion === 'tiempo_completo' && 'La dedicación a Tiempo Completo implica un total de 40 horas semanales.'}
-                              {formData.dedicacion === 'medio_tiempo' && 'La dedicación a Medio Tiempo implica un total de 20 horas semanales.'}
-                              {formData.dedicacion === 'horario' && 'Para la dedicación por Horario, debe especificar el número de horas semanales según el contrato.'}
+                              {formData.dedicacion === 'tiempo_completo' && 'La dedicacion a Tiempo Completo implica un total de 40 horas semanales.'}
+                              {formData.dedicacion === 'medio_tiempo' && 'La dedicacion a Medio Tiempo implica un total de 20 horas semanales.'}
+                              {formData.dedicacion === 'horario' && 'Para la dedicacion por Horario, debe especificar el numero de horas semanales segun el contrato.'}
                             </p>
                           </div>
                         </div>
@@ -953,8 +990,8 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
                   type="button"
                   onClick={() => {
                     if (abrirDesdeUsuarios) {
-                      // Volver a usuarios si venimos desde allí
-                      // Los datos se recuperarán automáticamente en GestionUsuarios
+                      // Volver a usuarios si venimos desde alli
+                      // Los datos se recuperaran automaticamente en GestionUsuarios
                       navigate('/fondo-tiempo/usuarios');
                     } else {
                       setIsCreating(false);
@@ -977,7 +1014,7 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
                     </>
                   ) : (
                     <>
-                      {abrirDesdeUsuarios ? '💾 Guardar y volver a Usuario' : '💾 Guardar'}
+                      {abrirDesdeUsuarios ? 'Guardar y volver a Usuario' : 'Guardar'}
                     </>
                   )}
                 </button>
@@ -1011,26 +1048,34 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
                             onClick={() => handleCrearCuentaParaDocente(docente)}
                             className="mt-1 text-sm font-semibold text-red-600 transition-colors hover:text-red-700 hover:underline dark:text-red-400 dark:hover:text-red-300"
                           >
-                            ⚠️ Sin Cuenta
+                            <span className="inline-flex items-center gap-1">
+                              <FaExclamationTriangle className="text-amber-500" size={12} />
+                              Sin Cuenta
+                            </span>
                           </button>
                         )}
                         <div className="flex flex-wrap items-center gap-2 mt-2">
                           <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-slate-50 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border-2 border-slate-300 dark:border-slate-600 shadow-sm">
-                            🆔 CI: {docente.ci}
+                            CI: {docente.ci}
                           </span>
+                          {docente.carrera_nombre && (
+                            <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 border-2 border-violet-300 dark:border-violet-700 shadow-sm">
+                              Carrera: {docente.carrera_nombre}
+                            </span>
+                          )}
                           <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-2 border-blue-300 dark:border-blue-700 shadow-sm">
-                            {docente.categoria === 'catedratico' ? '👨‍🏫 Catedrático' :
-                              docente.categoria === 'adjunto' ? '👔 Adjunto' : '🎓 Asistente'}
+                            {docente.categoria === 'catedratico' ? 'Catedratico' :
+                              docente.categoria === 'adjunto' ? 'Adjunto' : 'Asistente'}
                           </span>
                           <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-2 border-green-300 dark:border-green-700 shadow-sm">
-                            {docente.dedicacion === 'tiempo_completo' ? '⏰ Tiempo Completo' :
-                              docente.dedicacion === 'horario' ? '🕐 Horario' : '⏳ Medio Tiempo'}
+                            {docente.dedicacion === 'tiempo_completo' ? 'Tiempo Completo' :
+                              docente.dedicacion === 'horario' ? 'Horario' : 'Medio Tiempo'}
                           </span>
                         </div>
                       </div>
                     </div>
 
-                    {/* Botones de acción - Solo admin */}
+                    {/* Botones de acci+�n - Solo admin */}
                     {esAdmin() && (
                       <div className="flex gap-3">
                         <button
@@ -1057,7 +1102,7 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
         ) : (
           <div className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 p-12 text-center shadow-md">
             <div className="w-20 h-20 rounded-full bg-slate-50 dark:bg-slate-700 border-2 border-slate-300 dark:border-slate-600 flex items-center justify-center mx-auto mb-4">
-              <span className="text-5xl">👨‍🏫</span>
+              <span className="text-2xl font-bold text-slate-500 dark:text-slate-300">DOC</span>
             </div>
             <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-2">
               No hay docentes registrados
@@ -1070,7 +1115,7 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
                 onClick={handleToggleCreateForm}
                 className="inline-flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105"
               >
-                <span>➕</span>
+                <span>+</span>
                 Crear Primer Docente
               </button>
             )}
@@ -1081,40 +1126,60 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
       {/* Modal Crear/Editar */}
       {showModal && docenteSeleccionado && createPortal((
         <div
-          className="fixed top-0 right-0 bottom-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          className="fixed top-0 right-0 bottom-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in"
           style={{ left: sidebarCollapsed ? '5rem' : '18rem' }}
         >
-          <div className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            {/* Header Modal */}
-            <div className="px-6 py-4 border-b-2 border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-700/50">
-              <h3 className="text-xl font-bold text-blue-600 dark:text-white flex items-center gap-2">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="bg-[#2C4AAE] px-6 py-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
                   Editar Docente
-              </h3>
+                </h2>
+              </div>
             </div>
 
-            {/* Formulario */}
-            <form onSubmit={handleUpdateSubmit} className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
-                <div className="md:col-span-2">
-                  <InputField label="Nombres" name="nombres" value={formData.nombres} onChange={handleChange} required error={errors.nombres} />
-                </div>
-                <InputField label="Apellido Paterno" name="apellido_paterno" value={formData.apellido_paterno} onChange={handleChange} required error={errors.apellido_paterno} />
-                <InputField label="Apellido Materno" name="apellido_materno" value={formData.apellido_materno} onChange={handleChange} error={errors.apellido_materno} />
-                <InputField label="Cédula de Identidad (CI)" name="ci" value={formData.ci} onChange={handleChange} required error={errors.ci} />
+            {/* Body */}
+            <form id="editar-docente-form" onSubmit={handleUpdateSubmit} className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 dark:bg-slate-900">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <InputField
+                  label="Nombre completo"
+                  name="nombre_completo"
+                  value={formData.nombre_completo}
+                  onChange={handleChange}
+                  required
+                  error={errors.nombre_completo || errors.nombres || errors.apellido_paterno || errors.apellido_materno}
+                />
+                <InputField label="Cedula de Identidad (CI)" name="ci" value={formData.ci} onChange={handleChange} required error={errors.ci} />
                 <SelectConDropdown
-                  label="Categoría"
+                  label="Carrera"
+                  name="carrera"
+                  value={formData.carrera}
+                  onChange={handleChange}
+                  options={carreras.map((c) => ({ value: c.id, label: c.nombre }))}
+                  error={errors.carrera}
+                />
+                <FechaIngresoPicker
+                  value={formData.fecha_ingreso}
+                  onChange={(val) => setFormData((prev) => ({ ...prev, fecha_ingreso: val }))}
+                  error={errors.fecha_ingreso}
+                />
+                <InputField label="Email" name="email" type="email" value={formData.email} onChange={handleChange} error={errors.email} />
+                <InputField label="Telefono" name="telefono" value={formData.telefono} onChange={handleChange} error={errors.telefono} />
+                <SelectConDropdown
+                  label="Categoria"
                   name="categoria"
                   value={formData.categoria}
                   onChange={handleChange}
                   options={[
-                    { value: 'catedratico', label: 'Catedrático' },
+                    { value: 'catedratico', label: 'Catedratico' },
                     { value: 'adjunto', label: 'Adjunto' },
                     { value: 'asistente', label: 'Asistente' },
                   ]}
                   error={errors.categoria}
                 />
                 <SelectConDropdown
-                  label="Dedicación"
+                  label="Dedicacion"
                   name="dedicacion"
                   value={formData.dedicacion}
                   onChange={handleChange}
@@ -1125,48 +1190,54 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
                   ]}
                   error={errors.dedicacion}
                 />
-                {formData.dedicacion === 'horario' ? (
-                  <InputField
-                    label="Horas Semanales por Contrato"
-                    name="horas_contrato_semanales"
-                    type="number"
-                    value={formData.horas_contrato_semanales || ''}
-                    onChange={handleChange}
-                    required
-                    error={errors.horas_contrato_semanales}
-                    placeholder="Ej: 8, 12, 16"
-                  />
-                ) : (
-                  <div>
-                    <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Horas Semanales Requeridas</label>
-                    <input
+                <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-[minmax(0,380px)_1fr] gap-4 items-start">
+                  {formData.dedicacion === 'horario' ? (
+                    <InputField
+                      label="Horas / Semana"
+                      name="horas_contrato_semanales"
                       type="number"
-                      value={formData.dedicacion === 'tiempo_completo' ? 40 : 20}
-                      disabled
-                      className="w-full px-4 py-2.5 rounded-xl border-2 bg-slate-100 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600"
+                      value={formData.horas_contrato_semanales || ''}
+                      onChange={handleChange}
+                      required={Boolean(formData.dedicacion)}
+                      error={errors.horas_contrato_semanales}
                     />
-                  </div>
-                )}
-                <InputField label="Fecha de Ingreso" name="fecha_ingreso" type="date" value={formData.fecha_ingreso} onChange={handleChange} required error={errors.fecha_ingreso} />
-                <InputField label="Email" name="email" type="email" value={formData.email} onChange={handleChange} error={errors.email} />
-                <InputField label="Teléfono" name="telefono" value={formData.telefono} onChange={handleChange} error={errors.telefono} />
-              </div>
+                  ) : (
+                    <div>
+                      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Horas / Semana</label>
+                      <div className="w-full px-3 py-2.5 rounded-xl border-2 bg-gradient-to-r from-slate-100 to-slate-50 dark:from-slate-700 dark:to-slate-700/50 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600 flex items-center justify-between min-h-[46px]">
+                        <span className="font-bold text-lg text-slate-700 dark:text-slate-300">
+                          {formData.dedicacion === 'tiempo_completo' ? 40 : formData.dedicacion === 'medio_tiempo' ? 20 : ''}
+                        </span>
+                        <span className="text-xs text-slate-400 dark:text-slate-500">hrs</span>
+                      </div>
+                    </div>
+                  )}
 
-              <div className={`mt-6 p-4 rounded-xl ${dedicacionStyles[formData.dedicacion]?.bg} border-l-4 ${dedicacionStyles[formData.dedicacion]?.border} shadow-sm`}>
-                <div className="flex items-start gap-3">
-                  <InfoIcon className={`w-6 h-6 ${dedicacionStyles[formData.dedicacion]?.icon} flex-shrink-0 mt-0.5`} />
-                  <div>
-                    <h5 className={`font-semibold ${dedicacionStyles[formData.dedicacion]?.title}`}>Información sobre Dedicación</h5>
-                    <p className={`text-sm ${dedicacionStyles[formData.dedicacion]?.text} mt-1`}>
-                      {formData.dedicacion === 'tiempo_completo' && 'La dedicación a Tiempo Completo implica un total de 40 horas semanales.'}
-                      {formData.dedicacion === 'medio_tiempo' && 'La dedicación a Medio Tiempo implica un total de 20 horas semanales.'}
-                      {formData.dedicacion === 'horario' && 'Para la dedicación por Horario, debe especificar el número de horas semanales según el contrato.'}
-                    </p>
+                  <div
+                    className={`rounded-xl border-l-4 p-3.5 shadow-sm min-h-[92px] transition-opacity ${
+                      formData.dedicacion
+                        ? `${dedicacionStyles[formData.dedicacion]?.bg} ${dedicacionStyles[formData.dedicacion]?.border} opacity-100`
+                        : 'bg-transparent border-transparent opacity-0'
+                    }`}
+                  >
+                    {formData.dedicacion && (
+                      <div className="flex items-start gap-3">
+                        <InfoIcon className={`w-5 h-5 flex-shrink-0 mt-0.5 ${dedicacionStyles[formData.dedicacion]?.icon}`} />
+                        <div>
+                          <h5 className={`text-sm font-semibold ${dedicacionStyles[formData.dedicacion]?.title}`}>Informacion sobre Dedicacion</h5>
+                          <p className={`text-xs leading-5 mt-1 ${dedicacionStyles[formData.dedicacion]?.text}`}>
+                            {formData.dedicacion === 'tiempo_completo' && 'La dedicacion a Tiempo Completo implica un total de 40 horas semanales.'}
+                            {formData.dedicacion === 'medio_tiempo' && 'La dedicacion a Medio Tiempo implica un total de 20 horas semanales.'}
+                            {formData.dedicacion === 'horario' && 'Para la dedicacion por Horario, debe especificar el numero de horas semanales segun el contrato.'}
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
 
-              <div className="mt-4 bg-slate-50 dark:bg-slate-700/30 rounded-xl p-3 border-2 border-slate-300 dark:border-slate-600">
+              <div className="bg-slate-50 dark:bg-slate-700/30 rounded-xl p-3 border-2 border-slate-300 dark:border-slate-600">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -1176,33 +1247,44 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
                     className="w-4 h-4 rounded border-2 border-slate-300 dark:border-slate-600"
                   />
                   <span className="text-sm font-medium text-slate-800 dark:text-slate-300">
-                    ✅ Docente activo
+                    Docente activo
                   </span>
                 </label>
               </div>
-
-              {/* Botones */}
-              <div className="mt-6 pt-4 border-t-2 border-slate-300 dark:border-slate-700 flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="flex-1 px-4 py-2.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-xl font-semibold transition-all duration-200 border-2 border-slate-300 dark:border-slate-600 shadow-sm hover:shadow-md hover:scale-105"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-semibold transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105"
-                >
-                  💾 Actualizar
-                </button>
-              </div>
             </form>
+
+            {/* Footer */}
+            <div className="px-6 py-4 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="px-6 py-2.5 rounded-xl font-bold text-slate-700 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 transition-all"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                form="editar-docente-form"
+                disabled={isSubmitting}
+                className="px-6 py-2.5 rounded-xl font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg hover:shadow-xl transition-all flex items-center gap-2 disabled:opacity-50"
+              >
+                {isSubmitting ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    Actualizando...
+                  </>
+                ) : (
+                  <>
+                    Actualizar
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       ), document.body)}
 
-      {/* Modal de Confirmación de Eliminación */}
+      {/* Modal de Confirmacion de Eliminacion */}
       {showDeleteModal && createPortal((
         <div
           className="fixed top-0 right-0 bottom-0 z-[70] flex items-center justify-center p-4"
@@ -1212,20 +1294,20 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
           <div className="relative w-full max-w-lg rounded-2xl border border-red-600/80 dark:border-red-700/50 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden animate-slide-up" style={{ animationDuration: '160ms' }}>
             <div className="px-5 py-4 border-b border-red-400 dark:border-slate-700/70 bg-gradient-to-r from-red-400 via-red-200 to-red-50 dark:from-red-900/30 dark:via-slate-900 dark:to-slate-900">
               <h4 className="text-lg font-bold text-red-900 dark:text-red-300 flex items-center gap-2">
-                <span>🗑️</span>
-                Confirmar Eliminación
+                <span>!</span>
+                Confirmar Eliminacion
               </h4>
             </div>
             <div className="px-5 py-4 space-y-3 text-slate-700 dark:text-slate-200">
               <p className="text-sm leading-relaxed">
-                Se eliminará el docente <strong className="text-slate-900 dark:text-white">{docenteToDelete?.nombre_completo}</strong> del sistema de forma permanente.
+                Se eliminara el docente <strong className="text-slate-900 dark:text-white">{docenteToDelete?.nombre_completo}</strong> del sistema de forma permanente.
               </p>
               <div className="rounded-lg border border-red-700/70 bg-red-200/70 dark:bg-red-500/10 px-3 py-2 text-sm text-red-900 dark:text-red-200">
-                Acción irreversible: <strong className="text-red-900 dark:text-red-300">El docente perderá su acceso definitivamente.</strong>
+                Accion irreversible: <strong className="text-red-900 dark:text-red-300">El docente perdera su acceso definitivamente.</strong>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
-                  Escribe el nombre exacto del docente para habilitar la eliminación:
+                  Escribe el nombre exacto del docente para habilitar la eliminacion:
                 </label>
                 <input
                   type="text"
@@ -1236,7 +1318,7 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
                 />
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Esta operación no se puede deshacer.
+                Esta operacion no se puede deshacer.
               </p>
             </div>
             <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-700/70 flex justify-end gap-3 bg-slate-50 dark:bg-slate-950/70">
@@ -1253,7 +1335,7 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
                 disabled={deleteConfirmText !== (docenteToDelete?.nombre_completo || '')}
                 className="px-4 py-2 rounded-lg font-bold text-white bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800 disabled:bg-red-900/40 disabled:text-slate-300 disabled:cursor-not-allowed"
               >
-                🗑️ Eliminar
+                Eliminar
               </button>
             </div>
           </div>

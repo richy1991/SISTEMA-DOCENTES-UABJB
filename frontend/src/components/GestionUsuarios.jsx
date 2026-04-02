@@ -151,6 +151,152 @@ const SelectConDropdown = ({ label, name, value, onChange, options, error, disab
   );
 };
 
+const FilterDocentes = ({
+  label,
+  name,
+  value,
+  onChange,
+  docentes,
+  error,
+  disabled = false,
+  required = false,
+  placeholder = 'Buscar docente...'
+}) => {
+  const [open, setOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const containerRef = useRef(null);
+  const inputRef = useRef(null);
+
+  const selectedDocente = docentes.find((d) => String(d.id) === String(value));
+
+  useEffect(() => {
+    if (selectedDocente?.nombre_completo) {
+      setSearchTerm(selectedDocente.nombre_completo);
+    } else if (!value) {
+      setSearchTerm('');
+    }
+  }, [value, selectedDocente]);
+
+  useEffect(() => {
+    const handleOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    if (open) {
+      document.addEventListener('mousedown', handleOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [open]);
+
+  const filteredDocentes = docentes.filter((docente) => {
+    const term = searchTerm.toLowerCase();
+    const nombre = (docente.nombre_completo || '').toLowerCase();
+    const ci = String(docente.ci || '').toLowerCase();
+    return nombre.includes(term) || ci.includes(term);
+  });
+
+  const handleInputChange = (e) => {
+    const nextValue = e.target.value;
+    setSearchTerm(nextValue);
+    setOpen(true);
+
+    if (value) {
+      onChange({ target: { name, value: '' } });
+    }
+  };
+
+  const handleButtonClick = () => {
+    if (disabled) return;
+    setOpen(!open);
+    if (!open) {
+      setTimeout(() => inputRef.current?.focus(), 0);
+    }
+  };
+
+  const handleSelectDocente = (docente) => {
+    onChange({ target: { name, value: docente.id } });
+    setSearchTerm(docente.nombre_completo || '');
+    setOpen(false);
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      {label && (
+        <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
+          {label} {required && <span className="text-red-500">*</span>}
+        </label>
+      )}
+
+      <div
+        className={`flex items-center px-4 py-3 rounded-2xl transition-all ${
+          disabled
+            ? 'cursor-not-allowed opacity-60 border-2 border-slate-400 bg-slate-100 dark:bg-slate-700'
+            : error
+              ? 'border-2 border-red-500 bg-white dark:bg-slate-800'
+              : open
+                ? 'border-2 border-[#2C4AAE] bg-white dark:bg-slate-800'
+                : 'border-2 border-slate-400 bg-slate-100 dark:bg-slate-700 hover:border-[#2C4AAE]'
+        }`}
+      >
+        <input
+          ref={inputRef}
+          type="text"
+          value={searchTerm}
+          onChange={handleInputChange}
+          onFocus={() => !disabled && setOpen(true)}
+          placeholder={placeholder}
+          disabled={disabled}
+          className="flex-1 bg-transparent text-slate-800 dark:text-white focus:outline-none text-sm placeholder-slate-400 dark:placeholder-slate-500"
+        />
+
+        <button
+          type="button"
+          onClick={handleButtonClick}
+          disabled={disabled}
+          className="w-8 h-8 bg-[#2C4AAE] hover:bg-[#1a3a8a] rounded-lg flex items-center justify-center transition-colors flex-shrink-0 ml-2 disabled:opacity-70"
+        >
+          <svg
+            className={`w-4 h-4 text-white transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+      </div>
+
+      {open && !disabled && (
+        <div className="absolute z-50 mt-2 w-full rounded-xl border-2 border-[#2C4AAE] bg-white dark:bg-slate-800 shadow-xl max-h-64 overflow-auto">
+          {filteredDocentes.length > 0 ? (
+            filteredDocentes.map((docente) => (
+              <button
+                key={docente.id}
+                type="button"
+                onClick={() => handleSelectDocente(docente)}
+                className="w-full text-left px-4 py-3 text-sm transition-colors text-slate-700 dark:text-slate-300 hover:bg-[#2C4AAE] hover:text-white border-b border-slate-200 dark:border-slate-700 last:border-b-0"
+              >
+                <div className="font-semibold">{docente.nombre_completo}</div>
+              </button>
+            ))
+          ) : searchTerm ? (
+            <div className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400 text-center">
+              No hay docentes que coincidan
+            </div>
+          ) : (
+            <div className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400 text-center">
+              Escribe para buscar docentes
+            </div>
+          )}
+        </div>
+      )}
+
+      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+    </div>
+  );
+};
+
 const ToggleSwitch = ({ isActive, onChange, disabled = false }) => (
   <button
     type="button"
@@ -304,6 +450,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
   const [abrirModalAlVolver, setAbrirModalAlVolver] = useState(false);
+  const [vinculacionRapidaDocente, setVinculacionRapidaDocente] = useState(false);
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [usuarioToDelete, setUsuarioToDelete] = useState(null);
@@ -359,13 +506,14 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
       if (docente) {
         restoringLinkRef.current = true;
         restoringFormRef.current = true;
+        setVinculacionRapidaDocente(true);
         setFormData({
           username: '',
           email: datos.email || '',
           first_name: datos.first_name || '',
           last_name: datos.last_name || '',
           rol: 'docente',
-          carrera: '',
+          carrera: datos.carrera || docente.carrera_id || docente.carrera || '',
           docente: docente.id,
           password: '',
           password_confirm: '',
@@ -504,6 +652,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
         password_confirm: '',
       };
       setFormData(initialData);
+      setVinculacionRapidaDocente(false);
       setCrearNuevoDocente(false);
       setErrors({});
     }
@@ -511,6 +660,9 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
 
   const handleToggleCreateForm = () => {
     sessionStorage.removeItem('datosEditarUsuario');
+    if (isCreating) {
+      setVinculacionRapidaDocente(false);
+    }
     setIsCreating(!isCreating);
     setUsuarioEditando(null); // Ensure we are not in edit mode
   };
@@ -597,6 +749,8 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
   };
 
   const handleRolChange = (e) => {
+    if (vinculacionRapidaDocente) return;
+
     const newRol = e.target.value;
     const esAdminCarrera = user?.perfil?.rol === 'admin' && !user?.is_superuser;
     const carreraDefault = esAdminCarrera ? user?.perfil?.carrera : '';
@@ -607,7 +761,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
       // Admin de carrera siempre mantiene su carrera, otros roles la pierden al cambiar
       carrera: (newRol === 'director' || newRol === 'jefe_estudios' || newRol === 'admin') 
         ? (esAdminCarrera ? user?.perfil?.carrera : prev.carrera) 
-        : '',
+        : (newRol === 'docente' ? prev.carrera : ''),
       docente: newRol !== 'docente' ? '' : prev.docente,
     }));
     if (newRol !== 'docente') {
@@ -638,6 +792,17 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
     setIsSubmitting(true);
     setErrors({});
 
+    const docenteId = Number(formData.docente);
+    if (formData.rol === 'docente' && (!docenteId || Number.isNaN(docenteId))) {
+      setErrors((prev) => ({
+        ...prev,
+        docente: ['Debe seleccionar un docente para vincular.'],
+      }));
+      toast.error('Debe seleccionar un docente para vincular.');
+      setIsSubmitting(false);
+      return;
+    }
+
     let payload = {
       username: formData.username,
       email: formData.email,
@@ -651,8 +816,12 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
     // Admin, Director y Jefe de Estudios deben enviar carrera
     if (formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') {
       payload.carrera = formData.carrera;
-    } else if (formData.rol === 'docente') {
-      payload.docente = formData.docente;
+    }
+    if (formData.rol === 'docente') {
+      payload.docente = docenteId;
+      if (formData.carrera) {
+        payload.carrera = formData.carrera;
+      }
     }
 
     try {
@@ -758,8 +927,14 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
                         onChange={handleRolChange}
                         options={roles.map(rol => ({ value: rol.value, label: rol.label }))}
                         error={errors.rol}
+                        disabled={vinculacionRapidaDocente}
                         required
                       />
+                      {vinculacionRapidaDocente && (
+                        <p className="text-xs text-blue-600 dark:text-blue-300 mt-1">
+                          Vinculo rapido desde "Sin Cuenta": rol bloqueado en Docente.
+                        </p>
+                      )}
                     </div>
 
                     {/* Carrera para admin/director/jefe_estudios - a la derecha de Rol */}
@@ -781,15 +956,21 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
                     {/* Vincular a Docente Existente - solo para rol docente */}
                     {formData.rol === 'docente' && !crearNuevoDocente && (
                       <div>
-                        <SelectConDropdown
+                        <FilterDocentes
                           label="Vincular a Docente Existente"
                           name="docente"
                           value={formData.docente}
                           onChange={handleChange}
-                          options={docentes.map(d => ({ value: d.id, label: d.nombre_completo }))}
-                          error={errors.docente}
-                          placeholder="Seleccione un docente"
+                          docentes={docentes}
+                          error={errors.docente?.[0] || errors.docente}
+                          disabled={vinculacionRapidaDocente}
+                          placeholder="Buscar docente..."
                         />
+                        {vinculacionRapidaDocente && (
+                          <p className="text-xs text-blue-600 dark:text-blue-300 mt-1">
+                            Docente bloqueado para completar el vinculo directo.
+                          </p>
+                        )}
                       </div>
                     )}
 
@@ -819,7 +1000,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
                     )}
 
                     {/* Opción para docente */}
-                    {formData.rol === 'docente' && (
+                    {formData.rol === 'docente' && !vinculacionRapidaDocente && (
                       <div className="md:col-span-2">
                         <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
                           Crear nuevo registro de docente
@@ -853,7 +1034,10 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
                 <div className="px-6 py-4 bg-slate-100 dark:bg-slate-700 border-t border-slate-300 dark:border-slate-600 flex justify-end gap-3 rounded-b-2xl">
                   <button
                     type="button"
-                    onClick={() => setIsCreating(false)}
+                    onClick={() => {
+                      setIsCreating(false);
+                      setVinculacionRapidaDocente(false);
+                    }}
                     className="px-6 py-2.5 rounded-xl font-semibold text-slate-700 dark:text-slate-200 bg-slate-200 dark:bg-slate-600 hover:bg-slate-300 dark:hover:bg-slate-500 transition-all"
                   >
                     Cancelar

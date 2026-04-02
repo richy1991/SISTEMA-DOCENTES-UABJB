@@ -1962,22 +1962,8 @@ class UsuarioViewSet(viewsets.ModelViewSet):
                 # PASO D: Borrar Historial de Fondo (PROTECT)
                 HistorialFondo.objects.filter(usuario=user).delete()
 
-                # PASO E: DESVINCULAR Docente (NO BORRAR) - Solo poner en NULL
-                if docente:
-                    # Actualizar el perfil para que docente quede como huérfano
-                    user.perfil.docente = None
-                    user.perfil.save(update_fields=['docente'])
-                    # También limpiar la relación inversa en Docente si existe
-                    if hasattr(docente, 'usuario'):
-                        docente.usuario = None
-                        docente.save(update_fields=['usuario'])
-                    logger.info(f"Docente {docente.id} desvinculado")
-
-                # PASO F: Borrar PerfilUsuario
-                PerfilUsuario.objects.filter(user=user).delete()
-                logger.info(f"PerfilUsuario de {user.username} eliminado")
-
-                # PASO G: Ahora sí, borrar el usuario
+                # PASO E: Borrar el usuario.
+                # El perfil queda intacto con user = NULL para conservar carrera y demás datos del docente.
                 user_id = user.id
                 user.delete()
                 logger.info(f"Usuario {user.username} (ID: {user_id}) eliminado exitosamente")

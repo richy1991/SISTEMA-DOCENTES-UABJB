@@ -172,7 +172,7 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
       // Admin de carrera siempre mantiene su carrera, otros roles la pierden al cambiar
       carrera: (newRol === 'admin' || newRol === 'director' || newRol === 'jefe_estudios') 
         ? (esAdminCarrera ? currentUser?.perfil?.carrera : prev.carrera) 
-        : '',
+        : (newRol === 'docente' ? prev.carrera : ''),
       docente: newRol === 'docente' ? prev.docente : '',
     }));
     if (newRol !== 'docente') {
@@ -200,6 +200,7 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
         apellido_materno: apellidos.slice(1).join(' '),
         email: formData.email || '',
         telefono: '',
+        carrera: formData.carrera || '',
       })
     );
     sessionStorage.setItem('abrirModalDesdeUsuarios', 'true');

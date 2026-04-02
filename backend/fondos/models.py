@@ -173,6 +173,9 @@ class Carrera(models.Model):
     nombre = models.CharField(max_length=200, unique=True)
     codigo = models.CharField(max_length=20, unique=True)
     facultad = models.CharField(max_length=200)
+    logo_carrera = models.ImageField(upload_to='carreras/', null=True, blank=True)
+    logo_carrera_cifrada = models.BinaryField(null=True, blank=True, editable=False)
+    logo_carrera_mime = models.CharField(max_length=64, blank=True, default='')
     activo = models.BooleanField(default=True)
     
     class Meta:
@@ -182,6 +185,52 @@ class Carrera(models.Model):
     
     def __str__(self):
         return f"{self.nombre} - {self.facultad}"
+
+    @staticmethod
+    def _get_cipher():
+        key_from_env = getattr(settings, 'PROFILE_IMAGE_ENCRYPTION_KEY', '')
+        if key_from_env:
+            key = key_from_env.encode('utf-8') if isinstance(key_from_env, str) else key_from_env
+        else:
+            digest = hashlib.sha256(settings.SECRET_KEY.encode('utf-8')).digest()
+            key = base64.urlsafe_b64encode(digest)
+        return Fernet(key)
+
+    def set_logo_carrera_cifrada(self, uploaded_file):
+        image_bytes = uploaded_file.read()
+        if not image_bytes:
+            raise ValidationError("La imagen está vacía.")
+
+        mime_type = getattr(uploaded_file, 'content_type', '') or 'image/jpeg'
+        encrypted = self._get_cipher().encrypt(image_bytes)
+
+        self.logo_carrera_cifrada = encrypted
+        self.logo_carrera_mime = mime_type
+
+        # Compatibilidad: limpiar almacenamiento físico anterior.
+        if self.logo_carrera and self.logo_carrera.name:
+            self.logo_carrera.delete(save=False)
+        self.logo_carrera = None
+
+    def clear_logo_carrera(self):
+        if self.logo_carrera and self.logo_carrera.name:
+            self.logo_carrera.delete(save=False)
+        self.logo_carrera = None
+        self.logo_carrera_cifrada = None
+        self.logo_carrera_mime = ''
+
+    def get_logo_carrera_data_uri(self):
+        if not self.logo_carrera_cifrada:
+            return None
+
+        try:
+            decrypted = self._get_cipher().decrypt(bytes(self.logo_carrera_cifrada))
+        except InvalidToken:
+            return None
+
+        b64_image = base64.b64encode(decrypted).decode('ascii')
+        mime = self.logo_carrera_mime or 'image/jpeg'
+        return f"data:{mime};base64,{b64_image}"
 
 
 class Materia(models.Model):
@@ -1001,7 +1050,7 @@ class PerfilUsuario(models.Model):
         ('docente', 'Docente'),
     ]
 
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='perfil')
+    user = models.OneToOneField(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='perfil')
     docente = models.OneToOneField(Docente, on_delete=models.SET_NULL, null=True, blank=True, related_name='usuario')
     ci = models.CharField(max_length=20, blank=True, null=True, unique=True, verbose_name='Cedula de Identidad')
     rol = models.CharField(max_length=20, choices=ROLES, default='docente')
@@ -1036,7 +1085,8 @@ class PerfilUsuario(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.user.username} - {self.get_rol_display()}"
+        username = self.user.username if self.user else 'Sin usuario'
+        return f"{username} - {self.get_rol_display()}"
 
     @staticmethod
     def _get_cipher():
@@ -1072,17 +1122,29 @@ class PerfilUsuario(models.Model):
         self.foto_perfil_mime = ''
 
     def get_foto_perfil_data_uri(self):
-        if not self.foto_perfil_cifrada:
-            return None
-
-        try:
-            decrypted = self._get_cipher().decrypt(bytes(self.foto_perfil_cifrada))
-        except InvalidToken:
-            return None
-
-        b64_image = base64.b64encode(decrypted).decode('ascii')
-        mime = self.foto_perfil_mime or 'image/jpeg'
-        return f"data:{mime};base64,{b64_image}"
+        # Intenta primero con la foto propia del usuario
+        if self.foto_perfil_cifrada:
+            try:
+                decrypted = self._get_cipher().decrypt(bytes(self.foto_perfil_cifrada))
+                b64_image = base64.b64encode(decrypted).decode('ascii')
+                mime = self.foto_perfil_mime or 'image/jpeg'
+                return f"data:{mime};base64,{b64_image}"
+            except InvalidToken:
+                pass
+        
+        # Si no tiene foto propia, intenta usar la de su carrera asignada
+        if self.carrera and self.carrera.logo_carrera_cifrada:
+            try:
+                # Usa el mismo cipher para desencriptar el logo de carrera
+                decrypted = self._get_cipher().decrypt(bytes(self.carrera.logo_carrera_cifrada))
+                b64_image = base64.b64encode(decrypted).decode('ascii')
+                mime = self.carrera.logo_carrera_mime or 'image/jpeg'
+                return f"data:{mime};base64,{b64_image}"
+            except InvalidToken:
+                pass
+        
+        # Sin foto propia ni carrera asignada, devuelve None
+        return None
 
 
 @receiver(post_save, sender=User)
