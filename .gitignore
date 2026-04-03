@@ -12,6 +12,7 @@ backend/venv/
 
 # Database
 # backend/db.sqlite3  # base de datos de desarrollo — rastreada intencionalmente
+backend/backups/
 
 # Media files
 backend/media/

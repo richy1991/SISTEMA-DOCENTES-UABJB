@@ -30,19 +30,19 @@ import FondosArchivados from './components/FondosArchivados';
 import ListaDocentes from './components/ListaDocentes';
 import ListaCarreras from './components/ListaCarreras';
 import ListaCalendarios from './components/ListaCalendarios';
-import MateriaList from './components/MateriaList';
-import MateriaForm from './components/MateriaForm';
+import MateriaList from './components/materias/MateriaList';
+import MateriaForm from './components/materias/MateriaForm';
 import VistaCalendarioActivo from './VistaCalendarioActivo';
 import Proximamente from './components/Proximamente';
 import FondosLargoPlazo from './components/FondosLargoPlazo';
 import SeguimientoGlobal from './components/SeguimientoGlobal';
 import AdminPanel from './components/AdminPanel';
-import SimpleLayout from './components/SimpleLayout';
+import SimpleLayout from './components/layouts/SimpleLayout';
 import AdminDashboard from './components/AdminDashboard';
 import CambiarPassword from './components/CambiarPassword';
 import CargaHorariaGeneral from './components/CargaHorariaGeneral';
 import FondoTiempoDocente from './components/FondoTiempoDocente';
-import ErrorVinculoDocente from './components/ErrorVinculoDocente';
+import ErrorVinculoDocente from './components/common/ErrorVinculoDocente';
 import './App.css';
 
 // Componente wrapper para aplicar una animación de entrada a las páginas

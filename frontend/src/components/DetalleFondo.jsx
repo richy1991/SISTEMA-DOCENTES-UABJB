@@ -13,8 +13,8 @@ import FormularioEvaluarInforme from './FormularioEvaluarInforme';
 import ThemeToggle from './ThemeToggle';
 import CargaHorariaManager from './CargaHorariaManager';
 import toast from 'react-hot-toast';
-import EstadoTimeline from './EstadoTimeline';
-import TimelineObservaciones from './TimelineObservaciones';
+import EstadoTimeline from './fondos/EstadoTimeline';
+import TimelineObservaciones from './fondos/TimelineObservaciones';
 import PDFPreviewModal from './PDFPreviewModal';
 import { Eye, CheckCircle2, FileDown, ChevronLeft, ChevronRight } from 'lucide-react';
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FaEdit, FaTrash } from 'react-icons/fa';
-import api from '../apis/api';
+import api from '../../apis/api';
 import { Link, Outlet } from 'react-router-dom';
 import toast from 'react-hot-toast';
 

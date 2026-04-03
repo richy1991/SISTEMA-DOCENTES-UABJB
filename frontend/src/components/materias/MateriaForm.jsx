@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import api from '../apis/api';
+import api from '../../apis/api';
 import toast from 'react-hot-toast';
 import { AnimatePresence, motion } from 'framer-motion';
 
