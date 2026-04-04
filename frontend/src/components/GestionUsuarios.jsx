@@ -111,7 +111,7 @@ const SelectConDropdown = ({ label, name, value, onChange, options, error, disab
                 : 'border-2 border-slate-400 bg-slate-100 dark:bg-slate-700 hover:border-[#2C4AAE]'
         }`}
       >
-        <span className={`${selectedLabel ? 'text-slate-800 dark:text-white font-semibold' : 'text-slate-400 dark:text-slate-500'}`}>
+        <span className={`${selectedLabel ? 'text-slate-800 dark:text-white font-semibold text-sm leading-tight' : 'text-slate-400 dark:text-slate-500'}`}>
           {selectedLabel || placeholder}
         </span>
         <div className="w-8 h-8 bg-[#2C4AAE] hover:bg-[#1a3a8a] rounded-lg flex items-center justify-center transition-colors">
@@ -317,14 +317,17 @@ const ToggleSwitch = ({ isActive, onChange, disabled = false }) => (
 );
 
 // Dropdown simple estilo "Seleccione..."
-const SimpleDropdown = ({ label, value, onChange, options, placeholder = 'Carreras' }) => {
+const SimpleDropdown = ({ label, value, onChange, options, placeholder = 'Carreras', clearOnToggle = false }) => {
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
   const containerRef = useRef(null);
+  const inputRef = useRef(null);
 
   useEffect(() => {
     const handleOutside = (event) => {
       if (containerRef.current && !containerRef.current.contains(event.target)) {
         setOpen(false);
+        setSearch('');
       }
     };
     if (open) {
@@ -333,7 +336,16 @@ const SimpleDropdown = ({ label, value, onChange, options, placeholder = 'Carrer
     return () => document.removeEventListener('mousedown', handleOutside);
   }, [open]);
 
+  useEffect(() => {
+    if (open) {
+      setTimeout(() => inputRef.current?.focus(), 0);
+    }
+  }, [open]);
+
   const selectedLabel = options.find(opt => opt.value === value)?.label;
+  const filteredOptions = options.filter((option) =>
+    option.label.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <div ref={containerRef} className="relative">
@@ -342,10 +354,18 @@ const SimpleDropdown = ({ label, value, onChange, options, placeholder = 'Carrer
       </label>
       <button
         type="button"
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          if (clearOnToggle) {
+            onChange('');
+          }
+          setOpen(!open);
+          if (open) {
+            setSearch('');
+          }
+        }}
         className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border-2 border-transparent focus:border-blue-500 rounded-2xl text-left flex items-center justify-between transition-all"
       >
-        <span className={`${selectedLabel ? 'text-slate-800 dark:text-white font-semibold' : 'text-slate-400 dark:text-slate-500'}`}>
+        <span className={`${selectedLabel ? 'text-slate-800 dark:text-white font-semibold text-sm leading-tight' : 'text-slate-400 dark:text-slate-500'}`}>
           {selectedLabel || placeholder}
         </span>
         <div className="w-8 h-8 bg-[#2C4AAE] hover:bg-[#1a3a8a] rounded-lg flex items-center justify-center transition-colors">
@@ -361,13 +381,24 @@ const SimpleDropdown = ({ label, value, onChange, options, placeholder = 'Carrer
       </button>
       {open && (
         <div className="absolute z-40 mt-1 w-full rounded-xl border-2 border-[#2C4AAE] bg-white dark:bg-slate-800 shadow-xl max-h-48 overflow-auto">
-          {options.map((option) => (
+          <div className="p-2 border-b border-slate-200 dark:border-slate-700">
+            <input
+              ref={inputRef}
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar carrera..."
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-sm text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          {filteredOptions.map((option) => (
             <button
               key={option.value}
               type="button"
               onClick={() => {
-                onChange({ target: { value: option.value } });
+                onChange(option.value);
                 setOpen(false);
+                setSearch('');
               }}
               className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
                 value === option.value
@@ -378,6 +409,11 @@ const SimpleDropdown = ({ label, value, onChange, options, placeholder = 'Carrer
               {option.label}
             </button>
           ))}
+          {filteredOptions.length === 0 && (
+            <div className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400 text-center">
+              No hay carreras que coincidan
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -459,9 +495,8 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
   const [showToggleModal, setShowToggleModal] = useState(false);
   const [usuarioToToggle, setUsuarioToToggle] = useState(null);
   const [showOnlyOrphans, setShowOnlyOrphans] = useState(false);
-  const [sortField, setSortField] = useState('username');
-  const [sortDirection, setSortDirection] = useState('asc');
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCarrera, setSelectedCarrera] = useState('');
   
   // Usuarios huerfanos: sin perfil o con rol docente sin docente vinculado
   const esUsuarioHuerfano = (u) => !u?.perfil || (u.perfil?.rol === 'docente' && !u.perfil?.docente_id);
@@ -577,17 +612,12 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
     }
   };
 
-  const handleSort = (field) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDirection('asc');
-    }
-  };
-
   const usuariosFiltrados = (() => {
     let result = showOnlyOrphans ? usuarios.filter(esUsuarioHuerfano) : usuarios;
+
+    if (selectedCarrera) {
+      result = result.filter((usuario) => String(usuario?.perfil?.carrera || '') === String(selectedCarrera));
+    }
 
     // Filtrar por término de búsqueda (nombre o C.I.)
     if (searchTerm) {
@@ -746,6 +776,14 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
 
       return updated;
     });
+
+    // Limpia el error del campo al escribir para feedback inmediato
+    setErrors((prev) => {
+      if (!prev?.[name]) return prev;
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
   };
 
   const handleRolChange = (e) => {
@@ -753,7 +791,6 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
 
     const newRol = e.target.value;
     const esAdminCarrera = user?.perfil?.rol === 'admin' && !user?.is_superuser;
-    const carreraDefault = esAdminCarrera ? user?.perfil?.carrera : '';
     
     setFormData(prev => ({
       ...prev,
@@ -792,6 +829,19 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
     setIsSubmitting(true);
     setErrors({});
 
+    const esUsuarioSistema = ['admin', 'director', 'jefe_estudios'].includes(formData.rol);
+    const ciNormalizado = (formData.ci || '').trim();
+
+    if (esUsuarioSistema && !ciNormalizado) {
+      setErrors((prev) => ({
+        ...prev,
+        ci: ['El C.I. es obligatorio para este tipo de usuario.'],
+      }));
+      toast.error('El C.I. es obligatorio para este tipo de usuario.');
+      setIsSubmitting(false);
+      return;
+    }
+
     const docenteId = Number(formData.docente);
     if (formData.rol === 'docente' && (!docenteId || Number.isNaN(docenteId))) {
       setErrors((prev) => ({
@@ -816,6 +866,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
     // Admin, Director y Jefe de Estudios deben enviar carrera
     if (formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') {
       payload.carrera = formData.carrera;
+      payload.ci = ciNormalizado;
     }
     if (formData.rol === 'docente') {
       payload.docente = docenteId;
@@ -834,8 +885,15 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
       const apiErrors = err.response?.data;
       if (apiErrors) {
         setErrors(apiErrors);
-        const errorMsg = Object.values(apiErrors).flat().join(' ');
-        toast.error(`Error: ${errorMsg}`);
+        const ciMsg = Array.isArray(apiErrors?.ci)
+          ? apiErrors.ci[0]
+          : (typeof apiErrors?.ci === 'string' ? apiErrors.ci : null);
+        if (ciMsg) {
+          toast.error(`C.I.: ${ciMsg}`);
+        } else {
+          const errorMsg = Object.values(apiErrors).flat().join(' ');
+          toast.error(`Error: ${errorMsg}`);
+        }
       } else {
         toast.error('Ocurrió un error inesperado.');
       }
@@ -843,6 +901,10 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
       setIsSubmitting(false);
     }
   };
+
+  const ciError = Array.isArray(errors?.ci)
+    ? errors.ci[0]
+    : (typeof errors?.ci === 'string' ? errors.ci : null);
 
   if (loading) {
     return (
@@ -874,10 +936,11 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
               <div className="w-48">
                 <SimpleDropdown
                   label=""
-                  value=""
-                  onChange={() => {}}
+                  value={selectedCarrera}
+                  onChange={setSelectedCarrera}
                   options={carreras.map(c => ({ value: c.id, label: c.nombre }))}
                   placeholder="Carreras"
+                  clearOnToggle
                 />
               </div>
               <button
@@ -979,15 +1042,17 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
                       <div className="md:col-span-2">
                         <div className="grid grid-cols-2 gap-4">
                           <div>
-                            <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">C.I.</label>
+                            <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">C.I. <span className="text-red-500">*</span></label>
                             <input
                               type="text"
                               name="ci"
                               value={formData.ci || ''}
                               onChange={handleChange}
-                              className="w-full px-4 py-3 rounded-xl border-2 border-slate-400 dark:border-slate-600 bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              className={`w-full px-4 py-3 rounded-xl border-2 bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                ciError ? 'border-red-500 dark:border-red-500' : 'border-slate-400 dark:border-slate-600'
+                              }`}
                             />
-                            {errors.ci && <p className="text-xs text-red-600 mt-1">{errors.ci}</p>}
+                            {ciError && <p className="text-xs text-red-600 mt-1">{ciError}</p>}
                           </div>
                           <div>
                             <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Contraseña inicial</label>
@@ -1060,8 +1125,14 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
         <ModalUsuario
           isOpen={showModal}
           onClose={() => setShowModal(false)}
-          onSaveSuccess={() => {
+          onSaveSuccess={(usuarioActualizado) => {
             setShowModal(false);
+            if (usuarioActualizado?.id) {
+              setUsuarios((prev) => prev.map((usuario) => (
+                usuario.id === usuarioActualizado.id ? usuarioActualizado : usuario
+              )));
+              setUsuarioEditando(usuarioActualizado);
+            }
             cargarDatos();
           }}
           userToEdit={usuarioEditando}

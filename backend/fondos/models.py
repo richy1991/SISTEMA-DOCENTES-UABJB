@@ -173,10 +173,16 @@ class Carrera(models.Model):
     nombre = models.CharField(max_length=200, unique=True)
     codigo = models.CharField(max_length=20, unique=True)
     facultad = models.CharField(max_length=200)
+    mision = models.TextField(blank=True, default='')
+    vision = models.TextField(blank=True, default='')
+    perfil_profesional = models.TextField(blank=True, default='', help_text='Descripción del perfil profesional del egresado')
+    objetivo_carrera = models.TextField(blank=True, default='', help_text='Objetivo general de la carrera')
+    responsable = models.CharField(max_length=200, blank=True, default='', help_text='Nombre/cargo del responsable de la carrera')
     logo_carrera = models.ImageField(upload_to='carreras/', null=True, blank=True)
     logo_carrera_cifrada = models.BinaryField(null=True, blank=True, editable=False)
     logo_carrera_mime = models.CharField(max_length=64, blank=True, default='')
     activo = models.BooleanField(default=True)
+    fecha_actualizacion = models.DateTimeField(auto_now=True)
     
     class Meta:
         verbose_name = "Carrera"
@@ -1157,9 +1163,9 @@ def crear_perfil_usuario(sender, instance, created, **kwargs):
 
 @receiver(post_save, sender=User)
 def guardar_perfil_usuario(sender, instance, **kwargs):
-    if hasattr(instance, 'perfil'):
-        instance.perfil.activo = instance.is_active
-        instance.perfil.save()
+    # Sincroniza solo el campo 'activo' para no sobrescribir rol/carrera/docente
+    # con un objeto de perfil cacheado y desactualizado.
+    PerfilUsuario.objects.filter(user=instance).update(activo=instance.is_active)
 
 @receiver(post_save, sender=Actividad)
 @receiver(post_delete, sender=Actividad)

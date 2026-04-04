@@ -409,6 +409,149 @@ const InputField = ({ label, name, type = 'text', value, onChange, required, err
   </div>
 );
 
+const SimpleDropdown = ({ value, onChange, options, placeholder = 'Carreras', clearOnToggle = false }) => {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const containerRef = React.useRef(null);
+  const inputRef = React.useRef(null);
+
+  useEffect(() => {
+    const handleOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setOpen(false);
+        setSearch('');
+      }
+    };
+    if (open) {
+      document.addEventListener('mousedown', handleOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [open]);
+
+  useEffect(() => {
+    if (open) {
+      setTimeout(() => inputRef.current?.focus(), 0);
+    }
+  }, [open]);
+
+  const selectedLabel = options.find((opt) => String(opt.value) === String(value))?.label;
+  const filteredOptions = options.filter((option) =>
+    option.label.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => {
+          if (clearOnToggle) {
+            onChange('');
+          }
+          setOpen(!open);
+          if (open) {
+            setSearch('');
+          }
+        }}
+        className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border-2 border-transparent focus:border-blue-500 rounded-2xl text-left flex items-center justify-between transition-all"
+      >
+        <span className={`${selectedLabel ? 'text-slate-800 dark:text-white font-semibold text-sm leading-tight' : 'text-slate-400 dark:text-slate-500'}`}>
+          {selectedLabel || placeholder}
+        </span>
+        <div className="w-8 h-8 bg-[#2C4AAE] hover:bg-[#1a3a8a] rounded-lg flex items-center justify-center transition-colors">
+          <svg
+            className={`w-4 h-4 text-white transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </button>
+      {open && (
+        <div className="absolute z-40 mt-1 w-full rounded-xl border-2 border-[#2C4AAE] bg-white dark:bg-slate-800 shadow-xl max-h-48 overflow-auto">
+          <div className="p-2 border-b border-slate-200 dark:border-slate-700">
+            <input
+              ref={inputRef}
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar carrera..."
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-sm text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          {filteredOptions.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => {
+                onChange(option.value);
+                setOpen(false);
+                setSearch('');
+              }}
+              className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                String(value) === String(option.value)
+                  ? 'bg-[#2C4AAE] text-white font-semibold'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-[#2C4AAE] hover:text-white'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+          {filteredOptions.length === 0 && (
+            <div className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400 text-center">
+              No hay carreras que coincidan
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const SearchInput = ({ value, onChange, placeholder = 'Buscar por nombre o C.I....' }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const inputRef = React.useRef(null);
+
+  useEffect(() => {
+    if (isExpanded && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [isExpanded]);
+
+  const handleBlur = () => {
+    if (!value) {
+      setIsExpanded(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2 flex-row-reverse">
+      <button
+        type="button"
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="p-2.5 bg-[#2C4AAE] hover:bg-[#1a3a8a] text-white rounded-xl transition-all duration-300 hover:scale-110"
+        title="Buscar docente"
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+      </button>
+      <div className={`transition-all duration-300 overflow-hidden ${isExpanded ? 'w-64 opacity-100' : 'w-0 opacity-0'}`}>
+        <input
+          ref={inputRef}
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onBlur={handleBlur}
+          placeholder={placeholder}
+          className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border-2 border-[#2C4AAE] rounded-xl text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none transition-all"
+        />
+      </div>
+    </div>
+  );
+};
+
 const dedicacionStyles = {
   tiempo_completo: {
     bg: 'bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20',
@@ -433,7 +576,7 @@ const dedicacionStyles = {
   },
 };
 
-function ListaDocentes({ isDark, sidebarCollapsed = false }) {
+function ListaDocentes({ sidebarCollapsed = false }) {
   const splitNombreCompleto = (nombreCompleto) => {
     const partes = (nombreCompleto || '').trim().split(/\s+/).filter(Boolean);
 
@@ -495,7 +638,8 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
   // State for inline creation form
   const [isCreating, setIsCreating] = useState(false);
   const [abrirDesdeUsuarios, setAbrirDesdeUsuarios] = useState(false);
-  const [showOnlyOrphans, setShowOnlyOrphans] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCarrera, setSelectedCarrera] = useState('');
 
   useEffect(() => {
     cargarDocentes();
@@ -799,9 +943,26 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
   };
 
   const esAdmin = () => user?.is_superuser || user?.perfil?.rol === 'admin';
-  const docentesFiltrados = showOnlyOrphans
-    ? docentes.filter((docente) => !docente.usuario_email)
-    : docentes;
+  const docentesFiltrados = (() => {
+    let result = docentes;
+
+    if (selectedCarrera) {
+      result = result.filter((docente) => String(docente?.carrera_id || '') === String(selectedCarrera));
+    }
+
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase().trim();
+      result = result.filter((docente) => {
+        const nombre = `${docente.nombres || ''} ${docente.apellido_paterno || ''} ${docente.apellido_materno || ''}`
+          .toLowerCase()
+          .trim();
+        const ci = String(docente.ci || '').toLowerCase();
+        return nombre.includes(searchLower) || ci.includes(searchLower);
+      });
+    }
+
+    return result;
+  })();
 
   if (loading) {
     return (
@@ -841,17 +1002,16 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
               </p>
             </div>
             <div className="flex items-center gap-4">
-              <button
-                type="button"
-                onClick={() => setShowOnlyOrphans((prev) => !prev)}
-                className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-all ${
-                  showOnlyOrphans
-                    ? 'bg-red-100 text-red-700 border-red-300 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700'
-                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-600 dark:hover:bg-slate-700'
-                }`}
-              >
-                {showOnlyOrphans ? 'Ver todos' : 'Ver huerfanos'}
-              </button>
+              <SearchInput value={searchTerm} onChange={setSearchTerm} />
+              <div className="w-48">
+                <SimpleDropdown
+                  value={selectedCarrera}
+                  onChange={setSelectedCarrera}
+                  options={carreras.map((c) => ({ value: c.id, label: c.nombre }))}
+                  placeholder="Carreras"
+                  clearOnToggle
+                />
+              </div>
               {esAdmin() && (
                 <button
                   onClick={handleToggleCreateForm}
@@ -1105,10 +1265,10 @@ function ListaDocentes({ isDark, sidebarCollapsed = false }) {
               <span className="text-2xl font-bold text-slate-500 dark:text-slate-300">DOC</span>
             </div>
             <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-2">
-              No hay docentes registrados
+              {docentes.length > 0 ? 'No hay docentes que coincidan' : 'No hay docentes registrados'}
             </h3>
             <p className="text-slate-600 dark:text-slate-400 mb-6">
-              Comienza agregando tu primer docente
+              {docentes.length > 0 ? 'Prueba otro nombre, C.I. o carrera' : 'Comienza agregando tu primer docente'}
             </p>
             {esAdmin() && (
               <button

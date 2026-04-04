@@ -249,17 +249,53 @@ class SaldoVacacionesGestionViewSet(viewsets.ModelViewSet):
 
 
 class CarreraViewSet(viewsets.ModelViewSet):
-    queryset = Carrera.objects.filter(activo=True)
+    queryset = Carrera.objects.all()
     serializer_class = CarreraSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [filters.SearchFilter]
     search_fields = ['nombre', 'codigo', 'facultad']
 
+    def get_queryset(self):
+        queryset = Carrera.objects.all()
+        user = self.request.user
+
+        # Usuarios con permisos de gestión deben ver activas e inactivas.
+        if self._is_superuser(user) or self._can_edit_logo_only(user):
+            return queryset
+
+        # Para el resto, mantener solo carreras activas.
+        return queryset.filter(activo=True)
+
     def get_permissions(self):
-        # Configuración global de carreras: solo admin real.
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsFullAdmin()]
+        # Crear y eliminar carreras: solo superusuario.
+        if self.action in ['create', 'destroy']:
+            return [IsAuthenticated()]
+
+        # Actualizar carreras: permitido para autenticados,
+        # pero con validación fina por rol en update/partial_update.
+        if self.action in ['update', 'partial_update']:
+            return [IsAuthenticated()]
+
         return [IsAuthenticated()]
+
+    def _is_superuser(self, user):
+        return bool(user and user.is_authenticated and user.is_superuser)
+
+    def _rol_usuario(self, user):
+        if not user or not user.is_authenticated or not hasattr(user, 'perfil'):
+            return None
+        return user.perfil.rol
+
+    def _can_edit_logo_only(self, user):
+        return self._rol_usuario(user) in ['admin', 'director', 'jefe_estudios']
+
+    def _enforce_create_destroy_permission(self, request):
+        if not self._is_superuser(request.user):
+            raise PermissionDenied('Solo el superusuario puede crear o eliminar carreras.')
+
+    def create(self, request, *args, **kwargs):
+        self._enforce_create_destroy_permission(request)
+        return super().create(request, *args, **kwargs)
 
     def _build_dependency_counts(self, carrera):
         materias_qs = Materia.objects.filter(carrera=carrera)
@@ -281,6 +317,7 @@ class CarreraViewSet(viewsets.ModelViewSet):
         return Response(counts, status=status.HTTP_200_OK)
 
     def destroy(self, request, *args, **kwargs):
+        self._enforce_create_destroy_permission(request)
         carrera = self.get_object()
         try:
             carrera.delete()
@@ -295,6 +332,60 @@ class CarreraViewSet(viewsets.ModelViewSet):
                 },
                 status=status.HTTP_409_CONFLICT,
             )
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        user = request.user
+
+        # Superusuario: edición total de carrera.
+        if self._is_superuser(user):
+            raw_activo = request.data.get('activo', None)
+            if raw_activo is not None:
+                normalized = str(raw_activo).strip().lower()
+                next_activo = normalized in ['true', '1', 'yes', 'si', 'on']
+
+                if instance.activo and not next_activo:
+                    counts = self._build_dependency_counts(instance)
+                    if counts['materias'] > 0 or counts['informes'] > 0:
+                        raise drf_serializers.ValidationError({
+                            'activo': (
+                                'No se puede desactivar esta carrera porque tiene '
+                                f"{counts['materias']} materias y {counts['informes']} informes vinculados."
+                            )
+                        })
+
+            serializer = self.get_serializer(instance, data=request.data, partial=partial)
+            serializer.is_valid(raise_exception=True)
+            self.perform_update(serializer)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        # Autoridades (admin/director/jefe): solo edición de logo desde modal Ver.
+        if self._can_edit_logo_only(user):
+            data = request.data.copy()
+            allowed_fields = {'logo_carrera_file', 'remove_logo_carrera'}
+            provided_fields = set(data.keys())
+
+            # Si no se envía logo ni bandera de eliminación, no hay nada que actualizar.
+            if not provided_fields.intersection(allowed_fields):
+                raise drf_serializers.ValidationError({
+                    'logo_carrera_file': 'Solo puedes actualizar el logo de la carrera.'
+                })
+
+            for field in list(data.keys()):
+                if field not in allowed_fields:
+                    data.pop(field, None)
+
+            serializer = self.get_serializer(instance, data=data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            self.perform_update(serializer)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        raise PermissionDenied('No tienes permiso para editar carreras.')
+
+    def partial_update(self, request, *args, **kwargs):
+        kwargs['partial'] = True
+        return self.update(request, *args, **kwargs)
 
 
 class MateriaViewSet(viewsets.ModelViewSet):
@@ -1871,7 +1962,17 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=partial, context={'request': request})
         serializer.is_valid(raise_exception=True)
-        user = serializer.save()
+        try:
+            user = serializer.save()
+        except IntegrityError:
+            return Response(
+                {
+                    'rol': [
+                        'No se puede cambiar el rol de este usuario porque ya tiene registros asociados en el sistema.'
+                    ]
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         # Retornar con el serializer de lectura
         output_serializer = UsuarioSerializer(user)
@@ -1963,13 +2064,25 @@ class UsuarioViewSet(viewsets.ModelViewSet):
                 HistorialFondo.objects.filter(usuario=user).delete()
 
                 # PASO E: Borrar el usuario.
-                # El perfil queda intacto con user = NULL para conservar carrera y demás datos del docente.
+                # Regla de negocio:
+                # - Docente: conservar perfil huerfano (user=NULL) para posible re-vinculacion.
+                # - Admin/Director/Jefe: eliminar perfil por completo al no existir recuperacion por docente.
                 user_id = user.id
+                perfil_usuario = getattr(user, 'perfil', None)
+                rol_perfil = perfil_usuario.rol if perfil_usuario else None
+
+                if perfil_usuario and rol_perfil in ['admin', 'director', 'jefe_estudios']:
+                    perfil_usuario.delete()
+
                 user.delete()
                 logger.info(f"Usuario {user.username} (ID: {user_id}) eliminado exitosamente")
 
+                mensaje = 'Usuario eliminado correctamente. El docente quedó desvinculado.'
+                if rol_perfil in ['admin', 'director', 'jefe_estudios']:
+                    mensaje = 'Usuario administrativo eliminado correctamente junto con su perfil.'
+
                 return Response(
-                    {'success': 'Usuario eliminado correctamente. El docente quedó desvinculado.'},
+                    {'success': mensaje},
                     status=status.HTTP_204_NO_CONTENT
                 )
 

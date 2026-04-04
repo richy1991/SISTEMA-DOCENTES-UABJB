@@ -236,6 +236,19 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
     setLoading(true);
     setErrors({});
 
+    const esUsuarioSistema = ['admin', 'director', 'jefe_estudios'].includes(formData.rol);
+    const ciNormalizado = (formData.ci || '').trim();
+
+    if (esUsuarioSistema && !ciNormalizado) {
+      setErrors((prev) => ({
+        ...prev,
+        ci: ['El C.I. es obligatorio para este tipo de usuario.'],
+      }));
+      toast.error('El C.I. es obligatorio para este tipo de usuario.');
+      setLoading(false);
+      return;
+    }
+
     const docenteId = formData.rol === 'docente' ? Number(formData.docente) : null;
     if (formData.rol === 'docente' && !docenteId) {
       setErrors((prev) => ({
@@ -252,7 +265,7 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
       email: formData.email,
       first_name: formData.first_name,
       last_name: formData.last_name,
-      ci: formData.ci || null,
+      ci: ciNormalizado || null,
       rol: formData.rol,
       is_active: userToEdit.is_active,
     };
@@ -280,7 +293,7 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
       }
 
       toast.success('Usuario actualizado correctamente');
-      setTimeout(() => onSaveSuccess(), 600);
+      onSaveSuccess(response.data);
     } catch (err) {
       console.error('Error al guardar usuario:', err);
       const apiErrors = err.response?.data;
@@ -288,6 +301,13 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
 
       if (apiErrors && typeof apiErrors === 'object') {
         setErrors(apiErrors);
+        const rolError = Array.isArray(apiErrors?.rol)
+          ? apiErrors.rol[0]
+          : (typeof apiErrors?.rol === 'string' ? apiErrors.rol : null);
+        if (rolError) {
+          errorMsg = rolError;
+        }
+
         const errorMessages = [];
         
         Object.entries(apiErrors).forEach(([field, messages]) => {
@@ -302,7 +322,9 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
         });
         
         // Limitar a los primeros 2 errores
-        errorMsg = errorMessages.slice(0, 2).join('; ') || 'Error de validación.';
+        if (!rolError) {
+          errorMsg = errorMessages.slice(0, 2).join('; ') || 'Error de validación.';
+        }
       } else if (err.response?.data && typeof err.response.data === 'string') {
         if (err.response.data.includes('<!DOCTYPE html>') || err.response.data.includes('<html')) {
           errorMsg = 'Error interno del servidor al actualizar usuario. Vuelve a intentar o reporta este caso.';

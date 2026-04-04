@@ -25,7 +25,6 @@ def validar_unicidad_cargo_por_carrera(carrera, rol, exclude_user_id=None):
         rol=rol,
         carrera=carrera,
         activo=True,
-        user__is_active=True,
     )
 
     if exclude_user_id:
@@ -36,6 +35,37 @@ def validar_unicidad_cargo_por_carrera(carrera, rol, exclude_user_id=None):
             f'La carrera de {carrera.nombre} ya tiene un {cargos[rol]} asignado. '
             'Debe dar de baja al titular actual antes de asignar uno nuevo'
         )
+
+
+def usuario_tiene_uso_de_rol(user, perfil_actual=None):
+    """
+    Determina si el usuario ya tiene uso operativo en el sistema.
+    Si existe uso, no debe permitirse cambiar su rol para proteger la trazabilidad.
+    """
+    docente = perfil_actual.docente if perfil_actual else None
+
+    return (
+        (docente is not None and FondoTiempo.objects.filter(docente=docente).exists())
+        or HistorialFondo.objects.filter(usuario=user).exists()
+        or InformeFondo.objects.filter(elaborado_por=user).exists()
+        or InformeFondo.objects.filter(evaluado_por=user).exists()
+        or ObservacionFondo.objects.filter(resuelta_por=user).exists()
+        or MensajeObservacion.objects.filter(autor=user).exists()
+        or CargaHoraria.objects.filter(creado_por=user).exists()
+    )
+
+
+def obtener_perfil_por_ci(ci):
+    ci_normalizado = (ci or '').strip()
+    if not ci_normalizado:
+        return None
+    return PerfilUsuario.objects.filter(ci=ci_normalizado).select_related('user', 'docente').first()
+
+
+def perfil_ci_es_reutilizable(perfil_ci, rol_objetivo):
+    if not perfil_ci or perfil_ci.user_id:
+        return False
+    return perfil_ci.rol == rol_objetivo
 
 
 class CargaHorariaSerializer(serializers.ModelSerializer):
@@ -256,7 +286,13 @@ class CarreraSerializer(serializers.ModelSerializer):
             'nombre',
             'codigo',
             'facultad',
+            'mision',
+            'vision',
+            'perfil_profesional',
+            'objetivo_carrera',
+            'responsable',
             'activo',
+            'fecha_actualizacion',
             'logo_carrera',
             'logo_carrera_file',
             'remove_logo_carrera',
@@ -653,11 +689,12 @@ class PerfilUsuarioSerializer(serializers.ModelSerializer):
     docente_nombre = serializers.SerializerMethodField()
     docente_id = serializers.SerializerMethodField()
     foto_perfil = serializers.SerializerMethodField()
+    foto_perfil_es_propia = serializers.SerializerMethodField()
 
     class Meta:
         model = PerfilUsuario
         fields = ['id', 'rol', 'carrera', 'carrera_nombre', 'docente', 'docente_id', 'docente_nombre',
-                  'telefono', 'activo', 'foto_perfil', 'debe_cambiar_password']
+                  'telefono', 'activo', 'foto_perfil', 'foto_perfil_es_propia', 'debe_cambiar_password']
 
     def get_carrera_nombre(self, obj):
         """Retorna el nombre de la carrera si existe, si no, None."""
@@ -673,6 +710,9 @@ class PerfilUsuarioSerializer(serializers.ModelSerializer):
 
     def get_foto_perfil(self, obj):
         return obj.get_foto_perfil_data_uri()
+
+    def get_foto_perfil_es_propia(self, obj):
+        return bool(obj.foto_perfil_cifrada)
 
 
 class FotoPerfilSerializer(serializers.Serializer):
@@ -808,11 +848,12 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
     )
     # Campo para recibir datos de un nuevo docente a crear
     docente_data = serializers.JSONField(write_only=True, required=False, allow_null=True)
+    ci = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
         model = User
         fields = ['username', 'email', 'password', 'password_confirm', 'first_name',
-                  'last_name', 'rol', 'carrera', 'docente', 'docente_data']
+                  'last_name', 'rol', 'carrera', 'docente', 'docente_data', 'ci']
         extra_kwargs = {
             'first_name': {'required': True, 'allow_blank': False},
             'last_name': {'required': True, 'allow_blank': False},
@@ -843,6 +884,26 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
                 'carrera': 'Los administradores, directores y jefes de estudio deben tener una carrera asignada'
             })
 
+        # CI obligatorio para usuarios de sistema (no docentes)
+        ci_normalizado = (data.get('ci') or '').strip()
+        if data['rol'] in ['admin', 'director', 'jefe_estudios'] and not ci_normalizado:
+            raise serializers.ValidationError({
+                'ci': 'El C.I. es obligatorio para este tipo de usuario.'
+            })
+
+        if ci_normalizado:
+            perfil_ci = obtener_perfil_por_ci(ci_normalizado)
+            if perfil_ci and perfil_ci.user and perfil_ci.user_id:
+                raise serializers.ValidationError({
+                    'ci': 'Ya existe un usuario con este C.I.'
+                })
+            if perfil_ci and not perfil_ci.user_id and perfil_ci.rol != data['rol']:
+                raise serializers.ValidationError({
+                    'ci': 'Ese C.I. ya está reservado en un perfil huérfano de otro tipo de rol.'
+                })
+
+        data['ci'] = ci_normalizado or None
+
         # Validar unicidad de cargos por carrera (admin, director, jefe_estudios)
         if data['rol'] in ['admin', 'director', 'jefe_estudios']:
             validar_unicidad_cargo_por_carrera(data.get('carrera'), data['rol'])
@@ -859,10 +920,18 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
         # Validar los datos del nuevo docente si se proporcionan
         if data.get('docente_data'):
             docente_data = data.get('docente_data')
+            ci_docente = (docente_data.get('ci') or '').strip() if isinstance(docente_data, dict) else ''
+            if not ci_docente:
+                raise serializers.ValidationError({'docente_data': {'ci': 'El C.I. es obligatorio para crear el docente.'}})
+            docente_data['ci'] = ci_docente
             docente_serializer = DocenteSerializer(data=docente_data)
             docente_serializer.is_valid(raise_exception=True)
-            if 'ci' in docente_data and Docente.objects.filter(ci=docente_data['ci']).exists():
+            if Docente.objects.filter(ci=docente_data['ci']).exists():
                 raise serializers.ValidationError({'docente_data': {'ci': 'Ya existe un docente con este CI.'}})
+        elif data.get('docente'):
+            ci_docente_existente = (data['docente'].ci or '').strip()
+            if not ci_docente_existente:
+                raise serializers.ValidationError({'docente': 'El docente seleccionado no tiene C.I. registrado.'})
 
         return data
 
@@ -874,6 +943,7 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
             carrera = validated_data.pop('carrera', None)
             docente = validated_data.pop('docente', None)
             docente_data = validated_data.pop('docente_data', None)
+            ci = validated_data.pop('ci', None)
 
             # Crear usuario
             user = User.objects.create_user(
@@ -895,6 +965,10 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
                 elif docente:
                     docente_obj = docente
 
+                if not ci and docente_obj:
+                    ci_docente = (docente_obj.ci or '').strip()
+                    ci = ci_docente or None
+
             perfil_existente = None
             if docente_obj:
                 perfil_existente = PerfilUsuario.objects.filter(docente=docente_obj).select_related('user').first()
@@ -910,6 +984,8 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
 
             # Actualizar perfil (se crea automáticamente por signal)
             # VERIFICACIÓN: Si no existe el perfil, crearlo manualmente
+            perfil_ci = obtener_perfil_por_ci(ci)
+
             if perfil_existente:
                 perfil = perfil_existente
                 if hasattr(user, 'perfil') and user.perfil and user.perfil.id != perfil.id:
@@ -918,6 +994,20 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
                 perfil.rol = rol
                 perfil.carrera = carrera or perfil.carrera
                 perfil.docente = docente_obj
+                perfil.ci = ci
+                perfil.telefono = ''
+                perfil.activo = True
+                perfil.debe_cambiar_password = False
+                perfil.save()
+            elif perfil_ci_es_reutilizable(perfil_ci, rol):
+                perfil = perfil_ci
+                if hasattr(user, 'perfil') and user.perfil and user.perfil.id != perfil.id:
+                    user.perfil.delete()
+                perfil.user = user
+                perfil.rol = rol
+                perfil.carrera = carrera or perfil.carrera
+                perfil.docente = docente_obj
+                perfil.ci = ci
                 perfil.telefono = ''
                 perfil.activo = True
                 perfil.debe_cambiar_password = False
@@ -929,6 +1019,7 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
                     rol=rol,
                     carrera=carrera,
                     docente=docente_obj,
+                    ci=ci,
                     telefono='',
                     activo=True,
                     debe_cambiar_password=False
@@ -938,6 +1029,7 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
                 user.perfil.rol = rol
                 user.perfil.carrera = carrera
                 user.perfil.docente = docente_obj
+                user.perfil.ci = ci
                 user.perfil.save()
 
             return user
@@ -1004,6 +1096,16 @@ class ActualizarUsuarioSerializer(serializers.ModelSerializer):
         is_active_final = data.get('is_active', self.instance.is_active)
         es_superusuario_objetivo = bool(self.instance.is_superuser)
 
+        # Regla de inmutabilidad de rol con uso real del sistema.
+        if 'rol' in data and rol != rol_actual:
+            if usuario_tiene_uso_de_rol(self.instance, perfil_actual=perfil_actual):
+                raise serializers.ValidationError({
+                    'rol': (
+                        'No se puede cambiar el rol de este usuario porque ya tiene registros asociados '
+                        '(fondos, historial, informes u otras operaciones).'
+                    )
+                })
+
         if es_superusuario_objetivo:
             if 'is_active' in data and data.get('is_active') is False:
                 raise serializers.ValidationError({'is_active': 'El Super Admin no puede desactivarse.'})
@@ -1063,6 +1165,26 @@ class ActualizarUsuarioSerializer(serializers.ModelSerializer):
             # No se provee un docente y el usuario no tiene uno ya?
             if 'docente' not in data and 'docente_data' not in data and not docente_actual:
                 raise serializers.ValidationError({'docente': 'Debe asociar un perfil de docente para este rol.'})
+
+        # Regla 3: Ningun usuario del sistema puede quedar sin CI.
+        ci_en_request = data.get('ci', serializers.empty)
+        if ci_en_request is serializers.empty:
+            ci_normalizado = (perfil_actual.ci or '').strip() if perfil_actual and perfil_actual.ci else ''
+        else:
+            ci_normalizado = (ci_en_request or '').strip()
+            data['ci'] = ci_normalizado
+
+        if rol in ['admin', 'director', 'jefe_estudios'] and not ci_normalizado:
+            raise serializers.ValidationError({'ci': 'El C.I. es obligatorio para este tipo de usuario.'})
+
+        if rol == 'docente':
+            docente_objetivo = data.get('docente', docente_actual)
+            if docente_objetivo is not None:
+                ci_docente_objetivo = (docente_objetivo.ci or '').strip()
+                if not ci_docente_objetivo:
+                    raise serializers.ValidationError({'docente': 'El docente vinculado debe tener C.I. registrado.'})
+            elif not ci_normalizado:
+                raise serializers.ValidationError({'ci': 'El C.I. es obligatorio para usuarios docentes sin docente vinculado.'})
 
         return data
     
