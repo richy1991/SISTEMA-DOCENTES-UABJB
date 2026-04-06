@@ -1,12 +1,14 @@
 from django.db import models
 from decimal import Decimal
-from django.core.validators import MinValueValidator, MaxValueValidator
+from django.core.validators import MinValueValidator, MaxValueValidator, MinLengthValidator
 from django.core.exceptions import ValidationError
 from django.contrib.auth.models import User
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from django.utils import timezone
 from django.conf import settings
+from django.db.models.functions import Lower, Trim
+from simple_history.models import HistoricalRecords
 from cryptography.fernet import Fernet, InvalidToken
 import base64
 import hashlib
@@ -169,20 +171,42 @@ class SaldoVacacionesGestion(models.Model):
 
 class Carrera(models.Model):
     """Carreras de la universidad"""
+
+    FACULTAD_CHOICES = [
+        ('Facultad de Ingeniería y Tecnología', 'Facultad de Ingeniería y Tecnología'),
+        ('Facultad de Ciencias y Tecnologia', 'Facultad de Ciencias y Tecnologia'),
+        ('Facultad de Ciencias de la Salud', 'Facultad de Ciencias de la Salud'),
+        ('Facultad de Ciencias Juridicas, Politicas y Sociales', 'Facultad de Ciencias Juridicas, Politicas y Sociales'),
+        ('Facultad de Ciencias Economicas y Financieras', 'Facultad de Ciencias Economicas y Financieras'),
+        ('Facultad de Humanidades y Ciencias de la Educacion', 'Facultad de Humanidades y Ciencias de la Educacion'),
+        ('Facultad de Ciencias Agropecuarias', 'Facultad de Ciencias Agropecuarias'),
+    ]
     
     nombre = models.CharField(max_length=200, unique=True)
-    codigo = models.CharField(max_length=20, unique=True)
-    facultad = models.CharField(max_length=200)
+    codigo = models.CharField(max_length=20, unique=True, validators=[MinLengthValidator(2)])
+    facultad = models.CharField(max_length=200, choices=FACULTAD_CHOICES)
     mision = models.TextField(blank=True, default='')
     vision = models.TextField(blank=True, default='')
     perfil_profesional = models.TextField(blank=True, default='', help_text='Descripción del perfil profesional del egresado')
     objetivo_carrera = models.TextField(blank=True, default='', help_text='Objetivo general de la carrera')
     responsable = models.CharField(max_length=200, blank=True, default='', help_text='Nombre/cargo del responsable de la carrera')
+    resolucion_ministerial = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        help_text='Número/código de la resolución ministerial o universitaria que respalda la carrera',
+    )
+    fecha_resolucion = models.DateField(
+        null=True,
+        blank=True,
+        help_text='Fecha oficial de la resolución ministerial o universitaria',
+    )
     logo_carrera = models.ImageField(upload_to='carreras/', null=True, blank=True)
     logo_carrera_cifrada = models.BinaryField(null=True, blank=True, editable=False)
     logo_carrera_mime = models.CharField(max_length=64, blank=True, default='')
     activo = models.BooleanField(default=True)
     fecha_actualizacion = models.DateTimeField(auto_now=True)
+    history = HistoricalRecords()
     
     class Meta:
         verbose_name = "Carrera"
@@ -191,6 +215,21 @@ class Carrera(models.Model):
     
     def __str__(self):
         return f"{self.nombre} - {self.facultad}"
+
+    def clean(self):
+        super().clean()
+        self.codigo = (self.codigo or '').strip().upper()
+        self.facultad = (self.facultad or '').strip()
+
+        if not self.codigo:
+            raise ValidationError({'codigo': 'El codigo de carrera es obligatorio.'})
+        if not (self.facultad or '').strip():
+            raise ValidationError({'facultad': 'La facultad es obligatoria y no puede estar vacía.'})
+        facultades_validas = {value for value, _ in self.FACULTAD_CHOICES}
+        if self.facultad not in facultades_validas:
+            raise ValidationError({'facultad': 'La facultad seleccionada no es valida.'})
+        if self.fecha_resolucion and self.fecha_resolucion > timezone.now().date():
+            raise ValidationError({'fecha_resolucion': 'La fecha de resolución no puede ser futura.'})
 
     @staticmethod
     def _get_cipher():
@@ -241,14 +280,32 @@ class Carrera(models.Model):
 
 class Materia(models.Model):
     nombre = models.CharField(max_length=200)
-    sigla = models.CharField(max_length=20, unique=True)
+    sigla = models.CharField(max_length=20, unique=True, validators=[MinLengthValidator(2)])
     carrera = models.ForeignKey(Carrera, on_delete=models.PROTECT, related_name='materias')
     semestre = models.IntegerField()
     horas_teoricas = models.IntegerField(default=0)
     horas_practicas = models.IntegerField(default=0)
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                Lower(Trim('sigla')),
+                name='materia_sigla_unique_ci_trim',
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        self.sigla = (self.sigla or '').strip().upper()
+        if not self.sigla:
+            raise ValidationError({'sigla': 'La sigla de la materia es obligatoria.'})
+
     def __str__(self):
         return f"{self.sigla} - {self.nombre}"
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
 
     @property
     def horas_totales(self):
@@ -818,14 +875,39 @@ class CargaHoraria(models.Model):
     """Asignación de horas a un docente por parte de una autoridad (Jefe de Estudios)."""
     
     CATEGORIA_CHOICES = CategoriaFuncion.TIPO_CHOICES
+    PARALELO_CHOICES = [
+        ('A', 'A'),
+        ('B', 'B'),
+        ('C', 'C'),
+        ('D', 'D'),
+        ('E', 'E'),
+        ('F', 'F'),
+    ]
+    DIA_SEMANA_CHOICES = [
+        ('lunes', 'Lunes'),
+        ('martes', 'Martes'),
+        ('miercoles', 'Miercoles'),
+        ('jueves', 'Jueves'),
+        ('viernes', 'Viernes'),
+        ('sabado', 'Sabado'),
+    ]
 
     docente = models.ForeignKey(Docente, on_delete=models.PROTECT, related_name='cargas_horarias')
     calendario = models.ForeignKey(CalendarioAcademico, on_delete=models.PROTECT, related_name='cargas_horarias')
     categoria = models.CharField(max_length=30, choices=CATEGORIA_CHOICES)
-    titulo_actividad = models.CharField(
-        max_length=200,
-        help_text='Ej: "Mat. Cálculo I", "Proyecto Riego", "Dirección de Carrera"'
+    materia = models.ForeignKey(
+        Materia,
+        on_delete=models.PROTECT,
+        related_name='asignaciones_horarias',
+        null=False,
+        blank=False,
+        help_text='Materia del plan de estudios asignada al docente.'
     )
+    paralelo = models.CharField(max_length=1, choices=PARALELO_CHOICES, default='A')
+    dia_semana = models.CharField(max_length=10, choices=DIA_SEMANA_CHOICES, null=False)
+    hora_inicio = models.TimeField(null=False)
+    hora_fin = models.TimeField(null=False)
+    aula = models.CharField(max_length=100)
     horas = models.PositiveIntegerField(help_text="Cantidad de horas anuales asignadas para esta actividad.")
     documento_respaldo = models.CharField(
         max_length=100,
@@ -840,10 +922,24 @@ class CargaHoraria(models.Model):
         verbose_name = "Carga Horaria"
         verbose_name_plural = "Cargas Horarias"
         ordering = ['-calendario__gestion', 'docente', 'categoria']
-        unique_together = ['docente', 'calendario', 'categoria', 'titulo_actividad']
+        unique_together = ['docente', 'calendario', 'materia', 'paralelo', 'dia_semana', 'hora_inicio']
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(hora_fin__gt=models.F('hora_inicio')),
+                name='cargahoraria_hora_fin_gt_inicio',
+            ),
+        ]
+
+    def clean(self):
+        if self.hora_inicio and self.hora_fin and self.hora_fin <= self.hora_inicio:
+            raise ValidationError({'hora_fin': 'La hora de fin debe ser mayor que la hora de inicio.'})
 
     def __str__(self):
-        return f"{self.docente.nombre_completo} - {self.titulo_actividad} ({self.horas}h)"
+        materia_txt = self.materia.sigla if self.materia else 'SIN-MATERIA'
+        return (
+            f"{self.docente.nombre_completo} - {materia_txt} {self.paralelo} "
+            f"({self.dia_semana} {self.hora_inicio}-{self.hora_fin})"
+        )
 
 
 class Proyecto(models.Model):
@@ -1046,6 +1142,39 @@ class HistorialFondo(models.Model):
         return f"{self.get_tipo_cambio_display()} - {self.fecha.strftime('%d/%m/%Y %H:%M')}"
 
 
+class AsignacionCarrera(models.Model):
+    """Vincula un usuario con una carrera, un rol y, opcionalmente, un docente."""
+
+    ROLES = [
+        ('admin', 'Administrador'),
+        ('director', 'Director de Carrera'),
+        ('jefe_estudios', 'Jefe de Estudios'),
+        ('docente', 'Docente'),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='asignaciones_carrera')
+    carrera = models.ForeignKey(Carrera, on_delete=models.SET_NULL, null=True, blank=True, related_name='asignaciones_carrera')
+    rol = models.CharField(max_length=20, choices=ROLES)
+    docente = models.ForeignKey(Docente, on_delete=models.SET_NULL, null=True, blank=True, related_name='asignaciones_carrera')
+    activo = models.BooleanField(default=True)
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Asignación de Carrera"
+        verbose_name_plural = "Asignaciones de Carrera"
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'carrera', 'rol'],
+                name='uniq_usuario_carrera_rol_asignacion',
+            ),
+        ]
+
+    def __str__(self):
+        usuario = self.user.username if self.user else 'Sin usuario'
+        carrera = self.carrera.nombre if self.carrera else 'Sin carrera'
+        return f"{usuario} - {carrera} - {self.get_rol_display()}"
+
+
 class PerfilUsuario(models.Model):
     """Perfil extendido para usuarios del sistema"""
 
@@ -1057,7 +1186,7 @@ class PerfilUsuario(models.Model):
     ]
 
     user = models.OneToOneField(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='perfil')
-    docente = models.OneToOneField(Docente, on_delete=models.SET_NULL, null=True, blank=True, related_name='usuario')
+    docente = models.ForeignKey(Docente, on_delete=models.SET_NULL, null=True, blank=True, related_name='perfiles_usuario')
     ci = models.CharField(max_length=20, blank=True, null=True, unique=True, verbose_name='Cedula de Identidad')
     rol = models.CharField(max_length=20, choices=ROLES, default='docente')
     carrera = models.ForeignKey(Carrera, on_delete=models.SET_NULL, null=True, blank=True)
@@ -1093,6 +1222,22 @@ class PerfilUsuario(models.Model):
     def __str__(self):
         username = self.user.username if self.user else 'Sin usuario'
         return f"{username} - {self.get_rol_display()}"
+
+    def get_asignaciones_activas(self):
+        if not self.user_id:
+            return AsignacionCarrera.objects.none()
+        return self.user.asignaciones_carrera.filter(activo=True).select_related('carrera', 'docente')
+
+    def get_carreras_activas(self):
+        if not self.user_id:
+            return Carrera.objects.none()
+        return Carrera.objects.filter(
+            asignaciones_carrera__user=self.user,
+            asignaciones_carrera__activo=True,
+        ).distinct()
+
+    def get_carrera_activa_id(self):
+        return self.carrera_id
 
     @staticmethod
     def _get_cipher():

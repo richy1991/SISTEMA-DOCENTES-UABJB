@@ -6,7 +6,7 @@ from reportlab.lib.units import inch, cm
 from django.conf import settings
 import os
 from django.apps import apps
-from datetime import datetime
+from datetime import datetime, date
 import io
 from html import escape
 from django.db.models import Sum
@@ -60,6 +60,102 @@ class FondoPDFGenerator:
         if not texto or str(texto) == 'None':
             return "-"
         return str(texto).replace('\n', '<br/>')
+
+    def _duracion_horas(self, hora_inicio, hora_fin):
+        if not hora_inicio or not hora_fin:
+            return 0.0
+        dt_inicio = datetime.combine(date.today(), hora_inicio)
+        dt_fin = datetime.combine(date.today(), hora_fin)
+        return max((dt_fin - dt_inicio).total_seconds() / 3600.0, 0.0)
+
+    def _agrupar_horarios_contiguos(self, cargas_docencia):
+        orden_dias = {
+            'lunes': 1,
+            'martes': 2,
+            'miercoles': 3,
+            'jueves': 4,
+            'viernes': 5,
+            'sabado': 6,
+        }
+
+        cargas_ordenadas = sorted(
+            cargas_docencia,
+            key=lambda c: (
+                orden_dias.get(c.dia_semana, 99),
+                c.hora_inicio,
+                c.materia_id or 0,
+                c.paralelo,
+                (c.aula or '').strip().lower(),
+            ),
+        )
+
+        bloques = []
+        for carga in cargas_ordenadas:
+            materia_nombre = f"{carga.materia.sigla} - {carga.materia.nombre}" if carga.materia else "Sin materia"
+            aula_norm = (carga.aula or '').strip()
+            paralelo = (carga.paralelo or '').strip()
+
+            if not bloques:
+                bloques.append({
+                    'dia_semana': carga.dia_semana,
+                    'materia_id': carga.materia_id,
+                    'materia': materia_nombre,
+                    'paralelo': paralelo,
+                    'aula': aula_norm,
+                    'hora_inicio': carga.hora_inicio,
+                    'hora_fin': carga.hora_fin,
+                })
+                continue
+
+            ultimo = bloques[-1]
+            es_contiguo = (
+                ultimo['dia_semana'] == carga.dia_semana
+                and ultimo['materia_id'] == carga.materia_id
+                and ultimo['paralelo'] == paralelo
+                and (ultimo['aula'] or '').lower() == aula_norm.lower()
+                and ultimo['hora_fin'] == carga.hora_inicio
+            )
+
+            if es_contiguo:
+                ultimo['hora_fin'] = carga.hora_fin
+            else:
+                bloques.append({
+                    'dia_semana': carga.dia_semana,
+                    'materia_id': carga.materia_id,
+                    'materia': materia_nombre,
+                    'paralelo': paralelo,
+                    'aula': aula_norm,
+                    'hora_inicio': carga.hora_inicio,
+                    'hora_fin': carga.hora_fin,
+                })
+
+        for bloque in bloques:
+            bloque['horas'] = self._duracion_horas(bloque['hora_inicio'], bloque['hora_fin'])
+
+        return bloques
+
+    def _nombre_director_carrera(self, carrera):
+        if not carrera:
+            return 'SIN DIRECTOR ASIGNADO'
+
+        PerfilUsuario = apps.get_model('fondos', 'PerfilUsuario')
+        perfil_director = PerfilUsuario.objects.filter(
+            carrera=carrera,
+            rol='director',
+            activo=True,
+        ).select_related('docente', 'user').first()
+
+        if not perfil_director:
+            return 'SIN DIRECTOR ASIGNADO'
+
+        if perfil_director.docente:
+            return perfil_director.docente.nombre_completo.upper()
+
+        if perfil_director.user:
+            nombre = perfil_director.user.get_full_name().strip()
+            return (nombre or perfil_director.user.username).upper()
+
+        return 'SIN DIRECTOR ASIGNADO'
 
     def generar_pdf(self, fondo, informe_data=None):
         # 1. Configuración de Página
@@ -130,7 +226,11 @@ class FondoPDFGenerator:
             semanas_anio = float(fondo.semanas_año) if fondo.semanas_año else 1
             for carga in cargas_docencia:
                 horas_sem = float(carga.horas) / semanas_anio
-                asignaturas_list.append(f"{carga.titulo_actividad} ({horas_sem:.2f} Hrs/Sem)")
+                materia_txt = (
+                    f"{carga.materia.sigla} - {carga.materia.nombre} ({carga.paralelo})"
+                    if carga.materia else 'Sin materia'
+                )
+                asignaturas_list.append(f"{materia_txt} ({horas_sem:.2f} Hrs/Sem)")
             asignatura_texto = "<br/>".join(asignaturas_list)
         else:
             asignatura_texto = fondo.asignatura if fondo.asignatura else "Sin asignaturas"
@@ -223,6 +323,75 @@ class FondoPDFGenerator:
         elementos.append(tabla_cabecera)
         elementos.append(Spacer(1, 15))
 
+        # --- 2.1 HORARIO SEMANAL (LUNES A SÁBADO) ---
+        cargas_horario = list(cargas_docencia.select_related('materia'))
+        bloques_horario = self._agrupar_horarios_contiguos(cargas_horario)
+
+        estilo_horario_header = ParagraphStyle(
+            'HorarioHeader',
+            parent=estilo_celda_center,
+            fontSize=7,
+            fontName='Helvetica-Bold',
+        )
+        estilo_horario_celda = ParagraphStyle(
+            'HorarioCelda',
+            parent=estilo_celda,
+            fontSize=7,
+            leading=8,
+        )
+
+        datos_horario = [[
+            Paragraph('Día', estilo_horario_header),
+            Paragraph('Horario', estilo_horario_header),
+            Paragraph('Materia', estilo_horario_header),
+            Paragraph('Paralelo', estilo_horario_header),
+            Paragraph('Aula', estilo_horario_header),
+            Paragraph('Horas', estilo_horario_header),
+        ]]
+
+        if bloques_horario:
+            for bloque in bloques_horario:
+                datos_horario.append([
+                    Paragraph((bloque['dia_semana'] or '-').capitalize(), estilo_horario_celda),
+                    Paragraph(f"{bloque['hora_inicio'].strftime('%H:%M')} - {bloque['hora_fin'].strftime('%H:%M')}", estilo_horario_celda),
+                    Paragraph(self._limpiar_texto(bloque['materia']), estilo_horario_celda),
+                    Paragraph(self._limpiar_texto(bloque['paralelo'] or '-'), estilo_horario_celda),
+                    Paragraph(self._limpiar_texto(bloque['aula'] or '-'), estilo_horario_celda),
+                    Paragraph(f"{bloque['horas']:.2f}", estilo_horario_celda),
+                ])
+        else:
+            datos_horario.append([
+                Paragraph('-', estilo_horario_celda),
+                Paragraph('-', estilo_horario_celda),
+                Paragraph('Sin asignaciones horarias', estilo_horario_celda),
+                Paragraph('-', estilo_horario_celda),
+                Paragraph('-', estilo_horario_celda),
+                Paragraph('0.00', estilo_horario_celda),
+            ])
+
+        tabla_horario = Table(
+            datos_horario,
+            colWidths=[2.0*cm, 3.2*cm, 9.0*cm, 2.2*cm, 4.0*cm, 2.0*cm],
+            repeatRows=1,
+        )
+        tabla_horario.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+            ('BACKGROUND', (0,0), (-1,0), colors.Color(0.9, 0.9, 0.9)),
+            ('ALIGN', (0,0), (1,-1), 'CENTER'),
+            ('ALIGN', (3,0), (5,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('LEFTPADDING', (0,0), (-1,-1), 3),
+            ('RIGHTPADDING', (0,0), (-1,-1), 3),
+            ('TOPPADDING', (0,0), (-1,-1), 2),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+        ]))
+        tabla_horario.hAlign = 'CENTER'
+
+        elementos.append(Paragraph('<b>HORARIO SEMANAL (LUNES A SÁBADO)</b>', estilo_celda_center))
+        elementos.append(Spacer(1, 0.15*cm))
+        elementos.append(tabla_horario)
+        elementos.append(Spacer(1, 0.35*cm))
+
         # --- 3. CUERPO: TABLA DE ACTIVIDADES ---
         
         headers_1 = ['N°', 'INDICADORES', '', 'Hrs/Sem', 'Hrs/Año', 'Total\nHrs/Año', '%', 'Evidencias']
@@ -298,7 +467,10 @@ class FondoPDFGenerator:
                     es_ultima = (idx == n_filas - 1)
                     
                     if tipo_obj == 'carga':
-                        detalle = self._limpiar_texto(obj.titulo_actividad)
+                        detalle = self._limpiar_texto(
+                            f"{obj.materia.sigla} - {obj.materia.nombre} ({obj.paralelo})"
+                            if obj.materia else 'Sin materia'
+                        )
                         anual = float(obj.horas)
                         semanas_anio = float(fondo.semanas_año) if fondo.semanas_año else 1
                         hs = anual / semanas_anio
@@ -407,6 +579,35 @@ class FondoPDFGenerator:
             ]))
             tabla_conclusiones.hAlign = 'CENTER'
             elementos.append(tabla_conclusiones)
+
+        # --- 5. FIRMAS DINÁMICAS ---
+        nombre_director = self._nombre_director_carrera(fondo.carrera)
+        nombre_docente_firma = fondo.docente.nombre_completo.upper() if fondo.docente else 'SIN DOCENTE ASIGNADO'
+        estilo_firma = ParagraphStyle(
+            'Firma',
+            parent=estilo_celda_center,
+            fontSize=8,
+            leading=10,
+        )
+
+        firmas_data = [
+            [Paragraph('<br/><br/>', estilo_firma), Paragraph('<br/><br/>', estilo_firma)],
+            [Paragraph('_______________________________', estilo_firma), Paragraph('_______________________________', estilo_firma)],
+            [Paragraph(f'<b>{escape(nombre_director)}</b>', estilo_firma), Paragraph(f'<b>{escape(nombre_docente_firma)}</b>', estilo_firma)],
+            [Paragraph('DIRECTOR DE CARRERA', estilo_firma), Paragraph('DOCENTE', estilo_firma)],
+        ]
+        tabla_firmas = Table(firmas_data, colWidths=[12.3*cm, 12.3*cm])
+        tabla_firmas.setStyle(TableStyle([
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('LEFTPADDING', (0,0), (-1,-1), 0),
+            ('RIGHTPADDING', (0,0), (-1,-1), 0),
+            ('TOPPADDING', (0,0), (-1,-1), 2),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+        ]))
+        tabla_firmas.hAlign = 'CENTER'
+        elementos.append(Spacer(1, 0.35*cm))
+        elementos.append(tabla_firmas)
 
         doc.build(elementos)
 

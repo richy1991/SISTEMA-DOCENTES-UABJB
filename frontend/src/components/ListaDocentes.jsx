@@ -1040,14 +1040,13 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                   </h2>
                   {abrirDesdeUsuarios && (
                     <span className="px-3 py-1.5 bg-white/20 backdrop-blur-sm rounded-lg text-xs font-semibold text-white flex items-center gap-2">
-                      <span>U</span>
                       Volviendo a Crear Usuario
                     </span>
                   )}
                 </div>
               </div>
               {/* Body */}
-              <form id="crear-docente-form" onSubmit={handleCreateSubmit} className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 dark:bg-slate-900">
+              <form id="crear-docente-form" onSubmit={handleCreateSubmit} noValidate className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 dark:bg-slate-900">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <InputField
                     label="Nombre completo"
@@ -1202,7 +1201,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                         <h3 className="text-lg font-bold text-blue-600 dark:text-white truncate">
                           {docente.nombres} {docente.apellido_paterno} {docente.apellido_materno}
                         </h3>
-                        {!docente.usuario_email && (
+                        {!docente.usuario_id && (
                           <button
                             type="button"
                             onClick={() => handleCrearCuentaParaDocente(docente)}

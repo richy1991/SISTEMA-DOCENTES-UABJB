@@ -103,6 +103,7 @@ const ToggleSwitch = ({ isActive, onChange }) => (
 const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, carreras, roles, sidebarCollapsed = false, currentUser }) => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({});
+  const [asignacionesExtra, setAsignacionesExtra] = useState([]);
   const [crearNuevoDocente, setCrearNuevoDocente] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
@@ -110,6 +111,30 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   useEffect(() => {
+    const asignacionesUsuario = Array.isArray(userToEdit?.asignaciones) ? userToEdit.asignaciones : [];
+    const rolPrincipal = userToEdit?.perfil?.rol || 'docente';
+    const carreraPrincipal = userToEdit?.perfil?.carrera || '';
+    const docentePrincipal = userToEdit?.perfil?.docente_id || '';
+    let principalConsumida = false;
+    const extras = asignacionesUsuario
+      .filter((item) => {
+        const coincidePrincipal = (
+          String(item?.rol || '') === String(rolPrincipal)
+          && String(item?.carrera || '') === String(carreraPrincipal)
+          && String(item?.docente || '') === String(docentePrincipal)
+        );
+        if (!principalConsumida && coincidePrincipal) {
+          principalConsumida = true;
+          return false;
+        }
+        return true;
+      })
+      .map((item) => ({
+        rol: item?.rol || 'docente',
+        carrera: item?.carrera || '',
+        docente: item?.docente || '',
+      }));
+
     const initialData = {
       username: userToEdit?.username || '',
       email: userToEdit?.email || '',
@@ -122,6 +147,7 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
     };
 
     setFormData(initialData);
+    setAsignacionesExtra(extras);
     setCrearNuevoDocente(false);
     setErrors({});
     setShowResetConfirm(false);
@@ -208,6 +234,25 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
     navigate('/fondo-tiempo/docentes');
   };
 
+  const handleAsignacionChange = (index, field, value) => {
+    setAsignacionesExtra((prev) => prev.map((item, itemIndex) => (
+      itemIndex === index ? { ...item, [field]: value } : item
+    )));
+  };
+
+  const MAX_ASIGNACIONES_TOTAL = 2;
+  const totalAsignaciones = 1 + asignacionesExtra.length;
+  const puedeAgregarAsignacion = totalAsignaciones < MAX_ASIGNACIONES_TOTAL;
+
+  const agregarAsignacion = () => {
+    if (!puedeAgregarAsignacion) return;
+    setAsignacionesExtra((prev) => ([...prev, { rol: 'docente', carrera: '', docente: '' }]));
+  };
+
+  const eliminarAsignacion = (index) => {
+    setAsignacionesExtra((prev) => prev.filter((_, itemIndex) => itemIndex !== index));
+  };
+
   const tieneDocenteVinculado = Boolean(userToEdit?.perfil?.docente_id);
   const nombreDocenteVinculado = userToEdit?.perfil?.docente_nombre || 'Sin nombre';
   const esSuperusuarioEditado = Boolean(userToEdit?.is_superuser);
@@ -268,6 +313,7 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
       ci: ciNormalizado || null,
       rol: formData.rol,
       is_active: userToEdit.is_active,
+      asignaciones: asignacionesExtra,
     };
 
     // Admin, Director y Jefe de Estudios deben enviar carrera
@@ -468,6 +514,83 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
                   </div>
                 </div>
               )}
+
+              <div className="md:col-span-2 mt-2">
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <h4 className="text-sm font-bold uppercase tracking-wide text-slate-700 dark:text-slate-300">Asignaciones adicionales</h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Cada bloque define rol y carrera de forma independiente.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={agregarAsignacion}
+                    disabled={!puedeAgregarAsignacion}
+                    className={`rounded-xl px-3 py-2 font-semibold text-white transition-colors ${puedeAgregarAsignacion ? 'bg-[#2C4AAE] hover:bg-[#1a3a8a]' : 'bg-slate-400 cursor-not-allowed'}`}
+                  >
+                    +
+                  </button>
+                </div>
+                {!puedeAgregarAsignacion && (
+                  <p className="mb-3 text-xs text-amber-600 dark:text-amber-300">
+                    Límite alcanzado: máximo 2 asignaciones totales por usuario.
+                  </p>
+                )}
+
+                {asignacionesExtra.length > 0 && (
+                  <div className="space-y-4">
+                    {asignacionesExtra.map((asignacion, index) => (
+                      <div key={`${index}-${asignacion.rol}-${asignacion.carrera}`} className="space-y-4 rounded-2xl border-2 border-slate-300 bg-slate-50 p-4 dark:border-slate-600 dark:bg-slate-700/40">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Bloque {index + 1}</span>
+                          <button
+                            type="button"
+                            onClick={() => eliminarAsignacion(index)}
+                            className="rounded-lg bg-red-100 px-3 py-1.5 text-sm font-semibold text-red-700 transition-colors hover:bg-red-200 dark:bg-red-900/30 dark:text-red-200 dark:hover:bg-red-900/50"
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                          <SelectConDropdown
+                            label="Rol"
+                            name={`asignacion-rol-${index}`}
+                            value={asignacion.rol || 'docente'}
+                            onChange={(e) => handleAsignacionChange(index, 'rol', e.target.value)}
+                            options={(roles || []).filter((rol) => currentUser?.is_superuser || rol.value !== 'admin').map((rol) => ({ value: rol.value, label: rol.label }))}
+                            error={errors[`asignaciones.${index}.rol`]}
+                            required
+                          />
+
+                          <SelectConDropdown
+                            label="Carrera"
+                            name={`asignacion-carrera-${index}`}
+                            value={asignacion.carrera || ''}
+                            onChange={(e) => handleAsignacionChange(index, 'carrera', e.target.value)}
+                            options={carreras.map((c) => ({ value: c.id, label: c.nombre }))}
+                            error={errors[`asignaciones.${index}.carrera`]}
+                            required
+                          />
+
+                          {asignacion.rol === 'docente' && (
+                            <div className="md:col-span-2">
+                              <SelectConDropdown
+                                label="Docente"
+                                name={`asignacion-docente-${index}`}
+                                value={asignacion.docente || ''}
+                                onChange={(e) => handleAsignacionChange(index, 'docente', e.target.value)}
+                                options={docentes.map((d) => ({ value: d.id, label: d.nombre_completo }))}
+                                error={errors[`asignaciones.${index}.docente`]}
+                                placeholder="Seleccione un docente"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </form>

@@ -60,6 +60,25 @@ function App() {
   
   const { theme, setTheme, isDark } = useTheme();
 
+  const normalizarCarreraActiva = (userData, carreraIdPreferida = null) => {
+    if (!userData) return userData;
+
+    const asignaciones = Array.isArray(userData.asignaciones) ? userData.asignaciones : [];
+    if (asignaciones.length === 0) return userData;
+
+    const carreraGuardada = carreraIdPreferida || localStorage.getItem('carrera_activa_id');
+    const asignacionSeleccionada = asignaciones.find((item) => String(item.carrera) === String(carreraGuardada)) || asignaciones[0];
+
+    return {
+      ...userData,
+      perfil: {
+        ...userData.perfil,
+        carrera: asignacionSeleccionada.carrera,
+        carrera_nombre: asignacionSeleccionada.carrera_nombre,
+      },
+    };
+  };
+
   useEffect(() => {
     // Requisito: Forzar el login siempre.
     // Se limpia cualquier sesión guardada en el navegador al cargar la aplicación.
@@ -71,7 +90,12 @@ function App() {
   }, []);
 
   const handleLogin = (userData) => {
-    setUser(userData);
+    const userNormalizado = normalizarCarreraActiva(userData);
+    if (userNormalizado?.perfil?.carrera) {
+      localStorage.setItem('carrera_activa_id', String(userNormalizado.perfil.carrera));
+    }
+    localStorage.setItem('user', JSON.stringify(userNormalizado));
+    setUser(userNormalizado);
   };
 
   const handleLogout = () => {
@@ -84,11 +108,23 @@ function App() {
   const handleProfileUpdate = async () => {
     try {
       const response = await api.get('/usuario/');
-      setUser(response.data);
-      localStorage.setItem('user', JSON.stringify(response.data));
+      const userNormalizado = normalizarCarreraActiva(response.data);
+      setUser(userNormalizado);
+      localStorage.setItem('user', JSON.stringify(userNormalizado));
     } catch (error) {
       console.error("Error updating profile:", error);
     }
+  };
+
+  const handleCarreraActivaChange = (carreraId) => {
+    setUser((prev) => {
+      const nextUser = normalizarCarreraActiva(prev, carreraId);
+      if (nextUser?.perfil?.carrera) {
+        localStorage.setItem('carrera_activa_id', String(nextUser.perfil.carrera));
+      }
+      localStorage.setItem('user', JSON.stringify(nextUser));
+      return nextUser;
+    });
   };
 
   // 🔒 GUARDIÁN DE VÍNCULO DOCENTE: Verificar si el usuario tiene error de vínculo
@@ -202,6 +238,7 @@ function App() {
                   theme={theme}
                   setTheme={setTheme}
                   onProfileUpdate={handleProfileUpdate}
+                  onCarreraActivaChange={handleCarreraActivaChange}
                 />
               }
             >

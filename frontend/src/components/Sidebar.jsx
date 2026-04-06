@@ -68,7 +68,7 @@ const BookOpenIcon = (props) => (
     </svg>
 );
 
-function Sidebar({ user, onLogout, collapsed, setCollapsed, theme, setTheme, onProfileUpdate }) {
+function Sidebar({ user, onLogout, collapsed, setCollapsed, theme, setTheme, onProfileUpdate, onCarreraActivaChange }) {
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -117,6 +117,8 @@ function Sidebar({ user, onLogout, collapsed, setCollapsed, theme, setTheme, onP
 
   const visiblePrincipal = filterItems(menuItems.principal);
   const visibleAdmin = filterItems(menuItems.administracion);
+  const carrerasDisponibles = Array.isArray(user?.asignaciones) ? user.asignaciones : [];
+  const mostrarSelectorCarrera = carrerasDisponibles.length > 1;
 
   return (
     <>
@@ -162,6 +164,25 @@ function Sidebar({ user, onLogout, collapsed, setCollapsed, theme, setTheme, onP
               </div>
             )}
           </div>
+
+          {!collapsed && mostrarSelectorCarrera && (
+            <div className="mt-4 pt-4 border-t border-blue-800/40">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-blue-300 mb-2">
+                Carrera Activa
+              </label>
+              <select
+                value={user?.perfil?.carrera || ''}
+                onChange={(e) => onCarreraActivaChange?.(e.target.value)}
+                className="w-full rounded-xl bg-blue-950/80 border border-blue-700 text-white text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+              >
+                {carrerasDisponibles.map((asignacion) => (
+                  <option key={asignacion.id} value={asignacion.carrera}>
+                    {asignacion.carrera_nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* --- 2. NAVEGACIÓN PRINCIPAL (CON SCROLL) --- */}
