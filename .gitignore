@@ -13,6 +13,7 @@ backend/venv/
 # Database
 # backend/db.sqlite3  # base de datos de desarrollo — rastreada intencionalmente
 backend/backups/
+backend/db_corrupt_*.sqlite3
 
 # Media files
 backend/media/
