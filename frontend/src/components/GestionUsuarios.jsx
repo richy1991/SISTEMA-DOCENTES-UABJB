@@ -483,6 +483,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
   const [isCreating, setIsCreating] = useState(false);
   const [formData, setFormData] = useState({});
   const [crearNuevoDocente, setCrearNuevoDocente] = useState(false);
+  const [asignacionesExtra, setAsignacionesExtra] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
   const [abrirModalAlVolver, setAbrirModalAlVolver] = useState(false);
@@ -553,6 +554,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
           password: '',
           password_confirm: '',
         });
+        setAsignacionesExtra([]);
         setCrearNuevoDocente(false);
         setErrors({});
         setUsuarioEditando(null);
@@ -573,6 +575,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
         const datos = JSON.parse(datosGuardados);
         restoringFormRef.current = true;
         setFormData(datos);
+        setAsignacionesExtra([]);
         sessionStorage.removeItem('datosCrearUsuario');
         // Abrir el modal automáticamente con los datos recuperados
         setIsCreating(true);
@@ -682,6 +685,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
         password_confirm: '',
       };
       setFormData(initialData);
+      setAsignacionesExtra([]);
       setVinculacionRapidaDocente(false);
       setCrearNuevoDocente(false);
       setErrors({});
@@ -692,6 +696,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
     sessionStorage.removeItem('datosEditarUsuario');
     if (isCreating) {
       setVinculacionRapidaDocente(false);
+      setAsignacionesExtra([]);
     }
     setIsCreating(!isCreating);
     setUsuarioEditando(null); // Ensure we are not in edit mode
@@ -824,6 +829,25 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
     navigate('/fondo-tiempo/docentes');
   };
 
+  const handleAsignacionChange = (index, field, value) => {
+    setAsignacionesExtra((prev) => prev.map((item, itemIndex) => (
+      itemIndex === index ? { ...item, [field]: value } : item
+    )));
+  };
+
+  const MAX_ASIGNACIONES_TOTAL = 2;
+  const totalAsignaciones = 1 + asignacionesExtra.length;
+  const puedeAgregarAsignacion = totalAsignaciones < MAX_ASIGNACIONES_TOTAL;
+
+  const agregarAsignacion = () => {
+    if (!puedeAgregarAsignacion) return;
+    setAsignacionesExtra((prev) => ([...prev, { rol: 'docente', carrera: '', docente: '' }]));
+  };
+
+  const eliminarAsignacion = (index) => {
+    setAsignacionesExtra((prev) => prev.filter((_, itemIndex) => itemIndex !== index));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -863,6 +887,10 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
       password_confirm: formData.password_confirm,
     };
 
+    if (asignacionesExtra.length > 0) {
+      payload.asignaciones = asignacionesExtra;
+    }
+
     // Admin, Director y Jefe de Estudios deben enviar carrera
     if (formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') {
       payload.carrera = formData.carrera;
@@ -879,6 +907,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
       await api.post('/usuarios/', payload);
       toast.success('Usuario creado correctamente');
       setIsCreating(false);
+      setAsignacionesExtra([]);
       cargarDatos();
     } catch (err) {
       console.error('Error al crear usuario:', err.response);
@@ -905,6 +934,10 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
   const ciError = Array.isArray(errors?.ci)
     ? errors.ci[0]
     : (typeof errors?.ci === 'string' ? errors.ci : null);
+
+  const docenteError = Array.isArray(errors?.docente)
+    ? errors.docente[0]
+    : (typeof errors?.docente === 'string' ? errors.docente : null);
 
   if (loading) {
     return (
@@ -1018,22 +1051,33 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
 
                     {/* Vincular a Docente Existente - solo para rol docente */}
                     {formData.rol === 'docente' && !crearNuevoDocente && (
-                      <div>
-                        <FilterDocentes
-                          label="Vincular a Docente Existente"
-                          name="docente"
-                          value={formData.docente}
-                          onChange={handleChange}
-                          docentes={docentes}
-                          error={errors.docente?.[0] || errors.docente}
-                          disabled={vinculacionRapidaDocente}
-                          placeholder="Buscar docente..."
-                        />
-                        {vinculacionRapidaDocente && (
-                          <p className="text-xs text-blue-600 dark:text-blue-300 mt-1">
-                            Docente bloqueado para completar el vinculo directo.
-                          </p>
-                        )}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <FilterDocentes
+                            label="Vincular a Docente Existente"
+                            name="docente"
+                            value={formData.docente}
+                            onChange={handleChange}
+                            docentes={docentes}
+                            error={docenteError}
+                            disabled={vinculacionRapidaDocente}
+                            placeholder="Buscar docente..."
+                          />
+                          {vinculacionRapidaDocente && (
+                            <p className="text-xs text-blue-600 dark:text-blue-300 mt-1">
+                              Docente bloqueado para completar el vinculo directo.
+                            </p>
+                          )}
+                        </div>
+                        <div>
+                          <SimpleDropdown
+                            label="Carrera"
+                            value={formData.carrera || ''}
+                            onChange={(carreraId) => setFormData(prev => ({ ...prev, carrera: carreraId }))}
+                            options={carreras.map(c => ({ value: c.id, label: c.nombre }))}
+                            placeholder="Seleccione una carrera..."
+                          />
+                        </div>
                       </div>
                     )}
 
@@ -1092,6 +1136,86 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
                         </div>
                       </div>
                     )}
+
+                    <div className="md:col-span-2 mt-2">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <h3 className="text-sm font-bold uppercase tracking-wide text-slate-700 dark:text-slate-300">Asignaciones adicionales</h3>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Agrega una carrera y rol extra por usuario.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={agregarAsignacion}
+                          disabled={!puedeAgregarAsignacion}
+                          className={`px-3 py-2 rounded-xl text-white font-semibold transition-colors ${puedeAgregarAsignacion ? 'bg-[#2C4AAE] hover:bg-[#1a3a8a]' : 'bg-slate-400 cursor-not-allowed'}`}
+                        >
+                          +
+                        </button>
+                      </div>
+                      {!puedeAgregarAsignacion && (
+                        <p className="text-xs text-amber-600 dark:text-amber-300 mb-3">
+                          Límite alcanzado: máximo 2 asignaciones totales por usuario.
+                        </p>
+                      )}
+
+                      {asignacionesExtra.length > 0 && (
+                        <div className="space-y-4">
+                          {asignacionesExtra.map((asignacion, index) => {
+                            const mostrarDocente = asignacion.rol === 'docente';
+                            return (
+                              <div key={index} className="rounded-2xl border-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/40 p-4 space-y-4">
+                                <div className="flex items-center justify-between gap-3">
+                                  <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Bloque {index + 1}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => eliminarAsignacion(index)}
+                                    className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-200 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+                                  >
+                                    Eliminar
+                                  </button>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  <SelectConDropdown
+                                    label="Rol"
+                                    name={`asignacion-rol-${index}`}
+                                    value={asignacion.rol || 'docente'}
+                                    onChange={(e) => handleAsignacionChange(index, 'rol', e.target.value)}
+                                    options={roles.map(rol => ({ value: rol.value, label: rol.label }))}
+                                    error={errors[`asignaciones.${index}.rol`]}
+                                    required
+                                  />
+
+                                  <SelectConDropdown
+                                    label="Carrera"
+                                    name={`asignacion-carrera-${index}`}
+                                    value={asignacion.carrera || ''}
+                                    onChange={(e) => handleAsignacionChange(index, 'carrera', e.target.value)}
+                                    options={carreras.map(c => ({ value: c.id, label: c.nombre }))}
+                                    error={errors[`asignaciones.${index}.carrera`]}
+                                    required
+                                  />
+
+                                  {mostrarDocente && (
+                                    <div className="md:col-span-2">
+                                      <FilterDocentes
+                                        label="Docente"
+                                        name={`asignacion-docente-${index}`}
+                                        value={asignacion.docente || ''}
+                                        onChange={(e) => handleAsignacionChange(index, 'docente', e.target.value)}
+                                        docentes={docentes}
+                                        error={errors[`asignaciones.${index}.docente`]}
+                                        placeholder="Buscar docente..."
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
