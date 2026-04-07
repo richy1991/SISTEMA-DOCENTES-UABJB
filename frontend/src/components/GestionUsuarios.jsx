@@ -463,7 +463,7 @@ const SearchInput = ({ value, onChange, placeholder = 'Buscar por nombre o C.I..
   );
 };
 
-function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
+function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = true }) {
   const navigate = useNavigate();
   const restoringFormRef = useRef(false);
   const restoringEditModalRef = useRef(false);
@@ -991,7 +991,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
         {isCreating && createPortal((
           <div
             className={`fixed top-0 right-0 bottom-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 ${crearNuevoDocente && formData.rol === 'docente' ? '!justify-center' : ''}`}
-            style={{ left: sidebarCollapsed ? '5rem' : '18rem' }}
+            style={{ left: hasSidebar ? (sidebarCollapsed ? '5rem' : '18rem') : '0' }}
           >
             <div className={`flex items-center justify-center w-full h-full ${crearNuevoDocente && formData.rol === 'docente' ? 'gap-6' : ''}`}>
               {/* Modal Usuario - mantiene su tamaño original */}
@@ -1264,6 +1264,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user }) {
           carreras={carreras}
           roles={roles}
           sidebarCollapsed={sidebarCollapsed}
+          hasSidebar={hasSidebar}
           currentUser={user}
         />
 

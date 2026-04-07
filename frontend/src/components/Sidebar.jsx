@@ -100,11 +100,9 @@ function Sidebar({ user, onLogout, collapsed, setCollapsed, theme, setTheme, onP
       { path: '/fondo-tiempo/archivados', icon: ArchiveIcon, label: 'Fondos Archivados', roles: ['admin', 'director', 'jefe_estudios', 'docente'] },
     ],
     administracion: [
-      { path: '/fondo-tiempo/usuarios', icon: UsersIcon, label: 'Usuarios del Sistema', roles: ['admin'] },
       { path: '/fondo-tiempo/docentes', icon: AcademicCapIcon, label: 'Docentes', roles: ['admin', 'director', 'jefe_estudios'] },
       { path: '/fondo-tiempo/cargas-horarias', icon: ClockIcon, label: 'Carga Horaria', roles: ['admin', 'jefe_estudios'] },
       { path: '/fondo-tiempo/calendarios', icon: CalendarioIcon, label: 'Calendario Académico', roles: ['admin'] },
-      { path: '/fondo-tiempo/carreras', icon: BuildingIcon, label: 'Carreras', roles: ['admin'] },
       { path: '/fondo-tiempo/materias', icon: BookOpenIcon, label: 'Materias', roles: ['admin', 'director', 'jefe_estudios'] },
     ]
   };

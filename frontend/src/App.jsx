@@ -257,10 +257,8 @@ function App() {
               <Route path="archivados" element={<AnimatedRoute><FondosArchivados isDark={isDark} /></AnimatedRoute>} />
 
               {/* Rutas de Administración (Integradas en el Sidebar) */}
-              <Route path="usuarios" element={<AnimatedRoute><GestionUsuarios isDark={isDark} sidebarCollapsed={sidebarCollapsed} user={user} /></AnimatedRoute>} />
               <Route path="docentes" element={<AnimatedRoute><ListaDocentes isDark={isDark} sidebarCollapsed={sidebarCollapsed} /></AnimatedRoute>} />
               <Route path="calendarios" element={<AnimatedRoute><ListaCalendarios /></AnimatedRoute>} />
-              <Route path="carreras" element={<AnimatedRoute><ListaCarreras isDark={isDark} sidebarCollapsed={sidebarCollapsed} /></AnimatedRoute>} />
               <Route path="materias" element={<AnimatedRoute><MateriaList isDark={isDark} sidebarCollapsed={sidebarCollapsed} /></AnimatedRoute>}>
                 <Route path="nueva" element={<MateriaForm sidebarCollapsed={sidebarCollapsed} />} />
                 <Route path="editar/:id" element={<MateriaForm sidebarCollapsed={sidebarCollapsed} />} />
@@ -272,6 +270,15 @@ function App() {
             {/* Módulo: Fondos a Largo Plazo */}
             <Route path="/largo-plazo" element={<SimpleLayout />}>
               <Route index element={<Proximamente isDark={isDark} />} />
+            </Route>
+
+            {/* Módulo Principal: Gestión Global de Usuarios/Carreras */}
+            <Route path="/usuarios" element={<SimpleLayout />}>
+              <Route index element={<AnimatedRoute><GestionUsuarios isDark={isDark} user={user} hasSidebar={false} /></AnimatedRoute>} />
+            </Route>
+
+            <Route path="/carreras" element={<SimpleLayout />}>
+              <Route index element={<AnimatedRoute><ListaCarreras isDark={isDark} hasSidebar={false} /></AnimatedRoute>} />
             </Route>
 
             {/* Módulo: Seguimiento Global */}

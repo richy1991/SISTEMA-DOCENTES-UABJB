@@ -100,7 +100,7 @@ const ToggleSwitch = ({ isActive, onChange }) => (
   </button>
 );
 
-const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, carreras, roles, sidebarCollapsed = false, currentUser }) => {
+const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, carreras, roles, sidebarCollapsed = false, hasSidebar = true, currentUser }) => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({});
   const [asignacionesExtra, setAsignacionesExtra] = useState([]);
@@ -392,7 +392,7 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
   return createPortal(
     <div
       className="fixed top-0 right-0 bottom-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
-      style={{ left: sidebarCollapsed ? '5rem' : '18rem' }}
+      style={{ left: hasSidebar ? (sidebarCollapsed ? '5rem' : '18rem') : '0' }}
     >
       <div className="flex max-h-[95vh] w-full max-w-4xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-slate-800">
         <div className="bg-[#2C4AAE] px-6 py-4 rounded-t-2xl dark:bg-[#1a3a8a]">

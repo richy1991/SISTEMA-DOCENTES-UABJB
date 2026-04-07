@@ -689,7 +689,7 @@ const FilterCarreras = ({ carreras, onSelect, placeholder = 'Buscar carrera...' 
   );
 };
 
-function ListaCarreras({ isDark, sidebarCollapsed = false }) {
+function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) {
   const [carreras, setCarreras] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -1364,7 +1364,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false }) {
         {isCreating && createPortal((
           <div
             className="fixed top-0 right-0 bottom-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in"
-            style={{ left: sidebarCollapsed ? '5rem' : '18rem', animationDuration: '160ms' }}
+            style={{ left: hasSidebar ? (sidebarCollapsed ? '5rem' : '18rem') : '0', animationDuration: '160ms' }}
           >
             <div className="bg-white dark:bg-slate-900/90 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden animate-slide-up" style={{ animationDuration: '180ms' }}>
                 <div className="px-6 py-4 border-b border-[#7F97E8]/45 bg-[#2C4AAE]">
@@ -1672,7 +1672,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false }) {
 
       {/* Modal Ver / Editar */}
       {showModal && carreraSeleccionada && isViewMode && createPortal((
-        <div className="fixed top-0 right-0 bottom-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in" style={{ left: sidebarCollapsed ? '5rem' : '18rem', animationDuration: '160ms' }}>
+        <div className="fixed top-0 right-0 bottom-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in" style={{ left: hasSidebar ? (sidebarCollapsed ? '5rem' : '18rem') : '0', animationDuration: '160ms' }}>
           <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-5xl w-full max-h-[92vh] overflow-hidden animate-slide-up flex flex-col" style={{ animationDuration: '180ms' }}>
             {/* Header */}
             <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700 bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-700 dark:to-blue-800 flex items-center justify-between">
@@ -1841,7 +1841,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false }) {
       ), document.body)}
 
       {showModal && carreraSeleccionada && !isViewMode && createPortal((
-        <div className="fixed top-0 right-0 bottom-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in" style={{ left: sidebarCollapsed ? '5rem' : '18rem', animationDuration: '160ms' }}>
+        <div className="fixed top-0 right-0 bottom-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in" style={{ left: hasSidebar ? (sidebarCollapsed ? '5rem' : '18rem') : '0', animationDuration: '160ms' }}>
           <div className="bg-white dark:bg-slate-900/90 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden animate-slide-up" style={{ animationDuration: '180ms' }}>
             <div className="px-6 py-4 border-b border-[#7F97E8]/45 bg-[#2C4AAE]">
               <h3 className="text-xl font-bold text-slate-100 flex items-center gap-2">Editar Carrera</h3>

@@ -1308,9 +1308,21 @@ def crear_perfil_usuario(sender, instance, created, **kwargs):
 
 @receiver(post_save, sender=User)
 def guardar_perfil_usuario(sender, instance, **kwargs):
-    # Sincroniza solo el campo 'activo' para no sobrescribir rol/carrera/docente
-    # con un objeto de perfil cacheado y desactualizado.
-    PerfilUsuario.objects.filter(user=instance).update(activo=instance.is_active)
+    perfil = PerfilUsuario.objects.filter(user=instance).first()
+
+    if not perfil:
+        return
+
+    updates = {'activo': instance.is_active}
+
+    if instance.is_superuser:
+        updates['rol'] = 'admin'
+        updates['debe_cambiar_password'] = False
+
+    for field, value in updates.items():
+        setattr(perfil, field, value)
+
+    perfil.save(update_fields=list(updates.keys()))
 
 @receiver(post_save, sender=Actividad)
 @receiver(post_delete, sender=Actividad)

@@ -825,7 +825,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
           // Limpiar flag pero mantener datos en sessionStorage
           sessionStorage.removeItem('abrirModalDesdeUsuarios');
           sessionStorage.removeItem('datosCrearDocente');
-          navigate('/fondo-tiempo/usuarios');
+          navigate('/usuarios');
         }, 800);
       } else {
         toast.success('Docente creado correctamente');
@@ -858,7 +858,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
         email: docente.email || '',
       })
     );
-    navigate('/fondo-tiempo/usuarios');
+    navigate('/usuarios');
   };
 
   const handleUpdateSubmit = async (e) => {
@@ -1151,7 +1151,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                     if (abrirDesdeUsuarios) {
                       // Volver a usuarios si venimos desde alli
                       // Los datos se recuperaran automaticamente en GestionUsuarios
-                      navigate('/fondo-tiempo/usuarios');
+                      navigate('/usuarios');
                     } else {
                       setIsCreating(false);
                     }
