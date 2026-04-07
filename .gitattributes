@@ -33,3 +33,11 @@
 *.sqlite3 binary -text -eol -working-tree-encoding
 *.sqlite binary -text -eol -working-tree-encoding
 *.db binary -text -eol -working-tree-encoding
+
+# Images and binary assets (never normalize line endings/encoding)
+*.png binary -text -eol -working-tree-encoding
+*.jpg binary -text -eol -working-tree-encoding
+*.jpeg binary -text -eol -working-tree-encoding
+*.gif binary -text -eol -working-tree-encoding
+*.webp binary -text -eol -working-tree-encoding
+*.ico binary -text -eol -working-tree-encoding
