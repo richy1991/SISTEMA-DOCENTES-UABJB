@@ -130,7 +130,7 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
     ];
 
     return (
-        <div className="min-h-screen w-full bg-gradient-to-br from-blue-100 via-indigo-50 to-purple-100 dark:from-gray-900 dark:via-blue-900 dark:to-purple-900 text-slate-800 dark:text-slate-200 font-sans transition-colors duration-500 overflow-hidden">
+        <div className="relative isolate min-h-screen w-full bg-gradient-to-br from-blue-100 via-indigo-50 to-purple-100 dark:from-gray-900 dark:via-blue-900 dark:to-purple-900 text-slate-800 dark:text-slate-200 font-sans transition-colors duration-500 overflow-hidden">
             <style>{`
                 @keyframes module-corner-in {
                     0% {
@@ -166,10 +166,36 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
                 .tools-floating-enter {
                     animation: tools-slide-in 700ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
                 }
+                @keyframes logo-bg-intro {
+                    0% {
+                        transform: translateX(44vw) scale(5.6);
+                        opacity: 0.18;
+                        filter: blur(2px);
+                    }
+                    100% {
+                        transform: translateX(0) scale(1);
+                        opacity: 1;
+                        filter: blur(0);
+                    }
+                }
+                .logo-bg-enter {
+                    animation: logo-bg-intro 1300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+                    transform-origin: center center;
+                    will-change: transform, opacity, filter;
+                }
             `}</style>
 
+            {/* Logo institucional de fondo */}
+            <div className="hidden xl:block fixed left-[72px] top-[calc(50%-152px)] -translate-y-1/2 z-0 pointer-events-none">
+                <img
+                    src="/images/LOGOUAB.png"
+                    alt="Logo de la universidad"
+                    className="logo-bg-enter w-72 h-72 object-contain"
+                />
+            </div>
+
             {/* Círculos decorativos animados (del login) */}
-            <div className="fixed inset-0 overflow-hidden pointer-events-none">
+            <div className="fixed inset-0 overflow-hidden pointer-events-none z-[1]">
                 <div className="absolute -top-40 -right-40 w-80 h-80 rounded-full blur-3xl opacity-20 dark:opacity-30 animate-pulse bg-uab-blue-400 dark:bg-blue-500"></div>
                 <div className="absolute -bottom-40 -left-40 w-80 h-80 rounded-full blur-3xl opacity-20 dark:opacity-30 animate-pulse bg-purple-400 dark:bg-purple-500" style={{ animationDelay: '1s' }}></div>
             </div>
@@ -229,7 +255,7 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
                 </div>
 
                 {mostrarHerramientasGlobales && (
-                    <aside className="tools-floating-enter lg:fixed lg:right-8 lg:top-1/2 lg:-translate-y-1/2 mt-10 lg:mt-0 w-full max-w-sm lg:w-80">
+                    <aside className="tools-floating-enter lg:fixed lg:right-8 lg:top-[calc(50%-152px)] lg:-translate-y-1/2 mt-10 lg:mt-0 w-full max-w-sm lg:w-80">
                         <div className="relative rounded-2xl border border-white/35 dark:border-white/20 bg-white/5 dark:bg-slate-900/10 backdrop-blur-md shadow-2xl p-4">
                             <div className="absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/70 to-transparent" />
                             <p className="text-xs uppercase tracking-[0.22em] text-cyan-200/90 dark:text-cyan-300/80 mb-3 text-center">
