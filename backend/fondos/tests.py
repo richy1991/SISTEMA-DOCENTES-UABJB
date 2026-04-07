@@ -11,7 +11,7 @@ class FondoTiempoEvaluationTests(APITestCase):
         self.carrera_derecho = Carrera.objects.create(nombre="Derecho", codigo="DER", facultad="Ciencias Jurídicas")
 
         # Crear Docentes
-        self.docente_sistemas = Docente.objects.create(nombres="Juan", apellido_paterno="Perez", ci="123", categoria="catedratico", dedicacion="tiempo_completo")
+        self.docente_sistemas = Docente.objects.create(nombres="Juan", apellido_paterno="Perez", ci="123", carrera=self.carrera_sistemas, categoria="catedratico", dedicacion="tiempo_completo")
         
         # Crear Usuarios y Perfiles
         self.admin_user = User.objects.create_user(username="admin", password="password123", is_staff=True)

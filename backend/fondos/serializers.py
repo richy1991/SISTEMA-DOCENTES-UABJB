@@ -31,6 +31,19 @@ def validar_unicidad_cargo_por_carrera(carrera, rol, exclude_user_id=None):
     if exclude_user_id:
         queryset = queryset.exclude(user_id=exclude_user_id)
 
+    # Limpia perfiles huérfanos de autoridad que quedaron de pruebas previas.
+    perfiles_huerfanos = list(queryset.filter(user__isnull=True))
+    for perfil_huerfano in perfiles_huerfanos:
+        perfil_huerfano.delete()
+
+    queryset = PerfilUsuario.objects.filter(
+        rol=rol,
+        carrera=carrera,
+        activo=True,
+    )
+    if exclude_user_id:
+        queryset = queryset.exclude(user_id=exclude_user_id)
+
     if queryset.exists():
         raise serializers.ValidationError(
             f'La carrera de {carrera.nombre} ya tiene un {cargos[rol]} asignado. '
@@ -63,10 +76,22 @@ def obtener_perfil_por_ci(ci):
     return PerfilUsuario.objects.filter(ci=ci_normalizado).select_related('user', 'docente').first()
 
 
+def docente_tiene_historial_operativo(docente):
+    if not docente:
+        return False
+    return (
+        FondoTiempo.objects.filter(docente=docente).exists()
+        or SaldoVacacionesGestion.objects.filter(docente=docente).exists()
+        or CargaHoraria.objects.filter(docente=docente).exists()
+    )
+
+
 def perfil_ci_es_reutilizable(perfil_ci, rol_objetivo):
     if not perfil_ci or perfil_ci.user_id:
         return False
-    return perfil_ci.rol == rol_objetivo
+    if docente_tiene_historial_operativo(perfil_ci.docente):
+        return False
+    return True
 
 
 def _resolver_carrera_asignacion(valor_carrera):
@@ -132,6 +157,10 @@ def _guardar_asignaciones_usuario(user, bloques, docente_por_defecto=None):
             continue
 
         docente = _resolver_docente_asignacion(bloque, docente_por_defecto=docente_por_defecto)
+        if docente and docente.activo is False:
+            raise serializers.ValidationError({
+                'docente': 'No se puede asignar ni vincular un docente inactivo.'
+            })
         AsignacionCarrera.objects.update_or_create(
             user=user,
             carrera=carrera,
@@ -170,6 +199,11 @@ class CargaHorariaSerializer(serializers.ModelSerializer):
 
         if not materia:
             raise serializers.ValidationError({'materia': 'Debe seleccionar una materia para registrar la asignación.'})
+
+        if docente and docente.activo is False:
+            raise serializers.ValidationError({
+                'docente': 'No se puede asignar carga horaria o materia a un docente inactivo.'
+            })
 
         if hora_inicio and hora_fin and hora_fin <= hora_inicio:
             raise serializers.ValidationError({'hora_fin': 'La hora de fin debe ser mayor que la hora de inicio.'})
@@ -261,9 +295,7 @@ class DocenteSerializer(serializers.ModelSerializer):
     carrera_nombre = serializers.SerializerMethodField()
     carrera = serializers.PrimaryKeyRelatedField(
         queryset=Carrera.objects.all(),
-        write_only=True,
         required=False,
-        allow_null=True,
     )
 
     class Meta:
@@ -288,33 +320,31 @@ class DocenteSerializer(serializers.ModelSerializer):
         return None
 
     def get_carrera_id(self, obj):
-        """Obtiene la carrera asociada al perfil vinculado del docente si existe."""
-        perfil = self._perfil_asociado(obj)
-        if perfil and perfil.carrera:
-            return perfil.carrera.id
+        """Obtiene la carrera propia del docente."""
+        if obj.carrera:
+            return obj.carrera.id
         return None
 
     def get_carrera_nombre(self, obj):
-        """Obtiene el nombre de la carrera asociada al perfil vinculado del docente si existe."""
-        perfil = self._perfil_asociado(obj)
-        if perfil and perfil.carrera:
-            return perfil.carrera.nombre
+        """Obtiene el nombre de la carrera propia del docente."""
+        if obj.carrera:
+            return obj.carrera.nombre
         return None
 
     def validate_horas_contrato_semanales(self, value):
         """
         🔒 BLINDAJE: Valida que las horas de contrato semanales estén dentro del rango permitido.
-        Límite máximo: 56 horas semanales (Art. 13 del reglamento)
+        Para dedicación Horario, el máximo permitido es 32 horas semanales.
         """
         if value is not None:
             if value < 1:
                 raise serializers.ValidationError(
                     'Las horas semanales deben ser al menos 1 hora.'
                 )
-            if value > 56:
+            if value > 32:
                 raise serializers.ValidationError(
-                    '⚠️ Límite excedido: La carga horaria no puede superar las 56 horas semanales. '
-                    'Este es el máximo permitido por el reglamento para dedicación Horario.'
+                    '⚠️ Límite excedido: Un docente a tiempo horario no puede exceder las 32 horas semanales. '
+                    'Si requiere más horas, debe recategorizarse a Tiempo Completo.'
                 )
         return value
 
@@ -322,6 +352,12 @@ class DocenteSerializer(serializers.ModelSerializer):
         ci_normalizado = (value or '').strip()
         if not ci_normalizado:
             return ci_normalizado
+
+        docentes_conflicto = Docente.objects.filter(ci=ci_normalizado)
+        if self.instance:
+            docentes_conflicto = docentes_conflicto.exclude(pk=self.instance.pk)
+        if docentes_conflicto.exists():
+            raise serializers.ValidationError('Ya existe otro docente con este C.I.')
 
         perfiles_conflicto = PerfilUsuario.objects.filter(ci=ci_normalizado)
         if self.instance:
@@ -333,49 +369,48 @@ class DocenteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 f'El CI ya esta registrado en el usuario "{perfil_conflicto.user.username}" ({rol_conflicto}).'
             )
+        if perfil_conflicto and not perfil_ci_es_reutilizable(perfil_conflicto, 'docente'):
+            raise serializers.ValidationError(
+                'Ese C.I. sigue reservado por un perfil huérfano con historial del sistema. No se puede reutilizar automáticamente.'
+            )
 
         return ci_normalizado
 
     def validate(self, data):
         """
         🔒 BLINDAJE: Validaciones adicionales para el docente.
-        - Verifica límite de 56 horas semanales
+        - Verifica límite de 32 horas semanales para dedicación Horario
         - Valida coherencia entre dedicación y horas
         """
         dedicacion = data.get('dedicacion', self.instance.dedicacion if self.instance else None)
         horas_contrato = data.get('horas_contrato_semanales',
                                    self.instance.horas_contrato_semanales if self.instance else None)
 
-        # Validar que Horario tenga horas de contrato
+        # Regla de régimen: Horario requiere horas explícitas y máximo 32.
         if dedicacion == 'horario':
             if not horas_contrato or horas_contrato <= 0:
                 raise serializers.ValidationError({
                     'horas_contrato_semanales': 'Para dedicación "Horario", debe especificar un número de horas de contrato semanales mayor a cero.'
                 })
 
-            # 🔒 VALIDACIÓN DE LÍMITE DE 56 HORAS
-            if horas_contrato > 56:
+            if horas_contrato > 32:
                 raise serializers.ValidationError({
                     'horas_contrato_semanales': 
-                    f'⚠️ LÍMITE EXCEDIDO: Has ingresado {horas_contrato} horas semanales, pero el máximo permitido es 56 horas. '
-                    'Por favor, ajusta la carga horaria para cumplir con el reglamento.'
+                    f'⚠️ LÍMITE EXCEDIDO: Has ingresado {horas_contrato} horas semanales, pero el máximo permitido para tiempo horario es 32. '
+                    'Si requiere más horas, recategorice al docente a Tiempo Completo.'
                 })
 
-        # Validar coherencia para Tiempo Completo (40 horas fijas)
-        if dedicacion == 'tiempo_completo':
-            if horas_contrato and horas_contrato > 40:
-                raise serializers.ValidationError({
-                    'horas_contrato_semanales': 
-                    f'⚠️ INCOHERENCIA: Para dedicación "Tiempo Completo" el máximo es 40 horas, pero has ingresado {horas_contrato} horas.'
-                })
+        # Regla de régimen: Tiempo Completo siempre 40 horas.
+        if dedicacion == 'tiempo_completo' and horas_contrato not in [None, '']:
+            raise serializers.ValidationError({
+                'horas_contrato_semanales': 'Tiempo Completo siempre corresponde a 40 horas y no admite horas de contrato personalizadas.'
+            })
 
-        # Validar coherencia para Medio Tiempo (20 horas fijas)
-        if dedicacion == 'medio_tiempo':
-            if horas_contrato and horas_contrato > 20:
-                raise serializers.ValidationError({
-                    'horas_contrato_semanales': 
-                    f'⚠️ INCOHERENCIA: Para dedicación "Medio Tiempo" el máximo es 20 horas, pero has ingresado {horas_contrato} horas.'
-                })
+        # Regla de régimen: Medio Tiempo siempre 20 horas.
+        if dedicacion == 'medio_tiempo' and horas_contrato not in [None, '']:
+            raise serializers.ValidationError({
+                'horas_contrato_semanales': 'Medio Tiempo siempre corresponde a 20 horas y no admite horas de contrato personalizadas.'
+            })
 
         carrera = data.get('carrera')
         if self.instance is None and not carrera:
@@ -387,21 +422,86 @@ class DocenteSerializer(serializers.ModelSerializer):
                 'carrera': 'Debe seleccionar una carrera valida para el docente.'
             })
 
+        if self.instance is not None:
+            perfil_vinculado = self._perfil_asociado(self.instance)
+
+            dedicacion_actual = self.instance.dedicacion
+            if dedicacion_actual != 'horario' and dedicacion == 'horario':
+                cargas_docentes = CargaHoraria.objects.filter(docente=self.instance, categoria='docente')
+                minutos_totales_semana = 0
+                for carga in cargas_docentes:
+                    if not carga.hora_inicio or not carga.hora_fin:
+                        continue
+                    inicio_min = (carga.hora_inicio.hour * 60) + carga.hora_inicio.minute
+                    fin_min = (carga.hora_fin.hour * 60) + carga.hora_fin.minute
+                    if fin_min > inicio_min:
+                        minutos_totales_semana += (fin_min - inicio_min)
+
+                horas_totales_semana = Decimal(minutos_totales_semana) / Decimal('60')
+                if horas_totales_semana > Decimal('32'):
+                    raise serializers.ValidationError({
+                        'dedicacion': (
+                            'No se puede cambiar a Tiempo Horario porque la carga semanal asignada '
+                            f'({horas_totales_semana:.2f}h) excede el límite de 32h. '
+                            'Reduzca la carga académica primero.'
+                        )
+                    })
+
+            if 'fecha_ingreso' in data and data.get('fecha_ingreso') != self.instance.fecha_ingreso:
+                raise serializers.ValidationError({
+                    'fecha_ingreso': 'La fecha de ingreso es de solo lectura en la edición.'
+                })
+
+            if perfil_vinculado and 'carrera' in data and data.get('carrera') and data.get('carrera') != self.instance.carrera:
+                raise serializers.ValidationError({
+                    'carrera': 'No se puede cambiar la carrera de un docente vinculado a un usuario.'
+                })
+
+            if perfil_vinculado and 'email' in data:
+                nuevo_email = (data.get('email') or '').strip()
+                email_actual = (self.instance.email or '').strip()
+                if nuevo_email != email_actual:
+                    raise serializers.ValidationError({
+                        'email': 'El email es de solo lectura para docentes vinculados. Modifíquelo desde Gestión de Usuarios.'
+                    })
+
         return data
 
     def create(self, validated_data):
         carrera = validated_data.pop('carrera', None)
+        if not carrera:
+            raise serializers.ValidationError({'carrera': 'Debe seleccionar una carrera para el docente.'})
+        ci_docente = (validated_data.get('ci') or '').strip()
+        validated_data['carrera'] = carrera
         docente = super().create(validated_data)
 
         perfil = PerfilUsuario.objects.filter(docente=docente).first()
+        if not perfil and ci_docente:
+            perfil_ci = obtener_perfil_por_ci(ci_docente)
+            if perfil_ci and perfil_ci.user_id:
+                raise serializers.ValidationError({
+                    'ci': 'Ya existe un usuario con este C.I.'
+                })
+            if perfil_ci and perfil_ci.docente and perfil_ci.docente_id != docente.id and not perfil_ci_es_reutilizable(perfil_ci, 'docente'):
+                raise serializers.ValidationError({
+                    'ci': 'Ese C.I. sigue reservado por un perfil huérfano con historial del sistema. No se puede reutilizar automáticamente.'
+                })
+            if perfil_ci and perfil_ci_es_reutilizable(perfil_ci, 'docente'):
+                perfil = perfil_ci
+
         if perfil:
-            if carrera is not None:
-                perfil.carrera = carrera
-                perfil.save(update_fields=['carrera'])
+            perfil.docente = docente
+            perfil.ci = ci_docente or perfil.ci
+            perfil.rol = 'docente'
+            perfil.carrera = carrera
+            perfil.activo = True
+            perfil.debe_cambiar_password = False
+            perfil.save(update_fields=['docente', 'ci', 'rol', 'carrera', 'activo', 'debe_cambiar_password'])
         else:
             PerfilUsuario.objects.create(
                 user=None,
                 docente=docente,
+                ci=ci_docente or None,
                 rol='docente',
                 carrera=carrera,
                 telefono='',
@@ -412,10 +512,35 @@ class DocenteSerializer(serializers.ModelSerializer):
         return docente
 
     def update(self, instance, validated_data):
+        activo_en_request = validated_data.get('activo', instance.activo)
         carrera = validated_data.pop('carrera', serializers.empty)
         docente = super().update(instance, validated_data)
 
+        # Sincronizar nombre del docente con el usuario vinculado para evitar divergencias.
+        perfiles_vinculados_usuario = PerfilUsuario.objects.filter(docente=docente, user__isnull=False).select_related('user')
+        if perfiles_vinculados_usuario.exists():
+            apellido_compuesto = ' '.join(
+                [docente.apellido_paterno or '', docente.apellido_materno or '']
+            ).strip()
+            for perfil_vinculado in perfiles_vinculados_usuario:
+                usuario = perfil_vinculado.user
+                if not usuario:
+                    continue
+                cambios_usuario = []
+                if usuario.first_name != (docente.nombres or ''):
+                    usuario.first_name = docente.nombres or ''
+                    cambios_usuario.append('first_name')
+                if usuario.last_name != apellido_compuesto:
+                    usuario.last_name = apellido_compuesto
+                    cambios_usuario.append('last_name')
+                if cambios_usuario:
+                    usuario.save(update_fields=cambios_usuario)
+
         if carrera is not serializers.empty:
+            if not carrera:
+                raise serializers.ValidationError({'carrera': 'Debe seleccionar una carrera válida para el docente.'})
+            docente.carrera = carrera
+            docente.save(update_fields=['carrera'])
             perfil, _ = PerfilUsuario.objects.get_or_create(
                 docente=docente,
                 defaults={
@@ -430,6 +555,21 @@ class DocenteSerializer(serializers.ModelSerializer):
             if perfil.carrera != carrera:
                 perfil.carrera = carrera
                 perfil.save(update_fields=['carrera'])
+
+        # Regla de independencia: desactivar un docente no desactiva el usuario,
+        # pero le retira sus permisos operativos de rol docente.
+        if activo_en_request is False:
+            perfiles_vinculados = PerfilUsuario.objects.filter(docente=docente, user__isnull=False).select_related('user')
+            for perfil_vinculado in perfiles_vinculados:
+                if perfil_vinculado.user_id:
+                    AsignacionCarrera.objects.filter(
+                        user=perfil_vinculado.user,
+                        rol='docente',
+                        activo=True,
+                    ).update(activo=False)
+                if perfil_vinculado.rol == 'docente' and perfil_vinculado.activo:
+                    perfil_vinculado.activo = False
+                    perfil_vinculado.save(update_fields=['activo'])
 
         return docente
 
@@ -1166,9 +1306,9 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({
                     'ci': 'Ya existe un usuario con este C.I.'
                 })
-            if perfil_ci and not perfil_ci.user_id and perfil_ci.rol != data['rol']:
+            if perfil_ci and not perfil_ci.user_id and not perfil_ci_es_reutilizable(perfil_ci, data['rol']):
                 raise serializers.ValidationError({
-                    'ci': 'Ese C.I. ya está reservado en un perfil huérfano de otro tipo de rol.'
+                    'ci': 'Ese C.I. sigue reservado por un perfil huérfano con historial del sistema. No se puede reutilizar automáticamente.'
                 })
 
         data['ci'] = ci_normalizado or None
@@ -1183,6 +1323,11 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
         if data['rol'] == 'docente' and not data.get('docente') and not data.get('docente_data'):
             raise serializers.ValidationError({
                 'docente': 'Para el rol "docente", debe seleccionar un docente existente o proporcionar datos para crear uno nuevo.'
+            })
+
+        if data.get('docente') and data['docente'].activo is False:
+            raise serializers.ValidationError({
+                'docente': 'No se puede vincular un docente inactivo a un usuario.'
             })
 
         if data.get('docente') and data.get('docente_data'):
@@ -1257,11 +1402,30 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
             # Actualizar perfil (se crea automáticamente por signal)
             # VERIFICACIÓN: Si no existe el perfil, crearlo manualmente
             perfil_ci = obtener_perfil_por_ci(ci)
+            perfil_actual_usuario = PerfilUsuario.objects.filter(user=user).first()
+
+            def resolver_conflicto_ci(perfil_destino):
+                ci_normalizado = (ci or '').strip() if isinstance(ci, str) else ci
+                if not ci_normalizado:
+                    return
+
+                conflicto = PerfilUsuario.objects.filter(ci=ci_normalizado).exclude(pk=perfil_destino.pk).first()
+                if not conflicto:
+                    return
+
+                if conflicto.user_id and conflicto.user_id != user.id:
+                    raise serializers.ValidationError({'ci': 'Ya existe un usuario con este C.I.'})
+
+                # Si el conflicto es un perfil huérfano, liberar su CI antes de reasignarlo.
+                conflicto.ci = None
+                conflicto.save(update_fields=['ci'])
 
             if perfil_existente:
                 perfil = perfil_existente
-                if hasattr(user, 'perfil') and user.perfil and user.perfil.id != perfil.id:
-                    user.perfil.delete()
+                if perfil_actual_usuario and perfil_actual_usuario.id != perfil.id:
+                    perfil_actual_usuario.user = None
+                    perfil_actual_usuario.save(update_fields=['user'])
+                resolver_conflicto_ci(perfil)
                 perfil.user = user
                 perfil.rol = rol
                 perfil.carrera = carrera or perfil.carrera
@@ -1273,8 +1437,10 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
                 perfil.save()
             elif perfil_ci_es_reutilizable(perfil_ci, rol):
                 perfil = perfil_ci
-                if hasattr(user, 'perfil') and user.perfil and user.perfil.id != perfil.id:
-                    user.perfil.delete()
+                if perfil_actual_usuario and perfil_actual_usuario.id != perfil.id:
+                    perfil_actual_usuario.user = None
+                    perfil_actual_usuario.save(update_fields=['user'])
+                resolver_conflicto_ci(perfil)
                 perfil.user = user
                 perfil.rol = rol
                 perfil.carrera = carrera or perfil.carrera
@@ -1284,7 +1450,7 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
                 perfil.activo = True
                 perfil.debe_cambiar_password = False
                 perfil.save()
-            elif not hasattr(user, 'perfil'):
+            elif not perfil_actual_usuario:
                 # La signal falló, crear perfil manualmente
                 PerfilUsuario.objects.create(
                     user=user,
@@ -1298,11 +1464,20 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
                 )
             else:
                 # Perfil existe, actualizarlo
-                user.perfil.rol = rol
-                user.perfil.carrera = carrera
-                user.perfil.docente = docente_obj
-                user.perfil.ci = ci
-                user.perfil.save()
+                resolver_conflicto_ci(perfil_actual_usuario)
+                perfil_actual_usuario.rol = rol
+                perfil_actual_usuario.carrera = carrera
+                perfil_actual_usuario.docente = docente_obj
+                perfil_actual_usuario.ci = ci
+                perfil_actual_usuario.save()
+
+            # Mantener sincronizado el email del docente con el email del usuario
+            # en el flujo de creación de cuentas de rol docente.
+            if rol == 'docente' and docente_obj:
+                email_usuario = (validated_data.get('email') or '').strip()
+                if email_usuario and docente_obj.email != email_usuario:
+                    docente_obj.email = email_usuario
+                    docente_obj.save(update_fields=['email'])
 
             bloques_asignacion = [{'rol': rol, 'carrera': carrera, 'docente': docente_obj}] + asignaciones_extra
             _guardar_asignaciones_usuario(user, bloques_asignacion, docente_por_defecto=docente_obj)
@@ -1422,6 +1597,8 @@ class ActualizarUsuarioSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({'is_active': 'El Super Admin no puede desactivarse.'})
             if 'rol' in data and data.get('rol') != 'admin':
                 raise serializers.ValidationError({'rol': 'El rol del Super Admin no puede modificarse.'})
+            if asignaciones:
+                raise serializers.ValidationError({'asignaciones': 'El Super Admin no maneja asignaciones de carrera.'})
 
         # Regla 0: Solo superuser puede asignar rol 'admin'
         if (rol == 'admin' or any(item.get('rol') == 'admin' for item in asignaciones)) and rol_actual != 'admin':
@@ -1463,6 +1640,11 @@ class ActualizarUsuarioSerializer(serializers.ModelSerializer):
         # Regla 2: El rol de Docente debe tener un perfil de docente asociado.
         if rol == 'docente' or any(item.get('rol') == 'docente' for item in asignaciones):
             docente_objetivo = data.get('docente', docente_actual)
+
+            if docente_objetivo is not None and docente_objetivo.activo is False:
+                raise serializers.ValidationError({
+                    'docente': 'No se puede vincular un docente inactivo a un usuario.'
+                })
 
             if docente_objetivo is not None:
                 perfil_docente = PerfilUsuario.objects.filter(docente=docente_objetivo).select_related('user').first()
@@ -1536,7 +1718,11 @@ class ActualizarUsuarioSerializer(serializers.ModelSerializer):
         # 4. Gestionar 'carrera'
         # Se permite guardar carrera para docente cuando viene desde el flujo de creacion/vinculacion.
         if 'carrera' in validated_data:
-            perfil.carrera = validated_data.get('carrera')
+            carrera = validated_data.get('carrera')
+            perfil.carrera = carrera
+            if perfil.docente:
+                perfil.docente.carrera = carrera
+                perfil.docente.save(update_fields=['carrera'])
 
         # 4.1 Gestionar 'ci' (se guarda en Docente si existe vínculo)
         if ci is not None:
@@ -1593,6 +1779,11 @@ class ActualizarUsuarioSerializer(serializers.ModelSerializer):
             elif 'docente' in validated_data:
                 docente_objetivo = validated_data.get('docente')
 
+                if docente_objetivo is not None and docente_objetivo.activo is False:
+                    raise serializers.ValidationError({
+                        'docente': 'No se puede vincular un docente inactivo a un usuario.'
+                    })
+
                 # Si existe un perfil huerfano (user=None) para ese docente,
                 # liberamos el docente de ese perfil y transferimos datos utiles.
                 if docente_objetivo is not None:
@@ -1624,6 +1815,11 @@ class ActualizarUsuarioSerializer(serializers.ModelSerializer):
         
         # 7. Guardar el usuario. La señal post_save se encargará de sincronizar es_active.
         instance.save()
+
+        # Regla de independencia: si el usuario queda inactivo, también se inactiva su docente vinculado.
+        if instance.is_active is False and perfil.docente and perfil.docente.activo:
+            perfil.docente.activo = False
+            perfil.docente.save(update_fields=['activo'])
         
         return instance
     

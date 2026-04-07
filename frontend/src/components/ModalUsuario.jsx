@@ -100,6 +100,20 @@ const ToggleSwitch = ({ isActive, onChange }) => (
   </button>
 );
 
+const buildNombreCompleto = (firstName = '', lastName = '') =>
+  `${firstName || ''} ${lastName || ''}`.trim();
+
+const splitNombreCompleto = (nombreCompleto = '') => {
+  const partes = String(nombreCompleto).trim().split(/\s+/).filter(Boolean);
+  if (partes.length === 0) {
+    return { first_name: '', last_name: '' };
+  }
+  return {
+    first_name: partes[0],
+    last_name: partes.slice(1).join(' '),
+  };
+};
+
 const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, carreras, roles, sidebarCollapsed = false, hasSidebar = true, currentUser }) => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({});
@@ -109,6 +123,9 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
   const [errors, setErrors] = useState({});
   const [resettingPassword, setResettingPassword] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [passwordData, setPasswordData] = useState({ password: '', password_confirm: '' });
 
   useEffect(() => {
     const asignacionesUsuario = Array.isArray(userToEdit?.asignaciones) ? userToEdit.asignaciones : [];
@@ -140,6 +157,7 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
       email: userToEdit?.email || '',
       first_name: userToEdit?.first_name || '',
       last_name: userToEdit?.last_name || '',
+      nombre_completo: buildNombreCompleto(userToEdit?.first_name || '', userToEdit?.last_name || ''),
       ci: userToEdit?.ci || '',
       rol: userToEdit?.perfil?.rol || 'docente',
       carrera: userToEdit?.perfil?.carrera || '',
@@ -151,6 +169,8 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
     setCrearNuevoDocente(false);
     setErrors({});
     setShowResetConfirm(false);
+    setShowChangePassword(false);
+    setPasswordData({ password: '', password_confirm: '' });
   }, [userToEdit]);
 
   useEffect(() => {
@@ -185,6 +205,16 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
 
   const handleChange = (e) => {
     const { name, value } = e.target;
+    if (name === 'nombre_completo') {
+      const split = splitNombreCompleto(value);
+      setFormData((prev) => ({
+        ...prev,
+        nombre_completo: value,
+        first_name: split.first_name,
+        last_name: split.last_name,
+      }));
+      return;
+    }
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
@@ -229,6 +259,7 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
         carrera: formData.carrera || '',
       })
     );
+    sessionStorage.setItem('flujoDocenteDesdeUsuarios', 'editar_usuario');
     sessionStorage.setItem('abrirModalDesdeUsuarios', 'true');
     onClose();
     navigate('/fondo-tiempo/docentes');
@@ -276,6 +307,47 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
     }
   };
 
+  const handlePasswordFieldChange = (e) => {
+    const { name, value } = e.target;
+    setPasswordData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleCambiarPassword = async () => {
+    const password = passwordData.password || '';
+    const passwordConfirm = passwordData.password_confirm || '';
+
+    if (!password || !passwordConfirm) {
+      toast.error('Debes completar ambos campos de contraseña.');
+      return;
+    }
+
+    if (password !== passwordConfirm) {
+      toast.error('Las contraseñas no coinciden.');
+      return;
+    }
+
+    if (password.length < 8) {
+      toast.error('La contraseña debe tener al menos 8 caracteres.');
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      await api.post(`/usuarios/${userToEdit.id}/cambiar_password/`, {
+        password,
+        password_confirm: passwordConfirm,
+      });
+      toast.success('Contraseña actualizada correctamente.');
+      setShowChangePassword(false);
+      setPasswordData({ password: '', password_confirm: '' });
+    } catch (err) {
+      const errorMsg = err?.response?.data?.error || 'No se pudo cambiar la contraseña';
+      toast.error(errorMsg);
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -313,8 +385,11 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
       ci: ciNormalizado || null,
       rol: formData.rol,
       is_active: userToEdit.is_active,
-      asignaciones: asignacionesExtra,
     };
+
+    if (!esSuperusuarioEditado) {
+      payload.asignaciones = asignacionesExtra;
+    }
 
     // Admin, Director y Jefe de Estudios deben enviar carrera
     if ((formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && !esSuperusuarioEditado) {
@@ -405,38 +480,10 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
           <div className="p-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <InputField label="Usuario" name="username" value={formData.username} onChange={handleChange} required disabled={!!userToEdit} error={errors.username} />
-              <InputField label="Email" name="email" type="email" value={formData.email} onChange={handleChange} error={errors.email} />
-              <InputField label="Nombres" name="first_name" value={formData.first_name} onChange={handleChange} required error={errors.first_name} />
-              <InputField label="Apellidos" name="last_name" value={formData.last_name} onChange={handleChange} required error={errors.last_name} />
+              <InputField label="Nombre completo" name="nombre_completo" value={formData.nombre_completo || ''} onChange={handleChange} required error={errors.nombre_completo || errors.first_name || errors.last_name} />
 
               <div>
-                <SelectConDropdown
-                  label="Rol"
-                  name="rol"
-                  value={formData.rol}
-                  onChange={handleRolChange}
-                  options={(roles || []).filter((rol) => currentUser?.is_superuser || rol.value !== 'admin').map((rol) => ({ value: rol.value, label: rol.label }))}
-                  error={errors.rol}
-                  disabled={esSuperusuarioEditado}
-                  required
-                />
-              </div>
-
-              {formData.rol === 'docente' && !esSuperusuarioEditado && !mostrarOpcionesVinculacion && (
-                <div>
-                  <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Contrasena inicial</label>
-                  <div className="w-full px-4 py-3 rounded-xl border-2 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 font-mono font-semibold">
-                    {formData.username ? `${formData.username}UABJB` : 'usuarioUABJB'}
-                  </div>
-                </div>
-              )}
-
-              {mostrarCiAutoridad && esSuperusuarioEditado && (
-                <InputField label="C.I." name="ci" value={formData.ci} onChange={handleChange} error={errors.ci} />
-              )}
-
-              {mostrarCiAutoridad && !esSuperusuarioEditado && (
-                <div>
+                {(formData.rol === 'docente' || formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') ? (
                   <SelectConDropdown
                     label="Carrera"
                     name="carrera"
@@ -445,90 +492,120 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
                     options={carreras.map((c) => ({ value: c.id, label: c.nombre }))}
                     error={errors.carrera}
                     disabled={currentUser?.perfil?.rol === 'admin' && !currentUser?.is_superuser}
-                    required
+                    required={formData.rol !== 'docente'}
+                    placeholder="Seleccione una carrera..."
                   />
-                  {currentUser?.perfil?.rol === 'admin' && !currentUser?.is_superuser && (
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      Carrera asignada automaticamente (no puedes cambiarla)
-                    </p>
+                ) : (
+                  <div />
+                )}
+                {(formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && currentUser?.perfil?.rol === 'admin' && !currentUser?.is_superuser && (
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Carrera asignada automaticamente (no puedes cambiarla)
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <SelectConDropdown
+                      label="Rol"
+                      name="rol"
+                      value={formData.rol}
+                      onChange={handleRolChange}
+                      options={(roles || []).filter((rol) => currentUser?.is_superuser || rol.value !== 'admin').map((rol) => ({ value: rol.value, label: rol.label }))}
+                      error={errors.rol}
+                      disabled={esSuperusuarioEditado}
+                      required
+                    />
+                  </div>
+                  {!esSuperusuarioEditado && (
+                    <div className="shrink-0 pt-[28px]">
+                      <button
+                        type="button"
+                        onClick={asignacionesExtra.length > 0 ? () => setAsignacionesExtra([]) : agregarAsignacion}
+                        disabled={!puedeAgregarAsignacion && asignacionesExtra.length === 0}
+                        className={`h-[52px] w-[52px] rounded-2xl text-3xl font-bold text-white ${(!puedeAgregarAsignacion && asignacionesExtra.length === 0) ? 'cursor-not-allowed bg-slate-400' : 'bg-[#2C4AAE]'}`}
+                      >
+                        {asignacionesExtra.length > 0 ? '−' : '+'}
+                      </button>
+                    </div>
                   )}
                 </div>
-              )}
+              </div>
 
-              {mostrarOpcionesVinculacion && !crearNuevoDocente && (
-                <div>
-                  <SelectConDropdown
-                    label="Vincular a Docente Existente"
-                    name="docente"
-                    value={formData.docente}
-                    onChange={handleChange}
-                    options={docentes.map((d) => ({ value: d.id, label: d.nombre_completo }))}
-                    error={errors.docente}
-                    placeholder="Seleccione un docente"
-                  />
-                </div>
-              )}
-
-              {mostrarCiAutoridad && !esSuperusuarioEditado && (
-                <div className="md:col-span-2">
-                  <div className={`grid gap-4 ${esSuperusuarioEditado ? 'grid-cols-1' : 'grid-cols-2'}`}>
-                    <InputField label="C.I." name="ci" value={formData.ci} onChange={handleChange} error={errors.ci} />
-                    {!esSuperusuarioEditado && (
-                      <div>
-                        <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Contrasena inicial</label>
-                        <div className="w-full px-4 py-3 rounded-xl border-2 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 font-mono font-semibold">
-                          {formData.username ? `${formData.username}UABJB` : 'usuarioUABJB'}
-                        </div>
-                      </div>
+              <div>
+                {mostrarCiAutoridad ? (
+                  <InputField label="C.I." name="ci" value={formData.ci} onChange={handleChange} error={errors.ci} />
+                ) : (
+                  <div>
+                    <SelectConDropdown
+                      label="Vincular a Docente Existente"
+                      name="docente"
+                      value={formData.docente}
+                      onChange={handleChange}
+                      options={docentes.map((d) => ({ value: d.id, label: d.nombre_completo }))}
+                      error={errors.docente}
+                      disabled={tieneDocenteVinculado}
+                      placeholder={tieneDocenteVinculado ? nombreDocenteVinculado : 'Seleccione un docente'}
+                    />
+                    {mostrarInfoDocente && (
+                      <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-300">
+                        Docente vinculado: {nombreDocenteVinculado}
+                      </p>
                     )}
                   </div>
-                </div>
-              )}
+                )}
+              </div>
 
-              {formData.rol === 'docente' && (
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
-                    Crear nuevo registro de docente
-                  </label>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="flex items-center justify-center rounded-xl border-2 border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-700/50 w-3/4 mx-auto">
-                      <ToggleSwitch
-                        isActive={crearNuevoDocente}
-                        onChange={() => {
-                          if (!crearNuevoDocente) {
-                            setCrearNuevoDocente(true);
-                            handleCrearNuevoDocente();
-                          } else {
-                            setCrearNuevoDocente(false);
-                          }
-                        }}
-                      />
-                    </div>
-                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 dark:border-emerald-800/60 dark:bg-emerald-900/20 dark:text-emerald-300">
-                      {mostrarInfoDocente ? (
-                        <>Docente vinculado: {nombreDocenteVinculado}</>
-                      ) : (
-                        <>Aun no hay docente vinculado.</>
-                      )}
-                    </div>
-                  </div>
+              <div>
+                <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
+                  Crear nuevo registro de docente
+                </label>
+                <div className={`flex h-[52px] items-center justify-center rounded-xl border-2 ${formData.rol === 'docente' ? 'border-slate-300 bg-slate-100 dark:border-slate-600 dark:bg-slate-700/50' : 'border-slate-300 bg-slate-200/70 dark:border-slate-600 dark:bg-slate-700/30'}`}>
+                  <ToggleSwitch
+                    isActive={crearNuevoDocente}
+                    onChange={() => {
+                      if (formData.rol !== 'docente') return;
+                      if (!crearNuevoDocente) {
+                        setCrearNuevoDocente(true);
+                        handleCrearNuevoDocente();
+                      } else {
+                        setCrearNuevoDocente(false);
+                      }
+                    }}
+                  />
                 </div>
-              )}
+                {formData.rol !== 'docente' && (
+                  <p className="mt-1 text-xs text-amber-600 dark:text-amber-300">
+                    No disponible para este rol
+                  </p>
+                )}
+              </div>
 
+              <InputField label="Email" name="email" type="email" value={formData.email} onChange={handleChange} error={errors.email} />
+              <div>
+                <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Contraseña inicial</label>
+                <div className="w-full px-4 py-3 rounded-xl border-2 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 font-mono font-semibold">
+                  {formData.username ? `${formData.username}UABJB` : 'usuarioUABJB'}
+                </div>
+              </div>
+
+              {!esSuperusuarioEditado && (
               <div className="md:col-span-2 mt-2">
                 <div className="mb-3 flex items-center justify-between">
                   <div>
                     <h4 className="text-sm font-bold uppercase tracking-wide text-slate-700 dark:text-slate-300">Asignaciones adicionales</h4>
                     <p className="text-xs text-slate-500 dark:text-slate-400">Cada bloque define rol y carrera de forma independiente.</p>
                   </div>
-                  <button
+                  {esSuperusuarioEditado && (<button
                     type="button"
                     onClick={agregarAsignacion}
                     disabled={!puedeAgregarAsignacion}
                     className={`rounded-xl px-3 py-2 font-semibold text-white transition-colors ${puedeAgregarAsignacion ? 'bg-[#2C4AAE] hover:bg-[#1a3a8a]' : 'bg-slate-400 cursor-not-allowed'}`}
                   >
                     +
-                  </button>
+                  </button>)}
                 </div>
                 {!puedeAgregarAsignacion && (
                   <p className="mb-3 text-xs text-amber-600 dark:text-amber-300">
@@ -591,6 +668,7 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
                   </div>
                 )}
               </div>
+              )}
             </div>
           </div>
         </form>
@@ -598,20 +676,22 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
         <div className="px-6 py-4 bg-slate-100 dark:bg-slate-700 border-t border-slate-300 dark:border-slate-600 rounded-b-2xl">
           <div className="flex items-center justify-between">
             <div>
-              {userToEdit && !esSuperusuarioEditado && (
-                <button
-                  type="button"
-                  onClick={() => setShowResetConfirm(true)}
-                  disabled={loading || resettingPassword}
-                  className={`flex items-center gap-2 rounded-xl border-2 px-4 py-2.5 text-sm font-bold shadow-sm transition-all ${
-                    resettingPassword
-                      ? 'cursor-not-allowed border-slate-300 bg-slate-100 text-slate-400 dark:border-slate-600 dark:bg-slate-700'
-                      : 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-amber-900/40'
-                  }`}
-                  title={`Restablecer contraseña a: ${userToEdit?.username}UABJB`}
-                >
-                  🔑 {resettingPassword ? 'Restableciendo...' : 'Restablecer Contraseña'}
-                </button>
+              {userToEdit && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                      type="button"
+                      onClick={() => setShowResetConfirm(true)}
+                      disabled={loading || resettingPassword}
+                      className={`flex items-center gap-2 rounded-xl border-2 px-4 py-2.5 text-sm font-bold shadow-sm transition-all ${
+                        resettingPassword
+                          ? 'cursor-not-allowed border-slate-300 bg-slate-100 text-slate-400 dark:border-slate-600 dark:bg-slate-700'
+                          : 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-amber-900/40'
+                      }`}
+                      title={`Restablecer contraseña a: ${userToEdit?.username}UABJB`}
+                    >
+                      🔑 {resettingPassword ? 'Restableciendo...' : 'Restablecer Contraseña'}
+                    </button>
+                </div>
               )}
             </div>
             <div className="flex gap-3">
@@ -681,6 +761,65 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
                   }`}
                 >
                   {resettingPassword ? 'Restableciendo...' : 'Confirmar y Restablecer'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {false && showChangePassword && esSuperusuarioEditado && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+            <div
+              className="absolute inset-0 bg-black/70 backdrop-blur-[2px]"
+              onClick={() => !changingPassword && setShowChangePassword(false)}
+            />
+            <div className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-blue-300/40 bg-slate-900 shadow-2xl dark:border-blue-700/50">
+              <div className="border-b border-slate-700/70 bg-gradient-to-r from-blue-900/30 to-slate-900 px-5 py-4">
+                <h4 className="flex items-center gap-2 text-lg font-bold text-blue-300">
+                  <span>🔒</span>
+                  Cambiar Contraseña
+                </h4>
+              </div>
+              <div className="space-y-4 px-5 py-4 text-slate-200">
+                <p className="text-sm leading-relaxed">
+                  Estás cambiando la contraseña de <strong className="text-white">{userToEdit?.username}</strong>.
+                </p>
+                <InputField
+                  label="Nueva contraseña"
+                  name="password"
+                  type="password"
+                  value={passwordData.password}
+                  onChange={handlePasswordFieldChange}
+                  required
+                />
+                <InputField
+                  label="Confirmar nueva contraseña"
+                  name="password_confirm"
+                  type="password"
+                  value={passwordData.password_confirm}
+                  onChange={handlePasswordFieldChange}
+                  required
+                />
+                <p className="text-xs text-slate-400">Mínimo 8 caracteres.</p>
+              </div>
+              <div className="flex justify-end gap-3 border-t border-slate-700/70 bg-slate-950/70 px-5 py-4">
+                <button
+                  type="button"
+                  onClick={() => setShowChangePassword(false)}
+                  disabled={changingPassword}
+                  className="rounded-lg border border-slate-600 px-4 py-2 font-semibold text-slate-300 hover:bg-slate-800 disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCambiarPassword}
+                  disabled={changingPassword}
+                  className={`rounded-lg px-4 py-2 font-bold text-white ${
+                    changingPassword ? 'cursor-not-allowed bg-slate-500' : 'bg-blue-600 hover:bg-blue-700'
+                  }`}
+                >
+                  {changingPassword ? 'Guardando...' : 'Guardar Contraseña'}
                 </button>
               </div>
             </div>

@@ -16,16 +16,16 @@ from .models import (
 @admin.register(Docente)
 class DocenteAdmin(admin.ModelAdmin):
     list_display = [
-        'id','nombre_completo', 'ci', 'categoria', 'dedicacion',
+        'id','nombre_completo', 'ci', 'carrera', 'categoria', 'dedicacion',
         'horas_semanales_badge', 'email', 'activo'
     ]
-    list_filter = ['categoria', 'dedicacion', 'activo']
-    search_fields = ['nombres', 'apellido_paterno', 'apellido_materno', 'ci', 'email']
-    ordering = ['apellido_paterno', 'apellido_materno', 'nombres']
+    list_filter = ['carrera', 'categoria', 'dedicacion', 'activo']
+    search_fields = ['nombres', 'apellido_paterno', 'apellido_materno', 'ci', 'email', 'carrera__nombre']
+    ordering = ['carrera__facultad', 'carrera__nombre', 'apellido_paterno', 'apellido_materno', 'nombres']
     
     fieldsets = (
         ('Información Personal', {
-            'fields': ('nombres', 'apellido_paterno', 'apellido_materno', 'ci')
+            'fields': ('nombres', 'apellido_paterno', 'apellido_materno', 'ci', 'carrera')
         }),
         ('Información Laboral', {
             'fields': ('categoria', 'dedicacion'),

@@ -6,6 +6,23 @@ import api from '../apis/api';
 import ModalUsuario from './ModalUsuario';
 import toast from 'react-hot-toast';
 
+const getBackendErrorMessage = (apiErrors, fallback = 'Ocurrió un error inesperado.') => {
+  if (!apiErrors) return fallback;
+
+  if (typeof apiErrors === 'string') {
+    return apiErrors.includes('<!DOCTYPE') ? fallback : apiErrors;
+  }
+
+  if (typeof apiErrors.error === 'string' && apiErrors.error.trim()) return apiErrors.error;
+  if (typeof apiErrors.detail === 'string' && apiErrors.detail.trim()) return apiErrors.detail;
+
+  const nested = Object.values(apiErrors)
+    .flatMap((value) => Array.isArray(value) ? value : [value])
+    .find((value) => typeof value === 'string' && value.trim() && !value.includes('<!DOCTYPE'));
+
+  return nested || fallback;
+};
+
 // Animación para el search input
 const style = document.createElement('style');
 style.textContent = `
@@ -56,7 +73,7 @@ const TrashIcon = (props) => (
 
 const InputField = ({ label, name, type = 'text', value, onChange, required, disabled, error }) => (
   <div>
-    <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label} {required && <span className="text-red-500">*</span>}</label>
+    <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label}</label>
     <input
       type={type}
       name={name}
@@ -72,7 +89,11 @@ const InputField = ({ label, name, type = 'text', value, onChange, required, dis
 );
 
 // Componente Select con Dropdown animado (igual que en ListaDocentes)
-const SelectConDropdown = ({ label, name, value, onChange, options, error, disabled = false, required = false, placeholder = 'Seleccione...' }) => {
+const SELECT_INPUT_BASE_CLASS = 'border-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700';
+
+const STATIC_CONTROL_STYLE = { transition: 'none', transform: 'none', animation: 'none' };
+
+const SelectConDropdown = ({ label, name, value, onChange, options, error, disabled = false, required = false, placeholder = 'Seleccione...', hoverEffect = true, stable = false, standardStyle = false, onInteract = null }) => {
   const [open, setOpen] = useState(false);
   const containerRef = useRef(null);
 
@@ -94,29 +115,46 @@ const SelectConDropdown = ({ label, name, value, onChange, options, error, disab
     <div ref={containerRef} className="relative">
       {label && (
         <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
-          {label} {required && <span className="text-red-500">*</span>}
+          {label}
         </label>
       )}
       <button
         type="button"
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          if (!disabled && typeof onInteract === 'function') {
+            onInteract();
+          }
+          setOpen(!open);
+        }}
         disabled={disabled}
-        className={`w-full px-4 py-3 rounded-2xl text-left flex items-center justify-between transition-all ${
-          disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:shadow-md'
-        } ${
-          error 
-            ? 'border-2 border-red-500 bg-white dark:bg-slate-800' 
-            : open 
-              ? 'border-2 border-[#2C4AAE] bg-white dark:bg-slate-800' 
-                : 'border-2 border-slate-400 bg-slate-100 dark:bg-slate-700 hover:border-[#2C4AAE]'
-        }`}
+        style={STATIC_CONTROL_STYLE}
+        className={standardStyle
+          ? `w-full h-[52px] px-4 py-3 rounded-2xl text-left flex items-center justify-between shadow-sm transition-none transform-none hover:shadow-none ${
+              disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+            } ${
+              error
+                ? 'border-2 border-red-500 bg-slate-50 dark:bg-slate-700'
+                : SELECT_INPUT_BASE_CLASS
+            }`
+          : `w-full h-[52px] px-4 py-3 rounded-xl text-left flex items-center justify-between shadow-sm transition-none transform-none hover:shadow-none ${
+              disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+            } ${
+              error 
+                ? 'border-2 border-red-500 bg-slate-50 dark:bg-slate-700' 
+                : SELECT_INPUT_BASE_CLASS
+            }`
+        }
       >
-        <span className={`${selectedLabel ? 'text-slate-800 dark:text-white font-semibold text-sm leading-tight' : 'text-slate-400 dark:text-slate-500'}`}>
+        <span className={standardStyle
+          ? `${selectedLabel ? 'text-slate-800 dark:text-white font-semibold text-sm leading-tight' : 'text-slate-400 dark:text-slate-500'}`
+          : `${selectedLabel ? 'text-slate-800 dark:text-white font-semibold text-sm leading-tight' : 'text-slate-400 dark:text-slate-500'}`
+        }>
           {selectedLabel || placeholder}
         </span>
-        <div className="w-8 h-8 bg-[#2C4AAE] hover:bg-[#1a3a8a] rounded-lg flex items-center justify-center transition-colors">
+        <div style={STATIC_CONTROL_STYLE} className={standardStyle ? 'w-8 h-8 bg-[#2C4AAE] rounded-lg flex items-center justify-center transition-none transform-none' : 'w-8 h-8 bg-[#2C4AAE] rounded-lg flex items-center justify-center transition-none transform-none'}>
           <svg
-            className={`w-4 h-4 text-white transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+            style={STATIC_CONTROL_STYLE}
+            className="w-4 h-4 text-white transition-none transform-none"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -200,14 +238,18 @@ const FilterDocentes = ({
     const nextValue = e.target.value;
     setSearchTerm(nextValue);
     setOpen(true);
-
-    if (value) {
-      onChange({ target: { name, value: '' } });
-    }
   };
 
   const handleButtonClick = () => {
     if (disabled) return;
+    if (value) {
+      setSearchTerm('');
+      onChange({ target: { name, value: '' } });
+      setOpen(true);
+      setTimeout(() => inputRef.current?.focus(), 0);
+      return;
+    }
+
     setOpen(!open);
     if (!open) {
       setTimeout(() => inputRef.current?.focus(), 0);
@@ -224,19 +266,18 @@ const FilterDocentes = ({
     <div ref={containerRef} className="relative">
       {label && (
         <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
-          {label} {required && <span className="text-red-500">*</span>}
+          {label}
         </label>
       )}
 
       <div
-        className={`flex items-center px-4 py-3 rounded-2xl transition-all ${
+        style={STATIC_CONTROL_STYLE}
+        className={`flex items-center px-4 py-3 rounded-xl shadow-sm ${
           disabled
-            ? 'cursor-not-allowed opacity-60 border-2 border-slate-400 bg-slate-100 dark:bg-slate-700'
+            ? `cursor-not-allowed opacity-60 ${SELECT_INPUT_BASE_CLASS}`
             : error
-              ? 'border-2 border-red-500 bg-white dark:bg-slate-800'
-              : open
-                ? 'border-2 border-[#2C4AAE] bg-white dark:bg-slate-800'
-                : 'border-2 border-slate-400 bg-slate-100 dark:bg-slate-700 hover:border-[#2C4AAE]'
+              ? 'border-2 border-red-500 bg-slate-50 dark:bg-slate-700'
+              : SELECT_INPUT_BASE_CLASS
         }`}
       >
         <input
@@ -254,10 +295,12 @@ const FilterDocentes = ({
           type="button"
           onClick={handleButtonClick}
           disabled={disabled}
-          className="w-8 h-8 bg-[#2C4AAE] hover:bg-[#1a3a8a] rounded-lg flex items-center justify-center transition-colors flex-shrink-0 ml-2 disabled:opacity-70"
+          style={STATIC_CONTROL_STYLE}
+          className="w-8 h-8 bg-[#2C4AAE] rounded-lg flex items-center justify-center flex-shrink-0 ml-2 disabled:opacity-70"
         >
           <svg
-            className={`w-4 h-4 text-white transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+            style={STATIC_CONTROL_STYLE}
+            className="w-4 h-4 text-white"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -287,6 +330,169 @@ const FilterDocentes = ({
           ) : (
             <div className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400 text-center">
               Escribe para buscar docentes
+            </div>
+          )}
+        </div>
+      )}
+
+      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+    </div>
+  );
+};
+
+const FilterCarreras = ({
+  label,
+  name,
+  value,
+  onChange,
+  carreras,
+  error,
+  disabled = false,
+  required = false,
+  placeholder = 'Buscar carrera...'
+}) => {
+  const [open, setOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const containerRef = useRef(null);
+  const inputRef = useRef(null);
+  const clearingSelectionRef = useRef(false);
+
+  const selectedCarrera = carreras.find((c) => String(c.id) === String(value));
+
+  useEffect(() => {
+    if (clearingSelectionRef.current) {
+      if (!value) {
+        clearingSelectionRef.current = false;
+      }
+      return;
+    }
+    if (selectedCarrera?.nombre) {
+      setSearchTerm(selectedCarrera.nombre);
+    } else if (!value) {
+      setSearchTerm('');
+    }
+  }, [value, selectedCarrera]);
+
+  useEffect(() => {
+    const handleOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    if (open) {
+      document.addEventListener('mousedown', handleOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [open]);
+
+  const filteredCarreras = carreras.filter((carrera) => {
+    const term = searchTerm.toLowerCase();
+    const nombre = String(carrera.nombre || '').toLowerCase();
+    const codigo = String(carrera.codigo || '').toLowerCase();
+    const facultad = String(carrera.facultad_nombre || '').toLowerCase();
+    return nombre.includes(term) || codigo.includes(term) || facultad.includes(term);
+  });
+
+  const handleInputChange = (e) => {
+    const nextValue = e.target.value;
+    setSearchTerm(nextValue);
+    setOpen(true);
+
+    if (value) {
+      onChange({ target: { name, value: '' } });
+    }
+  };
+
+  const handleButtonClick = () => {
+    if (disabled) return;
+    if (value) {
+      clearingSelectionRef.current = true;
+      setSearchTerm('');
+      onChange({ target: { name, value: '' } });
+      setOpen(true);
+      setTimeout(() => inputRef.current?.focus(), 0);
+      return;
+    }
+    setOpen(!open);
+    if (!open) {
+      setTimeout(() => inputRef.current?.focus(), 0);
+    }
+  };
+
+  const handleSelectCarrera = (carrera) => {
+    onChange({ target: { name, value: carrera.id } });
+    setSearchTerm(carrera.nombre || '');
+    setOpen(false);
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      {label && (
+        <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
+          {label}
+        </label>
+      )}
+
+      <div
+        style={STATIC_CONTROL_STYLE}
+        className={`flex items-center px-4 py-3 rounded-xl shadow-sm ${
+          disabled
+            ? `cursor-not-allowed opacity-60 ${SELECT_INPUT_BASE_CLASS}`
+            : error
+              ? 'border-2 border-red-500 bg-slate-50 dark:bg-slate-700'
+              : SELECT_INPUT_BASE_CLASS
+        }`}
+      >
+        <input
+          ref={inputRef}
+          type="text"
+          value={searchTerm}
+          onChange={handleInputChange}
+          onFocus={() => !disabled && setOpen(true)}
+          placeholder={placeholder}
+          disabled={disabled}
+          className="flex-1 bg-transparent text-slate-800 dark:text-white focus:outline-none text-sm placeholder-slate-400 dark:placeholder-slate-500"
+        />
+
+        <button
+          type="button"
+          onClick={handleButtonClick}
+          disabled={disabled}
+          style={STATIC_CONTROL_STYLE}
+          className="w-8 h-8 bg-[#2C4AAE] rounded-lg flex items-center justify-center flex-shrink-0 ml-2 disabled:opacity-70"
+        >
+          <svg
+            style={STATIC_CONTROL_STYLE}
+            className="w-4 h-4 text-white"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+      </div>
+
+      {open && !disabled && (
+        <div className="absolute z-50 mt-2 w-full rounded-xl border-2 border-[#2C4AAE] bg-white dark:bg-slate-800 shadow-xl max-h-64 overflow-auto">
+          {filteredCarreras.length > 0 ? (
+            filteredCarreras.map((carrera) => (
+              <button
+                key={carrera.id}
+                type="button"
+                onClick={() => handleSelectCarrera(carrera)}
+                className="w-full text-left px-4 py-3 text-sm transition-colors text-slate-700 dark:text-slate-300 hover:bg-[#2C4AAE] hover:text-white border-b border-slate-200 dark:border-slate-700 last:border-b-0"
+              >
+                <div className="font-semibold">{carrera.nombre}</div>
+              </button>
+            ))
+          ) : searchTerm ? (
+            <div className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400 text-center">
+              No hay carreras que coincidan
+            </div>
+          ) : (
+            <div className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400 text-center">
+              Escribe para buscar carreras
             </div>
           )}
         </div>
@@ -349,7 +555,7 @@ const SimpleDropdown = ({ label, value, onChange, options, placeholder = 'Carrer
 
   return (
     <div ref={containerRef} className="relative">
-      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
+        <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
         {label}
       </label>
       <button
@@ -363,14 +569,14 @@ const SimpleDropdown = ({ label, value, onChange, options, placeholder = 'Carrer
             setSearch('');
           }
         }}
-        className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border-2 border-transparent focus:border-blue-500 rounded-2xl text-left flex items-center justify-between transition-all"
+        className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-700 border-2 border-slate-400 dark:border-slate-600 focus:border-blue-500 rounded-xl text-left flex items-center justify-between transition-all shadow-sm"
       >
         <span className={`${selectedLabel ? 'text-slate-800 dark:text-white font-semibold text-sm leading-tight' : 'text-slate-400 dark:text-slate-500'}`}>
           {selectedLabel || placeholder}
         </span>
-        <div className="w-8 h-8 bg-[#2C4AAE] hover:bg-[#1a3a8a] rounded-lg flex items-center justify-center transition-colors">
+        <div className="w-8 h-8 bg-[#2C4AAE] rounded-lg flex items-center justify-center">
           <svg
-            className={`w-4 h-4 text-white transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+            className={`w-4 h-4 text-white ${open ? 'rotate-180' : ''}`}
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -470,6 +676,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
   const restoringLinkRef = useRef(false);
   const [usuarios, setUsuarios] = useState([]);
   const [docentes, setDocentes] = useState([]);
+  const [docenteReciente, setDocenteReciente] = useState(null);
   const [carreras, setCarreras] = useState([]);
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -483,6 +690,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
   const [isCreating, setIsCreating] = useState(false);
   const [formData, setFormData] = useState({});
   const [crearNuevoDocente, setCrearNuevoDocente] = useState(false);
+  const [bloquearCrearNuevoDocente, setBloquearCrearNuevoDocente] = useState(false);
   const [asignacionesExtra, setAsignacionesExtra] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
@@ -530,32 +738,49 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
   }, [usuarios]);
 
   useEffect(() => {
-    if (restoringLinkRef.current || docentes.length === 0) return;
+    if (restoringLinkRef.current) return;
 
     const vincularDocentePendiente = sessionStorage.getItem('vincularDocentePendiente');
     if (!vincularDocentePendiente) return;
 
     try {
       const datos = JSON.parse(vincularDocentePendiente);
-      const docente = docentes.find((item) => item.id === datos.docenteId);
+      const docente = docentes.find((item) => String(item.id) === String(datos.docenteId));
+      const docenteId = datos.docenteId;
 
-      if (docente) {
+      if (docente || docenteId) {
         restoringLinkRef.current = true;
         restoringFormRef.current = true;
+        const datosCrearUsuarioRaw = sessionStorage.getItem('datosCrearUsuario');
+        const datosCrearUsuario = datosCrearUsuarioRaw ? JSON.parse(datosCrearUsuarioRaw) : null;
+        const nombreCompleto = datosCrearUsuario?.nombre_completo || `${datos.first_name || ''} ${datos.last_name || ''}`.trim();
+        const firstName = datosCrearUsuario?.first_name || datos.first_name || '';
+        const lastName = datosCrearUsuario?.last_name || datos.last_name || '';
+        const carreraSeleccionada = datosCrearUsuario?.carrera || datos.carrera || docente?.carrera_id || docente?.carrera || '';
+
         setVinculacionRapidaDocente(true);
+        setDocenteReciente({
+          id: docenteId,
+          nombre_completo: docente?.nombre_completo || nombreCompleto,
+          ci: docente?.ci || '',
+          carrera_id: carreraSeleccionada,
+        });
         setFormData({
-          username: '',
-          email: datos.email || '',
-          first_name: datos.first_name || '',
-          last_name: datos.last_name || '',
+          username: datosCrearUsuario?.username || '',
+          email: datosCrearUsuario?.email || datos.email || '',
+          nombre_completo: nombreCompleto,
+          first_name: firstName,
+          last_name: lastName,
           rol: 'docente',
-          carrera: datos.carrera || docente.carrera_id || docente.carrera || '',
-          docente: docente.id,
-          password: '',
-          password_confirm: '',
+          carrera: carreraSeleccionada,
+          docente: docenteId,
+          docente_data: null,
+          password: datosCrearUsuario?.password || '',
+          password_confirm: datosCrearUsuario?.password_confirm || '',
         });
         setAsignacionesExtra([]);
         setCrearNuevoDocente(false);
+        setBloquearCrearNuevoDocente(false);
         setErrors({});
         setUsuarioEditando(null);
         setIsCreating(true);
@@ -569,14 +794,41 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
 
   // 🔗 Recuperar datos del formulario al volver desde docentes
   useEffect(() => {
+    const vincularDocentePendiente = sessionStorage.getItem('vincularDocentePendiente');
+    if (vincularDocentePendiente) return;
     const datosGuardados = sessionStorage.getItem('datosCrearUsuario');
     if (datosGuardados) {
       try {
         const datos = JSON.parse(datosGuardados);
+        const docenteRetornadoRaw = sessionStorage.getItem('docenteRetornadoDesdeUsuarios');
+        const docenteRetornado = docenteRetornadoRaw ? JSON.parse(docenteRetornadoRaw) : null;
+        const firstName = datos.first_name || '';
+        const lastName = datos.last_name || '';
+        const nombreCompleto = datos.nombre_completo || `${firstName} ${lastName}`.trim();
+
+        setDocenteReciente(docenteRetornado ? {
+          id: docenteRetornado.id,
+          nombre_completo: docenteRetornado.nombre_completo || nombreCompleto,
+          ci: docenteRetornado.ci || '',
+          carrera_id: docenteRetornado.carrera || '',
+        } : null);
+
         restoringFormRef.current = true;
-        setFormData(datos);
+        setFormData({
+          ...datos,
+          nombre_completo: nombreCompleto,
+          first_name: firstName,
+          last_name: lastName,
+          carrera: docenteRetornado?.carrera || datos.carrera || '',
+          docente: docenteRetornado?.id || (datos.docente || ''),
+          docente_data: null,
+        });
+        setCrearNuevoDocente(false);
+        setBloquearCrearNuevoDocente(Boolean(docenteRetornado?.id));
         setAsignacionesExtra([]);
         sessionStorage.removeItem('datosCrearUsuario');
+        sessionStorage.removeItem('docenteRetornadoDesdeUsuarios');
+        sessionStorage.removeItem('flujoDocenteDesdeUsuarios');
         // Abrir el modal automáticamente con los datos recuperados
         setIsCreating(true);
         setAbrirModalAlVolver(false);
@@ -585,6 +837,20 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
       }
     }
   }, []);
+
+  useEffect(() => {
+    if (!isCreating) return;
+    if (formData.rol !== 'docente') return;
+    if (!docenteReciente?.id) return;
+    if (formData.docente) return;
+
+    setFormData((prev) => ({
+      ...prev,
+      docente: docenteReciente.id,
+      docente_data: null,
+      carrera: prev.carrera || docenteReciente.carrera_id || '',
+    }));
+  }, [isCreating, formData.rol, formData.docente, docenteReciente]);
 
   const cargarDatos = async () => {
     try {
@@ -613,6 +879,21 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
       setError('Error al cargar los datos');
       setLoading(false);
     }
+  };
+
+  const docentesDisponibles = docenteReciente && !docentes.some((item) => String(item.id) === String(docenteReciente.id))
+    ? [...docentes, docenteReciente]
+    : docentes;
+
+  const docentesActivosDisponibles = docentesDisponibles.filter((docente) => docente?.activo !== false);
+  const docentesPorId = new Map(docentes.map((docente) => [String(docente.id), docente]));
+
+  const usuarioTieneDocenteInactivo = (usuario) => {
+    if (usuario?.perfil?.rol !== 'docente') return false;
+    const docenteId = usuario?.perfil?.docente_id;
+    if (!docenteId) return false;
+    const docente = docentesPorId.get(String(docenteId));
+    return Boolean(docente && docente.activo === false);
   };
 
   const usuariosFiltrados = (() => {
@@ -676,11 +957,13 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
       const initialData = {
         username: '',
         email: '',
+        nombre_completo: '',
         first_name: '',
         last_name: '',
         rol: 'docente',
         carrera: carreraDefault,
         docente: '',
+        docente_data: null,
         password: '',
         password_confirm: '',
       };
@@ -688,6 +971,8 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
       setAsignacionesExtra([]);
       setVinculacionRapidaDocente(false);
       setCrearNuevoDocente(false);
+      setBloquearCrearNuevoDocente(false);
+      setDocenteReciente(null);
       setErrors({});
     }
   }, [isCreating, user]);
@@ -697,6 +982,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
     if (isCreating) {
       setVinculacionRapidaDocente(false);
       setAsignacionesExtra([]);
+      setBloquearCrearNuevoDocente(false);
     }
     setIsCreating(!isCreating);
     setUsuarioEditando(null); // Ensure we are not in edit mode
@@ -773,20 +1059,53 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
     setFormData(prev => {
       const updated = { ...prev, [name]: value };
 
+      if (name === 'nombre_completo') {
+        const partes = value.trim().split(/\s+/).filter(Boolean);
+        updated.first_name = partes[0] || '';
+        updated.last_name = partes.slice(1).join(' ');
+      }
+
       // Auto-generar contraseña por defecto al escribir el username
       if (name === 'username') {
         updated.password = value + 'UABJB';
         updated.password_confirm = value + 'UABJB';
       }
 
+      if (name === 'docente' && value) {
+        updated.docente_data = null;
+      }
+
+      if (name === 'carrera' && updated.docente_data) {
+        updated.docente_data = {
+          ...updated.docente_data,
+          carrera: value,
+        };
+      }
+
       return updated;
     });
 
+    if (name === 'carrera') {
+      setAsignacionesExtra((prev) => prev.map((item) => (
+        item.rol === 'docente' ? { ...item, carrera: value } : item
+      )));
+    }
+
+    if (name === 'docente' && value) {
+      setCrearNuevoDocente(false);
+    }
+
     // Limpia el error del campo al escribir para feedback inmediato
     setErrors((prev) => {
-      if (!prev?.[name]) return prev;
       const next = { ...prev };
-      delete next[name];
+      if (name === 'nombre_completo') {
+        delete next.nombre_completo;
+        delete next.first_name;
+        delete next.last_name;
+      } else {
+        if (!prev?.[name]) return prev;
+        delete next[name];
+      }
       return next;
     });
   };
@@ -796,6 +1115,8 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
 
     const newRol = e.target.value;
     const esAdminCarrera = user?.perfil?.rol === 'admin' && !user?.is_superuser;
+
+    setErrors((prev) => ({ ...prev, rol: null }));
     
     setFormData(prev => ({
       ...prev,
@@ -805,6 +1126,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
         ? (esAdminCarrera ? user?.perfil?.carrera : prev.carrera) 
         : (newRol === 'docente' ? prev.carrera : ''),
       docente: newRol !== 'docente' ? '' : prev.docente,
+      docente_data: newRol !== 'docente' ? null : prev.docente_data,
     }));
     if (newRol !== 'docente') {
       setCrearNuevoDocente(false);
@@ -814,15 +1136,19 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
   const handleCrearNuevoDocente = () => {
     // 🔗 Al marcar checkbox, ir a /fondo-tiempo/docentes y abrir modal
     // Guardar datos del formulario en sessionStorage para recuperarlos al volver
+    sessionStorage.removeItem('vincularDocentePendiente');
     sessionStorage.setItem('datosCrearUsuario', JSON.stringify(formData));
     const apellidos = (formData.last_name || '').trim().split(/\s+/).filter(Boolean);
     sessionStorage.setItem('datosCrearDocente', JSON.stringify({
       nombres: formData.first_name || '',
       apellido_paterno: apellidos[0] || '',
       apellido_materno: apellidos.slice(1).join(' '),
-      email: formData.email || '',
+      carrera: formData.carrera || '',
+      nombre_completo: formData.nombre_completo || `${formData.first_name || ''} ${formData.last_name || ''}`.trim(),
+      ci: '',
       telefono: '',
     }));
+    sessionStorage.setItem('flujoDocenteDesdeUsuarios', 'crear_usuario');
     sessionStorage.setItem('abrirModalDesdeUsuarios', 'true');
     // Marcar para abrir modal al volver
     setAbrirModalAlVolver(true);
@@ -830,9 +1156,21 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
   };
 
   const handleAsignacionChange = (index, field, value) => {
-    setAsignacionesExtra((prev) => prev.map((item, itemIndex) => (
-      itemIndex === index ? { ...item, [field]: value } : item
-    )));
+    setAsignacionesExtra((prev) => prev.map((item, itemIndex) => {
+      if (itemIndex !== index) return item;
+      if (field === 'rol') {
+        return {
+          ...item,
+          rol: value,
+          carrera: value === 'docente' ? (formData.carrera || '') : item.carrera,
+          docente: value === 'docente' ? item.docente : '',
+        };
+      }
+      if (field === 'carrera' && item.rol === 'docente') {
+        return item;
+      }
+      return { ...item, [field]: value };
+    }));
   };
 
   const MAX_ASIGNACIONES_TOTAL = 2;
@@ -840,8 +1178,12 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
   const puedeAgregarAsignacion = totalAsignaciones < MAX_ASIGNACIONES_TOTAL;
 
   const agregarAsignacion = () => {
+    if (asignacionesExtra.length > 0) {
+      setAsignacionesExtra([]);
+      return;
+    }
     if (!puedeAgregarAsignacion) return;
-    setAsignacionesExtra((prev) => ([...prev, { rol: 'docente', carrera: '', docente: '' }]));
+    setAsignacionesExtra((prev) => ([...prev, { rol: 'docente', carrera: formData.carrera || '', docente: '' }]));
   };
 
   const eliminarAsignacion = (index) => {
@@ -866,13 +1208,60 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
       return;
     }
 
-    const docenteId = Number(formData.docente);
-    if (formData.rol === 'docente' && (!docenteId || Number.isNaN(docenteId))) {
+    const resolverDocenteId = () => {
+      const valorDocente = formData.docente;
+      const valorNormalizado = String(valorDocente ?? '').trim();
+
+      if (valorNormalizado) {
+        const idNumerico = Number(valorNormalizado);
+        if (!Number.isNaN(idNumerico) && idNumerico > 0) {
+          const existeDocente = docentesDisponibles.some((docente) => String(docente.id) === String(idNumerico));
+          return existeDocente ? idNumerico : null;
+        }
+
+        const encontradoPorId = docentesDisponibles.find((docente) => String(docente.id) === valorNormalizado);
+        if (encontradoPorId) {
+          const idEncontrado = Number(encontradoPorId.id);
+          return Number.isNaN(idEncontrado) ? encontradoPorId.id : idEncontrado;
+        }
+      }
+
+      const nombreCompletoNormalizado = String(formData.nombre_completo || '').trim().toLowerCase();
+      if (nombreCompletoNormalizado) {
+        const encontradoPorNombre = docentesDisponibles.find((docente) =>
+          String(docente.nombre_completo || '').trim().toLowerCase() === nombreCompletoNormalizado
+        );
+        if (encontradoPorNombre) {
+          const idEncontrado = Number(encontradoPorNombre.id);
+          return Number.isNaN(idEncontrado) ? encontradoPorNombre.id : idEncontrado;
+        }
+      }
+
+      return null;
+    };
+
+    const docenteId = resolverDocenteId();
+    const docenteTemporal = formData.docente_data && typeof formData.docente_data === 'object'
+      ? formData.docente_data
+      : null;
+    const carreraDocente = formData.carrera || docenteTemporal?.carrera || '';
+
+    if (formData.rol === 'docente' && !carreraDocente) {
+      setErrors((prev) => ({
+        ...prev,
+        carrera: ['Debe seleccionar una carrera para el docente.'],
+      }));
+      toast.error('Debe seleccionar una carrera para el docente.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (formData.rol === 'docente' && !docenteId && !docenteTemporal) {
       setErrors((prev) => ({
         ...prev,
         docente: ['Debe seleccionar un docente para vincular.'],
       }));
-      toast.error('Debe seleccionar un docente para vincular.');
+      toast.error('Debe seleccionar o registrar un docente para vincular.');
       setIsSubmitting(false);
       return;
     }
@@ -897,9 +1286,14 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
       payload.ci = ciNormalizado;
     }
     if (formData.rol === 'docente') {
-      payload.docente = docenteId;
-      if (formData.carrera) {
-        payload.carrera = formData.carrera;
+      payload.carrera = carreraDocente;
+      if (docenteTemporal) {
+        payload.docente_data = {
+          ...docenteTemporal,
+          carrera: carreraDocente,
+        };
+      } else {
+        payload.docente = docenteId;
       }
     }
 
@@ -908,20 +1302,40 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
       toast.success('Usuario creado correctamente');
       setIsCreating(false);
       setAsignacionesExtra([]);
+      sessionStorage.removeItem('docenteTemporalDesdeUsuarios');
+      sessionStorage.removeItem('flujoDocenteDesdeUsuarios');
       cargarDatos();
     } catch (err) {
       console.error('Error al crear usuario:', err.response);
       const apiErrors = err.response?.data;
       if (apiErrors) {
-        setErrors(apiErrors);
+        if (typeof apiErrors === 'object') {
+          const backendMessage = getBackendErrorMessage(apiErrors, '');
+          const esErrorDeCargoPorCarrera =
+            backendMessage.includes('ya tiene un Administrador asignado')
+            || backendMessage.includes('ya tiene un Director asignado')
+            || backendMessage.includes('ya tiene un Jefe de Estudios asignado');
+
+          setErrors(
+            esErrorDeCargoPorCarrera
+              ? { ...apiErrors, rol: [backendMessage] }
+              : apiErrors
+          );
+        }
         const ciMsg = Array.isArray(apiErrors?.ci)
           ? apiErrors.ci[0]
           : (typeof apiErrors?.ci === 'string' ? apiErrors.ci : null);
+        const docenteMsg = Array.isArray(apiErrors?.docente)
+          ? apiErrors.docente[0]
+          : (typeof apiErrors?.docente === 'string' ? apiErrors.docente : null);
         if (ciMsg) {
           toast.error(`C.I.: ${ciMsg}`);
+        } else if (docenteMsg) {
+          toast.error(docenteMsg);
+        } else if (typeof apiErrors === 'string' && apiErrors.includes('<!DOCTYPE')) {
+          toast.error('Debe seleccionar un docente para vincular.');
         } else {
-          const errorMsg = Object.values(apiErrors).flat().join(' ');
-          toast.error(`Error: ${errorMsg}`);
+          toast.error(getBackendErrorMessage(apiErrors, 'Ocurrió un error inesperado al crear el usuario.'));
         }
       } else {
         toast.error('Ocurrió un error inesperado.');
@@ -938,6 +1352,16 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
   const docenteError = Array.isArray(errors?.docente)
     ? errors.docente[0]
     : (typeof errors?.docente === 'string' ? errors.docente : null);
+
+  const nombreCompletoError = Array.isArray(errors?.nombre_completo)
+    ? errors.nombre_completo[0]
+    : (Array.isArray(errors?.first_name)
+      ? errors.first_name[0]
+      : (Array.isArray(errors?.last_name)
+        ? errors.last_name[0]
+        : (typeof errors?.first_name === 'string'
+          ? errors.first_name
+          : (typeof errors?.last_name === 'string' ? errors.last_name : null))));
 
   if (loading) {
     return (
@@ -1007,25 +1431,63 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
                 <div className="p-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* Fila 1 */}
-                    <InputField label="Usuario *" name="username" value={formData.username || ''} onChange={handleChange} error={errors.username} />
-                    <InputField label="Email" name="email" type="email" value={formData.email || ''} onChange={handleChange} error={errors.email} />
+                    <InputField label="Usuario" name="username" value={formData.username || ''} onChange={handleChange} error={errors.username} />
+                    <InputField
+                      label="Nombre completo"
+                      name="nombre_completo"
+                      value={formData.nombre_completo || ''}
+                      onChange={handleChange}
+                      error={nombreCompletoError}
+                    />
 
-                    {/* Fila 2 */}
-                    <InputField label="Nombres *" name="first_name" value={formData.first_name || ''} onChange={handleChange} error={errors.first_name} />
-                    <InputField label="Apellidos *" name="last_name" value={formData.last_name || ''} onChange={handleChange} error={errors.last_name} />
-
-                    {/* Rol */}
+                    {/* Fila 2: Carrera - Vincular docente */}
                     <div>
-                      <SelectConDropdown
-                        label="Rol"
-                        name="rol"
-                        value={formData.rol || 'docente'}
-                        onChange={handleRolChange}
-                        options={roles.map(rol => ({ value: rol.value, label: rol.label }))}
-                        error={errors.rol}
-                        disabled={vinculacionRapidaDocente}
-                        required
-                      />
+                      {(formData.rol === 'docente' || formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') ? (
+                        <FilterCarreras
+                          label="Carrera"
+                          name="carrera"
+                          value={formData.carrera || ''}
+                          onChange={handleChange}
+                          carreras={carreras}
+                          error={errors.carrera}
+                          disabled={formData.rol !== 'docente' && user?.perfil?.rol === 'admin' && !user?.is_superuser}
+                          required={formData.rol !== 'docente'}
+                          placeholder="Buscar carrera..."
+                        />
+                      ) : (
+                        <div />
+                      )}
+                    </div>
+
+                    <div>
+                      <div className="flex items-start gap-2">
+                        <div className="flex-1 min-w-0">
+                          <SelectConDropdown
+                            label="Rol"
+                            name="rol"
+                            value={formData.rol || 'docente'}
+                            onChange={handleRolChange}
+                            onInteract={() => setErrors((prev) => ({ ...prev, rol: null }))}
+                            options={roles.map(rol => ({ value: rol.value, label: rol.label }))}
+                            error={errors.rol}
+                            disabled={vinculacionRapidaDocente}
+                            required
+                            standardStyle
+                          />
+                        </div>
+                        <div className="shrink-0 pt-[28px]">
+                          <button
+                            type="button"
+                            onClick={agregarAsignacion}
+                            disabled={!puedeAgregarAsignacion && asignacionesExtra.length === 0}
+                            style={STATIC_CONTROL_STYLE}
+                            className={`h-[52px] w-16 rounded-2xl border-2 border-[#2C4AAE] text-white font-black text-2xl leading-none shadow-sm flex items-center justify-center transition-none transform-none hover:shadow-none ${(puedeAgregarAsignacion || asignacionesExtra.length > 0) ? 'bg-[#2C4AAE]' : 'bg-slate-400 cursor-not-allowed opacity-70'}`}
+                            title={asignacionesExtra.length > 0 ? 'Cerrar asignación adicional' : 'Agregar asignación adicional'}
+                          >
+                            {asignacionesExtra.length > 0 ? '−' : '+'}
+                          </button>
+                        </div>
+                      </div>
                       {vinculacionRapidaDocente && (
                         <p className="text-xs text-blue-600 dark:text-blue-300 mt-1">
                           Vinculo rapido desde "Sin Cuenta": rol bloqueado en Docente.
@@ -1033,60 +1495,106 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
                       )}
                     </div>
 
-                    {/* Carrera para admin/director/jefe_estudios - a la derecha de Rol */}
-                    {(formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && (
-                      <div>
-                        <SelectConDropdown
-                          label="Carrera"
-                          name="carrera"
-                          value={formData.carrera}
+                    <div>
+                      {formData.rol === 'docente' ? (
+                        <FilterDocentes
+                          label="Vincular a Docente Existente"
+                          name="docente"
+                          value={formData.docente}
                           onChange={handleChange}
-                          options={carreras.map(c => ({ value: c.id, label: c.nombre }))}
-                          error={errors.carrera}
-                          disabled={user?.perfil?.rol === 'admin' && !user?.is_superuser}
-                          required
+                          docentes={docentesActivosDisponibles}
+                          error={docenteError}
+                          disabled={vinculacionRapidaDocente}
+                          placeholder="Buscar docente..."
                         />
-                      </div>
-                    )}
-
-                    {/* Vincular a Docente Existente - solo para rol docente */}
-                    {formData.rol === 'docente' && !crearNuevoDocente && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      ) : (formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') ? (
                         <div>
-                          <FilterDocentes
-                            label="Vincular a Docente Existente"
-                            name="docente"
-                            value={formData.docente}
+                          <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">C.I.</label>
+                          <input
+                            type="text"
+                            name="ci"
+                            value={formData.ci || ''}
                             onChange={handleChange}
-                            docentes={docentes}
-                            error={docenteError}
-                            disabled={vinculacionRapidaDocente}
-                            placeholder="Buscar docente..."
+                            className={`w-full px-4 py-3 rounded-xl border-2 bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                              ciError ? 'border-red-500 dark:border-red-500' : 'border-slate-400 dark:border-slate-600'
+                            }`}
                           />
-                          {vinculacionRapidaDocente && (
-                            <p className="text-xs text-blue-600 dark:text-blue-300 mt-1">
-                              Docente bloqueado para completar el vinculo directo.
+                          {ciError && <p className="text-xs text-red-600 mt-1">{ciError}</p>}
+                        </div>
+                      ) : (
+                        <div />
+                      )}
+                    </div>
+
+                    <div>
+                      {!vinculacionRapidaDocente ? (
+                        <div>
+                          <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
+                            Crear nuevo registro de docente
+                          </label>
+                          <div className="flex items-center justify-center rounded-xl border-2 border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-700/50 w-full h-[52px]">
+                            <ToggleSwitch
+                              isActive={crearNuevoDocente}
+                              disabled={bloquearCrearNuevoDocente || formData.rol !== 'docente'}
+                              onChange={() => {
+                                if (bloquearCrearNuevoDocente || formData.rol !== 'docente') return;
+                                if (!crearNuevoDocente) {
+                                  handleCrearNuevoDocente();
+                                } else {
+                                  setCrearNuevoDocente(false);
+                                  setFormData((prev) => ({ ...prev, docente_data: null }));
+                                  sessionStorage.removeItem('docenteTemporalDesdeUsuarios');
+                                }
+                              }}
+                            />
+                          </div>
+                          {formData.rol !== 'docente' && (
+                            <p className="text-xs text-amber-500 dark:text-amber-300 mt-1">
+                              No disponible para este rol
                             </p>
                           )}
                         </div>
+                      ) : (
+                        <div />
+                      )}
+                    </div>
+
+                    {(formData.rol === 'docente' || formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && !crearNuevoDocente && (
+                      <InputField
+                        label="Email"
+                        name="email"
+                        type="email"
+                        value={formData.email || ''}
+                        onChange={handleChange}
+                        error={errors.email}
+                      />
+                    )}
+
+                    {/* Fila 4 (Docente): Contraseña inicial - Asignaciones adicionales */}
+                    {formData.rol === 'docente' && !crearNuevoDocente && (
                         <div>
-                          <SimpleDropdown
-                            label="Carrera"
-                            value={formData.carrera || ''}
-                            onChange={(carreraId) => setFormData(prev => ({ ...prev, carrera: carreraId }))}
-                            options={carreras.map(c => ({ value: c.id, label: c.nombre }))}
-                            placeholder="Seleccione una carrera..."
-                          />
+                        <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Contraseña inicial</label>
+                        <div className="w-full px-4 py-3 rounded-xl border-2 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 font-mono font-semibold">
+                          {formData.username ? `${formData.username}UABJB` : 'usuarioUABJB'}
+                        </div>
+                      </div>
+                    )}
+
+                    {(formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && !crearNuevoDocente && (
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Contraseña inicial</label>
+                        <div className="w-full px-4 py-3 rounded-xl border-2 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 font-mono font-semibold">
+                          {formData.username ? `${formData.username}UABJB` : 'usuarioUABJB'}
                         </div>
                       </div>
                     )}
 
                     {/* C.I. para admin/director/jefe_estudios - abajo de Rol */}
-                    {(formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && (
+                    {false && (formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && (
                       <div className="md:col-span-2">
                         <div className="grid grid-cols-2 gap-4">
                           <div>
-                            <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">C.I. <span className="text-red-500">*</span></label>
+                            <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">C.I.</label>
                             <input
                               type="text"
                               name="ci"
@@ -1108,113 +1616,64 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
                       </div>
                     )}
 
-                    {/* Opción para docente */}
-                    {formData.rol === 'docente' && !vinculacionRapidaDocente && (
-                      <div className="md:col-span-2">
-                        <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
-                          Crear nuevo registro de docente
-                        </label>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="flex items-center justify-center rounded-xl border-2 border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-700/50 w-3/4 mx-auto">
-                            <ToggleSwitch
-                              isActive={crearNuevoDocente}
-                              onChange={() => {
-                                if (!crearNuevoDocente) {
-                                  handleCrearNuevoDocente();
-                                } else {
-                                  setCrearNuevoDocente(false);
-                                }
-                              }}
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Contraseña inicial</label>
-                            <div className="w-full px-4 py-3 rounded-xl border-2 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 font-mono font-semibold">
-                              {formData.username ? `${formData.username}UABJB` : 'usuarioUABJB'}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
                     <div className="md:col-span-2 mt-2">
-                      <div className="flex items-center justify-between mb-3">
-                        <div>
-                          <h3 className="text-sm font-bold uppercase tracking-wide text-slate-700 dark:text-slate-300">Asignaciones adicionales</h3>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">Agrega una carrera y rol extra por usuario.</p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={agregarAsignacion}
-                          disabled={!puedeAgregarAsignacion}
-                          className={`px-3 py-2 rounded-xl text-white font-semibold transition-colors ${puedeAgregarAsignacion ? 'bg-[#2C4AAE] hover:bg-[#1a3a8a]' : 'bg-slate-400 cursor-not-allowed'}`}
-                        >
-                          +
-                        </button>
-                      </div>
-                      {!puedeAgregarAsignacion && (
+                      {false && !puedeAgregarAsignacion && (
                         <p className="text-xs text-amber-600 dark:text-amber-300 mb-3">
                           Límite alcanzado: máximo 2 asignaciones totales por usuario.
                         </p>
                       )}
 
-                      {asignacionesExtra.length > 0 && (
-                        <div className="space-y-4">
+                      <div
+                        className={`${asignacionesExtra.length > 0 ? 'block' : 'hidden'}`}
+                      >
+                        <div className="space-y-4 pt-2">
                           {asignacionesExtra.map((asignacion, index) => {
                             const mostrarDocente = asignacion.rol === 'docente';
                             return (
-                              <div key={index} className="rounded-2xl border-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/40 p-4 space-y-4">
-                                <div className="flex items-center justify-between gap-3">
-                                  <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Bloque {index + 1}</span>
-                                  <button
-                                    type="button"
-                                    onClick={() => eliminarAsignacion(index)}
-                                    className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-200 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
-                                  >
-                                    Eliminar
-                                  </button>
-                                </div>
-
+                              <div key={index} className="rounded-2xl border-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/40 p-4">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                  <SelectConDropdown
-                                    label="Rol"
-                                    name={`asignacion-rol-${index}`}
-                                    value={asignacion.rol || 'docente'}
-                                    onChange={(e) => handleAsignacionChange(index, 'rol', e.target.value)}
-                                    options={roles.map(rol => ({ value: rol.value, label: rol.label }))}
-                                    error={errors[`asignaciones.${index}.rol`]}
-                                    required
-                                  />
-
-                                  <SelectConDropdown
+                                  <FilterCarreras
                                     label="Carrera"
                                     name={`asignacion-carrera-${index}`}
                                     value={asignacion.carrera || ''}
                                     onChange={(e) => handleAsignacionChange(index, 'carrera', e.target.value)}
-                                    options={carreras.map(c => ({ value: c.id, label: c.nombre }))}
+                                    carreras={carreras}
                                     error={errors[`asignaciones.${index}.carrera`]}
                                     required
+                                    placeholder="Buscar carrera..."
                                   />
 
-                                  {mostrarDocente && (
-                                    <div className="md:col-span-2">
-                                      <FilterDocentes
-                                        label="Docente"
-                                        name={`asignacion-docente-${index}`}
-                                        value={asignacion.docente || ''}
-                                        onChange={(e) => handleAsignacionChange(index, 'docente', e.target.value)}
-                                        docentes={docentes}
-                                        error={errors[`asignaciones.${index}.docente`]}
-                                        placeholder="Buscar docente..."
-                                      />
-                                    </div>
+                                  {mostrarDocente ? (
+                                    <FilterDocentes
+                                      label="Docente"
+                                      name={`asignacion-docente-${index}`}
+                                      value={asignacion.docente || ''}
+                                      onChange={(e) => handleAsignacionChange(index, 'docente', e.target.value)}
+                                      docentes={docentesActivosDisponibles}
+                                      error={errors[`asignaciones.${index}.docente`]}
+                                      placeholder="Buscar docente..."
+                                    />
+                                  ) : (
+                                    <div />
                                   )}
+
+                                  <div className="md:col-span-2">
+                                    <SelectConDropdown
+                                      label="Rol"
+                                      name={`asignacion-rol-${index}`}
+                                      value={asignacion.rol || 'docente'}
+                                      onChange={(e) => handleAsignacionChange(index, 'rol', e.target.value)}
+                                      options={roles.map(rol => ({ value: rol.value, label: rol.label }))}
+                                      error={errors[`asignaciones.${index}.rol`]}
+                                      required
+                                    />
+                                  </div>
                                 </div>
                               </div>
                             );
                           })}
                         </div>
-                      )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1318,13 +1777,32 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                 {usuariosFiltrados.map(usuario => (
-                  <tr key={usuario.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap">
+                  (() => {
+                    const filaInactiva = usuario.is_active === false && !usuario.is_superuser;
+                    const textoFila = filaInactiva ? 'text-red-700 dark:text-red-300' : 'text-slate-700 dark:text-slate-300';
+                    const textoPrincipal = filaInactiva ? 'font-bold text-red-700 dark:text-red-300' : 'font-bold text-slate-800 dark:text-white';
+                    return (
+                  <tr
+                    key={usuario.id}
+                    className={`transition-colors ${
+                      usuario.is_active
+                        ? 'hover:bg-slate-50 dark:hover:bg-slate-700/30'
+                        : 'bg-red-200/90 dark:bg-red-950/35 hover:bg-red-300/80 dark:hover:bg-red-900/45'
+                    }`}
+                  >
+                    <td className={`px-6 py-4 whitespace-nowrap ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
                       <div className="space-y-1">
-                        <div className="font-bold text-slate-800 dark:text-white">{usuario.username}</div>
+                        <div className={`flex items-center gap-2 ${textoPrincipal}`}>
+                          <span>{usuario.username}</span>
+                          {filaInactiva && (
+                            <span className="inline-flex items-center rounded-md border border-red-700 bg-red-200 px-2 py-0.5 text-[11px] font-bold text-red-900 dark:border-red-700 dark:bg-red-900/30 dark:text-red-300">
+                              (inactivo)
+                            </span>
+                          )}
+                        </div>
                         {/* Aviso si el usuario no tiene perfil */}
                         {!usuario.perfil && (
-                          <div className="text-xs font-semibold text-amber-600 dark:text-amber-400">
+                          <div className={`text-xs font-semibold ${filaInactiva ? 'text-red-700 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`}>
                             ⚠️ Sin Perfil
                           </div>
                         )}
@@ -1336,29 +1814,33 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-slate-700 dark:text-slate-300">
+                    <td className={`px-6 py-4 whitespace-nowrap ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
+                      <div className={`text-sm ${textoFila}`}>
                         {usuario.first_name || '-'}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-slate-700 dark:text-slate-300">
+                    <td className={`px-6 py-4 whitespace-nowrap ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
+                      <div className={`text-sm ${textoFila}`}>
                         {usuario.last_name || '-'}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-mono text-slate-700 dark:text-slate-300">
+                    <td className={`px-6 py-4 whitespace-nowrap ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
+                      <div className={`text-sm font-mono ${textoFila}`}>
                         {usuario.ci || '-'}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                    <td className={`px-6 py-4 whitespace-nowrap ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
+                      <div className={`text-sm font-bold ${textoFila}`}>
                         {usuario.carrera_codigo || '-'}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className={`px-6 py-4 whitespace-nowrap ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
+                      {(() => {
+                        const docenteInactivo = usuarioTieneDocenteInactivo(usuario);
+                        return (
                       <span className={`px-3 py-1.5 inline-flex text-xs font-bold rounded-lg border-2 shadow-sm ${
                         usuario.is_superuser ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 border-amber-400 dark:border-amber-600' :
+                        docenteInactivo ? 'bg-red-200 dark:bg-red-900/30 text-red-900 dark:text-red-200 border-red-600 dark:border-red-700' :
                         usuario.perfil?.rol === 'admin' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-700' :
                         usuario.perfil?.rol === 'director' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700' :
                         usuario.perfil?.rol === 'jefe_estudios' ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 border-cyan-300 dark:border-cyan-700' :
@@ -1367,10 +1849,13 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
                         {usuario.is_superuser ? '👑 Super Admin' :
                          usuario.perfil?.rol === 'admin' ? '🛡️ Admin' :
                          usuario.perfil?.rol === 'director' ? '🏛️ Director de Carrera' :
-                         usuario.perfil?.rol === 'jefe_estudios' ? '📚 Jefe de Estudios' : '👨‍🏫 Docente'}
+                         usuario.perfil?.rol === 'jefe_estudios' ? '📚 Jefe de Estudios' :
+                         docenteInactivo ? '👨‍🏫 Docente (inactivo)' : '👨‍🏫 Docente'}
                       </span>
+                        );
+                      })()}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className={`px-6 py-4 whitespace-nowrap ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
                       <div className="flex items-center justify-center gap-3">
                         {!usuario.is_superuser && (
                           <ToggleSwitch
@@ -1383,17 +1868,21 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
                           {usuario.is_superuser
                             ? <span className="text-amber-600 dark:text-amber-400 italic">protegido</span>
                             : usuario.is_active
-                            ? <span className="text-emerald-600 dark:text-emerald-400">Activo</span>
-                            : <span className="text-amber-600 dark:text-amber-400">Inactivo</span>
+                            ? <span className="text-emerald-600 dark:text-emerald-400 italic">Activo</span>
+                            : <span className="text-red-800 dark:text-red-400 font-black italic tracking-wide">inactivo</span>
                           }
                         </span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                    <td className={`px-6 py-4 whitespace-nowrap text-center ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
                       <div className="flex justify-center gap-3">
                         <button
                           onClick={() => abrirModalEditar(usuario)}
-                          className="text-blue-500 hover:text-blue-400 dark:text-blue-400 dark:hover:text-blue-300 transition-all duration-200 hover:scale-110"
+                          className={`transition-all duration-200 hover:scale-110 ${
+                            filaInactiva
+                              ? 'bg-red-600 hover:bg-red-700 text-white border border-red-700 shadow-sm px-2 py-2 rounded-lg'
+                              : 'text-blue-500 hover:text-blue-400 dark:text-blue-400 dark:hover:text-blue-300'
+                          }`}
                           title="Editar"
                         >
                           <FaEdit size={18} />
@@ -1401,7 +1890,13 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
                         <button
                           onClick={() => handleEliminar(usuario)}
                           disabled={usuario.is_superuser}
-                          className={`transition-all duration-200 ${usuario.is_superuser ? 'text-slate-400 dark:text-slate-600 cursor-not-allowed' : 'text-red-500 hover:text-red-400 dark:text-red-400 dark:hover:text-red-300 hover:scale-110'}`}
+                          className={`transition-all duration-200 hover:scale-110 ${
+                            usuario.is_superuser
+                              ? 'text-slate-400 dark:text-slate-600 cursor-not-allowed'
+                              : filaInactiva
+                              ? 'bg-red-600 hover:bg-red-700 text-white border border-red-700 shadow-sm px-2 py-2 rounded-lg'
+                              : 'text-red-500 hover:text-red-400 dark:text-red-400 dark:hover:text-red-300'
+                          }`}
                           title="Eliminar"
                         >
                           <FaTrash size={18} />
@@ -1409,6 +1904,8 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
                       </div>
                     </td>
                   </tr>
+                    );
+                  })()
                 ))}
               </tbody>
             </table>
@@ -1465,7 +1962,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
                   onClick={async () => {
                     try {
                       await api.post(`/usuarios/${usuarioToToggle.id}/toggle_activo/`);
-                      toast.success(`Usuario ${usuarioToToggle.is_active ? 'pausado' : 'reactivado'} con exito`);
+                      toast.success(`Usuario ${usuarioToToggle.is_active ? 'desactivado' : 'reactivado'} con éxito`);
                       setShowToggleModal(false);
                       cargarDatos();
                     } catch (err) {
