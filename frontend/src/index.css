@@ -2,6 +2,39 @@
 @tailwind components;
 @tailwind utilities;
 
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+body {
+  background-color: #f8fafc;
+}
+
+/* Mejora global de contraste en modo claro */
+html:not(.dark) input[type='text'],
+html:not(.dark) input[type='email'],
+html:not(.dark) input[type='password'],
+html:not(.dark) input[type='number'],
+html:not(.dark) input[type='date'],
+html:not(.dark) select,
+html:not(.dark) textarea {
+  border-color: #94a3b8;
+  background-color: #f1f5f9;
+}
+
+html:not(.dark) input[type='checkbox'],
+html:not(.dark) input[type='radio'] {
+  accent-color: #2c4aae;
+}
+
+html:not(.dark) .border-t {
+  border-top-color: #cbd5e1;
+}
+
 /* Ocultar scrollbar en Chrome/Safari/Edge */
 .hide-scrollbar::-webkit-scrollbar {
   display: none;

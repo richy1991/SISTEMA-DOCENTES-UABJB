@@ -63,8 +63,9 @@ const CargaHorariaGeneral = ({ isDark }) => {
   };
 
   const filteredDocentes = docentes.filter(docente => {
-    const fullName = `${docente.nombres} ${docente.apellido_paterno} ${docente.apellido_materno || ''}`.toLowerCase();
-    const ci = docente.ci || '';
+    // 🔒 PROTECCIÓN: Optional chaining para todos los accesos
+    const fullName = `${docente?.nombres || ''} ${docente?.apellido_paterno || ''} ${docente?.apellido_materno || ''}`.toLowerCase();
+    const ci = docente?.ci || '';
     return fullName.includes(searchTerm.toLowerCase()) || ci.includes(searchTerm);
   });
 
@@ -132,11 +133,11 @@ const CargaHorariaGeneral = ({ isDark }) => {
                 {/* Card Header with Avatar */}
                 <div className="p-6 flex items-start gap-4">
                   <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-xl shadow-lg flex-shrink-0 group-hover:scale-105 transition-transform">
-                    {getInitials(docente.nombre_completo || `${docente.nombres} ${docente.apellido_paterno}`)}
+                    {getInitials(docente?.nombre_completo || `${docente?.nombres || ''} ${docente?.apellido_paterno || ''}`)}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-lg font-bold text-slate-800 dark:text-white truncate" title={docente.nombre_completo}>
-                      {docente.nombre_completo || `${docente.nombres} ${docente.apellido_paterno}`}
+                    <h3 className="text-lg font-bold text-slate-800 dark:text-white truncate" title={docente?.nombre_completo || 'Sin nombre'}>
+                      {docente?.nombre_completo || `${docente?.nombres || ''} ${docente?.apellido_paterno || ''}`}
                     </h3>
                     <p className="text-sm text-slate-500 dark:text-slate-400 truncate flex items-center gap-1 mt-1">
                       <span className="text-xs">📧</span> {getEmail(docente)}
@@ -163,7 +164,7 @@ const CargaHorariaGeneral = ({ isDark }) => {
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-500">Dedicación</p>
                       <p className="font-medium text-slate-800 dark:text-slate-200 capitalize">
-                        {docente.dedicacion ? docente.dedicacion.replace('_', ' ') : 'No especificada'}
+                        {docente?.dedicacion ? docente.dedicacion.replace('_', ' ') : 'No especificada'}
                       </p>
                     </div>
                   </div>
@@ -171,7 +172,7 @@ const CargaHorariaGeneral = ({ isDark }) => {
                     <UserIcon className="w-5 h-5 text-slate-400" />
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-500">CI</p>
-                      <p className="font-medium text-slate-800 dark:text-slate-200">{docente.ci}</p>
+                      <p className="font-medium text-slate-800 dark:text-slate-200">{docente?.ci || 'N/A'}</p>
                     </div>
                   </div>
                 </div>

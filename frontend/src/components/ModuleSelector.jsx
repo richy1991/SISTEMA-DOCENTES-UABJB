@@ -42,6 +42,18 @@ const SeguimientoIcon = (props) => (
     </svg>
 );
 
+const UsersIcon = (props) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m-7.5-2.963A3.426 3.426 0 0012 15.75c1.262 0 2.427-.393 3.379-1.085m-6.758 0a3.426 3.426 0 01-3.379-1.085 3.426 3.426 0 01-3.379 1.085C4.26 15.366 3 16.827 3 18.75V19.5a.75.75 0 00.75.75h12.586a.75.75 0 00.75-.75v-.75c0-1.923-1.26-3.384-3.006-3.963zM12 6a3.75 3.75 0 100 7.5 3.75 3.75 0 000-7.5z" />
+    </svg>
+);
+
+const BuildingIcon = (props) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3.75h.008v.008h-.008v-.008zm0 3h.008v.008h-.008v-.008zm0 3h.008v.008h-.008v-.008z" />
+    </svg>
+);
+
 // --- COMPONENTE PRINCIPAL ---
 const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
     const navigate = useNavigate();
@@ -55,10 +67,7 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
         navigate('/login');
     };
 
-    // Definición de módulos
-    let modules = [];
-
-    modules = [...modules,
+    const modules = [
         {
             name: 'Fondo de Tiempo',
             description: 'Gestión de carga horaria y proyectos.',
@@ -93,8 +102,72 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
         },
     ];
 
+    const mostrarHerramientasGlobales = user?.perfil?.rol === 'admin' || user?.is_superuser;
+    const herramientasGlobales = [
+        {
+            name: 'Usuarios del Sistema',
+            description: 'Gestión global de cuentas y permisos.',
+            path: '/usuarios',
+            icon: UsersIcon,
+            color: 'cyan',
+            enabled: true,
+        },
+        {
+            name: 'Carreras',
+            description: 'Catálogo general de carreras del sistema.',
+            path: '/carreras',
+            icon: BuildingIcon,
+            color: 'purple',
+            enabled: true,
+        },
+    ];
+
+    const moduleEntryVectors = [
+        { x: -320, y: -220 },
+        { x: 320, y: -220 },
+        { x: -320, y: 220 },
+        { x: 320, y: 220 },
+    ];
+
     return (
         <div className="min-h-screen w-full bg-gradient-to-br from-blue-100 via-indigo-50 to-purple-100 dark:from-gray-900 dark:via-blue-900 dark:to-purple-900 text-slate-800 dark:text-slate-200 font-sans transition-colors duration-500 overflow-hidden">
+            <style>{`
+                @keyframes module-corner-in {
+                    0% {
+                        opacity: 0;
+                        transform: translate(var(--from-x), var(--from-y)) scale(0.9);
+                        filter: blur(4px);
+                    }
+                    70% {
+                        opacity: 1;
+                        transform: translate(0, 0) scale(1.02);
+                        filter: blur(0);
+                    }
+                    100% {
+                        opacity: 1;
+                        transform: translate(0, 0) scale(1);
+                        filter: blur(0);
+                    }
+                }
+                .module-corner-enter {
+                    animation: module-corner-in 800ms cubic-bezier(0.22, 1, 0.36, 1) both;
+                    will-change: transform, opacity, filter;
+                }
+                @keyframes tools-slide-in {
+                    0% {
+                        opacity: 0;
+                        transform: translateX(140%) translateY(-50%);
+                    }
+                    100% {
+                        opacity: 1;
+                        transform: translateX(0) translateY(-50%);
+                    }
+                }
+                .tools-floating-enter {
+                    animation: tools-slide-in 700ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+                }
+            `}</style>
+
             {/* Círculos decorativos animados (del login) */}
             <div className="fixed inset-0 overflow-hidden pointer-events-none">
                 <div className="absolute -top-40 -right-40 w-80 h-80 rounded-full blur-3xl opacity-20 dark:opacity-30 animate-pulse bg-uab-blue-400 dark:bg-blue-500"></div>
@@ -136,13 +209,66 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
                 </div>
 
                 {/* Grid de Módulos */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl animate-fade-in" style={{animationDelay: '200ms'}}>
-                    {modules.filter(m => m.enabled).map((module) => (
-                        <ModuleCard key={module.name} {...module} onClick={module.action} />
-                    ))}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl">
+                    {modules.filter(m => m.enabled).map((module, index) => {
+                        const vector = moduleEntryVectors[index] || moduleEntryVectors[moduleEntryVectors.length - 1];
+                        return (
+                            <div
+                                key={module.name}
+                                className="module-corner-enter"
+                                style={{
+                                    '--from-x': `${vector.x}px`,
+                                    '--from-y': `${vector.y}px`,
+                                    animationDelay: `${160 + index * 120}ms`,
+                                }}
+                            >
+                                <ModuleCard {...module} onClick={module.action} />
+                            </div>
+                        );
+                    })}
                 </div>
+
+                {mostrarHerramientasGlobales && (
+                    <aside className="tools-floating-enter lg:fixed lg:right-8 lg:top-1/2 lg:-translate-y-1/2 mt-10 lg:mt-0 w-full max-w-sm lg:w-80">
+                        <div className="relative rounded-2xl border border-white/35 dark:border-white/20 bg-white/5 dark:bg-slate-900/10 backdrop-blur-md shadow-2xl p-4">
+                            <div className="absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/70 to-transparent" />
+                            <p className="text-xs uppercase tracking-[0.22em] text-cyan-200/90 dark:text-cyan-300/80 mb-3 text-center">
+                                Herramientas Globales
+                            </p>
+                            <div className="space-y-3">
+                                {herramientasGlobales.map((tool) => (
+                                    <FloatingToolButton key={tool.name} {...tool} />
+                                ))}
+                            </div>
+                        </div>
+                    </aside>
+                )}
             </div>
         </div>
+    );
+};
+
+const FloatingToolButton = ({ name, description, path, icon: Icon, color }) => {
+    const colorClasses = {
+        cyan: 'from-cyan-500/35 to-sky-500/20 border-cyan-300/50 hover:border-cyan-200/80',
+        purple: 'from-purple-500/35 to-fuchsia-500/20 border-purple-300/50 hover:border-purple-200/80',
+    };
+
+    const buttonColor = colorClasses[color] || colorClasses.cyan;
+
+    return (
+        <Link
+            to={path}
+            className={`group flex items-center gap-3 w-full rounded-xl border bg-gradient-to-r ${buttonColor} bg-white/10 dark:bg-slate-800/20 backdrop-blur-sm px-4 py-3 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg`}
+        >
+            <div className="w-10 h-10 rounded-lg bg-white/20 dark:bg-slate-900/30 flex items-center justify-center text-cyan-100">
+                <Icon className="h-5 w-5" />
+            </div>
+            <div className="text-left">
+                <p className="font-semibold text-slate-100">{name}</p>
+                <p className="text-xs text-slate-300/90">{description}</p>
+            </div>
+        </Link>
     );
 };
 

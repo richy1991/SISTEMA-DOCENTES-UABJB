@@ -108,7 +108,7 @@ const CustomSelect = ({
                                     className={`w-full text-left px-3 py-1.5 text-sm transition-colors border-l-2 ${
                                         active
                                             ? 'bg-cyan-50 dark:bg-cyan-900/30 border-cyan-500 text-cyan-800 dark:text-cyan-200 font-semibold'
-                                            : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/90'
+                                            : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-[#2C4AAE]'
                                     }`}
                                     title={opt.label}
                                 >

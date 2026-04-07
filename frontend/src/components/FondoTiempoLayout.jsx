@@ -9,7 +9,8 @@ const FondoTiempoLayout = ({
     setSidebarCollapsed,
     theme,
     setTheme,
-    onProfileUpdate // <-- Recibimos la prop
+    onProfileUpdate, // <-- Recibimos la prop
+    onCarreraActivaChange,
 }) => {
     return (
         <div className="flex h-screen overflow-hidden bg-blue-50 dark:bg-slate-900">
@@ -23,6 +24,7 @@ const FondoTiempoLayout = ({
                 collapsed={sidebarCollapsed}
                 setCollapsed={setSidebarCollapsed}
                 onProfileUpdate={onProfileUpdate} // <-- La pasamos a Sidebar
+                onCarreraActivaChange={onCarreraActivaChange}
             />
 
             {/* Contenido Principal del Módulo */}

@@ -11,10 +11,11 @@ const ProfilePicture = ({ user, onUpdate }) => {
   const fileInputRef = useRef(null);
 
   useEffect(() => {
-    // Si el usuario tiene una foto de perfil, usarla. Si no, usar default.
+    // Si hay imagen (propia o por carrera), mostrarla.
+    // Solo se considera "custom" cuando es foto propia del usuario.
     if (user?.perfil?.foto_perfil) {
       setImage(user.perfil.foto_perfil);
-      setIsCustomImage(true);
+      setIsCustomImage(Boolean(user?.perfil?.foto_perfil_es_propia));
     } else {
       setImage(defaultProfileImg);
       setIsCustomImage(false);
@@ -46,6 +47,7 @@ const ProfilePicture = ({ user, onUpdate }) => {
         // Opcional: Revertir a la imagen anterior si la subida falla
         if (user?.perfil?.foto_perfil) {
           setImage(user.perfil.foto_perfil);
+          setIsCustomImage(Boolean(user?.perfil?.foto_perfil_es_propia));
         } else {
           setImage(defaultProfileImg);
           setIsCustomImage(false);
@@ -62,9 +64,11 @@ const ProfilePicture = ({ user, onUpdate }) => {
     
     // SOLUCIÓN 2: Usar toast personalizado en lugar de window.confirm
     toast((t) => (
-      <div className="flex flex-col items-center gap-2">
-        <p className="font-medium text-sm text-slate-800 dark:text-white">¿Eliminar foto de perfil?</p>
-        <div className="flex gap-2 mt-1">
+      <div className="max-w-sm rounded-xl border border-red-300 bg-red-50 text-red-900 shadow-lg p-3 dark:border-red-800 dark:bg-red-950/90 dark:text-red-100">
+        <p className="font-semibold text-sm leading-tight">¿Eliminar foto de perfil?</p>
+        <p className="text-xs text-red-700 mt-1 dark:text-red-300">Se restaurara la imagen predeterminada.</p>
+
+        <div className="flex gap-2 mt-3 justify-end">
           <button
             onClick={async () => {
               toast.dismiss(t.id);
@@ -83,13 +87,13 @@ const ProfilePicture = ({ user, onUpdate }) => {
                 toast.error('Error al eliminar');
               }
             }}
-            className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-md text-xs font-bold transition-colors"
+            className="px-3 py-1.5 rounded-md bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-600 text-white text-xs font-semibold transition-colors"
           >
             Eliminar
           </button>
           <button
             onClick={() => toast.dismiss(t.id)}
-            className="bg-slate-200 hover:bg-slate-300 text-slate-800 px-3 py-1 rounded-md text-xs font-bold transition-colors"
+            className="px-3 py-1.5 rounded-md bg-white hover:bg-red-100 text-red-800 text-xs font-semibold transition-colors border border-red-300 dark:bg-red-900/30 dark:hover:bg-red-900/50 dark:text-red-200 dark:border-red-700"
           >
             Cancelar
           </button>
@@ -97,7 +101,12 @@ const ProfilePicture = ({ user, onUpdate }) => {
       </div>
     ), {
       duration: 5000,
-      position: 'top-center',
+      position: 'top-right',
+      style: {
+        background: 'transparent',
+        boxShadow: 'none',
+        padding: 0,
+      },
     });
   };
 

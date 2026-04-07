@@ -11,20 +11,24 @@ const NuevoCatalogoItemModal = ({ partida, item, onClose, onCreated, onUpdated }
   const [errorMessages, setErrorMessages] = useState([]);
   const [fieldErrors, setFieldErrors] = useState({});
   const [form, setForm] = useState({
-    descripcion: '',
+    partida: '',
+    detalle: '',
     unidad_medida: '',
-    codigo: '',
   });
 
   useEffect(() => {
     if (item && typeof item === 'object') {
       setForm({
-        descripcion: item.descripcion ?? item.nombre ?? item.titulo ?? '',
+        partida: item.partida ?? partida?.codigo ?? '',
+        detalle: item.detalle ?? item.descripcion ?? item.nombre ?? item.titulo ?? '',
         unidad_medida: item.unidad_medida ?? item.unidad ?? item.uom ?? '',
-        codigo: item.codigo ?? '',
       });
     } else if (partida) {
-      setForm(prev => ({ ...prev, unidad_medida: partida.unidad_medida || partida.unidad || prev.unidad_medida }));
+      setForm(prev => ({
+        ...prev,
+        partida: partida.codigo ?? prev.partida,
+        unidad_medida: partida.unidad_medida || partida.unidad || prev.unidad_medida,
+      }));
     }
   }, [item, partida]);
 
@@ -37,22 +41,20 @@ const NuevoCatalogoItemModal = ({ partida, item, onClose, onCreated, onUpdated }
     e.preventDefault();
     setErrorMessages([]);
     setFieldErrors({});
-    if (!String(form.descripcion || '').trim()) {
-      const nextFieldErrors = { descripcion: 'Requerido.' };
+    if (!String(form.partida || '').trim() || !String(form.detalle || '').trim()) {
+      const nextFieldErrors = {};
+      if (!String(form.partida || '').trim()) nextFieldErrors.partida = 'Requerido.';
+      if (!String(form.detalle || '').trim()) nextFieldErrors.detalle = 'Requerido.';
       setFieldErrors(nextFieldErrors);
       setErrorMessages(buildClientErrorMessages(nextFieldErrors));
       return;
     }
 
     const payload = {
-      descripcion: form.descripcion.trim(),
+      partida: form.partida.trim(),
+      detalle: form.detalle.trim(),
       unidad_medida: form.unidad_medida || null,
-      codigo: form.codigo || undefined,
     };
-    if (partida) {
-      if (partida.id !== undefined) payload.partida_id = Number(partida.id);
-      if (partida.codigo !== undefined) payload.partida = partida.codigo;
-    }
 
     setSubmitting(true);
     try {
@@ -62,7 +64,28 @@ const NuevoCatalogoItemModal = ({ partida, item, onClose, onCreated, onUpdated }
         if (onUpdated) onUpdated(res.data || res);
         if (onClose) onClose();
       } else {
-        const res = await createCatalogoItem(payload);
+        let res;
+        try {
+          res = await createCatalogoItem(payload);
+        } catch (createErr) {
+          const conflict = createErr?.response?.status === 409 && createErr?.response?.data?.requires_confirmation;
+          if (!conflict) throw createErr;
+
+          const duplicateId = createErr?.response?.data?.duplicate_item_id;
+          const okReplace = window.confirm('Ya existe un item con ese DETALLE. ¿Deseas reemplazar el existente?');
+          if (!okReplace) {
+            toast('Creación cancelada por el usuario.');
+            return;
+          }
+
+          if (!duplicateId) throw createErr;
+          res = await updateCatalogoItem(duplicateId, payload);
+          toast.success('Item existente reemplazado');
+          if (onUpdated) onUpdated(res.data || res);
+          if (onClose) onClose();
+          return;
+        }
+
         toast.success('Item creado');
         if (onCreated) onCreated(res.data || res);
         if (onClose) onClose();
@@ -89,7 +112,7 @@ const NuevoCatalogoItemModal = ({ partida, item, onClose, onCreated, onUpdated }
     <Modal onClose={onClose}>
       <div className="modal-panel rounded-xl w-full max-w-md">
         <div className="modal-header flex items-center justify-between px-6 py-4">
-          <h3 className="font-semibold">{item ? 'Editar ítem de catálogo' : 'Nuevo ítem de catálogo'}</h3>
+          <h3 className="font-semibold">{item?.id ? 'Editar ítem de catálogo' : 'Nuevo ítem de catálogo'}</h3>
           <IconButton onClick={onClose} className="btn-header-icon rounded-full w-8 h-8 flex items-center justify-center" ariaLabel="Cerrar">
             <FaTimes />
           </IconButton>
@@ -98,13 +121,24 @@ const NuevoCatalogoItemModal = ({ partida, item, onClose, onCreated, onUpdated }
           <ModalErrorAlert title="No se pudo guardar el ítem de catálogo:" messages={errorMessages} />
           <div>
             <Input
-              label="Descripción"
-              name="descripcion"
-              value={form.descripcion}
+              label="partida"
+              name="partida"
+              value={form.partida}
               onChange={handleChange}
-              error={fieldErrors.descripcion}
+              error={fieldErrors.partida}
             />
-            {fieldErrors.descripcion && <div className="text-sm text-red-600 dark:text-red-400 mt-1">{fieldErrors.descripcion}</div>}
+            {fieldErrors.partida && <div className="text-sm text-red-600 dark:text-red-400 mt-1">{fieldErrors.partida}</div>}
+          </div>
+
+          <div>
+            <Input
+              label="DETALLE"
+              name="detalle"
+              value={form.detalle}
+              onChange={handleChange}
+              error={fieldErrors.detalle}
+            />
+            {fieldErrors.detalle && <div className="text-sm text-red-600 dark:text-red-400 mt-1">{fieldErrors.detalle}</div>}
           </div>
 
           <div>
@@ -115,16 +149,6 @@ const NuevoCatalogoItemModal = ({ partida, item, onClose, onCreated, onUpdated }
               onChange={handleChange}
             />
           </div>
-
-          <div>
-            <Input
-              label="Código (opcional)"
-              name="codigo"
-              value={form.codigo}
-              onChange={handleChange}
-            />
-          </div>
-
           <div className="flex justify-end gap-2 modal-actions">
             <button type="button" onClick={onClose} className="btn-cancel px-3 py-1 rounded border">
               Cancelar

@@ -1,7 +1,28 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
+import { FaEdit, FaTrash } from 'react-icons/fa';
 import api from '../apis/api';
 import ModalUsuario from './ModalUsuario';
 import toast from 'react-hot-toast';
+
+// Animación para el search input
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes slideIn {
+    from {
+      width: 0;
+      opacity: 0;
+      transform: translateX(10px);
+    }
+    to {
+      width: 100%;
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+`;
+document.head.appendChild(style);
 
 const InfoIcon = (props) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
@@ -43,21 +64,249 @@ const InputField = ({ label, name, type = 'text', value, onChange, required, dis
       onChange={onChange}
       required={required}
       disabled={disabled}
-      className={`w-full px-4 py-3 rounded-xl border-2 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm ${error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'}`}
+      placeholder={required ? '' : ' '}
+      className={`w-full px-4 py-3 rounded-xl border-2 bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm ${error ? 'border-red-500' : 'border-slate-400 dark:border-slate-600'}`}
     />
     {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
   </div>
 );
 
-const ToggleSwitch = ({ isActive, onChange }) => (
+// Componente Select con Dropdown animado (igual que en ListaDocentes)
+const SelectConDropdown = ({ label, name, value, onChange, options, error, disabled = false, required = false, placeholder = 'Seleccione...' }) => {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    const handleOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    if (open) {
+      document.addEventListener('mousedown', handleOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [open]);
+
+  const selectedLabel = options.find(opt => opt.value === value)?.label;
+
+  return (
+    <div ref={containerRef} className="relative">
+      {label && (
+        <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
+          {label} {required && <span className="text-red-500">*</span>}
+        </label>
+      )}
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        disabled={disabled}
+        className={`w-full px-4 py-3 rounded-2xl text-left flex items-center justify-between transition-all ${
+          disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:shadow-md'
+        } ${
+          error 
+            ? 'border-2 border-red-500 bg-white dark:bg-slate-800' 
+            : open 
+              ? 'border-2 border-[#2C4AAE] bg-white dark:bg-slate-800' 
+                : 'border-2 border-slate-400 bg-slate-100 dark:bg-slate-700 hover:border-[#2C4AAE]'
+        }`}
+      >
+        <span className={`${selectedLabel ? 'text-slate-800 dark:text-white font-semibold text-sm leading-tight' : 'text-slate-400 dark:text-slate-500'}`}>
+          {selectedLabel || placeholder}
+        </span>
+        <div className="w-8 h-8 bg-[#2C4AAE] hover:bg-[#1a3a8a] rounded-lg flex items-center justify-center transition-colors">
+          <svg
+            className={`w-4 h-4 text-white transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-full rounded-xl border-2 border-[#2C4AAE] bg-white dark:bg-slate-800 shadow-xl max-h-48 overflow-auto">
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => {
+                onChange({ target: { name, value: option.value } });
+                setOpen(false);
+              }}
+              className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                value === option.value
+                  ? 'bg-[#2C4AAE] text-white font-semibold'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-[#2C4AAE] hover:text-white'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+    </div>
+  );
+};
+
+const FilterDocentes = ({
+  label,
+  name,
+  value,
+  onChange,
+  docentes,
+  error,
+  disabled = false,
+  required = false,
+  placeholder = 'Buscar docente...'
+}) => {
+  const [open, setOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const containerRef = useRef(null);
+  const inputRef = useRef(null);
+
+  const selectedDocente = docentes.find((d) => String(d.id) === String(value));
+
+  useEffect(() => {
+    if (selectedDocente?.nombre_completo) {
+      setSearchTerm(selectedDocente.nombre_completo);
+    } else if (!value) {
+      setSearchTerm('');
+    }
+  }, [value, selectedDocente]);
+
+  useEffect(() => {
+    const handleOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    if (open) {
+      document.addEventListener('mousedown', handleOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [open]);
+
+  const filteredDocentes = docentes.filter((docente) => {
+    const term = searchTerm.toLowerCase();
+    const nombre = (docente.nombre_completo || '').toLowerCase();
+    const ci = String(docente.ci || '').toLowerCase();
+    return nombre.includes(term) || ci.includes(term);
+  });
+
+  const handleInputChange = (e) => {
+    const nextValue = e.target.value;
+    setSearchTerm(nextValue);
+    setOpen(true);
+
+    if (value) {
+      onChange({ target: { name, value: '' } });
+    }
+  };
+
+  const handleButtonClick = () => {
+    if (disabled) return;
+    setOpen(!open);
+    if (!open) {
+      setTimeout(() => inputRef.current?.focus(), 0);
+    }
+  };
+
+  const handleSelectDocente = (docente) => {
+    onChange({ target: { name, value: docente.id } });
+    setSearchTerm(docente.nombre_completo || '');
+    setOpen(false);
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      {label && (
+        <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
+          {label} {required && <span className="text-red-500">*</span>}
+        </label>
+      )}
+
+      <div
+        className={`flex items-center px-4 py-3 rounded-2xl transition-all ${
+          disabled
+            ? 'cursor-not-allowed opacity-60 border-2 border-slate-400 bg-slate-100 dark:bg-slate-700'
+            : error
+              ? 'border-2 border-red-500 bg-white dark:bg-slate-800'
+              : open
+                ? 'border-2 border-[#2C4AAE] bg-white dark:bg-slate-800'
+                : 'border-2 border-slate-400 bg-slate-100 dark:bg-slate-700 hover:border-[#2C4AAE]'
+        }`}
+      >
+        <input
+          ref={inputRef}
+          type="text"
+          value={searchTerm}
+          onChange={handleInputChange}
+          onFocus={() => !disabled && setOpen(true)}
+          placeholder={placeholder}
+          disabled={disabled}
+          className="flex-1 bg-transparent text-slate-800 dark:text-white focus:outline-none text-sm placeholder-slate-400 dark:placeholder-slate-500"
+        />
+
+        <button
+          type="button"
+          onClick={handleButtonClick}
+          disabled={disabled}
+          className="w-8 h-8 bg-[#2C4AAE] hover:bg-[#1a3a8a] rounded-lg flex items-center justify-center transition-colors flex-shrink-0 ml-2 disabled:opacity-70"
+        >
+          <svg
+            className={`w-4 h-4 text-white transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+      </div>
+
+      {open && !disabled && (
+        <div className="absolute z-50 mt-2 w-full rounded-xl border-2 border-[#2C4AAE] bg-white dark:bg-slate-800 shadow-xl max-h-64 overflow-auto">
+          {filteredDocentes.length > 0 ? (
+            filteredDocentes.map((docente) => (
+              <button
+                key={docente.id}
+                type="button"
+                onClick={() => handleSelectDocente(docente)}
+                className="w-full text-left px-4 py-3 text-sm transition-colors text-slate-700 dark:text-slate-300 hover:bg-[#2C4AAE] hover:text-white border-b border-slate-200 dark:border-slate-700 last:border-b-0"
+              >
+                <div className="font-semibold">{docente.nombre_completo}</div>
+              </button>
+            ))
+          ) : searchTerm ? (
+            <div className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400 text-center">
+              No hay docentes que coincidan
+            </div>
+          ) : (
+            <div className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400 text-center">
+              Escribe para buscar docentes
+            </div>
+          )}
+        </div>
+      )}
+
+      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+    </div>
+  );
+};
+
+const ToggleSwitch = ({ isActive, onChange, disabled = false }) => (
   <button
     type="button"
-    onClick={onChange}
+    onClick={() => !disabled && onChange()}
+    disabled={disabled}
     className={`relative inline-flex h-6 w-12 items-center rounded-full transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 ${
-      isActive 
-        ? 'bg-emerald-500 dark:bg-emerald-600 focus:ring-emerald-400 dark:focus:ring-emerald-500' 
-        : 'bg-slate-300 dark:bg-slate-600 focus:ring-slate-400 dark:focus:ring-slate-500'
-    }`}
+      isActive
+        ? 'bg-emerald-500 dark:bg-emerald-600 focus:ring-emerald-400 dark:focus:ring-emerald-500'
+        : 'bg-slate-500 dark:bg-slate-600 focus:ring-slate-400 dark:focus:ring-slate-500'
+    } ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}
   >
     <span
       className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition-transform duration-300 ${
@@ -67,31 +316,158 @@ const ToggleSwitch = ({ isActive, onChange }) => (
   </button>
 );
 
-const dedicacionStyles = {
-  tiempo_completo: {
-      bg: 'bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20',
-      border: 'border-blue-500',
-      icon: 'text-blue-500',
-      title: 'text-blue-800 dark:text-blue-300',
-      text: 'text-blue-700 dark:text-blue-400',
-  },
-  medio_tiempo: {
-      bg: 'bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20',
-      border: 'border-green-500',
-      icon: 'text-green-500',
-      title: 'text-green-800 dark:text-green-300',
-      text: 'text-green-700 dark:text-green-400',
-  },
-  horario: {
-      bg: 'bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-900/20 dark:to-amber-900/20',
-      border: 'border-orange-500',
-      icon: 'text-orange-500',
-      title: 'text-orange-800 dark:text-orange-300',
-      text: 'text-orange-700 dark:text-orange-400',
-  },
+// Dropdown simple estilo "Seleccione..."
+const SimpleDropdown = ({ label, value, onChange, options, placeholder = 'Carreras', clearOnToggle = false }) => {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const containerRef = useRef(null);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    const handleOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setOpen(false);
+        setSearch('');
+      }
+    };
+    if (open) {
+      document.addEventListener('mousedown', handleOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [open]);
+
+  useEffect(() => {
+    if (open) {
+      setTimeout(() => inputRef.current?.focus(), 0);
+    }
+  }, [open]);
+
+  const selectedLabel = options.find(opt => opt.value === value)?.label;
+  const filteredOptions = options.filter((option) =>
+    option.label.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div ref={containerRef} className="relative">
+      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
+        {label}
+      </label>
+      <button
+        type="button"
+        onClick={() => {
+          if (clearOnToggle) {
+            onChange('');
+          }
+          setOpen(!open);
+          if (open) {
+            setSearch('');
+          }
+        }}
+        className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border-2 border-transparent focus:border-blue-500 rounded-2xl text-left flex items-center justify-between transition-all"
+      >
+        <span className={`${selectedLabel ? 'text-slate-800 dark:text-white font-semibold text-sm leading-tight' : 'text-slate-400 dark:text-slate-500'}`}>
+          {selectedLabel || placeholder}
+        </span>
+        <div className="w-8 h-8 bg-[#2C4AAE] hover:bg-[#1a3a8a] rounded-lg flex items-center justify-center transition-colors">
+          <svg
+            className={`w-4 h-4 text-white transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </button>
+      {open && (
+        <div className="absolute z-40 mt-1 w-full rounded-xl border-2 border-[#2C4AAE] bg-white dark:bg-slate-800 shadow-xl max-h-48 overflow-auto">
+          <div className="p-2 border-b border-slate-200 dark:border-slate-700">
+            <input
+              ref={inputRef}
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar carrera..."
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-sm text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          {filteredOptions.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => {
+                onChange(option.value);
+                setOpen(false);
+                setSearch('');
+              }}
+              className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                value === option.value
+                  ? 'bg-[#2C4AAE] text-white font-semibold'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-[#2C4AAE] hover:text-white'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+          {filteredOptions.length === 0 && (
+            <div className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400 text-center">
+              No hay carreras que coincidan
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 };
 
-function GestionUsuarios({ isDark }) {
+// Componente de Búsqueda Animado
+const SearchInput = ({ value, onChange, placeholder = 'Buscar por nombre o C.I....' }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (isExpanded && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [isExpanded]);
+
+  const handleBlur = () => {
+    if (!value) {
+      setIsExpanded(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2 flex-row-reverse">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className={`p-2.5 bg-[#2C4AAE] hover:bg-[#1a3a8a] text-white rounded-xl transition-all duration-300 hover:scale-110 ${isExpanded ? 'rotate-0' : 'rotate-0'}`}
+        title="Buscar usuario"
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+      </button>
+      <div className={`transition-all duration-300 overflow-hidden ${isExpanded ? 'w-64 opacity-100' : 'w-0 opacity-0'}`}>
+        <input
+          ref={inputRef}
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onBlur={handleBlur}
+          placeholder={placeholder}
+          className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border-2 border-[#2C4AAE] rounded-xl text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none transition-all"
+        />
+      </div>
+    </div>
+  );
+};
+
+function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = true }) {
+  const navigate = useNavigate();
+  const restoringFormRef = useRef(false);
+  const restoringEditModalRef = useRef(false);
+  const restoringLinkRef = useRef(false);
   const [usuarios, setUsuarios] = useState([]);
   const [docentes, setDocentes] = useState([]);
   const [carreras, setCarreras] = useState([]);
@@ -107,8 +483,11 @@ function GestionUsuarios({ isDark }) {
   const [isCreating, setIsCreating] = useState(false);
   const [formData, setFormData] = useState({});
   const [crearNuevoDocente, setCrearNuevoDocente] = useState(false);
+  const [asignacionesExtra, setAsignacionesExtra] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
+  const [abrirModalAlVolver, setAbrirModalAlVolver] = useState(false);
+  const [vinculacionRapidaDocente, setVinculacionRapidaDocente] = useState(false);
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [usuarioToDelete, setUsuarioToDelete] = useState(null);
@@ -116,10 +495,97 @@ function GestionUsuarios({ isDark }) {
 
   const [showToggleModal, setShowToggleModal] = useState(false);
   const [usuarioToToggle, setUsuarioToToggle] = useState(null);
+  const [showOnlyOrphans, setShowOnlyOrphans] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCarrera, setSelectedCarrera] = useState('');
+  
+  // Usuarios huerfanos: sin perfil o con rol docente sin docente vinculado
+  const esUsuarioHuerfano = (u) => !u?.perfil || (u.perfil?.rol === 'docente' && !u.perfil?.docente_id);
+  const hayOrfanos = usuarios.length > 0 && usuarios.some(esUsuarioHuerfano);
 
   useEffect(() => {
     cargarDatos();
   }, []);
+
+  useEffect(() => {
+    if (restoringEditModalRef.current || usuarios.length === 0) return;
+
+    const datosEditarGuardados = sessionStorage.getItem('datosEditarUsuario');
+    if (!datosEditarGuardados) return;
+
+    try {
+      const { userId } = JSON.parse(datosEditarGuardados);
+      const usuario = usuarios.find((item) => item.id === userId);
+
+      if (usuario) {
+        restoringEditModalRef.current = true;
+        setUsuarioEditando(usuario);
+        setShowModal(true);
+        setIsCreating(false);
+      }
+    } catch (e) {
+      console.error('Error al recuperar edición de usuario:', e);
+      sessionStorage.removeItem('datosEditarUsuario');
+    }
+  }, [usuarios]);
+
+  useEffect(() => {
+    if (restoringLinkRef.current || docentes.length === 0) return;
+
+    const vincularDocentePendiente = sessionStorage.getItem('vincularDocentePendiente');
+    if (!vincularDocentePendiente) return;
+
+    try {
+      const datos = JSON.parse(vincularDocentePendiente);
+      const docente = docentes.find((item) => item.id === datos.docenteId);
+
+      if (docente) {
+        restoringLinkRef.current = true;
+        restoringFormRef.current = true;
+        setVinculacionRapidaDocente(true);
+        setFormData({
+          username: '',
+          email: datos.email || '',
+          first_name: datos.first_name || '',
+          last_name: datos.last_name || '',
+          rol: 'docente',
+          carrera: datos.carrera || docente.carrera_id || docente.carrera || '',
+          docente: docente.id,
+          password: '',
+          password_confirm: '',
+        });
+        setAsignacionesExtra([]);
+        setCrearNuevoDocente(false);
+        setErrors({});
+        setUsuarioEditando(null);
+        setIsCreating(true);
+        sessionStorage.removeItem('vincularDocentePendiente');
+      }
+    } catch (e) {
+      console.error('Error al preparar vínculo rápido de docente:', e);
+      sessionStorage.removeItem('vincularDocentePendiente');
+    }
+  }, [docentes]);
+
+  // 🔗 Recuperar datos del formulario al volver desde docentes
+  useEffect(() => {
+    const datosGuardados = sessionStorage.getItem('datosCrearUsuario');
+    if (datosGuardados) {
+      try {
+        const datos = JSON.parse(datosGuardados);
+        restoringFormRef.current = true;
+        setFormData(datos);
+        setAsignacionesExtra([]);
+        sessionStorage.removeItem('datosCrearUsuario');
+        // Abrir el modal automáticamente con los datos recuperados
+        setIsCreating(true);
+        setAbrirModalAlVolver(false);
+      } catch (e) {
+        console.error('Error al recuperar datos:', e);
+      }
+    }
+  }, []);
+
   const cargarDatos = async () => {
     try {
       const [usuariosRes, docentesRes, carrerasRes, rolesRes] = await Promise.all([
@@ -132,7 +598,15 @@ function GestionUsuarios({ isDark }) {
       setUsuarios(usuariosRes.data.results || usuariosRes.data);
       setDocentes(docentesRes.data.results || docentesRes.data);
       setCarreras(carrerasRes.data.results || carrerasRes.data);
-      setRoles(rolesRes.data || []);
+      
+      // Filtrar roles: solo superuser puede ver y asignar rol 'admin'
+      const todosRoles = rolesRes.data || [];
+      const esSuperuser = user?.is_superuser === true;
+      const rolesFiltrados = todosRoles.filter(rol => 
+        esSuperuser ? true : rol.value !== 'admin'
+      );
+      setRoles(rolesFiltrados);
+      
       setLoading(false);
     } catch (err) {
       console.error('Error al cargar datos:', err);
@@ -141,46 +615,106 @@ function GestionUsuarios({ isDark }) {
     }
   };
 
+  const usuariosFiltrados = (() => {
+    let result = showOnlyOrphans ? usuarios.filter(esUsuarioHuerfano) : usuarios;
+
+    if (selectedCarrera) {
+      result = result.filter((usuario) => String(usuario?.perfil?.carrera || '') === String(selectedCarrera));
+    }
+
+    // Filtrar por término de búsqueda (nombre o C.I.)
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
+      result = result.filter((usuario) => {
+        const nombre = `${usuario.first_name || ''} ${usuario.last_name || ''}`.toLowerCase();
+        const ci = usuario.ci || '';
+        return nombre.includes(searchLower) || ci.includes(searchLower);
+      });
+    }
+
+    // Orden jerárquico: Admin → Director → Jefe Estudios → Docente
+    const ordenJerarquico = {
+      'admin': 0,
+      'director': 1,
+      'jefe_estudios': 2,
+      'docente': 3
+    };
+
+    result = [...result].sort((a, b) => {
+      const rolA = a.perfil?.rol || 'docente';
+      const rolB = b.perfil?.rol || 'docente';
+      const ordenA = ordenJerarquico[rolA] ?? 99;
+      const ordenB = ordenJerarquico[rolB] ?? 99;
+
+      if (ordenA !== ordenB) {
+        return ordenA - ordenB;
+      }
+
+      // Si mismo rol, ordenar por apellido
+      const apellidoA = (a.last_name || '').toLowerCase();
+      const apellidoB = (b.last_name || '').toLowerCase();
+      return apellidoA.localeCompare(apellidoB, 'es', { sensitivity: 'base' });
+    });
+
+    return result;
+  })();
+
   // Initialize form when creation starts
   useEffect(() => {
     if (isCreating) {
+      if (restoringFormRef.current) {
+        restoringFormRef.current = false;
+        setCrearNuevoDocente(false);
+        setErrors({});
+        return;
+      }
+      
+      // Admin de carrera: bloquear con su propia carrera
+      const esAdminCarrera = user?.perfil?.rol === 'admin' && !user?.is_superuser;
+      const carreraDefault = esAdminCarrera ? user?.perfil?.carrera : '';
+      
       const initialData = {
         username: '',
         email: '',
         first_name: '',
         last_name: '',
         rol: 'docente',
-        carrera: '',
+        carrera: carreraDefault,
         docente: '',
         password: '',
         password_confirm: '',
-        docente_data: {
-          nombres: '',
-          apellido_paterno: '',
-          apellido_materno: '',
-          ci: '',
-          categoria: 'catedratico',
-          dedicacion: 'tiempo_completo',
-        }
       };
       setFormData(initialData);
+      setAsignacionesExtra([]);
+      setVinculacionRapidaDocente(false);
       setCrearNuevoDocente(false);
       setErrors({});
     }
-  }, [isCreating]);
+  }, [isCreating, user]);
 
   const handleToggleCreateForm = () => {
+    sessionStorage.removeItem('datosEditarUsuario');
+    if (isCreating) {
+      setVinculacionRapidaDocente(false);
+      setAsignacionesExtra([]);
+    }
     setIsCreating(!isCreating);
     setUsuarioEditando(null); // Ensure we are not in edit mode
   };
 
   const abrirModalEditar = (usuario) => {
+    sessionStorage.removeItem('datosEditarUsuario');
+    restoringEditModalRef.current = false;
     setUsuarioEditando(usuario);
     setShowModal(true);
     setIsCreating(false); // Hide create form if it was open
   };
 
   const handleToggleActivo = (usuario) => {
+    if (usuario?.is_superuser) {
+      toast.error('El Super Admin no puede desactivarse');
+      return;
+    }
     setUsuarioToToggle(usuario);
     setShowToggleModal(true);
   };
@@ -209,14 +743,33 @@ function GestionUsuarios({ isDark }) {
       cargarDatos();
       closeDeleteModal();
     } catch (err) {
-      console.error('Error:', err);
-      toast.error('Error al eliminar el usuario');
+      console.error('Error al eliminar usuario:', err);
+      console.log('Error response:', err.response);
+      console.log('Error data:', err.response?.data);
+
+      // Capturar mensaje de error específico del backend
+      let errorMessage = 'Error al eliminar el usuario';
+
+      if (err.response && err.response.data) {
+        // Backend devolvió un error específico
+        if (typeof err.response.data === 'object') {
+          // Puede ser { error: 'mensaje' } o { detail: 'mensaje' }
+          errorMessage = err.response.data.error || err.response.data.detail || JSON.stringify(err.response.data);
+        } else if (typeof err.response.data === 'string') {
+          errorMessage = err.response.data;
+        }
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+
+      console.error('Error message:', errorMessage);
+      toast.error(errorMessage);
     }
   };
   // --- FORM LOGIC FOR INLINE CREATION ---
   const handleChange = (e) => {
     const { name, value } = e.target;
-    
+
     setFormData(prev => {
       const updated = { ...prev, [name]: value };
 
@@ -226,46 +779,31 @@ function GestionUsuarios({ isDark }) {
         updated.password_confirm = value + 'UABJB';
       }
 
-      // AUTOMATIZACIÓN: Si estamos creando un docente nuevo, copiamos los datos del usuario
-      if (crearNuevoDocente) {
-        if (name === 'first_name') {
-          updated.docente_data = { ...updated.docente_data, nombres: value };
-        }
-        if (name === 'last_name') {
-          const parts = value.trim().split(' ');
-          const paterno = parts[0] || '';
-          const materno = parts.slice(1).join(' ') || '';
-          updated.docente_data = { 
-            ...updated.docente_data, 
-            apellido_paterno: paterno,
-            apellido_materno: materno 
-          };
-        }
-      }
       return updated;
     });
-  };
 
-  const handleDocenteDataChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => {
-        const newDocenteData = {
-            ...prev.docente_data,
-            [name]: value,
-        };
-        if (name === 'dedicacion' && value !== 'horario') {
-            newDocenteData.horas_contrato_semanales = null;
-        }
-        return { ...prev, docente_data: newDocenteData };
+    // Limpia el error del campo al escribir para feedback inmediato
+    setErrors((prev) => {
+      if (!prev?.[name]) return prev;
+      const next = { ...prev };
+      delete next[name];
+      return next;
     });
   };
 
   const handleRolChange = (e) => {
+    if (vinculacionRapidaDocente) return;
+
     const newRol = e.target.value;
+    const esAdminCarrera = user?.perfil?.rol === 'admin' && !user?.is_superuser;
+    
     setFormData(prev => ({
       ...prev,
       rol: newRol,
-      carrera: (newRol === 'director' || newRol === 'jefe_estudios') ? prev.carrera : '',
+      // Admin de carrera siempre mantiene su carrera, otros roles la pierden al cambiar
+      carrera: (newRol === 'director' || newRol === 'jefe_estudios' || newRol === 'admin') 
+        ? (esAdminCarrera ? user?.perfil?.carrera : prev.carrera) 
+        : (newRol === 'docente' ? prev.carrera : ''),
       docente: newRol !== 'docente' ? '' : prev.docente,
     }));
     if (newRol !== 'docente') {
@@ -273,10 +811,71 @@ function GestionUsuarios({ isDark }) {
     }
   };
 
+  const handleCrearNuevoDocente = () => {
+    // 🔗 Al marcar checkbox, ir a /fondo-tiempo/docentes y abrir modal
+    // Guardar datos del formulario en sessionStorage para recuperarlos al volver
+    sessionStorage.setItem('datosCrearUsuario', JSON.stringify(formData));
+    const apellidos = (formData.last_name || '').trim().split(/\s+/).filter(Boolean);
+    sessionStorage.setItem('datosCrearDocente', JSON.stringify({
+      nombres: formData.first_name || '',
+      apellido_paterno: apellidos[0] || '',
+      apellido_materno: apellidos.slice(1).join(' '),
+      email: formData.email || '',
+      telefono: '',
+    }));
+    sessionStorage.setItem('abrirModalDesdeUsuarios', 'true');
+    // Marcar para abrir modal al volver
+    setAbrirModalAlVolver(true);
+    navigate('/fondo-tiempo/docentes');
+  };
+
+  const handleAsignacionChange = (index, field, value) => {
+    setAsignacionesExtra((prev) => prev.map((item, itemIndex) => (
+      itemIndex === index ? { ...item, [field]: value } : item
+    )));
+  };
+
+  const MAX_ASIGNACIONES_TOTAL = 2;
+  const totalAsignaciones = 1 + asignacionesExtra.length;
+  const puedeAgregarAsignacion = totalAsignaciones < MAX_ASIGNACIONES_TOTAL;
+
+  const agregarAsignacion = () => {
+    if (!puedeAgregarAsignacion) return;
+    setAsignacionesExtra((prev) => ([...prev, { rol: 'docente', carrera: '', docente: '' }]));
+  };
+
+  const eliminarAsignacion = (index) => {
+    setAsignacionesExtra((prev) => prev.filter((_, itemIndex) => itemIndex !== index));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
     setErrors({});
+
+    const esUsuarioSistema = ['admin', 'director', 'jefe_estudios'].includes(formData.rol);
+    const ciNormalizado = (formData.ci || '').trim();
+
+    if (esUsuarioSistema && !ciNormalizado) {
+      setErrors((prev) => ({
+        ...prev,
+        ci: ['El C.I. es obligatorio para este tipo de usuario.'],
+      }));
+      toast.error('El C.I. es obligatorio para este tipo de usuario.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    const docenteId = Number(formData.docente);
+    if (formData.rol === 'docente' && (!docenteId || Number.isNaN(docenteId))) {
+      setErrors((prev) => ({
+        ...prev,
+        docente: ['Debe seleccionar un docente para vincular.'],
+      }));
+      toast.error('Debe seleccionar un docente para vincular.');
+      setIsSubmitting(false);
+      return;
+    }
 
     let payload = {
       username: formData.username,
@@ -288,28 +887,42 @@ function GestionUsuarios({ isDark }) {
       password_confirm: formData.password_confirm,
     };
 
-    if (formData.rol === 'director' || formData.rol === 'jefe_estudios') {
+    if (asignacionesExtra.length > 0) {
+      payload.asignaciones = asignacionesExtra;
+    }
+
+    // Admin, Director y Jefe de Estudios deben enviar carrera
+    if (formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') {
       payload.carrera = formData.carrera;
-    } else if (formData.rol === 'docente') {
-      if (crearNuevoDocente) {
-        payload.docente_data = formData.docente_data;
-      } else {
-        payload.docente = formData.docente;
+      payload.ci = ciNormalizado;
+    }
+    if (formData.rol === 'docente') {
+      payload.docente = docenteId;
+      if (formData.carrera) {
+        payload.carrera = formData.carrera;
       }
     }
 
     try {
       await api.post('/usuarios/', payload);
       toast.success('Usuario creado correctamente');
-      setIsCreating(false); // Hide form on success
-      cargarDatos(); // Refresh list
+      setIsCreating(false);
+      setAsignacionesExtra([]);
+      cargarDatos();
     } catch (err) {
       console.error('Error al crear usuario:', err.response);
       const apiErrors = err.response?.data;
       if (apiErrors) {
         setErrors(apiErrors);
-        const errorMsg = Object.values(apiErrors).flat().join(' ');
-        toast.error(`Error: ${errorMsg}`);
+        const ciMsg = Array.isArray(apiErrors?.ci)
+          ? apiErrors.ci[0]
+          : (typeof apiErrors?.ci === 'string' ? apiErrors.ci : null);
+        if (ciMsg) {
+          toast.error(`C.I.: ${ciMsg}`);
+        } else {
+          const errorMsg = Object.values(apiErrors).flat().join(' ');
+          toast.error(`Error: ${errorMsg}`);
+        }
       } else {
         toast.error('Ocurrió un error inesperado.');
       }
@@ -317,6 +930,14 @@ function GestionUsuarios({ isDark }) {
       setIsSubmitting(false);
     }
   };
+
+  const ciError = Array.isArray(errors?.ci)
+    ? errors.ci[0]
+    : (typeof errors?.ci === 'string' ? errors.ci : null);
+
+  const docenteError = Array.isArray(errors?.docente)
+    ? errors.docente[0]
+    : (typeof errors?.docente === 'string' ? errors.docente : null);
 
   if (loading) {
     return (
@@ -337,239 +958,357 @@ function GestionUsuarios({ isDark }) {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent">
-                👥 Gestión de Usuarios
+                Gestión de Usuarios
               </h1>
-              <p className="text-slate-700 dark:text-slate-300 mt-1">
+              <p className="text-slate-700 dark:text-slate-300 mt-1 italic">
                 Administración de cuentas y permisos
               </p>
             </div>
-            <button
-              onClick={handleToggleCreateForm}
-              className="px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center gap-2"
-            >
-              <span>{isCreating ? '➖' : '➕'}</span>
-              {isCreating ? 'Cancelar Creación' : 'Crear Usuario'}
-            </button>
+            <div className="flex items-center gap-4">
+              <SearchInput value={searchTerm} onChange={setSearchTerm} />
+              <div className="w-48">
+                <SimpleDropdown
+                  label=""
+                  value={selectedCarrera}
+                  onChange={setSelectedCarrera}
+                  options={carreras.map(c => ({ value: c.id, label: c.nombre }))}
+                  placeholder="Carreras"
+                  clearOnToggle
+                />
+              </div>
+              <button
+                onClick={handleToggleCreateForm}
+                className="px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center gap-2"
+              >
+                <span>{isCreating ? '➖' : '➕'}</span>
+                {isCreating ? 'Cancelar Creación' : 'Crear Usuario'}
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* FORMULARIO DE CREACIÓN EN LÍNEA */}
-        {isCreating && (
-          <div className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-lg mt-6 animate-fade-in">
-            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700">
-              <h2 className="text-xl font-bold text-slate-800 dark:text-white">
-                Crear Nuevo Usuario
-              </h2>
-            </div>
-            <form onSubmit={handleSubmit}>
-              <div className="p-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Columna Izquierda */}
-                  <div className="space-y-4">
-                    <InputField label="Usuario" name="username" value={formData.username || ''} onChange={handleChange} required error={errors.username} />
+        {/* MODAL DE CREACIÓN DE USUARIO */}
+        {isCreating && createPortal((
+          <div
+            className={`fixed top-0 right-0 bottom-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 ${crearNuevoDocente && formData.rol === 'docente' ? '!justify-center' : ''}`}
+            style={{ left: hasSidebar ? (sidebarCollapsed ? '5rem' : '18rem') : '0' }}
+          >
+            <div className={`flex items-center justify-center w-full h-full ${crearNuevoDocente && formData.rol === 'docente' ? 'gap-6' : ''}`}>
+              {/* Modal Usuario - mantiene su tamaño original */}
+              <div className={`bg-white dark:bg-slate-800 rounded-2xl shadow-2xl animate-fade-in transition-all duration-300 ${crearNuevoDocente && formData.rol === 'docente' ? 'max-w-2xl w-full' : 'max-w-2xl w-full mx-4'}`} style={{ overflow: 'visible' }}>
+                {/* Header azul */}
+                <div className="bg-[#2C4AAE] dark:bg-[#1a3a8a] px-6 py-4 rounded-t-2xl">
+                  <h2 className="text-xl font-bold text-white">
+                    Crear Nuevo Usuario
+                  </h2>
+                </div>
+
+              <form onSubmit={handleSubmit}>
+                <div className="p-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Fila 1 */}
+                    <InputField label="Usuario *" name="username" value={formData.username || ''} onChange={handleChange} error={errors.username} />
                     <InputField label="Email" name="email" type="email" value={formData.email || ''} onChange={handleChange} error={errors.email} />
-                    <InputField label="Nombres" name="first_name" value={formData.first_name || ''} onChange={handleChange} required error={errors.first_name} />
-                    <InputField label="Apellidos" name="last_name" value={formData.last_name || ''} onChange={handleChange} required error={errors.last_name} />
-                    <div className="pt-1">
-                      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
-                        Contraseña inicial <span className="text-red-500">*</span>
-                      </label>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          value={formData.username ? `${formData.username}UABJB` : ''}
-                          readOnly
-                          placeholder="Se generará al ingresar el usuario"
-                          className="w-full px-4 py-3 rounded-xl border-2 bg-slate-100 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600 cursor-not-allowed font-mono tracking-wide"
-                        />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" title="Contraseña generada automáticamente">🔒</span>
-                      </div>
-                      <div className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2 mt-2">
-                        <InfoIcon className="w-4 h-4 shrink-0 mt-0.5" />
-                        <span>La contraseña por defecto será <strong>{formData.username ? `${formData.username}UABJB` : 'usuarioUABJB'}</strong>. El usuario deberá personalizarla al iniciar sesión por primera vez.</span>
-                      </div>
-                    </div>
-                  </div>
 
-                  {/* Columna Derecha */}
-                  <div className="space-y-4">
+                    {/* Fila 2 */}
+                    <InputField label="Nombres *" name="first_name" value={formData.first_name || ''} onChange={handleChange} error={errors.first_name} />
+                    <InputField label="Apellidos *" name="last_name" value={formData.last_name || ''} onChange={handleChange} error={errors.last_name} />
+
+                    {/* Rol */}
                     <div>
-                      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Rol</label>
-                      <select name="rol" value={formData.rol || 'docente'} onChange={handleRolChange} className="w-full px-4 py-3 rounded-xl border-2 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white border-slate-300 dark:border-slate-600">
-                        {roles.map(rol => (
-                          <option key={rol.value} value={rol.value}>{rol.label}</option>
-                        ))}
-                      </select>
+                      <SelectConDropdown
+                        label="Rol"
+                        name="rol"
+                        value={formData.rol || 'docente'}
+                        onChange={handleRolChange}
+                        options={roles.map(rol => ({ value: rol.value, label: rol.label }))}
+                        error={errors.rol}
+                        disabled={vinculacionRapidaDocente}
+                        required
+                      />
+                      {vinculacionRapidaDocente && (
+                        <p className="text-xs text-blue-600 dark:text-blue-300 mt-1">
+                          Vinculo rapido desde "Sin Cuenta": rol bloqueado en Docente.
+                        </p>
+                      )}
                     </div>
 
-                    {(formData.rol === 'director' || formData.rol === 'jefe_estudios') && (
+                    {/* Carrera para admin/director/jefe_estudios - a la derecha de Rol */}
+                    {(formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && (
                       <div>
-                        <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Carrera</label>
-                        <select name="carrera" value={formData.carrera} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border-2 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white border-slate-300 dark:border-slate-600" required>
-                          <option value="">Seleccione una carrera</option>
-                          {carreras.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-                        </select>
-                        {errors.carrera && <p className="text-xs text-red-600 mt-1">{errors.carrera}</p>}
+                        <SelectConDropdown
+                          label="Carrera"
+                          name="carrera"
+                          value={formData.carrera}
+                          onChange={handleChange}
+                          options={carreras.map(c => ({ value: c.id, label: c.nombre }))}
+                          error={errors.carrera}
+                          disabled={user?.perfil?.rol === 'admin' && !user?.is_superuser}
+                          required
+                        />
                       </div>
                     )}
 
-                    {formData.rol === 'docente' && (
-                      <div className="md:col-span-2 p-4 border-2 border-slate-200 dark:border-slate-700 rounded-xl space-y-4 bg-slate-50 dark:bg-slate-800/30">
-                          <label className="flex items-center gap-3 cursor-pointer">
-                              <input 
-                                type="checkbox" 
-                                checked={crearNuevoDocente} 
-                                onChange={(e) => {
-                                  const isChecked = e.target.checked;
-                                  setCrearNuevoDocente(isChecked);
-                                  // Al activar, copiar lo que ya se haya escrito arriba
-                                  if (isChecked) {
-                                    setFormData(prev => {
-                                      const parts = (prev.last_name || '').trim().split(' ');
-                                      const paterno = parts[0] || '';
-                                      const materno = parts.slice(1).join(' ') || '';
-                                      return {
-                                        ...prev,
-                                        docente_data: {
-                                          ...prev.docente_data,
-                                          nombres: prev.first_name || '',
-                                          apellido_paterno: paterno,
-                                          apellido_materno: materno
-                                        }
-                                      };
-                                    });
-                                  }
-                                }} 
-                                className="w-5 h-5 text-blue-600 rounded border-slate-400 focus:ring-blue-500" 
-                              />
-                              <span className="font-semibold text-slate-800 dark:text-slate-200">Crear nuevo registro de docente</span>
-                          </label>
-
-                          {crearNuevoDocente ? (
-                              <div className="p-5 bg-white dark:bg-slate-800 rounded-lg border-2 border-slate-300 dark:border-slate-600 space-y-4">
-                                  <h4 className="font-bold text-lg text-blue-600 dark:text-blue-400 border-b border-slate-200 dark:border-slate-700 pb-3 mb-4">
-                                    Datos del Nuevo Docente
-                                  </h4>
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
-                                      <div className="md:col-span-2">
-                                        <InputField label="Nombres" name="nombres" value={formData.docente_data.nombres} onChange={handleDocenteDataChange} required error={errors.docente_data?.nombres} />
-                                      </div>
-                                      <InputField label="Apellido Paterno" name="apellido_paterno" value={formData.docente_data.apellido_paterno} onChange={handleDocenteDataChange} required error={errors.docente_data?.apellido_paterno} />
-                                      <InputField label="Apellido Materno" name="apellido_materno" value={formData.docente_data.apellido_materno} onChange={handleDocenteDataChange} error={errors.docente_data?.apellido_materno} />
-                                      <InputField label="Cédula de Identidad (CI)" name="ci" value={formData.docente_data.ci} onChange={handleDocenteDataChange} required error={errors.docente_data?.ci} />
-                                      <div>
-                                          <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Categoría</label>
-                                          <select name="categoria" value={formData.docente_data.categoria} onChange={handleDocenteDataChange} className="w-full px-4 py-3 rounded-xl border-2 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white border-slate-300 dark:border-slate-600">
-                                              <option value="catedratico">Catedrático</option>
-                                              <option value="adjunto">Adjunto</option>
-                                              <option value="asistente">Asistente</option>
-                                          </select>
-                                      </div>
-                                      <div>
-                                          <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Dedicación</label>
-                                          <select name="dedicacion" value={formData.docente_data.dedicacion} onChange={handleDocenteDataChange} className="w-full px-4 py-3 rounded-xl border-2 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white border-slate-300 dark:border-slate-600">
-                                              <option value="tiempo_completo">Tiempo Completo</option>
-                                              <option value="medio_tiempo">Medio Tiempo</option>
-                                              <option value="horario">Horario</option>
-                                          </select>
-                                      </div>
-                                      {formData.docente_data.dedicacion === 'horario' ? (
-                                          <InputField
-                                              label="Horas Semanales por Contrato"
-                                              name="horas_contrato_semanales"
-                                              type="number"
-                                              value={formData.docente_data.horas_contrato_semanales || ''}
-                                              onChange={handleDocenteDataChange}
-                                              required
-                                              error={errors.docente_data?.horas_contrato_semanales}
-                                              placeholder="Ej: 8, 12, 16"
-                                          />
-                                      ) : (
-                                          <div>
-                                              <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Horas Semanales Requeridas</label>
-                                              <input
-                                                  type="number"
-                                                  value={formData.docente_data.dedicacion === 'tiempo_completo' ? 40 : 20}
-                                                  disabled
-                                                  className="w-full px-4 py-3 rounded-xl border-2 bg-slate-100 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600"
-                                              />
-                                          </div>
-                                      )}
-                                  </div>
-                                  <div className={`mt-4 p-4 rounded-xl ${dedicacionStyles[formData.docente_data.dedicacion]?.bg} border-l-4 ${dedicacionStyles[formData.docente_data.dedicacion]?.border} shadow-sm`}>
-                                    <div className="flex items-start gap-3">
-                                        <InfoIcon className={`w-6 h-6 ${dedicacionStyles[formData.docente_data.dedicacion]?.icon} flex-shrink-0 mt-0.5`} />
-                                        <div>
-                                            <h5 className={`font-semibold ${dedicacionStyles[formData.docente_data.dedicacion]?.title}`}>Información sobre Dedicación</h5>
-                                            <p className={`text-sm ${dedicacionStyles[formData.docente_data.dedicacion]?.text} mt-1`}>
-                                                {formData.docente_data.dedicacion === 'tiempo_completo' && 'La dedicación a Tiempo Completo implica un total de 40 horas semanales.'}
-                                                {formData.docente_data.dedicacion === 'medio_tiempo' && 'La dedicación a Medio Tiempo implica un total de 20 horas semanales.'}
-                                                {formData.docente_data.dedicacion === 'horario' && 'Para la dedicación por Horario, debe especificar el número de horas semanales según el contrato.'}
-                                            </p>
-                                        </div>
-                                    </div>
-                                  </div>
-                              </div>
-                          ) : (
-                              <div>
-                                  <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Vincular a Docente Existente</label>
-                                  <select name="docente" value={formData.docente} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border-2 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white border-slate-300 dark:border-slate-600" required>
-                                      <option value="">Seleccione un docente</option>
-                                      {docentes.map(d => <option key={d.id} value={d.id}>{d.nombre_completo}</option>)}
-                                  </select>
-                                  {errors.docente && <p className="text-xs text-red-600 mt-1">{errors.docente}</p>}
-                              </div>
+                    {/* Vincular a Docente Existente - solo para rol docente */}
+                    {formData.rol === 'docente' && !crearNuevoDocente && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <FilterDocentes
+                            label="Vincular a Docente Existente"
+                            name="docente"
+                            value={formData.docente}
+                            onChange={handleChange}
+                            docentes={docentes}
+                            error={docenteError}
+                            disabled={vinculacionRapidaDocente}
+                            placeholder="Buscar docente..."
+                          />
+                          {vinculacionRapidaDocente && (
+                            <p className="text-xs text-blue-600 dark:text-blue-300 mt-1">
+                              Docente bloqueado para completar el vinculo directo.
+                            </p>
                           )}
+                        </div>
+                        <div>
+                          <SimpleDropdown
+                            label="Carrera"
+                            value={formData.carrera || ''}
+                            onChange={(carreraId) => setFormData(prev => ({ ...prev, carrera: carreraId }))}
+                            options={carreras.map(c => ({ value: c.id, label: c.nombre }))}
+                            placeholder="Seleccione una carrera..."
+                          />
+                        </div>
                       </div>
                     )}
+
+                    {/* C.I. para admin/director/jefe_estudios - abajo de Rol */}
+                    {(formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && (
+                      <div className="md:col-span-2">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">C.I. <span className="text-red-500">*</span></label>
+                            <input
+                              type="text"
+                              name="ci"
+                              value={formData.ci || ''}
+                              onChange={handleChange}
+                              className={`w-full px-4 py-3 rounded-xl border-2 bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                ciError ? 'border-red-500 dark:border-red-500' : 'border-slate-400 dark:border-slate-600'
+                              }`}
+                            />
+                            {ciError && <p className="text-xs text-red-600 mt-1">{ciError}</p>}
+                          </div>
+                          <div>
+                            <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Contraseña inicial</label>
+                            <div className="w-full px-4 py-3 rounded-xl border-2 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 font-mono font-semibold">
+                              {formData.username ? `${formData.username}UABJB` : 'usuarioUABJB'}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Opción para docente */}
+                    {formData.rol === 'docente' && !vinculacionRapidaDocente && (
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
+                          Crear nuevo registro de docente
+                        </label>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="flex items-center justify-center rounded-xl border-2 border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-700/50 w-3/4 mx-auto">
+                            <ToggleSwitch
+                              isActive={crearNuevoDocente}
+                              onChange={() => {
+                                if (!crearNuevoDocente) {
+                                  handleCrearNuevoDocente();
+                                } else {
+                                  setCrearNuevoDocente(false);
+                                }
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Contraseña inicial</label>
+                            <div className="w-full px-4 py-3 rounded-xl border-2 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 font-mono font-semibold">
+                              {formData.username ? `${formData.username}UABJB` : 'usuarioUABJB'}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="md:col-span-2 mt-2">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <h3 className="text-sm font-bold uppercase tracking-wide text-slate-700 dark:text-slate-300">Asignaciones adicionales</h3>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Agrega una carrera y rol extra por usuario.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={agregarAsignacion}
+                          disabled={!puedeAgregarAsignacion}
+                          className={`px-3 py-2 rounded-xl text-white font-semibold transition-colors ${puedeAgregarAsignacion ? 'bg-[#2C4AAE] hover:bg-[#1a3a8a]' : 'bg-slate-400 cursor-not-allowed'}`}
+                        >
+                          +
+                        </button>
+                      </div>
+                      {!puedeAgregarAsignacion && (
+                        <p className="text-xs text-amber-600 dark:text-amber-300 mb-3">
+                          Límite alcanzado: máximo 2 asignaciones totales por usuario.
+                        </p>
+                      )}
+
+                      {asignacionesExtra.length > 0 && (
+                        <div className="space-y-4">
+                          {asignacionesExtra.map((asignacion, index) => {
+                            const mostrarDocente = asignacion.rol === 'docente';
+                            return (
+                              <div key={index} className="rounded-2xl border-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/40 p-4 space-y-4">
+                                <div className="flex items-center justify-between gap-3">
+                                  <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Bloque {index + 1}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => eliminarAsignacion(index)}
+                                    className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-200 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+                                  >
+                                    Eliminar
+                                  </button>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  <SelectConDropdown
+                                    label="Rol"
+                                    name={`asignacion-rol-${index}`}
+                                    value={asignacion.rol || 'docente'}
+                                    onChange={(e) => handleAsignacionChange(index, 'rol', e.target.value)}
+                                    options={roles.map(rol => ({ value: rol.value, label: rol.label }))}
+                                    error={errors[`asignaciones.${index}.rol`]}
+                                    required
+                                  />
+
+                                  <SelectConDropdown
+                                    label="Carrera"
+                                    name={`asignacion-carrera-${index}`}
+                                    value={asignacion.carrera || ''}
+                                    onChange={(e) => handleAsignacionChange(index, 'carrera', e.target.value)}
+                                    options={carreras.map(c => ({ value: c.id, label: c.nombre }))}
+                                    error={errors[`asignaciones.${index}.carrera`]}
+                                    required
+                                  />
+
+                                  {mostrarDocente && (
+                                    <div className="md:col-span-2">
+                                      <FilterDocentes
+                                        label="Docente"
+                                        name={`asignacion-docente-${index}`}
+                                        value={asignacion.docente || ''}
+                                        onChange={(e) => handleAsignacionChange(index, 'docente', e.target.value)}
+                                        docentes={docentes}
+                                        error={errors[`asignaciones.${index}.docente`]}
+                                        placeholder="Buscar docente..."
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
+
+                {/* Footer con botones */}
+                <div className="px-6 py-4 bg-slate-100 dark:bg-slate-700 border-t border-slate-300 dark:border-slate-600 flex justify-end gap-3 rounded-b-2xl">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCreating(false);
+                      setVinculacionRapidaDocente(false);
+                    }}
+                    className="px-6 py-2.5 rounded-xl font-semibold text-slate-700 dark:text-slate-200 bg-slate-200 dark:bg-slate-600 hover:bg-slate-300 dark:hover:bg-slate-500 transition-all"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="px-6 py-2.5 rounded-xl font-bold text-white bg-[#2C4AAE] hover:bg-[#1a3a8a] transition-all disabled:opacity-50"
+                  >
+                    {isSubmitting ? 'Creando...' : 'Crear Usuario'}
+                  </button>
+                </div>
+              </form>
               </div>
-              <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
-                <button type="button" onClick={() => setIsCreating(false)} disabled={isSubmitting} className="px-6 py-2.5 rounded-xl font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm disabled:opacity-50">
-                  Cancelar
-                </button>
-                <button type="submit" disabled={isSubmitting} className="px-6 py-2.5 rounded-xl text-white font-bold transition-all shadow-lg hover:shadow-xl flex items-center gap-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 hover:scale-105">
-                  {isSubmitting ? 'Guardando...' : 'Crear Usuario'}
-                </button>
-              </div>
-            </form>
+            </div>
           </div>
-        )}
+        ), document.body)}
  
         {/* Modal for editing */}
         <ModalUsuario
           isOpen={showModal}
           onClose={() => setShowModal(false)}
-          onSaveSuccess={() => {
+          onSaveSuccess={(usuarioActualizado) => {
             setShowModal(false);
+            if (usuarioActualizado?.id) {
+              setUsuarios((prev) => prev.map((usuario) => (
+                usuario.id === usuarioActualizado.id ? usuarioActualizado : usuario
+              )));
+              setUsuarioEditando(usuarioActualizado);
+            }
             cargarDatos();
           }}
           userToEdit={usuarioEditando}
           docentes={docentes}
           carreras={carreras}
           roles={roles}
+          sidebarCollapsed={sidebarCollapsed}
+          hasSidebar={hasSidebar}
+          currentUser={user}
         />
+
+        <div className="flex justify-end">
+          {hayOrfanos && (
+            <button
+              type="button"
+              onClick={() => setShowOnlyOrphans((prev) => !prev)}
+              className={`px-4 py-2 rounded-xl text-sm font-bold border-2 transition-all shadow-md ${
+                showOnlyOrphans
+                  ? 'bg-red-700 text-white border-red-800 hover:bg-red-800 dark:bg-red-700 dark:border-red-900 animate-pulse-slow'
+                  : 'bg-red-600 text-white border-red-700 hover:bg-red-700 dark:bg-red-600 dark:border-red-800 animate-pulse-slow'
+              }`}
+            >
+              {showOnlyOrphans ? '⚠️ Mostrar Todos' : '⚠️ Urgente: Ver Huérfanos'}
+            </button>
+          )}
+        </div>
         
         {/* Tabla de usuarios */}
         <div id="fondo-usuarios-tabla" className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-lg overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y-2 divide-slate-300 dark:divide-slate-700">
-              <thead className="bg-gradient-to-r from-blue-600 to-indigo-600">
+              <thead className="bg-blue-800 dark:bg-blue-900">
                 <tr>
                   <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">
                     Usuario
                   </th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">
-                    Nombre Completo
+                    Nombre
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">
+                    Apellidos
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">
+                    C.I.
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">
+                    Carrera
                   </th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">
                     Rol
                   </th>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">
-                    Email
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">
+                  <th className="px-6 py-4 text-center text-xs font-bold text-white uppercase tracking-wider">
                     Estado
                   </th>
                   <th className="px-6 py-4 text-center text-xs font-bold text-white uppercase tracking-wider">
@@ -578,39 +1317,72 @@ function GestionUsuarios({ isDark }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                {usuarios.map(usuario => (
+                {usuariosFiltrados.map(usuario => (
                   <tr key={usuario.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="font-bold text-slate-800 dark:text-white">{usuario.username}</div>
+                      <div className="space-y-1">
+                        <div className="font-bold text-slate-800 dark:text-white">{usuario.username}</div>
+                        {/* Aviso si el usuario no tiene perfil */}
+                        {!usuario.perfil && (
+                          <div className="text-xs font-semibold text-amber-600 dark:text-amber-400">
+                            ⚠️ Sin Perfil
+                          </div>
+                        )}
+                        {/* Aviso si el usuario tiene rol docente pero no tiene docente vinculado */}
+                        {usuario.perfil?.rol === 'docente' && (!usuario.perfil?.docente_id || usuario.perfil.docente_id === null) && (
+                          <div className="text-xs font-semibold text-red-600 dark:text-red-400">
+                            ❌ Sin Vínculo Docente
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-slate-700 dark:text-slate-300">
-                        {usuario.nombre_completo || `${usuario.first_name} ${usuario.last_name}`}
+                        {usuario.first_name || '-'}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-slate-700 dark:text-slate-300">
+                        {usuario.last_name || '-'}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-mono text-slate-700 dark:text-slate-300">
+                        {usuario.ci || '-'}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                        {usuario.carrera_codigo || '-'}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`px-3 py-1.5 inline-flex text-xs font-bold rounded-lg border-2 shadow-sm ${
+                        usuario.is_superuser ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 border-amber-400 dark:border-amber-600' :
                         usuario.perfil?.rol === 'admin' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-700' :
                         usuario.perfil?.rol === 'director' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700' :
                         usuario.perfil?.rol === 'jefe_estudios' ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 border-cyan-300 dark:border-cyan-700' :
                         'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700'
                       }`}>
-                        {usuario.perfil?.rol === 'admin' ? '🛡️ Admin' :
-                         usuario.perfil?.rol === 'director' ? '👔 Director' :
-                         usuario.perfil?.rol === 'jefe_estudios' ? '🧑‍⚖️ Jefe de Estudios' : '👨‍🏫 Docente'}
+                        {usuario.is_superuser ? '👑 Super Admin' :
+                         usuario.perfil?.rol === 'admin' ? '🛡️ Admin' :
+                         usuario.perfil?.rol === 'director' ? '🏛️ Director de Carrera' :
+                         usuario.perfil?.rol === 'jefe_estudios' ? '📚 Jefe de Estudios' : '👨‍🏫 Docente'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">
-                      {usuario.email || '-'}
-                    </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-3">
-                        <ToggleSwitch 
-                          isActive={usuario.is_active}
-                          onChange={() => handleToggleActivo(usuario)}
-                        />
+                      <div className="flex items-center justify-center gap-3">
+                        {!usuario.is_superuser && (
+                          <ToggleSwitch
+                            isActive={usuario.is_active}
+                            disabled={usuario.is_superuser}
+                            onChange={() => handleToggleActivo(usuario)}
+                          />
+                        )}
                         <span className="text-sm font-semibold">
-                          {usuario.is_active 
+                          {usuario.is_superuser
+                            ? <span className="text-amber-600 dark:text-amber-400 italic">protegido</span>
+                            : usuario.is_active
                             ? <span className="text-emerald-600 dark:text-emerald-400">Activo</span>
                             : <span className="text-amber-600 dark:text-amber-400">Inactivo</span>
                           }
@@ -618,20 +1390,21 @@ function GestionUsuarios({ isDark }) {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <div className="flex justify-center gap-2">
+                      <div className="flex justify-center gap-3">
                         <button
                           onClick={() => abrirModalEditar(usuario)}
-                          className="flex items-center justify-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 text-white text-xs font-semibold rounded-lg transition-all duration-200 shadow-sm hover:shadow-md hover:scale-105"
+                          className="text-blue-500 hover:text-blue-400 dark:text-blue-400 dark:hover:text-blue-300 transition-all duration-200 hover:scale-110"
+                          title="Editar"
                         >
-                          <PencilIcon className="w-4 h-4" />
-                          <span>Editar</span>
+                          <FaEdit size={18} />
                         </button>
                         <button
                           onClick={() => handleEliminar(usuario)}
-                          className="flex items-center justify-center gap-1 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 dark:bg-amber-700 dark:hover:bg-amber-800 text-white text-xs font-semibold rounded-lg transition-all duration-200 shadow-sm hover:shadow-md hover:scale-105"
+                          disabled={usuario.is_superuser}
+                          className={`transition-all duration-200 ${usuario.is_superuser ? 'text-slate-400 dark:text-slate-600 cursor-not-allowed' : 'text-red-500 hover:text-red-400 dark:text-red-400 dark:hover:text-red-300 hover:scale-110'}`}
+                          title="Eliminar"
                         >
-                          <TrashIcon className="w-4 h-4" />
-                          <span>Eliminar</span>
+                          <FaTrash size={18} />
                         </button>
                       </div>
                     </td>

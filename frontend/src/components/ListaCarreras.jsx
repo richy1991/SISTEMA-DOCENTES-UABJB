@@ -1,19 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { getCarreras } from '../apis/api';
+import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { FaEdit, FaTrash, FaEye } from 'react-icons/fa';
+import { getCarreras, getFacultadesCarrera } from '../apis/api';
 import api from '../apis/api';
 import toast from 'react-hot-toast';
+import html2pdf from 'html2pdf.js';
 
-const PencilIcon = (props) => (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
-    </svg>
-);
-
-const TrashIcon = (props) => (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-    </svg>
-);
+const FECHA_MAXIMA_HOY = new Date().toISOString().split('T')[0];
 
 const InputField = ({ label, name, type = 'text', value, onChange, required, error }) => (
   <div>
@@ -30,47 +23,706 @@ const InputField = ({ label, name, type = 'text', value, onChange, required, err
   </div>
 );
 
-const ToggleSwitch = ({ isActive, onChange }) => (
+const SelectConDropdown = ({
+  label,
+  name,
+  value,
+  onChange,
+  options,
+  error,
+  disabled = false,
+  required = false,
+  placeholder = 'Seleccione...',
+  searchable = false
+}) => {
+  const [open, setOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [inputValue, setInputValue] = useState('');
+  const containerRef = useRef(null);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    const handleOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+
+    if (open) {
+      document.addEventListener('mousedown', handleOutside);
+    }
+
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [open]);
+
+  const selectedLabel = options.find((opt) => opt.value === value)?.label;
+  const errorMessage = Array.isArray(error) ? (error[0] || '') : error;
+  useEffect(() => {
+    if (!open) {
+      setSearchTerm('');
+      setInputValue(selectedLabel || '');
+      return;
+    }
+
+    if (searchable) {
+      setTimeout(() => inputRef.current?.focus(), 0);
+    }
+  }, [open, searchable, selectedLabel]);
+
+  const filteredOptions = searchable
+    ? options.filter((opt) => String(opt.label || '').toLowerCase().includes(searchTerm.toLowerCase()))
+    : options;
+
+  return (
+    <div ref={containerRef} className="relative">
+      {label && (
+        <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
+          {label} {required && <span className="text-red-500">*</span>}
+        </label>
+      )}
+
+      <div
+        className={`w-full px-4 py-3 rounded-2xl text-left flex items-center justify-between transition-all ${
+          disabled ? 'cursor-not-allowed opacity-60' : 'hover:shadow-md'
+        } ${
+          error
+            ? 'border-2 border-red-500 bg-white dark:bg-slate-800'
+            : open
+              ? 'border-2 border-[#2C4AAE] bg-white dark:bg-slate-800'
+              : 'border-2 border-slate-400 bg-slate-100 dark:bg-slate-700 hover:border-[#2C4AAE]'
+        }`}
+      >
+        {searchable ? (
+          <input
+            ref={inputRef}
+            type="text"
+            value={open ? inputValue : (selectedLabel || '')}
+            onFocus={() => {
+              if (disabled) return;
+              setOpen(true);
+              setInputValue('');
+              setSearchTerm('');
+            }}
+            onChange={(e) => {
+              const term = e.target.value;
+              setInputValue(term);
+              setSearchTerm(term);
+              if (!open) setOpen(true);
+            }}
+            placeholder={placeholder}
+            disabled={disabled}
+            className={`flex-1 bg-transparent focus:outline-none text-sm ${selectedLabel && !open ? 'text-slate-800 dark:text-white font-semibold leading-tight' : 'text-slate-800 dark:text-white'} placeholder-slate-400 dark:placeholder-slate-500`}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setOpen((prev) => !prev)}
+            disabled={disabled}
+            className="flex-1 text-left bg-transparent"
+          >
+            <span className={`${selectedLabel ? 'text-slate-800 dark:text-white font-semibold text-sm leading-tight' : 'text-slate-400 dark:text-slate-500'}`}>
+              {selectedLabel || placeholder}
+            </span>
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={() => {
+            if (disabled) return;
+            setOpen((prev) => !prev);
+          }}
+          disabled={disabled}
+          className="w-8 h-8 bg-[#2C4AAE] hover:bg-[#1a3a8a] rounded-lg flex items-center justify-center transition-colors"
+        >
+          <svg
+            className={`w-4 h-4 text-white transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+      </div>
+
+      {open && (
+        <div className="absolute z-50 mt-1 w-full rounded-xl border-2 border-[#2C4AAE] bg-white dark:bg-slate-800 shadow-xl max-h-48 overflow-auto">
+          {filteredOptions.length > 0 ? (
+            filteredOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => {
+                  onChange({ target: { name, value: option.value } });
+                  setInputValue(option.label);
+                  setOpen(false);
+                }}
+                className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                  value === option.value
+                    ? 'bg-[#2C4AAE] text-white font-semibold'
+                    : 'text-slate-700 dark:text-slate-300 hover:bg-[#2C4AAE] hover:text-white'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))
+          ) : (
+            <div className="px-4 py-3 text-sm text-center text-slate-500 dark:text-slate-400">
+              No se encontraron opciones
+            </div>
+          )}
+        </div>
+      )}
+
+      {errorMessage && <p className="text-xs text-red-600 mt-1">{errorMessage}</p>}
+    </div>
+  );
+};
+
+const weekDays = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+const monthNames = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+];
+
+function parseIsoDate(iso) {
+  if (!iso || typeof iso !== 'string') return null;
+  const parts = iso.split('-').map(Number);
+  if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return null;
+  const [year, month, day] = parts;
+  const d = new Date(year, month - 1, day);
+  if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) return null;
+  return d;
+}
+
+function toIsoDate(dateObj) {
+  const y = dateObj.getFullYear();
+  const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const d = String(dateObj.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function formatDisplayDate(iso) {
+  const dateObj = parseIsoDate(iso);
+  if (!dateObj) return '';
+  const dd = String(dateObj.getDate()).padStart(2, '0');
+  const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const yyyy = dateObj.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
+
+function parseDisplayDate(display) {
+  if (!display || typeof display !== 'string') return null;
+  const match = display.match(/^\d{2}\/\d{2}\/\d{4}$/);
+  if (!match) return null;
+  const [dd, mm, yyyy] = display.split('/').map(Number);
+  const d = new Date(yyyy, mm - 1, dd);
+  if (d.getFullYear() !== yyyy || d.getMonth() !== mm - 1 || d.getDate() !== dd) return null;
+  return d;
+}
+
+const DatePickerField = ({ label, name, value, onDateChange, error, required, maxIsoDate }) => {
+  const [open, setOpen] = useState(false);
+  const [openQuickPicker, setOpenQuickPicker] = useState(null);
+  const [inputValue, setInputValue] = useState(formatDisplayDate(value));
+  const [visibleMonth, setVisibleMonth] = useState(() => {
+    const selectedDate = parseIsoDate(value);
+    const today = new Date();
+    return selectedDate ? new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1) : new Date(today.getFullYear(), today.getMonth(), 1);
+  });
+  const [draftDay, setDraftDay] = useState(null);
+  const [draftMonth, setDraftMonth] = useState(null);
+  const [draftYear, setDraftYear] = useState(null);
+  const [hasSelectedMonth, setHasSelectedMonth] = useState(false);
+  const [hasSelectedYear, setHasSelectedYear] = useState(false);
+  const containerRef = useRef(null);
+  const yearMenuRef = useRef(null);
+  const currentYearOptionRef = useRef(null);
+
+  useEffect(() => {
+    setInputValue(formatDisplayDate(value));
+  }, [value]);
+
+  useEffect(() => {
+    const handleOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    if (open) {
+      document.addEventListener('mousedown', handleOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+    };
+  }, [open]);
+
+  const year = visibleMonth.getFullYear();
+  const month = visibleMonth.getMonth();
+  const today = new Date();
+  const currentYearRef = today.getFullYear();
+  const startYear = currentYearRef - 25;
+  const endYear = currentYearRef + 25;
+  const yearOptions = Array.from({ length: endYear - startYear + 1 }, (_, idx) => startYear + idx);
+  const monthOptions = monthNames.map((labelItem, valueIndex) => ({ value: valueIndex, label: labelItem }));
+  const firstDay = new Date(year, month, 1);
+  const offset = (firstDay.getDay() + 6) % 7;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const calendarCells = [];
+  for (let i = 0; i < offset; i += 1) calendarCells.push(null);
+  for (let d = 1; d <= daysInMonth; d += 1) {
+    calendarCells.push(new Date(year, month, d));
+  }
+  while (calendarCells.length % 7 !== 0) calendarCells.push(null);
+
+  const isSameDate = (a, b) => (
+    a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+  );
+
+  useEffect(() => {
+    if (openQuickPicker !== 'year') return;
+
+    const rafId = requestAnimationFrame(() => {
+      const menuEl = yearMenuRef.current;
+      const currentYearEl = currentYearOptionRef.current;
+      if (!menuEl || !currentYearEl) return;
+
+      const targetTop = currentYearEl.offsetTop - (menuEl.clientHeight / 2) + (currentYearEl.clientHeight / 2);
+      menuEl.scrollTop = Math.max(0, targetTop);
+    });
+
+    return () => cancelAnimationFrame(rafId);
+  }, [openQuickPicker]);
+
+  const isOverMaxDate = (dateObj) => {
+    const maxDateObj = parseIsoDate(maxIsoDate);
+    if (!maxDateObj) return false;
+    return dateObj > maxDateObj;
+  };
+
+  const commitDate = (dateObj) => {
+    if (isOverMaxDate(dateObj)) {
+      toast.error('La fecha de resolución no puede ser futura.');
+      return;
+    }
+    const iso = toIsoDate(dateObj);
+    onDateChange(name, iso);
+    setInputValue(formatDisplayDate(iso));
+    setOpen(false);
+  };
+
+  const handlePickDate = (dateObj) => {
+    setDraftDay(dateObj.getDate());
+    setHasSelectedMonth(true);
+    setHasSelectedYear(true);
+    commitDate(dateObj);
+  };
+
+  const handleManualInputChange = (e) => {
+    const rawValue = e.target.value;
+    const onlyDigits = rawValue.replace(/\D/g, '').slice(0, 8);
+    let formatted = onlyDigits;
+    if (onlyDigits.length > 2) {
+      formatted = `${onlyDigits.slice(0, 2)}/${onlyDigits.slice(2)}`;
+    }
+    if (onlyDigits.length > 4) {
+      formatted = `${onlyDigits.slice(0, 2)}/${onlyDigits.slice(2, 4)}/${onlyDigits.slice(4)}`;
+    }
+    setInputValue(formatted);
+    if (formatted.length === 10) {
+      const parsed = parseDisplayDate(formatted);
+      if (parsed) {
+        if (isOverMaxDate(parsed)) {
+          toast.error('La fecha de resolución no puede ser futura.');
+          return;
+        }
+        onDateChange(name, toIsoDate(parsed));
+        setVisibleMonth(new Date(parsed.getFullYear(), parsed.getMonth(), 1));
+      }
+    }
+    if (!formatted) {
+      onDateChange(name, '');
+    }
+  };
+
+  const handleManualInputBlur = () => {
+    if (!inputValue) {
+      onDateChange(name, '');
+      return;
+    }
+    const parsed = parseDisplayDate(inputValue);
+    if (parsed) {
+      if (isOverMaxDate(parsed)) {
+        toast.error('La fecha de resolución no puede ser futura.');
+        setInputValue(formatDisplayDate(value));
+        return;
+      }
+      const iso = toIsoDate(parsed);
+      onDateChange(name, iso);
+      setInputValue(formatDisplayDate(iso));
+      setVisibleMonth(new Date(parsed.getFullYear(), parsed.getMonth(), 1));
+      return;
+    }
+    onDateChange(name, '');
+    setInputValue('');
+  };
+
+  const errorMessage = Array.isArray(error) ? (error[0] || '') : error;
+
+  return (
+    <div ref={containerRef} className="relative">
+      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label} {required && <span className="text-red-500">*</span>}</label>
+      <div className={`relative w-full rounded-xl border-2 bg-slate-50 dark:bg-slate-700 shadow-sm ${error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'} focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent`}>
+        <input
+          type="text"
+          inputMode="numeric"
+          placeholder="dd/mm/aaaa"
+          value={inputValue}
+          onChange={handleManualInputChange}
+          onBlur={handleManualInputBlur}
+          className="w-full bg-transparent text-slate-800 dark:text-white px-4 py-2.5 pr-12 rounded-xl focus:outline-none"
+          aria-label={label}
+        />
+        <button
+          type="button"
+          onClick={() => setOpen((prev) => !prev)}
+          className="absolute right-1.5 top-1/2 h-8 w-8 rounded-lg border border-[#3A56AF]/40 bg-[#2C4AAE] text-white hover:bg-[#233C8F] transition-colors"
+          style={{ transform: 'translateY(-50%)' }}
+          aria-label={`Abrir calendario de ${label}`}
+        >
+          <svg className="w-4 h-4 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10m-13 9h16a1 1 0 001-1V7a1 1 0 00-1-1H4a1 1 0 00-1 1v12a1 1 0 001 1z" />
+          </svg>
+        </button>
+      </div>
+
+      {open && (
+        <div
+          className="absolute z-50 mt-2 w-[268px] max-w-[calc(100vw-2rem)] rounded-xl border border-[#7F97E8]/45 bg-[#2C4AAE] backdrop-blur-xl shadow-2xl p-2.5"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="grid grid-cols-2 gap-1.5 mb-2">
+            <div className="relative">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpenQuickPicker((prev) => (prev === 'month' ? null : 'month'));
+                }}
+                className={`w-full h-8 text-left pl-2.5 pr-8 rounded-xl border bg-white dark:bg-slate-800 text-xs shadow-sm ${openQuickPicker === 'month' ? 'border-cyan-500/80 dark:border-cyan-500 ring-2 ring-cyan-400/40 dark:ring-cyan-500/35 text-slate-900 dark:text-slate-100' : 'border-cyan-300/70 dark:border-cyan-700/80 hover:border-cyan-500/70 dark:hover:border-cyan-500/80 text-slate-800 dark:text-slate-100'}`}
+              >
+                <span className="block truncate font-semibold">{hasSelectedMonth && draftMonth !== null ? monthNames[draftMonth] : monthNames[month]}</span>
+                <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center">
+                  <span className="inline-flex h-4 w-4 items-center justify-center rounded-md bg-cyan-50 dark:bg-cyan-900/30 ring-1 ring-cyan-200/70 dark:ring-cyan-700/70">
+                    <svg className={`w-2.5 h-2.5 text-cyan-700 dark:text-cyan-300 transition-transform duration-200 ${openQuickPicker === 'month' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </span>
+                </span>
+              </button>
+              {openQuickPicker === 'month' && (
+                <div className="absolute z-40 mt-1.5 w-full max-h-40 overflow-auto rounded-xl border border-cyan-300 dark:border-cyan-700 bg-white dark:bg-slate-900 shadow-xl shadow-cyan-900/15 dark:shadow-black/35" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+                  {monthOptions.map((opt) => {
+                    const active = hasSelectedMonth && draftMonth !== null && opt.value === draftMonth;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDraftMonth(opt.value);
+                          setHasSelectedMonth(true);
+                          setVisibleMonth(new Date(year, opt.value, 1));
+                          setOpenQuickPicker(null);
+                        }}
+                        className={`w-full text-left px-3 py-1.5 text-xs border-l-2 ${active ? 'bg-cyan-50 dark:bg-cyan-900/30 border-cyan-500 text-cyan-800 dark:text-cyan-200 font-semibold' : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-[#2C4AAE]'}`}
+                      >
+                        <span className="block truncate">{opt.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="relative">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpenQuickPicker((prev) => (prev === 'year' ? null : 'year'));
+                }}
+                className={`w-full h-8 text-left pl-2.5 pr-8 rounded-xl border bg-white dark:bg-slate-800 text-xs shadow-sm ${openQuickPicker === 'year' ? 'border-cyan-500/80 dark:border-cyan-500 ring-2 ring-cyan-400/40 dark:ring-cyan-500/35 text-slate-900 dark:text-slate-100' : 'border-cyan-300/70 dark:border-cyan-700/80 hover:border-cyan-500/70 dark:hover:border-cyan-500/80 text-slate-800 dark:text-slate-100'}`}
+              >
+                <span className="block truncate font-semibold">{hasSelectedYear && draftYear !== null ? draftYear : year}</span>
+                <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center">
+                  <span className="inline-flex h-4 w-4 items-center justify-center rounded-md bg-cyan-50 dark:bg-cyan-900/30 ring-1 ring-cyan-200/70 dark:ring-cyan-700/70">
+                    <svg className={`w-2.5 h-2.5 text-cyan-700 dark:text-cyan-300 transition-transform duration-200 ${openQuickPicker === 'year' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </span>
+                </span>
+              </button>
+              {openQuickPicker === 'year' && (
+                <div ref={yearMenuRef} className="absolute z-40 mt-1.5 w-full max-h-40 overflow-auto rounded-xl border border-cyan-300 dark:border-cyan-700 bg-white dark:bg-slate-900 shadow-xl shadow-cyan-900/15 dark:shadow-black/35" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+                  {yearOptions.map((y) => {
+                    const active = hasSelectedYear && draftYear !== null && y === draftYear;
+                    const isCurrentSystemYear = y === currentYearRef;
+                    return (
+                      <button
+                        key={y}
+                        ref={isCurrentSystemYear ? currentYearOptionRef : null}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDraftYear(y);
+                          setHasSelectedYear(true);
+                          setVisibleMonth(new Date(y, draftMonth ?? month, 1));
+                          setOpenQuickPicker(null);
+                        }}
+                        className={`w-full text-left px-3 py-1.5 text-xs border-l-2 ${active ? 'bg-cyan-50 dark:bg-cyan-900/30 border-cyan-500 text-cyan-800 dark:text-cyan-200 font-semibold' : isCurrentSystemYear ? 'bg-blue-50 dark:bg-blue-900/25 border-blue-400 text-blue-800 dark:text-blue-200 font-semibold hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-[#2C4AAE]' : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-[#2C4AAE]'}`}
+                      >
+                        <span className="flex items-center justify-between gap-2">
+                          <span className="block truncate">{y}</span>
+                          {isCurrentSystemYear && !active && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-200/80 dark:bg-blue-800/50 text-blue-900 dark:text-blue-100">Actual</span>
+                          )}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-7 gap-0.5 mb-1">
+            {weekDays.map((wd) => (
+              <div key={wd} className="text-center text-[10px] font-semibold text-slate-200/85 py-0.5">{wd}</div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-7 gap-0.5">
+            {calendarCells.map((cellDate, idx) => {
+              if (!cellDate) {
+                return <div key={`empty-${idx}`} className="h-8" />;
+              }
+              const isToday = isSameDate(cellDate, today);
+              const isSelected = draftDay !== null && cellDate.getDate() === draftDay;
+              const isBlocked = isOverMaxDate(cellDate);
+              return (
+                <button
+                  key={toIsoDate(cellDate)}
+                  type="button"
+                  onClick={() => !isBlocked && handlePickDate(cellDate)}
+                  className={`h-8 rounded-lg text-xs ${isSelected ? 'bg-[#4654E8] text-white font-semibold' : isBlocked ? 'text-slate-300/60 cursor-not-allowed' : 'text-slate-100 hover:bg-white/15'} ${isToday && !isSelected ? 'border border-white/55' : 'border border-transparent'}`}
+                >
+                  {cellDate.getDate()}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {errorMessage && <p className="text-xs text-red-600 mt-1">{errorMessage}</p>}
+    </div>
+  );
+};
+
+const ToggleSwitch = ({ isActive, onChange, size = 'md' }) => (
   <button
     type="button"
     onClick={onChange}
-    className={`relative inline-flex h-6 w-12 items-center rounded-full transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+    className={`relative inline-flex items-center rounded-full transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+      size === 'sm' ? 'h-5 w-9' : 'h-6 w-12'
+    } ${
       isActive
         ? 'bg-emerald-500 dark:bg-emerald-600 focus:ring-emerald-400 dark:focus:ring-emerald-500'
         : 'bg-slate-300 dark:bg-slate-600 focus:ring-slate-400 dark:focus:ring-slate-500'
     }`}
   >
     <span
-      className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition-transform duration-300 ${
-        isActive ? 'translate-x-6' : 'translate-x-0.5'
+      className={`inline-block transform rounded-full bg-white shadow-lg transition-transform duration-300 ${
+        size === 'sm' ? 'h-4 w-4' : 'h-5 w-5'
+      } ${
+        isActive ? (size === 'sm' ? 'translate-x-[16px]' : 'translate-x-6') : 'translate-x-0.5'
       }`}
     />
   </button>
 );
 
-function ListaCarreras({ isDark }) {
+// Componente ExpandableTextarea
+const ExpandableTextarea = ({ label, name, value, onChange, onExpand, placeholder, rows = 3 }) => (
+  <div>
+    <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label}</label>
+    <div className="relative">
+      <textarea
+        name={name}
+        value={value || ''}
+        onChange={onChange}
+        rows={rows}
+        placeholder={placeholder}
+        className="w-full px-4 py-2.5 rounded-xl border-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 placeholder:text-xs placeholder:italic transition-all shadow-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:shadow-md pr-12"
+      />
+      <button
+        type="button"
+        onClick={onExpand}
+        title="Expandir"
+        className="absolute right-2 top-2 p-1 rounded-md bg-blue-500 hover:bg-blue-600 text-white transition-colors text-xs"
+      >
+        ⤢
+      </button>
+    </div>
+  </div>
+);
+
+// Componente de Filtro de Carreras con Búsqueda
+const FilterCarreras = ({ carreras, onSelect, placeholder = 'Buscar carrera...' }) => {
+  const [open, setOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const containerRef = useRef(null);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    const handleOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    if (open) {
+      document.addEventListener('mousedown', handleOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [open]);
+
+  const filteredCarreras = carreras.filter(carrera =>
+    carrera.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    carrera.codigo.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const handleInputChange = (e) => {
+    const value = e.target.value;
+    setSearchTerm(value);
+    if (!value.trim()) {
+      onSelect(null);
+    }
+    setOpen(true);
+  };
+
+  const handleButtonClick = () => {
+    // Al usar el botón del desplegable, limpiar siempre el campo de búsqueda
+    // para listar nuevamente todas las carreras.
+    setSearchTerm('');
+    onSelect(null);
+    setOpen(!open);
+    if (!open) {
+      setTimeout(() => inputRef.current?.focus(), 0);
+    }
+  };
+
+  const handleSelectCarrera = (carrera) => {
+    onSelect(carrera);
+    setSearchTerm(carrera.nombre);
+    setOpen(false);
+  };
+
+  return (
+    <div ref={containerRef} className="relative w-64">
+      <div className={`flex items-center px-4 py-3 rounded-2xl transition-all ${
+        open 
+          ? 'border-2 border-[#2C4AAE] bg-white dark:bg-slate-800' 
+          : 'border-2 border-slate-400 bg-slate-100 dark:bg-slate-700 hover:border-[#2C4AAE]'
+      }`}>
+        <input
+          ref={inputRef}
+          type="text"
+          placeholder={placeholder}
+          value={searchTerm}
+          onChange={handleInputChange}
+          onFocus={() => setOpen(true)}
+          className="flex-1 bg-transparent text-slate-800 dark:text-white focus:outline-none text-sm placeholder-slate-400 dark:placeholder-slate-500"
+        />
+        <button
+          type="button"
+          onClick={handleButtonClick}
+          className="w-8 h-8 bg-[#2C4AAE] hover:bg-[#1a3a8a] rounded-lg flex items-center justify-center transition-colors flex-shrink-0 ml-2"
+        >
+          <svg
+            className={`w-4 h-4 text-white transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+      </div>
+
+      {open && (
+        <div className="absolute z-50 mt-2 w-full rounded-xl border-2 border-[#2C4AAE] bg-white dark:bg-slate-800 shadow-xl max-h-64 overflow-auto">
+          {filteredCarreras.length > 0 ? (
+            filteredCarreras.map((carrera) => (
+              <button
+                key={carrera.id}
+                type="button"
+                onClick={() => handleSelectCarrera(carrera)}
+                className="w-full text-left px-4 py-3 text-sm transition-colors text-slate-700 dark:text-slate-300 hover:bg-[#2C4AAE] hover:text-white border-b border-slate-200 dark:border-slate-700 last:border-b-0"
+              >
+                <div className="font-semibold">{carrera.nombre}</div>
+              </button>
+            ))
+          ) : searchTerm ? (
+            <div className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400 text-center">
+              No hay carreras que coincidan
+            </div>
+          ) : (
+            <div className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400 text-center">
+              Escribe para buscar carreras
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) {
   const [carreras, setCarreras] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [user, setUser] = useState(null);
+  const [facultadOptions, setFacultadOptions] = useState([]);
 
   // Modal de editar
   const [showModal, setShowModal] = useState(false);
   const [carreraSeleccionada, setCarreraSeleccionada] = useState(null);
+  const [isViewMode, setIsViewMode] = useState(false);
 
   // Formulario
   const [formData, setFormData] = useState({
     nombre: '',
     codigo: '',
     facultad: '',
-    activo: true
+    resolucion_ministerial: '',
+    fecha_resolucion: '',
+    mision: '',
+    vision: '',
+    perfil_profesional: '',
+    objetivo_carrera: '',
+    responsable: '',
+    activo: true,
+    fecha_actualizacion: null
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
+  const [logoFile, setLogoFile] = useState(null);
+  const [logoPreview, setLogoPreview] = useState('');
+  const [removeLogoCarrera, setRemoveLogoCarrera] = useState(false);
 
-  // States para modal de eliminación
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [showDependencyWarningModal, setShowDependencyWarningModal] = useState(false);
   const [carreraToDelete, setCarreraToDelete] = useState(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleteImpact, setDeleteImpact] = useState({
@@ -80,18 +732,43 @@ function ListaCarreras({ isDark }) {
     informes: 0,
     failed: false,
   });
+  const [showDependencyWarningModal, setShowDependencyWarningModal] = useState(false);
+  const createLogoInputRef = useRef(null);
+  const suppressUpdateToastRef = useRef(false);
+  const carreraContentRef = useRef(null);
+
+  // State for inline creation form
+  const [isCreating, setIsCreating] = useState(false);
+  const [carreraFiltroId, setCarreraFiltroId] = useState(null);
+
+  // States para modal expandido de campos de texto
+  const [expandedField, setExpandedField] = useState(null);
+  const [expandedContent, setExpandedContent] = useState('');
+
+  // Handler para el filtro de carreras
+  const handleSelectCarreraFromFilter = (carrera) => {
+    if (!carrera) {
+      setCarreraFiltroId(null);
+      return;
+    }
+    setCarreraFiltroId((prev) => (prev === carrera.id ? null : carrera.id));
+  };
 
   useEffect(() => {
     cargarCarreras();
-    cargarUsuario();
+    cargarFacultades();
+    const userData = JSON.parse(localStorage.getItem('user') || 'null');
+    setUser(userData);
   }, []);
 
-  const cargarUsuario = () => {
+  const cargarFacultades = async () => {
     try {
-      const userData = JSON.parse(localStorage.getItem('user'));
-      setUser(userData);
+      const response = await getFacultadesCarrera();
+      const data = response.data || [];
+      setFacultadOptions(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.error('Error cargando usuario:', err);
+      console.error('Error cargando facultades:', err);
+      setFacultadOptions([]);
     }
   };
 
@@ -108,52 +785,258 @@ function ListaCarreras({ isDark }) {
     }
   };
 
-  const abrirModalCrear = () => {
-    setCarreraSeleccionada(null);
-    setFormData({
-      nombre: '',
-      codigo: '',
-      facultad: '',
-      activo: true,
-    });
-    setErrors({});
-    setShowModal(true);
+  const carrerasMostradas = carreraFiltroId
+    ? carreras.filter((c) => c.id === carreraFiltroId)
+    : carreras;
+
+  useEffect(() => {
+    if (isCreating) {
+      setFormData({
+        nombre: '',
+        codigo: '',
+        facultad: '',
+        resolucion_ministerial: '',
+        fecha_resolucion: '',
+        mision: '',
+        vision: '',
+        perfil_profesional: '',
+        objetivo_carrera: '',
+        responsable: '',
+        activo: true,
+      });
+      setErrors({});
+      setLogoFile(null);
+      setLogoPreview('');
+      setRemoveLogoCarrera(false);
+    }
+  }, [isCreating]);
+
+  const handleToggleCreateForm = () => {
+    setIsCreating(!isCreating);
   };
 
   const abrirModalEditar = (carrera) => {
     setCarreraSeleccionada(carrera);
+    setIsViewMode(false);
+    suppressUpdateToastRef.current = false;
     setFormData({
       nombre: carrera.nombre,
       codigo: carrera.codigo,
       facultad: carrera.facultad,
-      activo: carrera.activo
+      resolucion_ministerial: carrera.resolucion_ministerial || '',
+      fecha_resolucion: carrera.fecha_resolucion || '',
+      mision: carrera.mision || '',
+      vision: carrera.vision || '',
+      perfil_profesional: carrera.perfil_profesional || '',
+      objetivo_carrera: carrera.objetivo_carrera || '',
+      responsable: carrera.responsable || '',
+      activo: carrera.activo,
+      fecha_actualizacion: carrera.fecha_actualizacion
     });
+    setLogoFile(null);
+    setLogoPreview(carrera.logo_carrera || '');
+    setRemoveLogoCarrera(false);
     setShowModal(true);
+    setIsCreating(false);
+  };
+
+  const abrirModalVer = (carrera) => {
+    setCarreraSeleccionada(carrera);
+    setIsViewMode(true);
+    suppressUpdateToastRef.current = false;
+    setFormData({
+      nombre: carrera.nombre,
+      codigo: carrera.codigo,
+      facultad: carrera.facultad,
+      resolucion_ministerial: carrera.resolucion_ministerial || '',
+      fecha_resolucion: carrera.fecha_resolucion || '',
+      mision: carrera.mision || '',
+      vision: carrera.vision || '',
+      perfil_profesional: carrera.perfil_profesional || '',
+      objetivo_carrera: carrera.objetivo_carrera || '',
+      responsable: carrera.responsable || '',
+      activo: carrera.activo,
+      fecha_actualizacion: carrera.fecha_actualizacion
+    });
+    setLogoFile(null);
+    setLogoPreview(carrera.logo_carrera || '');
+    setRemoveLogoCarrera(false);
+    setShowModal(true);
+    setIsCreating(false);
+  };
+
+  const handleLogoChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('Selecciona una imagen válida');
+      return;
+    }
+
+    setLogoFile(file);
+    setRemoveLogoCarrera(false);
+    setLogoPreview(URL.createObjectURL(file));
+    setErrors((prev) => {
+      if (!prev.logo_carrera_file) return prev;
+      const next = { ...prev };
+      delete next.logo_carrera_file;
+      return next;
+    });
+  };
+
+  const handleRemoveLogo = () => {
+    setLogoFile(null);
+    setLogoPreview('');
+    setRemoveLogoCarrera(true);
+  };
+
+  const buildCarreraPayload = () => {
+    const codigoNormalizado = String(formData.codigo || '').trim().toUpperCase();
+
+    const payload = new FormData();
+    payload.append('nombre', formData.nombre);
+    payload.append('codigo', codigoNormalizado);
+    payload.append('facultad', formData.facultad);
+    payload.append('resolucion_ministerial', formData.resolucion_ministerial || '');
+    payload.append('fecha_resolucion', formData.fecha_resolucion || '');
+    payload.append('mision', formData.mision || '');
+    payload.append('vision', formData.vision || '');
+    payload.append('perfil_profesional', formData.perfil_profesional || '');
+    payload.append('objetivo_carrera', formData.objetivo_carrera || '');
+    payload.append('responsable', formData.responsable || '');
+    payload.append('activo', String(Boolean(formData.activo)));
+
+    if (logoFile) {
+      payload.append('logo_carrera_file', logoFile);
+    }
+    if (removeLogoCarrera) {
+      payload.append('remove_logo_carrera', 'true');
+    }
+
+    return payload;
   };
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData(prev => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : value
+      [name]: type === 'checkbox' ? checked : (name === 'codigo' ? value.toUpperCase() : value)
     }));
+
+    setErrors((prev) => {
+      if (!prev[name]) return prev;
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
+  };
+
+  const handleDateChange = (name, value) => {
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+
+    setErrors((prev) => {
+      if (!prev[name]) return prev;
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
   };
 
   const handleActivoSwitchChange = () => {
+    const nextActivo = !formData.activo;
+    suppressUpdateToastRef.current = true;
     setFormData((prev) => ({
       ...prev,
-      activo: !prev.activo,
+      activo: nextActivo,
     }));
+
+    if (nextActivo) {
+      toast.success('Carrera activa: para confirmar, actualice la carrera');
+    } else {
+      toast.error('Carrera inactiva: para confirmar, actualice la carrera');
+    }
+  };
+
+  // Handlers para modal expandido de campos
+  const openExpandedField = (fieldName) => {
+    setExpandedField(fieldName);
+    setExpandedContent(formData[fieldName] || '');
+  };
+
+  const closeExpandedField = () => {
+    setExpandedField(null);
+    setExpandedContent('');
+  };
+
+  const saveExpandedField = () => {
+    setFormData(prev => ({
+      ...prev,
+      [expandedField]: expandedContent
+    }));
+    closeExpandedField();
+  };
+
+  const getErrorMessage = (fieldError) => {
+    if (!fieldError) return '';
+    if (Array.isArray(fieldError)) return fieldError[0] || '';
+    return String(fieldError);
+  };
+
+  const validateCarreraForm = ({ requireLogo = false } = {}) => {
+    const newErrors = {};
+
+    if (!String(formData.nombre || '').trim()) {
+      newErrors.nombre = ['Este campo es obligatorio: nombre de la carrera.'];
+    }
+
+    if (!String(formData.facultad || '').trim()) {
+      newErrors.facultad = ['Este campo es obligatorio: facultad.'];
+    }
+
+    if (!String(formData.codigo || '').trim()) {
+      newErrors.codigo = ['Este campo es obligatorio: código de la carrera.'];
+    }
+
+    if (!String(formData.resolucion_ministerial || '').trim()) {
+      newErrors.resolucion_ministerial = ['Este campo es obligatorio: resolución ministerial.'];
+    }
+
+    if (!String(formData.fecha_resolucion || '').trim()) {
+      newErrors.fecha_resolucion = ['Este campo es obligatorio: fecha de resolución.'];
+    } else if (formData.fecha_resolucion > FECHA_MAXIMA_HOY) {
+      newErrors.fecha_resolucion = ['La fecha de resolución no puede ser futura.'];
+    }
+
+    if (requireLogo && !logoFile) {
+      newErrors.logo_carrera_file = ['El logo de carrera es obligatorio para crear una nueva carrera.'];
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
   };
 
   const handleCreateSubmit = async (e) => {
     e.preventDefault();
-    setIsSubmitting(true);
     setErrors({});
+
+    const isValid = validateCarreraForm({ requireLogo: true });
+    if (!isValid) {
+      toast.error('Completa los campos obligatorios marcados en rojo.');
+      return;
+    }
+
+    setIsSubmitting(true);
     try {
-      await api.post('/carreras/', formData);
+      const payload = buildCarreraPayload();
+      await api.post('/carreras/', payload, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
       toast.success('Carrera creada correctamente');
-      setShowModal(false);
+      setIsCreating(false);
       cargarCarreras();
     } catch (err) {
       console.error(err);
@@ -172,15 +1055,90 @@ function ListaCarreras({ isDark }) {
 
   const handleUpdateSubmit = async (e) => {
     e.preventDefault();
+
+    setErrors({});
+    const isValid = validateCarreraForm({ requireLogo: false });
+    if (!isValid) {
+      toast.error('Completa los campos obligatorios marcados en rojo.');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
-      await api.put(`/carreras/${carreraSeleccionada.id}/`, formData);
-      toast.success('Carrera actualizada correctamente');
+      const payload = buildCarreraPayload();
+      await api.put(`/carreras/${carreraSeleccionada.id}/`, payload, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      if (!suppressUpdateToastRef.current) {
+        toast.success('Carrera actualizada correctamente');
+      }
+      suppressUpdateToastRef.current = false;
       setShowModal(false);
+      setLogoFile(null);
+      setLogoPreview('');
+      setRemoveLogoCarrera(false);
       cargarCarreras();
     } catch (err) {
       console.error(err);
-      toast.error('Error al actualizar: ' + (err.response?.data?.detail || err.message));
+      const apiData = err.response?.data;
+      let errorMsg = err.message;
+
+      if (apiData) {
+        if (apiData.detail) {
+          errorMsg = apiData.detail;
+        } else if (apiData.activo) {
+          errorMsg = Array.isArray(apiData.activo) ? apiData.activo.join(' ') : String(apiData.activo);
+        } else {
+          const values = Object.values(apiData).flatMap((value) => Array.isArray(value) ? value : [value]);
+          errorMsg = values.join(' ');
+        }
+      }
+
+      toast.error('Error al actualizar: ' + errorMsg);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const buildLogoOnlyPayload = () => {
+    const payload = new FormData();
+    if (logoFile) {
+      payload.append('logo_carrera_file', logoFile);
+    }
+    if (removeLogoCarrera) {
+      payload.append('remove_logo_carrera', 'true');
+    }
+    return payload;
+  };
+
+  const handleLogoOnlySubmit = async (e) => {
+    e?.preventDefault?.();
+    if (!logoFile && !removeLogoCarrera) {
+      toast.error('No hay cambios de logo para guardar.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const payload = buildLogoOnlyPayload();
+      await api.patch(`/carreras/${carreraSeleccionada.id}/`, payload, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      toast.success('Logo de carrera actualizado correctamente');
+      setShowModal(false);
+      setLogoFile(null);
+      setLogoPreview('');
+      setRemoveLogoCarrera(false);
+      cargarCarreras();
+    } catch (err) {
+      console.error(err);
+      const apiErrors = err.response?.data;
+      if (apiErrors && typeof apiErrors === 'object') {
+        const errorMsg = Object.values(apiErrors).flat().join(' ');
+        toast.error(`Error: ${errorMsg}`);
+      } else {
+        toast.error('Error al actualizar logo: ' + (err.response?.data?.detail || err.message));
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -266,7 +1224,82 @@ function ListaCarreras({ isDark }) {
     }
   };
 
-  const esAdmin = () => user?.is_staff === true;
+  const esSuperusuario = () => user?.is_superuser === true;
+  const rolActual = user?.perfil?.rol;
+  const puedeEditarLogo = () => esSuperusuario() || ['admin', 'director', 'jefe_estudios'].includes(rolActual);
+  const puedeEditarEstructura = () => esSuperusuario();
+  const soloEditarLogo = () => !esSuperusuario() && ['admin', 'director', 'jefe_estudios'].includes(rolActual);
+
+  const escapeHtml = (value = '') => String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  const handleExportarFichaPdf = () => {
+    if (!carreraSeleccionada) return;
+
+    const nombre = escapeHtml(formData.nombre || carreraSeleccionada.nombre || '');
+    const codigo = escapeHtml(formData.codigo || carreraSeleccionada.codigo || '');
+    const facultad = escapeHtml(formData.facultad || carreraSeleccionada.facultad || '');
+    const mision = escapeHtml(formData.mision || carreraSeleccionada.mision || '').replace(/\n/g, '<br/>');
+    const vision = escapeHtml(formData.vision || carreraSeleccionada.vision || '').replace(/\n/g, '<br/>');
+    const logo = logoPreview || carreraSeleccionada.logo_carrera || '';
+
+    const popup = window.open('', '_blank', 'width=1024,height=900');
+    if (!popup) {
+      toast.error('No se pudo abrir la ventana para exportar PDF.');
+      return;
+    }
+
+    popup.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Ficha de Carrera - ${nombre}</title>
+          <style>
+            body { font-family: 'Segoe UI', Arial, sans-serif; background: #e5e7eb; margin: 0; padding: 32px; }
+            .sheet { background: #fff; max-width: 900px; margin: 0 auto; border: 1px solid #d1d5db; box-shadow: 0 10px 25px rgba(0,0,0,0.12); padding: 36px; }
+            .header { display: flex; justify-content: space-between; gap: 24px; border-bottom: 2px solid #1e3a8a; padding-bottom: 16px; }
+            .title { font-size: 28px; color: #1e3a8a; margin: 0 0 8px 0; }
+            .meta { color: #334155; margin: 4px 0; font-size: 14px; }
+            .logo { width: 96px; height: 96px; object-fit: cover; border: 1px solid #cbd5e1; border-radius: 8px; }
+            .section { margin-top: 22px; }
+            .section h2 { font-size: 16px; color: #1e40af; margin: 0 0 10px 0; text-transform: uppercase; letter-spacing: 0.05em; }
+            .box { border: 1px solid #cbd5e1; background: #f8fafc; padding: 14px; min-height: 70px; color: #0f172a; line-height: 1.5; }
+          </style>
+        </head>
+        <body>
+          <div class="sheet">
+            <div class="header">
+              <div>
+                <h1 class="title">Ficha de Carrera</h1>
+                <p class="meta"><strong>Carrera:</strong> ${nombre}</p>
+                <p class="meta"><strong>Código:</strong> ${codigo}</p>
+                <p class="meta"><strong>Facultad:</strong> ${facultad}</p>
+              </div>
+              ${logo ? `<img class="logo" src="${logo}" alt="Logo carrera" />` : ''}
+            </div>
+
+            <div class="section">
+              <h2>Misión</h2>
+              <div class="box">${mision || '<em>Sin misión registrada.</em>'}</div>
+            </div>
+
+            <div class="section">
+              <h2>Visión</h2>
+              <div class="box">${vision || '<em>Sin visión registrada.</em>'}</div>
+            </div>
+          </div>
+        </body>
+      </html>
+    `);
+    popup.document.close();
+    popup.focus();
+    popup.print();
+  };
 
   if (loading) {
     return (
@@ -296,73 +1329,319 @@ function ListaCarreras({ isDark }) {
       {/* Header */}
       <div className="max-w-7xl mx-auto space-y-6">
         <div className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-lg p-6">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div>
               <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent">
-                🎓 Carreras
+                Carreras
               </h2>
-              <p className="text-sm text-slate-700 dark:text-slate-400 mt-1">
+              <p className="text-sm text-slate-700 dark:text-slate-400 mt-1 italic">
                 Gestión de carreras universitarias
               </p>
             </div>
-            {esAdmin() && (
-              <button
-                onClick={abrirModalCrear}
-                className="px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center gap-2"
-              >
-                <span>➕</span>
-                Nueva Carrera
-              </button>
-            )}
+            <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
+              {/* Filtro de Carreras */}
+              <FilterCarreras 
+                carreras={carreras} 
+                onSelect={handleSelectCarreraFromFilter}
+                placeholder="Buscar carrera..."
+              />
+              
+              {/* Botón Nueva Carrera */}
+              {puedeEditarEstructura() && (
+                <button
+                  onClick={handleToggleCreateForm}
+                  className="px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center justify-center gap-2 whitespace-nowrap"
+                >
+                  <span>{isCreating ? '➖' : '➕'}</span>
+                  {isCreating ? 'Cancelar' : 'Nueva Carrera'}
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
-        {carreras.length > 0 ? (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {carreras.map((carrera) => (
+        {/* MODAL DE CREACIÓN DE CARRERA */}
+        {isCreating && createPortal((
+          <div
+            className="fixed top-0 right-0 bottom-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in"
+            style={{ left: hasSidebar ? (sidebarCollapsed ? '5rem' : '18rem') : '0', animationDuration: '160ms' }}
+          >
+            <div className="bg-white dark:bg-slate-900/90 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden animate-slide-up" style={{ animationDuration: '180ms' }}>
+                <div className="px-6 py-4 border-b border-[#7F97E8]/45 bg-[#2C4AAE]">
+                  <h2 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
+                    Nueva Carrera
+                  </h2>
+                </div>
+                <form onSubmit={handleCreateSubmit} noValidate className="px-6 py-5 max-h-[calc(90vh-76px)] overflow-y-auto">
+                  <div className="grid grid-cols-1 md:grid-cols-5 gap-5 items-start">
+                    <div className="md:col-span-3 space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Nombre de la Carrera <span className="text-red-500">*</span></label>
+                          <input type="text" name="nombre" value={formData.nombre} onChange={handleChange} required placeholder="Ej: Ingeniería de Sistemas" className={`w-full px-4 py-2.5 rounded-xl border-2 ${errors.nombre ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'} bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 placeholder:text-xs placeholder:italic transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:shadow-md`} />
+                          {errors.nombre && <p className="text-xs text-red-600 mt-1">{getErrorMessage(errors.nombre)}</p>}
+                        </div>
+
+                        <SelectConDropdown
+                          label="Facultad"
+                          name="facultad"
+                          value={formData.facultad}
+                          onChange={handleChange}
+                          required
+                          searchable
+                          options={[
+                            { value: '', label: 'Seleccione una facultad...' },
+                            ...facultadOptions
+                          ]}
+                          error={errors.facultad}
+                          placeholder="Seleccione una facultad..."
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Código <span className="text-red-500">*</span></label>
+                          <input type="text" name="codigo" value={formData.codigo} onChange={handleChange} required placeholder="Ej: IS" className={`w-full px-4 py-2.5 rounded-xl border-2 ${errors.codigo ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'} bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 placeholder:text-xs placeholder:italic transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:shadow-md`} />
+                          {errors.codigo && <p className="text-xs text-red-600 mt-1">{getErrorMessage(errors.codigo)}</p>}
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Resolución Ministerial <span className="text-red-500">*</span></label>
+                          <input type="text" name="resolucion_ministerial" value={formData.resolucion_ministerial} onChange={handleChange} required placeholder="Ej: RM 123/2020" className={`w-full px-4 py-2.5 rounded-xl border-2 ${errors.resolucion_ministerial ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'} bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 placeholder:text-xs placeholder:italic transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:shadow-md`} />
+                          {errors.resolucion_ministerial && <p className="text-xs text-red-600 mt-1">{getErrorMessage(errors.resolucion_ministerial)}</p>}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <DatePickerField
+                          label="Fecha de Resolución"
+                          name="fecha_resolucion"
+                          value={formData.fecha_resolucion}
+                          onDateChange={handleDateChange}
+                          required
+                          error={errors.fecha_resolucion}
+                          maxIsoDate={FECHA_MAXIMA_HOY}
+                        />
+
+                        <div>
+                          <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Responsable</label>
+                          <input
+                            type="text"
+                            name="responsable"
+                            value={formData.responsable || ''}
+                            onChange={handleChange}
+                            placeholder="Nombre o cargo del responsable de la carrera"
+                            className="w-full px-4 py-2.5 rounded-xl border-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 placeholder:text-xs placeholder:italic transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:shadow-md"
+                          />
+                        </div>
+                      </div>
+
+                    </div>
+
+                    <div className="md:col-span-2 h-full">
+                      <div className="rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/60 p-4 h-full flex flex-col">
+                        <div className="mb-3 flex items-center justify-between gap-2">
+                          <label className="block text-sm font-semibold text-slate-800 dark:text-slate-300">Logo de Carrera <span className="text-red-500">*</span></label>
+                        </div>
+
+                        <input
+                          ref={createLogoInputRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={handleLogoChange}
+                          className="hidden"
+                        />
+
+                        <div className="flex-1 flex items-center justify-center">
+                          <div className="mx-auto w-40 h-40 rounded-full overflow-hidden border border-blue-300 dark:border-blue-700 shadow-md relative group bg-white dark:bg-slate-900">
+                            {logoPreview ? (
+                              <img src={logoPreview} alt="Logo de carrera" className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full bg-gradient-to-br from-blue-900 to-blue-950" />
+                            )}
+
+                            <div className="absolute inset-0 flex opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                              {logoPreview ? (
+                                <>
+                                  <div
+                                    onClick={() => createLogoInputRef.current?.click()}
+                                    className="w-1/2 h-full bg-black/45 hover:bg-black/65 backdrop-blur-md flex flex-col items-center justify-center cursor-pointer text-white"
+                                    title="Cambiar logo"
+                                  >
+                                    <span className="text-[10px] font-bold">CAMBIAR</span>
+                                  </div>
+                                  <div className="w-px h-full bg-white/20" />
+                                  <div
+                                    onClick={handleRemoveLogo}
+                                    className="w-1/2 h-full bg-red-600/65 hover:bg-red-600/85 backdrop-blur-md flex flex-col items-center justify-center cursor-pointer text-white"
+                                    title="Eliminar logo"
+                                  >
+                                    <span className="text-[10px] font-bold">BORRAR</span>
+                                  </div>
+                                </>
+                              ) : (
+                                <div
+                                  onClick={() => createLogoInputRef.current?.click()}
+                                  className="w-full h-full bg-black/35 hover:bg-black/55 backdrop-blur-md flex items-center justify-center cursor-pointer text-white"
+                                  title="Subir logo"
+                                >
+                                  <span className="text-xs font-bold">SUBIR FOTO</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <p className="mt-3 text-xs text-center text-slate-500 dark:text-slate-400">
+                          Pasa el cursor para subir, cambiar o eliminar el logo.
+                        </p>
+                        {errors.logo_carrera_file && <p className="text-xs text-red-600 mt-2 text-center">{getErrorMessage(errors.logo_carrera_file)}</p>}
+                      </div>
+                    </div>
+
+                    <div className="md:col-span-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <ExpandableTextarea
+                        label="Misión"
+                        name="mision"
+                        value={formData.mision}
+                        onChange={handleChange}
+                        onExpand={() => openExpandedField('mision')}
+                        placeholder="Misión institucional de la carrera"
+                        rows={3}
+                      />
+
+                      <ExpandableTextarea
+                        label="Visión"
+                        name="vision"
+                        value={formData.vision}
+                        onChange={handleChange}
+                        onExpand={() => openExpandedField('vision')}
+                        placeholder="Visión institucional de la carrera"
+                        rows={3}
+                      />
+                    </div>
+
+                    <div className="md:col-span-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <ExpandableTextarea
+                        label="Perfil Profesional"
+                        name="perfil_profesional"
+                        value={formData.perfil_profesional}
+                        onChange={handleChange}
+                        onExpand={() => openExpandedField('perfil_profesional')}
+                        placeholder="Descripción del perfil profesional del egresado"
+                        rows={3}
+                      />
+
+                      <ExpandableTextarea
+                        label="Objetivo de Carrera"
+                        name="objetivo_carrera"
+                        value={formData.objetivo_carrera}
+                        onChange={handleChange}
+                        onExpand={() => openExpandedField('objetivo_carrera')}
+                        placeholder="Objetivo general de la carrera"
+                        rows={3}
+                      />
+                    </div>
+
+                  </div>
+
+                  <div className="mt-6 pt-4 border-t-2 border-slate-300 dark:border-slate-700 flex flex-wrap justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCreating(false);
+                      }}
+                      className="px-6 py-2.5 min-w-[160px] bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-xl font-semibold transition-all duration-200 border-2 border-slate-300 dark:border-slate-600 shadow-sm hover:shadow-md"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="px-6 py-2.5 min-w-[200px] bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-semibold transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-60"
+                    >
+                      {isSubmitting ? 'Guardando...' : '💾 Guardar'}
+                    </button>
+                  </div>
+                </form>
+            </div>
+          </div>
+        ), document.body)}
+
+        {carrerasMostradas.length > 0 ? (
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+            {carrerasMostradas.map((carrera) => (
               <div 
                 key={carrera.id} 
-                className="bg-white dark:bg-slate-800 rounded-xl border-2 border-slate-300 dark:border-slate-700 shadow-md hover:shadow-xl transition-all duration-300 hover:scale-[1.02]"
+                className={`rounded-xl border shadow-sm hover:shadow-md transition-all duration-200 flex flex-col h-[240px] ${
+                  carrera.activo
+                    ? 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700'
+                    : 'bg-red-100 dark:bg-red-900/35 border-red-400 dark:border-red-700'
+                }`}
               >
-                <div className="p-5">
-                  {/* Fila superior */}
+                <div className="p-6 flex flex-col flex-1">
+                  {/* Contenido horizontal */}
                   <div className="flex items-start justify-between gap-4 mb-4">
-                    {/* Info */}
+                    {/* Info izquierda */}
                     <div className="flex-1 min-w-0">
-                      <h3 className="text-lg font-bold text-blue-600 dark:text-white truncate">
-                        {carrera.nombre}
-                      </h3>
-                      <p className="text-sm text-slate-700 dark:text-slate-400 truncate">
-                        {carrera.facultad}
-                      </p>
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-baseline gap-2 flex-wrap">
+                          <h3 className={`text-base font-bold ${carrera.activo ? 'text-slate-800 dark:text-white' : 'text-red-900 dark:text-red-100'}`}>
+                            {carrera.nombre}
+                          </h3>
+                          <p className={`text-sm ${carrera.activo ? 'text-slate-600 dark:text-slate-400' : 'text-red-800 dark:text-red-200'}`}>
+                            {carrera.facultad}
+                          </p>
+                        </div>
+                      </div>
                     </div>
+
                     {/* Código */}
-                    <div className="bg-slate-50 dark:bg-slate-700 px-4 py-2 rounded-lg border-2 border-slate-300 dark:border-slate-600 shadow-sm min-w-[74px] min-h-[56px] flex items-center justify-center">
-                      <div className="text-xl font-extrabold text-slate-800 dark:text-white text-center tracking-wide leading-none">
+                    <div className="px-4 py-3 rounded-md border-2 border-blue-300 dark:border-blue-600 bg-blue-50 dark:bg-blue-900/40">
+                      <div className="text-lg font-extrabold text-blue-700 dark:text-blue-300">
                         {carrera.codigo}
                       </div>
                     </div>
                   </div>
 
-                  {/* Botones de acción - Solo admin */}
-                  {esAdmin() && (
-                    <div className="flex gap-2 pt-3 border-t-2 border-slate-200 dark:border-slate-700">
+                  {!carrera.activo && (
+                    <p className="mt-1 mb-2 text-xs font-semibold text-red-800 dark:text-red-200">
+                      ⚠ Carrera inactiva
+                    </p>
+                  )}
+
+                  {/* Botones de acción - Una línea */}
+                  <div className={`flex gap-2 pt-4 mt-auto border-t justify-center ${
+                    carrera.activo ? 'border-slate-200 dark:border-slate-700' : 'border-red-300 dark:border-red-700/80'
+                  }`}>
+                    <button
+                      onClick={() => abrirModalVer(carrera)}
+                      className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700 rounded-lg text-blue-600 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-all duration-200 hover:shadow-md"
+                      title="Ver"
+                    >
+                      <FaEye size={14} />
+                    </button>
+
+                    {puedeEditarEstructura() && (
                       <button
                         onClick={() => abrirModalEditar(carrera)}
-                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 text-white text-sm font-semibold rounded-lg transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105"
+                        className="flex items-center justify-center gap-2 px-4 py-2 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-300 dark:border-emerald-700 rounded-lg text-emerald-600 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-all duration-200 hover:shadow-md"
+                        title="Editar"
                       >
-                        <PencilIcon className="w-4 h-4" />
-                        <span>Editar</span>
+                        <FaEdit size={14} />
                       </button>
+                    )}
+
+                    {puedeEditarEstructura() && (
                       <button
                         onClick={() => eliminarCarrera(carrera)}
-                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-amber-600 hover:bg-amber-700 dark:bg-amber-700 dark:hover:bg-amber-800 text-white text-sm font-semibold rounded-lg transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105"
+                        className="flex items-center justify-center gap-2 px-4 py-2 bg-red-50 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded-lg text-red-600 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/50 transition-all duration-200 hover:shadow-md"
+                        title="Eliminar"
                       >
-                        <TrashIcon className="w-4 h-4" />
-                        <span>Eliminar</span>
+                        <FaTrash size={14} />
                       </button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
@@ -378,9 +1657,9 @@ function ListaCarreras({ isDark }) {
             <p className="text-slate-600 dark:text-slate-400 mb-6">
               Comienza agregando tu primera carrera
             </p>
-            {esAdmin() && (
+            {puedeEditarEstructura() && (
               <button
-                onClick={abrirModalCrear}
+                onClick={handleToggleCreateForm}
                 className="inline-flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105"
               >
                 <span>➕</span>
@@ -391,108 +1670,362 @@ function ListaCarreras({ isDark }) {
         )}
       </div>
 
-      {/* Modal Crear/Editar */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in" style={{ animationDuration: '160ms' }}>
-          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-2xl max-w-2xl w-full max-h-[98vh] md:max-h-[95vh] overflow-visible animate-slide-up" style={{ animationDuration: '180ms' }}>
-            {/* Header Modal */}
-            <div className="px-6 py-5 border-b border-[#7F97E8]/45 bg-[#2C4AAE] rounded-t-3xl">
-              <h3 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-                {carreraSeleccionada ? '✏️ Editar Carrera' : '➕ Nueva Carrera'}
-              </h3>
+      {/* Modal Ver / Editar */}
+      {showModal && carreraSeleccionada && isViewMode && createPortal((
+        <div className="fixed top-0 right-0 bottom-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in" style={{ left: hasSidebar ? (sidebarCollapsed ? '5rem' : '18rem') : '0', animationDuration: '160ms' }}>
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-5xl w-full max-h-[92vh] overflow-hidden animate-slide-up flex flex-col" style={{ animationDuration: '180ms' }}>
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700 bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-700 dark:to-blue-800 flex items-center justify-between">
+              <h3 className="text-xl font-bold text-white">Ver Carrera</h3>
             </div>
 
-            {/* Formulario */}
-            <form onSubmit={carreraSeleccionada ? handleUpdateSubmit : handleCreateSubmit} className="p-6 md:p-7">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
-                    Nombre de la Carrera <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    name="nombre"
-                    value={formData.nombre}
-                    onChange={handleChange}
-                    required
-                    placeholder="Ej: Ingeniería de Sistemas"
-                    className="w-full px-4 py-3 rounded-2xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/80 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                  />
+            {/* Content */}
+            <div className="flex-1 p-5 md:p-6 overflow-y-auto">
+              <div ref={carreraContentRef} className="mx-auto max-w-3xl bg-white text-slate-800 rounded-lg shadow-xl p-6 md:p-8">
+                <div className="flex flex-col items-center justify-center pb-6 border-b border-slate-300">
+                  {logoPreview ? (
+                    <img src={logoPreview} alt="Logo carrera" className="h-52 w-52 object-contain" />
+                  ) : (
+                    <div className="h-36 w-36 flex items-center justify-center text-xs text-slate-500">
+                      Sin logo
+                    </div>
+                  )}
+
+                  <h4 className="mt-4 text-2xl font-bold text-blue-800 text-center">
+                    {formData.nombre}
+                  </h4>
+                  <span className="mt-2 inline-flex items-center justify-center text-center px-4 py-1 text-blue-700 font-extrabold tracking-wide leading-none min-w-[64px]">
+                    {formData.codigo}
+                  </span>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
-                    Código <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    name="codigo"
-                    value={formData.codigo}
-                    onChange={handleChange}
-                    required
-                    placeholder="Ej: IS"
-                    className="w-full px-4 py-3 rounded-2xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/80 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                  />
-                </div>
-
-                <div className="flex items-center gap-1.5 py-0.5 px-2 rounded-xl border w-fit transition-colors duration-200"
-                  style={{ minHeight: 'unset', lineHeight: 1 }}
-                >
-                  <div className="flex flex-col justify-center">
-                    <p className={`text-[10px] font-semibold uppercase tracking-wide leading-none ${
-                      formData.activo
-                        ? 'text-emerald-700 dark:text-emerald-300'
-                        : 'text-rose-700 dark:text-rose-300'
-                    }`}>Estado</p>
-                    <p className={`text-[11px] font-semibold leading-none ${
-                      formData.activo
-                        ? 'text-emerald-800 dark:text-emerald-200'
-                        : 'text-rose-800 dark:text-rose-200'
-                    }`}>
-                      {formData.activo ? 'Activa' : 'Inactiva'}
-                    </p>
+                <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-3 pb-4 border-b border-slate-200">
+                  <div>
+                    <h5 className="text-xs font-bold tracking-widest text-slate-600 uppercase">Facultad</h5>
+                    <p className="mt-1 text-sm font-semibold text-slate-800">{formData.facultad || 'N/A'}</p>
                   </div>
-                  <ToggleSwitch
-                    isActive={Boolean(formData.activo)}
-                    onChange={handleActivoSwitchChange}
-                  />
+                  {formData.responsable && (
+                    <div>
+                      <h5 className="text-xs font-bold tracking-widest text-slate-600 uppercase">Responsable</h5>
+                      <p className="mt-1 text-sm font-semibold text-slate-800">{formData.responsable}</p>
+                    </div>
+                  )}
+                  {formData.fecha_actualizacion && (
+                    <div>
+                      <h5 className="text-xs font-bold tracking-widest text-slate-600 uppercase">Actualizado</h5>
+                      <p className="mt-1 text-sm font-semibold text-slate-800">
+                        {new Date(formData.fecha_actualizacion).toLocaleDateString('es-ES', { 
+                          year: 'numeric', 
+                          month: 'long', 
+                          day: 'numeric' 
+                        })}
+                      </p>
+                    </div>
+                  )}
                 </div>
 
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
-                    Facultad <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    name="facultad"
-                    value={formData.facultad}
-                    onChange={handleChange}
-                    required
-                    placeholder="Ej: Ciencias y Tecnología"
-                    className="w-full px-4 py-3 rounded-2xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/80 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                  />
+                <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <h5 className="text-sm font-bold tracking-wider text-blue-700 uppercase">Misión</h5>
+                    <div className="mt-2 rounded-md border border-slate-300 bg-slate-50 p-4 text-sm italic leading-relaxed min-h-[110px] whitespace-pre-line">
+                      {formData.mision || 'Sin misión registrada.'}
+                    </div>
+                  </div>
+
+                  <div>
+                    <h5 className="text-sm font-bold tracking-wider text-blue-700 uppercase">Visión</h5>
+                    <div className="mt-2 rounded-md border border-slate-300 bg-slate-50 p-4 text-sm italic leading-relaxed min-h-[110px] whitespace-pre-line">
+                      {formData.vision || 'Sin visión registrada.'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <h5 className="text-sm font-bold tracking-wider text-blue-700 uppercase">Perfil Profesional</h5>
+                    <div className="mt-2 rounded-md border border-slate-300 bg-slate-50 p-4 text-sm italic leading-relaxed min-h-[110px] whitespace-pre-line">
+                      {formData.perfil_profesional || 'Sin perfil profesional registrado.'}
+                    </div>
+                  </div>
+
+                  <div>
+                    <h5 className="text-sm font-bold tracking-wider text-blue-700 uppercase">Objetivo de Carrera</h5>
+                    <div className="mt-2 rounded-md border border-slate-300 bg-slate-50 p-4 text-sm italic leading-relaxed min-h-[110px] whitespace-pre-line">
+                      {formData.objetivo_carrera || 'Sin objetivo de carrera registrado.'}
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="mt-6 pt-5 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
+              {soloEditarLogo() && (
+                <div className="mx-auto mt-6 max-w-3xl bg-white dark:bg-slate-800 rounded-lg border border-slate-300 dark:border-slate-700 p-4">
+                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">Actualizar logo institucional</p>
+                  <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleLogoChange}
+                      className="block w-full text-sm text-slate-700 dark:text-slate-300 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-blue-600 file:text-white file:font-semibold hover:file:bg-blue-700"
+                    />
+                    {(logoPreview || logoFile) && (
+                      <button
+                        type="button"
+                        onClick={handleRemoveLogo}
+                        className="px-3 py-2 rounded-lg border border-red-300 dark:border-red-700 text-red-600 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/30 text-sm font-semibold"
+                      >
+                        Eliminar Logo
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleLogoOnlySubmit}
+                      disabled={isSubmitting}
+                      className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-60"
+                    >
+                      {isSubmitting ? 'Guardando...' : 'Guardar Logo'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="mx-auto mt-6 max-w-3xl flex flex-wrap justify-end gap-3">
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-6 py-4 flex gap-3 justify-end">
+              <button
+                type="button"
+                onClick={async () => {
+                  if (carreraContentRef.current) {
+                    const element = carreraContentRef.current;
+                    const options = {
+                      margin: [8, 8, 8, 8],
+                      filename: `${formData.nombre}_${formData.codigo}.pdf`,
+                      image: { type: 'jpeg', quality: 0.98 },
+                      html2canvas: { scale: 1.5, allowTaint: true, useCORS: true },
+                      jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4' },
+                      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+                    };
+                    html2pdf().set(options).from(element).save();
+                    toast.success('Carrera descargada en PDF');
+                  }
+                }}
+                className="px-6 py-2.5 bg-slate-300 hover:bg-slate-400 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-lg font-semibold transition-all"
+              >
+                ⬇️ Descargar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  suppressUpdateToastRef.current = false;
+                  setShowModal(false);
+                  setIsViewMode(false);
+                }}
+                className="px-6 py-2.5 bg-slate-300 hover:bg-slate-400 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-lg font-semibold transition-all"
+              >
+                Cerrar
+              </button>
+              {puedeEditarEstructura() && (
                 <button
                   type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-5 py-2.5 min-w-[120px] bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-xl font-semibold transition-all duration-200 border border-slate-300 dark:border-slate-600"
+                  onClick={() => setIsViewMode(false)}
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-all shadow-md"
+                >
+                  Editar Carrera
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      ), document.body)}
+
+      {showModal && carreraSeleccionada && !isViewMode && createPortal((
+        <div className="fixed top-0 right-0 bottom-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in" style={{ left: hasSidebar ? (sidebarCollapsed ? '5rem' : '18rem') : '0', animationDuration: '160ms' }}>
+          <div className="bg-white dark:bg-slate-900/90 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden animate-slide-up" style={{ animationDuration: '180ms' }}>
+            <div className="px-6 py-4 border-b border-[#7F97E8]/45 bg-[#2C4AAE]">
+              <h3 className="text-xl font-bold text-slate-100 flex items-center gap-2">Editar Carrera</h3>
+            </div>
+
+            <form onSubmit={handleUpdateSubmit} noValidate className="px-6 py-5 max-h-[calc(90vh-76px)] overflow-y-auto">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-5 items-start">
+                <div className="md:col-span-3 space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Nombre de la Carrera <span className="text-red-500">*</span></label>
+                      <input type="text" name="nombre" value={formData.nombre} onChange={handleChange} required placeholder="Ej: Ingeniería de Sistemas" className={`w-full px-4 py-2.5 rounded-xl border-2 ${errors.nombre ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'} bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 placeholder:text-xs placeholder:italic transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:shadow-md`} />
+                      {errors.nombre && <p className="text-xs text-red-600 mt-1">{getErrorMessage(errors.nombre)}</p>}
+                    </div>
+
+                    <SelectConDropdown
+                      label="Facultad"
+                      name="facultad"
+                      value={formData.facultad}
+                      onChange={handleChange}
+                      required
+                      searchable
+                      options={[
+                        { value: '', label: 'Seleccione una facultad...' },
+                        ...facultadOptions
+                      ]}
+                      error={errors.facultad}
+                      placeholder="Seleccione una facultad..."
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Código <span className="text-red-500">*</span></label>
+                      <input type="text" name="codigo" value={formData.codigo} onChange={handleChange} required placeholder="Ej: IS" className={`w-full px-4 py-2.5 rounded-xl border-2 ${errors.codigo ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'} bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 placeholder:text-xs placeholder:italic transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:shadow-md`} />
+                      {errors.codigo && <p className="text-xs text-red-600 mt-1">{getErrorMessage(errors.codigo)}</p>}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Resolución Ministerial <span className="text-red-500">*</span></label>
+                      <input type="text" name="resolucion_ministerial" value={formData.resolucion_ministerial} onChange={handleChange} required placeholder="Ej: RM 123/2020" className={`w-full px-4 py-2.5 rounded-xl border-2 ${errors.resolucion_ministerial ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'} bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 placeholder:text-xs placeholder:italic transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:shadow-md`} />
+                      {errors.resolucion_ministerial && <p className="text-xs text-red-600 mt-1">{getErrorMessage(errors.resolucion_ministerial)}</p>}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <DatePickerField
+                      label="Fecha de Resolución"
+                      name="fecha_resolucion"
+                      value={formData.fecha_resolucion}
+                      onDateChange={handleDateChange}
+                      required
+                      error={errors.fecha_resolucion}
+                      maxIsoDate={FECHA_MAXIMA_HOY}
+                    />
+
+                    <div>
+                      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Responsable</label>
+                      <input type="text" name="responsable" value={formData.responsable || ''} onChange={handleChange} placeholder="Nombre o cargo del responsable de la carrera" className="w-full px-4 py-2.5 rounded-xl border-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 placeholder:text-xs placeholder:italic transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:shadow-md" />
+                    </div>
+                  </div>
+
+                </div>
+
+                <div className="md:col-span-2 h-full">
+                  <div className={`rounded-xl border p-4 h-full flex flex-col ${
+                    formData.activo
+                      ? 'border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/60'
+                      : 'border-red-500 dark:border-red-500 bg-red-100 dark:bg-red-900/35 shadow-[0_0_0_1px_rgba(239,68,68,0.16)]'
+                  }`}>
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <label className="block text-sm font-semibold text-slate-800 dark:text-slate-300">Logo de Carrera</label>
+                      <ToggleSwitch size="sm" isActive={Boolean(formData.activo)} onChange={handleActivoSwitchChange} />
+                    </div>
+
+                    <input type="file" accept="image/*" onChange={handleLogoChange} className="hidden" id="editar-logo-carrera-file" />
+
+                    <div className="flex-1 flex items-center justify-center">
+                      <div className={`mx-auto w-40 h-40 rounded-full overflow-hidden border shadow-md relative group ${
+                        formData.activo
+                          ? 'border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-900'
+                          : 'border-red-500 dark:border-red-700 bg-red-200 dark:bg-red-950/55'
+                      }`}>
+                        {logoPreview ? (
+                          <img src={logoPreview} alt="Logo carrera" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className={`w-full h-full ${formData.activo ? 'bg-gradient-to-br from-blue-900 to-blue-950' : 'bg-gradient-to-br from-red-700 to-red-950'}`} />
+                        )}
+
+                        <div className="absolute inset-0 flex opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                          {logoPreview ? (
+                            <>
+                              <label htmlFor="editar-logo-carrera-file" className="w-1/2 h-full bg-black/45 hover:bg-black/65 backdrop-blur-md flex flex-col items-center justify-center cursor-pointer text-white">
+                                <span className="text-[10px] font-bold">CAMBIAR</span>
+                              </label>
+                              <div className="w-px h-full bg-white/20" />
+                              <button type="button" onClick={handleRemoveLogo} className="w-1/2 h-full bg-red-600/65 hover:bg-red-600/85 backdrop-blur-md flex flex-col items-center justify-center cursor-pointer text-white">
+                                <span className="text-[10px] font-bold">BORRAR</span>
+                              </button>
+                            </>
+                          ) : (
+                            <label htmlFor="editar-logo-carrera-file" className="w-full h-full bg-black/35 hover:bg-black/55 backdrop-blur-md flex items-center justify-center cursor-pointer text-white">
+                              <span className="text-xs font-bold">SUBIR FOTO</span>
+                            </label>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <p className={`mt-3 text-xs text-center ${formData.activo ? 'text-slate-500 dark:text-slate-400' : 'font-semibold text-red-800 dark:text-red-200'}`}>
+                      {formData.activo
+                        ? 'Pasa el cursor para subir, cambiar o eliminar el logo.'
+                        : '⚠ Carrera inactiva'}
+                    </p>
+                  </div>
+
+                </div>
+
+                <div className="md:col-span-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <ExpandableTextarea
+                    label="Misión"
+                    name="mision"
+                    value={formData.mision}
+                    onChange={handleChange}
+                    onExpand={() => openExpandedField('mision')}
+                    placeholder="Misión institucional de la carrera"
+                    rows={3}
+                  />
+
+                  <ExpandableTextarea
+                    label="Visión"
+                    name="vision"
+                    value={formData.vision}
+                    onChange={handleChange}
+                    onExpand={() => openExpandedField('vision')}
+                    placeholder="Visión institucional de la carrera"
+                    rows={3}
+                  />
+                </div>
+
+                <div className="md:col-span-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <ExpandableTextarea
+                    label="Perfil Profesional"
+                    name="perfil_profesional"
+                    value={formData.perfil_profesional}
+                    onChange={handleChange}
+                    onExpand={() => openExpandedField('perfil_profesional')}
+                    placeholder="Descripción del perfil profesional del egresado"
+                    rows={3}
+                  />
+
+                  <ExpandableTextarea
+                    label="Objetivo de Carrera"
+                    name="objetivo_carrera"
+                    value={formData.objetivo_carrera}
+                    onChange={handleChange}
+                    onExpand={() => openExpandedField('objetivo_carrera')}
+                    placeholder="Objetivo general de la carrera"
+                    rows={3}
+                  />
+                </div>
+
+              </div>
+
+              <div className="mt-6 pt-4 border-t-2 border-slate-300 dark:border-slate-700 flex flex-wrap justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    suppressUpdateToastRef.current = false;
+                    setShowModal(false);
+                    setIsViewMode(false);
+                  }}
+                  className="px-6 py-2.5 min-w-[160px] bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-xl font-semibold transition-all duration-200 border-2 border-slate-300 dark:border-slate-600 shadow-sm hover:shadow-md"
                 >
                   Cancelar
                 </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 min-w-[150px] bg-[#4654E8] hover:bg-[#3D47D1] text-white rounded-xl font-semibold transition-all duration-200 shadow-[0_8px_20px_rgba(70,84,232,0.35)] hover:shadow-[0_8px_20px_rgba(70,84,232,0.5)]"
-                >
-                  {carreraSeleccionada ? '💾 Actualizar' : '✅ Crear Carrera'}
+                <button type="submit" className="px-6 py-2.5 min-w-[200px] bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-semibold transition-all duration-200 shadow-md hover:shadow-lg">
+                  💾 Actualizar
                 </button>
               </div>
             </form>
           </div>
         </div>
-      )}
+      ), document.body)}
 
       {/* Modal de Confirmación de Eliminación */}
       {showDeleteModal && (
@@ -583,6 +2116,51 @@ function ListaCarreras({ isDark }) {
                 className="px-4 py-2 rounded-lg font-semibold text-red-800 dark:text-red-200 border border-red-300 dark:border-red-700/60 bg-red-100 dark:bg-red-900/25 hover:bg-red-200 dark:hover:bg-red-900/35"
               >
                 Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Expandido para Campos de Texto */}
+      {expandedField && (
+        <div className="fixed inset-0 flex items-center justify-center z-[60] p-4">
+          <div className="relative w-full max-w-xl max-h-[80vh] bg-white dark:bg-slate-900 rounded-xl shadow-2xl overflow-hidden">
+            {/* Header */}
+            <div className="px-4 py-2 border-b border-slate-200 dark:border-slate-700 bg-blue-500 dark:bg-blue-700">
+              <h3 className="text-sm font-semibold text-white capitalize">
+                {expandedField === 'mision' && 'Misión'}
+                {expandedField === 'vision' && 'Visión'}
+                {expandedField === 'perfil_profesional' && 'Perfil Profesional'}
+                {expandedField === 'objetivo_carrera' && 'Objetivo de Carrera'}
+              </h3>
+            </div>
+
+            {/* Content */}
+            <div className="p-4 overflow-y-auto max-h-[calc(80vh-100px)]">
+              <textarea
+                value={expandedContent}
+                onChange={(e) => setExpandedContent(e.target.value)}
+                className="w-full h-[250px] px-3 py-2 rounded-lg border-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 placeholder:text-xs placeholder:italic transition-all shadow-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Ingresa el contenido aquí..."
+              />
+            </div>
+
+            {/* Footer */}
+            <div className="px-4 py-2 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex gap-2 justify-end">
+              <button
+                type="button"
+                onClick={closeExpandedField}
+                className="px-3 py-1.5 rounded-md bg-slate-300 dark:bg-slate-700 hover:bg-slate-400 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 text-sm transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={saveExpandedField}
+                className="px-3 py-1.5 rounded-md bg-blue-500 hover:bg-blue-600 text-white text-sm transition-colors"
+              >
+                Guardar
               </button>
             </div>
           </div>

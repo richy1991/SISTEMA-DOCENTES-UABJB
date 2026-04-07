@@ -87,3 +87,100 @@ class FondoTiempoEvaluationTests(APITestCase):
         self.client.force_authenticate(user=self.docente_user)
         response = self.client.post(self.url, self.eval_data, format='json')
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class UsuarioCargoUnicoTests(APITestCase):
+    def setUp(self):
+        self.carrera_sistemas = Carrera.objects.create(
+            nombre="Ingeniería de Sistemas",
+            codigo="SIS",
+            facultad="Ciencia y Tecnología",
+        )
+        self.carrera_derecho = Carrera.objects.create(
+            nombre="Derecho",
+            codigo="DER",
+            facultad="Ciencias Jurídicas",
+        )
+
+        self.admin_user = User.objects.create_user(
+            username="admin_users",
+            password="password123",
+            is_staff=True,
+        )
+        self.admin_user.perfil.rol = 'admin'
+        self.admin_user.perfil.save()
+
+        self.director_actual = User.objects.create_user(
+            username="director_actual",
+            password="password123",
+            is_staff=True,
+        )
+        self.director_actual.perfil.rol = 'director'
+        self.director_actual.perfil.carrera = self.carrera_sistemas
+        self.director_actual.perfil.activo = True
+        self.director_actual.perfil.save()
+
+        self.url_lista = '/api/usuarios/'
+        self.url_detalle_director = f'/api/usuarios/{self.director_actual.pk}/'
+
+        self.client.force_authenticate(user=self.admin_user)
+
+    def test_rechaza_director_duplicado_activo_en_misma_carrera(self):
+        response = self.client.post(
+            self.url_lista,
+            {
+                'username': 'director_nuevo',
+                'email': 'nuevo@uabjb.edu.bo',
+                'password': 'password123',
+                'password_confirm': 'password123',
+                'first_name': 'Nuevo',
+                'last_name': 'Director',
+                'rol': 'director',
+                'carrera': self.carrera_sistemas.id,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn(
+            'Operación denegada: La carrera de Ingeniería de Sistemas ya tiene un Director asignado. Debe dar de baja al titular actual antes de asignar uno nuevo',
+            str(response.data),
+        )
+
+    def test_permite_editar_al_mismo_titular_sin_autobloqueo(self):
+        response = self.client.patch(
+            self.url_detalle_director,
+            {
+                'first_name': 'Director',
+                'last_name': 'Actualizado',
+                'rol': 'director',
+                'carrera': self.carrera_sistemas.id,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.director_actual.refresh_from_db()
+        self.assertEqual(self.director_actual.last_name, 'Actualizado')
+
+    def test_permite_nuevo_director_si_el_titular_actual_esta_inactivo(self):
+        self.director_actual.is_active = False
+        self.director_actual.save()
+        self.director_actual.refresh_from_db()
+
+        response = self.client.post(
+            self.url_lista,
+            {
+                'username': 'director_reemplazo',
+                'email': 'reemplazo@uabjb.edu.bo',
+                'password': 'password123',
+                'password_confirm': 'password123',
+                'first_name': 'Director',
+                'last_name': 'Reemplazo',
+                'rol': 'director',
+                'carrera': self.carrera_sistemas.id,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)

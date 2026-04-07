@@ -30,18 +30,19 @@ import FondosArchivados from './components/FondosArchivados';
 import ListaDocentes from './components/ListaDocentes';
 import ListaCarreras from './components/ListaCarreras';
 import ListaCalendarios from './components/ListaCalendarios';
-import MateriaList from './components/MateriaList';
-import MateriaForm from './components/MateriaForm';
+import MateriaList from './components/materias/MateriaList';
+import MateriaForm from './components/materias/MateriaForm';
 import VistaCalendarioActivo from './VistaCalendarioActivo';
 import Proximamente from './components/Proximamente';
 import FondosLargoPlazo from './components/FondosLargoPlazo';
 import SeguimientoGlobal from './components/SeguimientoGlobal';
 import AdminPanel from './components/AdminPanel';
-import SimpleLayout from './components/SimpleLayout';
+import SimpleLayout from './components/layouts/SimpleLayout';
 import AdminDashboard from './components/AdminDashboard';
 import CambiarPassword from './components/CambiarPassword';
 import CargaHorariaGeneral from './components/CargaHorariaGeneral';
 import FondoTiempoDocente from './components/FondoTiempoDocente';
+import ErrorVinculoDocente from './components/common/ErrorVinculoDocente';
 import './App.css';
 
 // Componente wrapper para aplicar una animación de entrada a las páginas
@@ -59,6 +60,25 @@ function App() {
   
   const { theme, setTheme, isDark } = useTheme();
 
+  const normalizarCarreraActiva = (userData, carreraIdPreferida = null) => {
+    if (!userData) return userData;
+
+    const asignaciones = Array.isArray(userData.asignaciones) ? userData.asignaciones : [];
+    if (asignaciones.length === 0) return userData;
+
+    const carreraGuardada = carreraIdPreferida || localStorage.getItem('carrera_activa_id');
+    const asignacionSeleccionada = asignaciones.find((item) => String(item.carrera) === String(carreraGuardada)) || asignaciones[0];
+
+    return {
+      ...userData,
+      perfil: {
+        ...userData.perfil,
+        carrera: asignacionSeleccionada.carrera,
+        carrera_nombre: asignacionSeleccionada.carrera_nombre,
+      },
+    };
+  };
+
   useEffect(() => {
     // Requisito: Forzar el login siempre.
     // Se limpia cualquier sesión guardada en el navegador al cargar la aplicación.
@@ -70,7 +90,12 @@ function App() {
   }, []);
 
   const handleLogin = (userData) => {
-    setUser(userData);
+    const userNormalizado = normalizarCarreraActiva(userData);
+    if (userNormalizado?.perfil?.carrera) {
+      localStorage.setItem('carrera_activa_id', String(userNormalizado.perfil.carrera));
+    }
+    localStorage.setItem('user', JSON.stringify(userNormalizado));
+    setUser(userNormalizado);
   };
 
   const handleLogout = () => {
@@ -83,12 +108,27 @@ function App() {
   const handleProfileUpdate = async () => {
     try {
       const response = await api.get('/usuario/');
-      setUser(response.data);
-      localStorage.setItem('user', JSON.stringify(response.data));
+      const userNormalizado = normalizarCarreraActiva(response.data);
+      setUser(userNormalizado);
+      localStorage.setItem('user', JSON.stringify(userNormalizado));
     } catch (error) {
       console.error("Error updating profile:", error);
     }
   };
+
+  const handleCarreraActivaChange = (carreraId) => {
+    setUser((prev) => {
+      const nextUser = normalizarCarreraActiva(prev, carreraId);
+      if (nextUser?.perfil?.carrera) {
+        localStorage.setItem('carrera_activa_id', String(nextUser.perfil.carrera));
+      }
+      localStorage.setItem('user', JSON.stringify(nextUser));
+      return nextUser;
+    });
+  };
+
+  // 🔒 GUARDIÁN DE VÍNCULO DOCENTE: Verificar si el usuario tiene error de vínculo
+  const hasVinculoError = user && user.perfil?.error_vinculo === true;
 
   if (loading) {
     return (
@@ -114,17 +154,50 @@ function App() {
     );
   }
 
+  // 🔒 BLOQUEO POR ERROR DE VÍNCULO: Si el usuario no tiene docente vinculado
+  if (hasVinculoError) {
+    return (
+      <Router>
+        <Toaster position="top-right" />
+        <ErrorVinculoDocente onLogout={handleLogout} />
+      </Router>
+    );
+  }
+
   return (
     <Router>
-      <Toaster 
+      <Toaster
         position="top-right"
         toastOptions={{
           style: {
             background: isDark ? '#1e293b' : '#ffffff',
             color: isDark ? '#f1f5f9' : '#0f172a',
+            borderRadius: '12px',
+            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+            fontFamily: "'Inter', system-ui, sans-serif",
+            fontSize: '14px',
+            fontWeight: '500',
           },
-          success: { style: { background: '#10b981', color: 'white' } },
-          error: { style: { background: '#ef4444', color: 'white' } },
+          success: { 
+            style: { 
+              background: isDark ? '#064e3b' : '#f0fdf4', 
+              color: isDark ? '#a7f3d0' : '#166534',
+              border: '2px solid #10b981',
+              borderLeft: '4px solid #059669',
+            },
+            icon: '✅',
+            duration: 4000,
+          },
+          error: { 
+            style: { 
+              background: isDark ? '#7f1d1d' : '#fef2f2', 
+              color: isDark ? '#fecaca' : '#991b1b',
+              border: '2px solid #ef4444',
+              borderLeft: '4px solid #f59e0b',
+            },
+            icon: '⚠️',
+            duration: 6000,
+          },
         }}
       />
       <style>{`
@@ -165,6 +238,7 @@ function App() {
                   theme={theme}
                   setTheme={setTheme}
                   onProfileUpdate={handleProfileUpdate}
+                  onCarreraActivaChange={handleCarreraActivaChange}
                 />
               }
             >
@@ -183,13 +257,12 @@ function App() {
               <Route path="archivados" element={<AnimatedRoute><FondosArchivados isDark={isDark} /></AnimatedRoute>} />
 
               {/* Rutas de Administración (Integradas en el Sidebar) */}
-              <Route path="usuarios" element={<AnimatedRoute><GestionUsuarios isDark={isDark} /></AnimatedRoute>} />
-              <Route path="docentes" element={<AnimatedRoute><ListaDocentes isDark={isDark} /></AnimatedRoute>} />
+              <Route path="docentes" element={<AnimatedRoute><ListaDocentes isDark={isDark} sidebarCollapsed={sidebarCollapsed} /></AnimatedRoute>} />
               <Route path="calendarios" element={<AnimatedRoute><ListaCalendarios /></AnimatedRoute>} />
-              <Route path="carreras" element={<AnimatedRoute><ListaCarreras isDark={isDark} /></AnimatedRoute>} />
-              <Route path="materias" element={<AnimatedRoute><MateriaList isDark={isDark} /></AnimatedRoute>} />
-              <Route path="materias/nueva" element={<AnimatedRoute><MateriaForm /></AnimatedRoute>} />
-              <Route path="materias/editar/:id" element={<AnimatedRoute><MateriaForm /></AnimatedRoute>} />
+              <Route path="materias" element={<AnimatedRoute><MateriaList isDark={isDark} sidebarCollapsed={sidebarCollapsed} /></AnimatedRoute>}>
+                <Route path="nueva" element={<MateriaForm sidebarCollapsed={sidebarCollapsed} />} />
+                <Route path="editar/:id" element={<MateriaForm sidebarCollapsed={sidebarCollapsed} />} />
+              </Route>
 
               <Route path="*" element={<Navigate to="/fondo-tiempo" replace />} />
             </Route>
@@ -197,6 +270,15 @@ function App() {
             {/* Módulo: Fondos a Largo Plazo */}
             <Route path="/largo-plazo" element={<SimpleLayout />}>
               <Route index element={<Proximamente isDark={isDark} />} />
+            </Route>
+
+            {/* Módulo Principal: Gestión Global de Usuarios/Carreras */}
+            <Route path="/usuarios" element={<SimpleLayout />}>
+              <Route index element={<AnimatedRoute><GestionUsuarios isDark={isDark} user={user} hasSidebar={false} /></AnimatedRoute>} />
+            </Route>
+
+            <Route path="/carreras" element={<SimpleLayout />}>
+              <Route index element={<AnimatedRoute><ListaCarreras isDark={isDark} hasSidebar={false} /></AnimatedRoute>} />
             </Route>
 
             {/* Módulo: Seguimiento Global */}

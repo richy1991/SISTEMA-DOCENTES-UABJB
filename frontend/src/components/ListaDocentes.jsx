@@ -1,291 +1,92 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
+import { FaEdit, FaTrash, FaExclamationTriangle } from 'react-icons/fa';
 import { getDocentes } from '../apis/api';
 import api from '../apis/api';
 import toast from 'react-hot-toast';
 
-const PencilIcon = (props) => (
-  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
-  </svg>
-);
+// ============================================================================
+// COMPONENTE INTERNO: FechaIngresoPicker (Calendario personalizado)
+// ============================================================================
+const weekDays = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+const monthNames = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+];
 
-const TrashIcon = (props) => (
-  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-  </svg>
-);
+function parseIsoDate(iso) {
+  if (!iso || typeof iso !== 'string') return null;
+  const parts = iso.split('-').map(Number);
+  if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return null;
+  const [year, month, day] = parts;
+  const d = new Date(year, month - 1, day);
+  if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) return null;
+  return d;
+}
+function toIsoDate(dateObj) {
+  const y = dateObj.getFullYear();
+  const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const d = String(dateObj.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+function formatDisplayDate(iso) {
+  const dateObj = parseIsoDate(iso);
+  if (!dateObj) return '';
+  const dd = String(dateObj.getDate()).padStart(2, '0');
+  const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const yyyy = dateObj.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
+function parseDisplayDate(display) {
+  if (!display || typeof display !== 'string') return null;
+  const match = display.match(/^\d{2}\/\d{2}\/\d{4}$/);
+  if (!match) return null;
+  const [dd, mm, yyyy] = display.split('/').map(Number);
+  const d = new Date(yyyy, mm - 1, dd);
+  if (d.getFullYear() !== yyyy || d.getMonth() !== mm - 1 || d.getDate() !== dd) return null;
+  return d;
+}
 
-const InfoIcon = (props) => (
-  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
-
-const ChevronDown = ({ open = false }) => (
-  <div className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center">
-    <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-[#263F8A]/10 dark:bg-[#263F8A]/25 ring-1 ring-[#263F8A]/35 dark:ring-[#263F8A]/45">
-      <svg
-        className={`w-3 h-3 text-[#263F8A] dark:text-[#8EA0D9] transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-      >
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
-      </svg>
-    </span>
-  </div>
-);
-
-const CustomSelect = ({
-  value,
-  options,
-  onChange,
-  placeholder,
-  disabled = false,
-  emptyText = 'Sin opciones disponibles',
-  menuMaxHeight = 'max-h-56',
-}) => {
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef(null);
-  const selected = options.find((opt) => opt.value?.toString() === value?.toString());
-
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (containerRef.current && !containerRef.current.contains(event.target)) {
-        setOpen(false);
-      }
-    };
-
-    const handleEscape = (event) => {
-      if (event.key === 'Escape') setOpen(false);
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleEscape);
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleEscape);
-    };
-  }, []);
-
-  const handlePick = (newValue) => {
-    onChange(newValue);
-    setOpen(false);
-  };
-
-  return (
-    <div ref={containerRef} className="relative w-full">
-      <button
-        type="button"
-        onClick={() => !disabled && setOpen((prev) => !prev)}
-        disabled={disabled}
-        className={`w-full text-left pl-3.5 pr-10 py-2.5 rounded-xl border bg-white dark:bg-slate-800 text-sm shadow-sm transition-all ${
-          disabled
-            ? 'border-slate-300/80 dark:border-slate-700 text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-70'
-            : open
-              ? 'border-blue-600 dark:border-blue-600 ring-2 ring-blue-500/35 dark:ring-blue-500/35 text-slate-900 dark:text-slate-100'
-              : 'border-blue-200 dark:border-blue-700 hover:border-blue-400 dark:hover:border-blue-600 text-slate-800 dark:text-slate-100'
-        }`}
-      >
-        <span className="block truncate font-semibold">{selected ? selected.label : placeholder}</span>
-        <ChevronDown open={open} />
-      </button>
-
-      {open && !disabled && (
-        <div className={`absolute z-30 mt-1.5 w-full overflow-auto rounded-xl border border-blue-400 dark:border-blue-700 bg-white dark:bg-slate-900 shadow-xl shadow-blue-500/20 dark:shadow-black/35 ${menuMaxHeight}`}>
-          {options.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{emptyText}</div>
-          ) : (
-            options.map((opt) => {
-              const active = opt.value?.toString() === value?.toString();
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => handlePick(opt.value)}
-                  className={`w-full text-left px-3 py-1.5 text-sm transition-colors border-l-2 ${
-                    active
-                      ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-600 dark:border-blue-500 text-blue-700 dark:text-blue-200 font-semibold'
-                      : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-800/90'
-                  }`}
-                  title={opt.label}
-                >
-                  <span className="block truncate">{opt.label}</span>
-                </button>
-              );
-            })
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
-
-const ToggleSwitch = ({ isActive, onChange }) => (
-  <button
-    type="button"
-    onClick={onChange}
-    className={`relative inline-flex h-6 w-12 items-center rounded-full transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 ${
-      isActive
-        ? 'bg-emerald-500 dark:bg-emerald-600 focus:ring-emerald-400 dark:focus:ring-emerald-500'
-        : 'bg-slate-300 dark:bg-slate-600 focus:ring-slate-400 dark:focus:ring-slate-500'
-    }`}
-  >
-    <span
-      className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition-transform duration-300 ${
-        isActive ? 'translate-x-6' : 'translate-x-0.5'
-      }`}
-    />
-  </button>
-);
-
-const InputField = ({ label, name, type = 'text', value, onChange, required, error }) => (
-  <div>
-    <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label} {required && <span className="text-red-500">*</span>}</label>
-    <input
-      type={type}
-      name={name}
-      value={value}
-      onChange={onChange}
-      required={required}
-      className={`w-full px-4 py-2.5 rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md ${error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'}`}
-    />
-    {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
-  </div>
-);
-
-const DateIngresoField = ({ value, onChange, error }) => {
+function FechaIngresoPicker({ value, onChange, error }) {
   const [open, setOpen] = useState(false);
   const [openQuickPicker, setOpenQuickPicker] = useState(null);
+  const [inputValue, setInputValue] = useState(formatDisplayDate(value));
+  const [visibleMonth, setVisibleMonth] = useState(() => {
+    const selectedDate = parseIsoDate(value);
+    const today = new Date();
+    return selectedDate ? new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1) : new Date(today.getFullYear(), today.getMonth(), 1);
+  });
   const [draftDay, setDraftDay] = useState(null);
   const [draftMonth, setDraftMonth] = useState(null);
   const [draftYear, setDraftYear] = useState(null);
   const [hasSelectedMonth, setHasSelectedMonth] = useState(false);
   const [hasSelectedYear, setHasSelectedYear] = useState(false);
-  const containerRef = useRef(null);
-  const yearMenuRef = useRef(null);
-  const currentYearOptionRef = useRef(null);
+  const containerRef = React.useRef(null);
+  const yearMenuRef = React.useRef(null);
+  const currentYearOptionRef = React.useRef(null);
 
-  const parseIsoDate = (iso) => {
-    if (!iso || typeof iso !== 'string') return null;
-    const parts = iso.split('-').map(Number);
-    if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return null;
-    const [year, month, day] = parts;
-    const d = new Date(year, month - 1, day);
-    if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) return null;
-    return d;
-  };
-
-  const toIsoDate = (dateObj) => {
-    const y = dateObj.getFullYear();
-    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const d = String(dateObj.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  };
-
-  const formatDisplayDate = (iso) => {
-    const dateObj = parseIsoDate(iso);
-    if (!dateObj) return '';
-    const dd = String(dateObj.getDate()).padStart(2, '0');
-    const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const yyyy = dateObj.getFullYear();
-    return `${dd}/${mm}/${yyyy}`;
-  };
-
-  const parseDisplayDate = (display) => {
-    if (!display || typeof display !== 'string') return null;
-    const match = display.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-    if (!match) return null;
-    const [, dd, mm, yyyy] = match;
-    const day = Number(dd);
-    const month = Number(mm);
-    const year = Number(yyyy);
-    const d = new Date(year, month - 1, day);
-    if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) return null;
-    return d;
-  };
-
-  const [inputValue, setInputValue] = useState(formatDisplayDate(value));
-
-  useEffect(() => {
+  React.useEffect(() => {
     setInputValue(formatDisplayDate(value));
   }, [value]);
 
-  const selectedDate = parseIsoDate(value);
-  const today = new Date();
-  const [visibleMonth, setVisibleMonth] = useState(
-    selectedDate ? new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1) : new Date(today.getFullYear(), today.getMonth(), 1)
-  );
-
-  useEffect(() => {
-    if (open) {
-      const base = selectedDate || today;
-      setVisibleMonth(new Date(base.getFullYear(), base.getMonth(), 1));
-      setDraftDay(null);
-      setDraftMonth(base.getMonth());
-      setDraftYear(base.getFullYear());
-      setHasSelectedMonth(false);
-      setHasSelectedYear(false);
-    } else {
-      setOpenQuickPicker(null);
-      setDraftDay(null);
-      setDraftMonth(null);
-      setDraftYear(null);
-      setHasSelectedMonth(false);
-      setHasSelectedYear(false);
-    }
-  }, [open]);
-
-  useEffect(() => {
+  React.useEffect(() => {
     const handleOutside = (event) => {
       if (containerRef.current && !containerRef.current.contains(event.target)) {
         setOpen(false);
       }
     };
-
     if (open) {
       document.addEventListener('mousedown', handleOutside);
     }
-
     return () => {
       document.removeEventListener('mousedown', handleOutside);
     };
   }, [open]);
 
-  useEffect(() => {
-    if (openQuickPicker !== 'year') return;
-
-    const rafId = requestAnimationFrame(() => {
-      const menuEl = yearMenuRef.current;
-      const currentYearEl = currentYearOptionRef.current;
-      if (!menuEl || !currentYearEl) return;
-
-      const targetTop = currentYearEl.offsetTop - (menuEl.clientHeight / 2) + (currentYearEl.clientHeight / 2);
-      menuEl.scrollTop = Math.max(0, targetTop);
-    });
-
-    return () => cancelAnimationFrame(rafId);
-  }, [openQuickPicker]);
-
-  const weekDays = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
-  const monthNames = [
-    'Enero',
-    'Febrero',
-    'Marzo',
-    'Abril',
-    'Mayo',
-    'Junio',
-    'Julio',
-    'Agosto',
-    'Septiembre',
-    'Octubre',
-    'Noviembre',
-    'Diciembre',
-  ];
-
   const year = visibleMonth.getFullYear();
   const month = visibleMonth.getMonth();
+  const today = new Date();
   const currentYearRef = today.getFullYear();
   const startYear = currentYearRef - 25;
   const endYear = currentYearRef + 25;
@@ -294,7 +95,6 @@ const DateIngresoField = ({ value, onChange, error }) => {
   const firstDay = new Date(year, month, 1);
   const offset = (firstDay.getDay() + 6) % 7;
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-
   const calendarCells = [];
   for (let i = 0; i < offset; i += 1) calendarCells.push(null);
   for (let d = 1; d <= daysInMonth; d += 1) {
@@ -303,73 +103,14 @@ const DateIngresoField = ({ value, onChange, error }) => {
   while (calendarCells.length % 7 !== 0) calendarCells.push(null);
 
   const isSameDate = (a, b) => (
-    a
-    && b
-    && a.getFullYear() === b.getFullYear()
-    && a.getMonth() === b.getMonth()
-    && a.getDate() === b.getDate()
+    a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
   );
 
   const handlePickDate = (dateObj) => {
-    const nextDay = dateObj.getDate();
-    setDraftDay(nextDay);
-
-    const monthCandidate = draftMonth ?? month;
-    const yearCandidate = draftYear ?? year;
-    const canCommit = Boolean(nextDay && hasSelectedMonth && hasSelectedYear && monthCandidate !== null && yearCandidate !== null);
-    if (!canCommit) return;
-
-    const maxDayForMonth = new Date(yearCandidate, monthCandidate + 1, 0).getDate();
-    if (nextDay > maxDayForMonth) return;
-
-    const finalDate = new Date(yearCandidate, monthCandidate, nextDay);
-    const iso = toIsoDate(finalDate);
-    onChange(iso);
-    setInputValue(formatDisplayDate(iso));
-    setOpen(false);
-  };
-
-  const handleQuickPickMonth = (nextMonth) => {
-    const yearCandidate = draftYear ?? year;
-    setDraftMonth(nextMonth);
+    setDraftDay(dateObj.getDate());
     setHasSelectedMonth(true);
-    setVisibleMonth(new Date(yearCandidate, nextMonth, 1));
-    setOpenQuickPicker(null);
-
-    const dayCandidate = draftDay;
-    if (!dayCandidate || !hasSelectedYear || yearCandidate === null) return;
-
-    const maxDayForMonth = new Date(yearCandidate, nextMonth + 1, 0).getDate();
-    if (dayCandidate > maxDayForMonth) {
-      setDraftDay(null);
-      return;
-    }
-
-    const finalDate = new Date(yearCandidate, nextMonth, dayCandidate);
-    const iso = toIsoDate(finalDate);
-    onChange(iso);
-    setInputValue(formatDisplayDate(iso));
-    setOpen(false);
-  };
-
-  const handleQuickPickYear = (nextYear) => {
-    const monthCandidate = draftMonth ?? month;
-    setDraftYear(nextYear);
     setHasSelectedYear(true);
-    setVisibleMonth(new Date(nextYear, monthCandidate, 1));
-    setOpenQuickPicker(null);
-
-    const dayCandidate = draftDay;
-    if (!dayCandidate || !hasSelectedMonth || monthCandidate === null) return;
-
-    const maxDayForMonth = new Date(nextYear, monthCandidate + 1, 0).getDate();
-    if (dayCandidate > maxDayForMonth) {
-      setDraftDay(null);
-      return;
-    }
-
-    const finalDate = new Date(nextYear, monthCandidate, dayCandidate);
-    const iso = toIsoDate(finalDate);
+    const iso = toIsoDate(dateObj);
     onChange(iso);
     setInputValue(formatDisplayDate(iso));
     setOpen(false);
@@ -378,7 +119,6 @@ const DateIngresoField = ({ value, onChange, error }) => {
   const handleManualInputChange = (e) => {
     const rawValue = e.target.value;
     const onlyDigits = rawValue.replace(/\D/g, '').slice(0, 8);
-
     let formatted = onlyDigits;
     if (onlyDigits.length > 2) {
       formatted = `${onlyDigits.slice(0, 2)}/${onlyDigits.slice(2)}`;
@@ -386,9 +126,7 @@ const DateIngresoField = ({ value, onChange, error }) => {
     if (onlyDigits.length > 4) {
       formatted = `${onlyDigits.slice(0, 2)}/${onlyDigits.slice(2, 4)}/${onlyDigits.slice(4)}`;
     }
-
     setInputValue(formatted);
-
     if (formatted.length === 10) {
       const parsed = parseDisplayDate(formatted);
       if (parsed) {
@@ -396,7 +134,6 @@ const DateIngresoField = ({ value, onChange, error }) => {
         setVisibleMonth(new Date(parsed.getFullYear(), parsed.getMonth(), 1));
       }
     }
-
     if (!formatted) {
       onChange('');
     }
@@ -407,7 +144,6 @@ const DateIngresoField = ({ value, onChange, error }) => {
       onChange('');
       return;
     }
-
     const parsed = parseDisplayDate(inputValue);
     if (parsed) {
       const iso = toIsoDate(parsed);
@@ -416,8 +152,6 @@ const DateIngresoField = ({ value, onChange, error }) => {
       setVisibleMonth(new Date(parsed.getFullYear(), parsed.getMonth(), 1));
       return;
     }
-
-    toast.error('Fecha inválida. Usa el formato dd/mm/aaaa.');
     onChange('');
     setInputValue('');
   };
@@ -439,7 +173,7 @@ const DateIngresoField = ({ value, onChange, error }) => {
         <button
           type="button"
           onClick={() => setOpen((prev) => !prev)}
-          className="absolute right-1.5 top-1/2 h-8 w-8 rounded-lg border border-[#3A56AF]/40 bg-[#2C4AAE] text-slate-100 hover:bg-[#233C8F] transition-colors"
+          className="absolute right-1.5 top-1/2 h-8 w-8 rounded-lg border border-[#3A56AF]/40 bg-[#2C4AAE] text-white hover:bg-[#233C8F] transition-colors"
           style={{ transform: 'translateY(-50%)' }}
           aria-label="Abrir calendario de Fecha de Ingreso"
         >
@@ -448,35 +182,12 @@ const DateIngresoField = ({ value, onChange, error }) => {
           </svg>
         </button>
       </div>
-
       {open && (
         <div
           className="absolute z-50 mt-2 w-[268px] max-w-[calc(100vw-2rem)] rounded-xl border border-[#7F97E8]/45 bg-[#2C4AAE] backdrop-blur-xl shadow-2xl p-2.5"
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center justify-between mb-2">
-            <button
-              type="button"
-              onClick={() => setVisibleMonth(new Date(year, month - 1, 1))}
-              className="h-7 w-7 rounded-lg text-slate-100 hover:bg-white/15"
-              aria-label="Mes anterior"
-            >
-              ‹
-            </button>
-            <p className="text-xs font-semibold text-slate-100">
-              {monthNames[month]} {year}
-            </p>
-            <button
-              type="button"
-              onClick={() => setVisibleMonth(new Date(year, month + 1, 1))}
-              className="h-7 w-7 rounded-lg text-slate-100 hover:bg-white/15"
-              aria-label="Mes siguiente"
-            >
-              ›
-            </button>
-          </div>
-
           <div className="grid grid-cols-2 gap-1.5 mb-2">
             <div className="relative">
               <button
@@ -485,34 +196,20 @@ const DateIngresoField = ({ value, onChange, error }) => {
                   e.stopPropagation();
                   setOpenQuickPicker((prev) => (prev === 'month' ? null : 'month'));
                 }}
-                className={`w-full h-8 text-left pl-2.5 pr-8 rounded-xl border bg-white dark:bg-slate-800 text-xs shadow-sm ${
-                  openQuickPicker === 'month'
-                    ? 'border-cyan-500/80 dark:border-cyan-500 ring-2 ring-cyan-400/40 dark:ring-cyan-500/35 text-slate-900 dark:text-slate-100'
-                    : 'border-cyan-300/70 dark:border-cyan-700/80 hover:border-cyan-500/70 dark:hover:border-cyan-500/80 text-slate-800 dark:text-slate-100'
-                }`}
+                className={`w-full h-8 text-left pl-2.5 pr-8 rounded-xl border bg-white dark:bg-slate-800 text-xs shadow-sm ${openQuickPicker === 'month' ? 'border-cyan-500/80 dark:border-cyan-500 ring-2 ring-cyan-400/40 dark:ring-cyan-500/35 text-slate-900 dark:text-slate-100' : 'border-cyan-300/70 dark:border-cyan-700/80 hover:border-cyan-500/70 dark:hover:border-cyan-500/80 text-slate-800 dark:text-slate-100'}`}
                 aria-label="Seleccionar mes"
               >
-                <span className="block truncate font-semibold">{hasSelectedMonth && draftMonth !== null ? monthNames[draftMonth] : 'Seleccione'}</span>
+                <span className="block truncate font-semibold">{hasSelectedMonth && draftMonth !== null ? monthNames[draftMonth] : monthNames[month]}</span>
                 <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center">
                   <span className="inline-flex h-4 w-4 items-center justify-center rounded-md bg-cyan-50 dark:bg-cyan-900/30 ring-1 ring-cyan-200/70 dark:ring-cyan-700/70">
-                    <svg
-                      className={`w-2.5 h-2.5 text-cyan-700 dark:text-cyan-300 transition-transform duration-200 ${openQuickPicker === 'month' ? 'rotate-180' : ''}`}
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
+                    <svg className={`w-2.5 h-2.5 text-cyan-700 dark:text-cyan-300 transition-transform duration-200 ${openQuickPicker === 'month' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
                     </svg>
                   </span>
                 </span>
               </button>
-
               {openQuickPicker === 'month' && (
-                <div
-                  className="absolute z-40 mt-1.5 w-full max-h-40 overflow-auto rounded-xl border border-cyan-300 dark:border-cyan-700 bg-white dark:bg-slate-900 shadow-xl shadow-cyan-900/15 dark:shadow-black/35"
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onClick={(e) => e.stopPropagation()}
-                >
+                <div className="absolute z-40 mt-1.5 w-full max-h-40 overflow-auto rounded-xl border border-cyan-300 dark:border-cyan-700 bg-white dark:bg-slate-900 shadow-xl shadow-cyan-900/15 dark:shadow-black/35" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
                   {monthOptions.map((opt) => {
                     const active = hasSelectedMonth && draftMonth !== null && opt.value === draftMonth;
                     return (
@@ -521,13 +218,12 @@ const DateIngresoField = ({ value, onChange, error }) => {
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleQuickPickMonth(opt.value);
+                          setDraftMonth(opt.value);
+                          setHasSelectedMonth(true);
+                          setVisibleMonth(new Date(year, opt.value, 1));
+                          setOpenQuickPicker(null);
                         }}
-                        className={`w-full text-left px-3 py-1.5 text-xs border-l-2 ${
-                          active
-                            ? 'bg-cyan-50 dark:bg-cyan-900/30 border-cyan-500 text-cyan-800 dark:text-cyan-200 font-semibold'
-                            : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-slate-800/90'
-                        }`}
+                        className={`w-full text-left px-3 py-1.5 text-xs border-l-2 ${active ? 'bg-cyan-50 dark:bg-cyan-900/30 border-cyan-500 text-cyan-800 dark:text-cyan-200 font-semibold' : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-[#2C4AAE]'}`}
                       >
                         <span className="block truncate">{opt.label}</span>
                       </button>
@@ -536,7 +232,6 @@ const DateIngresoField = ({ value, onChange, error }) => {
                 </div>
               )}
             </div>
-
             <div className="relative">
               <button
                 type="button"
@@ -544,35 +239,20 @@ const DateIngresoField = ({ value, onChange, error }) => {
                   e.stopPropagation();
                   setOpenQuickPicker((prev) => (prev === 'year' ? null : 'year'));
                 }}
-                className={`w-full h-8 text-left pl-2.5 pr-8 rounded-xl border bg-white dark:bg-slate-800 text-xs shadow-sm ${
-                  openQuickPicker === 'year'
-                    ? 'border-cyan-500/80 dark:border-cyan-500 ring-2 ring-cyan-400/40 dark:ring-cyan-500/35 text-slate-900 dark:text-slate-100'
-                    : 'border-cyan-300/70 dark:border-cyan-700/80 hover:border-cyan-500/70 dark:hover:border-cyan-500/80 text-slate-800 dark:text-slate-100'
-                }`}
-                aria-label="Seleccionar año"
+                className={`w-full h-8 text-left pl-2.5 pr-8 rounded-xl border bg-white dark:bg-slate-800 text-xs shadow-sm ${openQuickPicker === 'year' ? 'border-cyan-500/80 dark:border-cyan-500 ring-2 ring-cyan-400/40 dark:ring-cyan-500/35 text-slate-900 dark:text-slate-100' : 'border-cyan-300/70 dark:border-cyan-700/80 hover:border-cyan-500/70 dark:hover:border-cyan-500/80 text-slate-800 dark:text-slate-100'}`}
+                aria-label="Seleccionar a+�o"
               >
-                <span className="block truncate font-semibold">{hasSelectedYear && draftYear !== null ? draftYear : 'Seleccione'}</span>
+                <span className="block truncate font-semibold">{hasSelectedYear && draftYear !== null ? draftYear : year}</span>
                 <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center">
                   <span className="inline-flex h-4 w-4 items-center justify-center rounded-md bg-cyan-50 dark:bg-cyan-900/30 ring-1 ring-cyan-200/70 dark:ring-cyan-700/70">
-                    <svg
-                      className={`w-2.5 h-2.5 text-cyan-700 dark:text-cyan-300 transition-transform duration-200 ${openQuickPicker === 'year' ? 'rotate-180' : ''}`}
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
+                    <svg className={`w-2.5 h-2.5 text-cyan-700 dark:text-cyan-300 transition-transform duration-200 ${openQuickPicker === 'year' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
                     </svg>
                   </span>
                 </span>
               </button>
-
               {openQuickPicker === 'year' && (
-                <div
-                  ref={yearMenuRef}
-                  className="absolute z-40 mt-1.5 w-full max-h-40 overflow-auto rounded-xl border border-cyan-300 dark:border-cyan-700 bg-white dark:bg-slate-900 shadow-xl shadow-cyan-900/15 dark:shadow-black/35"
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onClick={(e) => e.stopPropagation()}
-                >
+                <div ref={yearMenuRef} className="absolute z-40 mt-1.5 w-full max-h-40 overflow-auto rounded-xl border border-cyan-300 dark:border-cyan-700 bg-white dark:bg-slate-900 shadow-xl shadow-cyan-900/15 dark:shadow-black/35" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
                   {yearOptions.map((y) => {
                     const active = hasSelectedYear && draftYear !== null && y === draftYear;
                     const isCurrentSystemYear = y === currentYearRef;
@@ -583,22 +263,17 @@ const DateIngresoField = ({ value, onChange, error }) => {
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleQuickPickYear(y);
+                          setDraftYear(y);
+                          setHasSelectedYear(true);
+                          setVisibleMonth(new Date(y, draftMonth ?? month, 1));
+                          setOpenQuickPicker(null);
                         }}
-                        className={`w-full text-left px-3 py-1.5 text-xs border-l-2 ${
-                          active
-                            ? 'bg-cyan-50 dark:bg-cyan-900/30 border-cyan-500 text-cyan-800 dark:text-cyan-200 font-semibold'
-                            : isCurrentSystemYear
-                              ? 'bg-blue-50 dark:bg-blue-900/25 border-blue-400 text-blue-800 dark:text-blue-200 font-semibold hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-slate-800/90'
-                              : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-slate-800/90'
-                        }`}
+                        className={`w-full text-left px-3 py-1.5 text-xs border-l-2 ${active ? 'bg-cyan-50 dark:bg-cyan-900/30 border-cyan-500 text-cyan-800 dark:text-cyan-200 font-semibold' : isCurrentSystemYear ? 'bg-blue-50 dark:bg-blue-900/25 border-blue-400 text-blue-800 dark:text-blue-200 font-semibold hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-[#2C4AAE]' : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-[#2C4AAE]'}`}
                       >
                         <span className="flex items-center justify-between gap-2">
                           <span className="block truncate">{y}</span>
                           {isCurrentSystemYear && !active && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-200/80 dark:bg-blue-800/50 text-blue-900 dark:text-blue-100">
-                              Actual
-                            </span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-200/80 dark:bg-blue-800/50 text-blue-900 dark:text-blue-100">Actual</span>
                           )}
                         </span>
                       </button>
@@ -608,45 +283,271 @@ const DateIngresoField = ({ value, onChange, error }) => {
               )}
             </div>
           </div>
-
           <div className="grid grid-cols-7 gap-0.5 mb-1">
             {weekDays.map((wd) => (
-              <div key={wd} className="text-center text-[10px] font-semibold text-slate-200/85 py-0.5">
-                {wd}
-              </div>
+              <div key={wd} className="text-center text-[10px] font-semibold text-slate-200/85 py-0.5">{wd}</div>
             ))}
           </div>
-
           <div className="grid grid-cols-7 gap-0.5">
             {calendarCells.map((cellDate, idx) => {
               if (!cellDate) {
                 return <div key={`empty-${idx}`} className="h-8" />;
               }
-
               const isToday = isSameDate(cellDate, today);
               const isSelected = draftDay !== null && cellDate.getDate() === draftDay;
-
               return (
                 <button
                   key={toIsoDate(cellDate)}
                   type="button"
                   onClick={() => handlePickDate(cellDate)}
-                  className={`h-8 rounded-lg text-xs ${
-                    isSelected
-                      ? 'bg-[#4654E8] text-white font-semibold'
-                      : 'text-slate-100 hover:bg-white/15'
-                  } ${isToday && !isSelected ? 'border border-white/55' : 'border border-transparent'}`}
+                  className={`h-8 rounded-lg text-xs ${isSelected ? 'bg-[#4654E8] text-white font-semibold' : 'text-slate-100 hover:bg-white/15'} ${isToday && !isSelected ? 'border border-white/55' : 'border border-transparent'}`}
                 >
                   {cellDate.getDate()}
                 </button>
               );
             })}
           </div>
+        </div>
+      )}
+      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+    </div>
+  );
+}
 
+// Componente Select con dise+�o personalizado (mismo estilo que FechaIngresoPicker)
+const SelectConDropdown = ({ label, value, onChange, options, error, name }) => {
+  const [open, setOpen] = useState(false);
+  const containerRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const handleOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    if (open) {
+      document.addEventListener('mousedown', handleOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+    };
+  }, [open]);
+
+  const selectedLabel = value && options.find(opt => opt.value === value)?.label;
+  const displayLabel = selectedLabel || 'Seleccione...';
+
+  const handleSelect = (optionValue) => {
+    onChange({ target: { name, value: optionValue } });
+    setOpen(false);
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label}</label>
+      
+      {/* Bot+�n principal */}
+      <div className={`relative w-full rounded-xl border-2 bg-slate-50 dark:bg-slate-700 shadow-sm ${error ? 'border-red-500' : open ? 'border-[#3A56AF] dark:border-[#3A56AF]' : 'border-slate-300 dark:border-slate-600'}`}>
+        <button
+          type="button"
+          onClick={() => setOpen((prev) => !prev)}
+          className="w-full text-left px-4 py-2.5 rounded-xl bg-transparent text-slate-800 dark:text-white flex items-center justify-between gap-2"
+        >
+          <span className={`truncate ${!value ? 'text-slate-400 dark:text-slate-500' : ''}`}>{displayLabel}</span>
+          <span className="flex items-center justify-center h-6 w-6 rounded-md bg-[#2C4AAE] ring-1 ring-[#2C4AAE]">
+            <svg className={`w-3.5 h-3.5 text-white transition-transform duration-200 ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+            </svg>
+          </span>
+        </button>
+      </div>
+
+      {/* Men+� desplegable */}
+      {open && (
+        <div className="absolute z-50 mt-2 w-full rounded-xl border-2 border-[#3A56AF] bg-white dark:bg-slate-900 shadow-xl">
+          <div className="max-h-40 overflow-auto p-2">
+            {options.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => handleSelect(option.value)}
+                className={`w-full text-left px-3 py-1.5 text-xs border-l-2 rounded-lg transition-colors ${
+                  option.value === value
+                    ? 'bg-cyan-50 dark:bg-cyan-900/30 border-cyan-500 text-cyan-800 dark:text-cyan-200 font-semibold'
+                    : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-[#2C4AAE]'
+                }`}
+              >
+                <span className="block truncate">{option.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
       {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+    </div>
+  );
+};
+
+const InfoIcon = (props) => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
+const InputField = ({ label, name, type = 'text', value, onChange, required, error }) => (
+  <div>
+    <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label} {required && <span className="text-red-500">*</span>}</label>
+    <input
+      type={type}
+      name={name}
+      value={value}
+      onChange={onChange}
+      required={required}
+      className={`w-full px-4 py-2.5 rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md ${error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'}`}
+    />
+    {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+  </div>
+);
+
+const SimpleDropdown = ({ value, onChange, options, placeholder = 'Carreras', clearOnToggle = false }) => {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const containerRef = React.useRef(null);
+  const inputRef = React.useRef(null);
+
+  useEffect(() => {
+    const handleOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setOpen(false);
+        setSearch('');
+      }
+    };
+    if (open) {
+      document.addEventListener('mousedown', handleOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [open]);
+
+  useEffect(() => {
+    if (open) {
+      setTimeout(() => inputRef.current?.focus(), 0);
+    }
+  }, [open]);
+
+  const selectedLabel = options.find((opt) => String(opt.value) === String(value))?.label;
+  const filteredOptions = options.filter((option) =>
+    option.label.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => {
+          if (clearOnToggle) {
+            onChange('');
+          }
+          setOpen(!open);
+          if (open) {
+            setSearch('');
+          }
+        }}
+        className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border-2 border-transparent focus:border-blue-500 rounded-2xl text-left flex items-center justify-between transition-all"
+      >
+        <span className={`${selectedLabel ? 'text-slate-800 dark:text-white font-semibold text-sm leading-tight' : 'text-slate-400 dark:text-slate-500'}`}>
+          {selectedLabel || placeholder}
+        </span>
+        <div className="w-8 h-8 bg-[#2C4AAE] hover:bg-[#1a3a8a] rounded-lg flex items-center justify-center transition-colors">
+          <svg
+            className={`w-4 h-4 text-white transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </button>
+      {open && (
+        <div className="absolute z-40 mt-1 w-full rounded-xl border-2 border-[#2C4AAE] bg-white dark:bg-slate-800 shadow-xl max-h-48 overflow-auto">
+          <div className="p-2 border-b border-slate-200 dark:border-slate-700">
+            <input
+              ref={inputRef}
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar carrera..."
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-sm text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          {filteredOptions.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => {
+                onChange(option.value);
+                setOpen(false);
+                setSearch('');
+              }}
+              className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                String(value) === String(option.value)
+                  ? 'bg-[#2C4AAE] text-white font-semibold'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-[#2C4AAE] hover:text-white'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+          {filteredOptions.length === 0 && (
+            <div className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400 text-center">
+              No hay carreras que coincidan
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const SearchInput = ({ value, onChange, placeholder = 'Buscar por nombre o C.I....' }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const inputRef = React.useRef(null);
+
+  useEffect(() => {
+    if (isExpanded && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [isExpanded]);
+
+  const handleBlur = () => {
+    if (!value) {
+      setIsExpanded(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2 flex-row-reverse">
+      <button
+        type="button"
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="p-2.5 bg-[#2C4AAE] hover:bg-[#1a3a8a] text-white rounded-xl transition-all duration-300 hover:scale-110"
+        title="Buscar docente"
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+      </button>
+      <div className={`transition-all duration-300 overflow-hidden ${isExpanded ? 'w-64 opacity-100' : 'w-0 opacity-0'}`}>
+        <input
+          ref={inputRef}
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onBlur={handleBlur}
+          placeholder={placeholder}
+          className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border-2 border-[#2C4AAE] rounded-xl text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none transition-all"
+        />
+      </div>
     </div>
   );
 };
@@ -675,8 +576,34 @@ const dedicacionStyles = {
   },
 };
 
-function ListaDocentes({ isDark }) {
+function ListaDocentes({ sidebarCollapsed = false }) {
+  const splitNombreCompleto = (nombreCompleto) => {
+    const partes = (nombreCompleto || '').trim().split(/\s+/).filter(Boolean);
+
+    if (partes.length === 0) {
+      return { nombres: '', apellido_paterno: '', apellido_materno: '' };
+    }
+    if (partes.length === 1) {
+      return { nombres: partes[0], apellido_paterno: '', apellido_materno: '' };
+    }
+    if (partes.length === 2) {
+      return { nombres: partes[0], apellido_paterno: partes[1], apellido_materno: '' };
+    }
+
+    return {
+      nombres: partes.slice(0, -2).join(' '),
+      apellido_paterno: partes[partes.length - 2],
+      apellido_materno: partes[partes.length - 1],
+    };
+  };
+
+  const buildNombreCompleto = (nombres, apellidoPaterno, apellidoMaterno) =>
+    [nombres, apellidoPaterno, apellidoMaterno].filter(Boolean).join(' ').trim();
+
+  const navigate = useNavigate();
+  const restoringCreateFormRef = React.useRef(false);
   const [docentes, setDocentes] = useState([]);
+  const [carreras, setCarreras] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [user, setUser] = useState(null);
@@ -687,9 +614,11 @@ function ListaDocentes({ isDark }) {
 
   // Formulario
   const [formData, setFormData] = useState({
+    nombre_completo: '',
     nombres: '',
     apellido_paterno: '',
     apellido_materno: '',
+    carrera: '',
     ci: '',
     categoria: 'catedratico',
     dedicacion: 'tiempo_completo',
@@ -706,18 +635,55 @@ function ListaDocentes({ isDark }) {
   const [docenteToDelete, setDocenteToDelete] = useState(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
+  // State for inline creation form
+  const [isCreating, setIsCreating] = useState(false);
+  const [abrirDesdeUsuarios, setAbrirDesdeUsuarios] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCarrera, setSelectedCarrera] = useState('');
+
   useEffect(() => {
     cargarDocentes();
     const userData = JSON.parse(localStorage.getItem('user') || 'null');
     setUser(userData);
+    
+    // ���� Detectar si venimos desde "Crear Usuario" para abrir modal
+    const abrirModal = sessionStorage.getItem('abrirModalDesdeUsuarios');
+    if (abrirModal === 'true') {
+      const datosDocenteGuardados = sessionStorage.getItem('datosCrearDocente');
+      if (datosDocenteGuardados) {
+        try {
+          const datosDocente = JSON.parse(datosDocenteGuardados);
+          restoringCreateFormRef.current = true;
+          setFormData((prev) => ({
+            ...prev,
+            ...datosDocente,
+            nombre_completo: buildNombreCompleto(
+              datosDocente.nombres,
+              datosDocente.apellido_paterno,
+              datosDocente.apellido_materno
+            ),
+          }));
+        } catch (e) {
+          console.error('Error al recuperar datos de docente:', e);
+        }
+      }
+      setAbrirDesdeUsuarios(true);
+      setIsCreating(true);
+      sessionStorage.removeItem('abrirModalDesdeUsuarios');
+    }
   }, []);
 
   const cargarDocentes = async () => {
     setLoading(true);
     try {
-      const response = await getDocentes();
-      const data = response.data.results || response.data;
-      setDocentes(Array.isArray(data) ? data : []);
+      const [docentesResponse, carrerasResponse] = await Promise.all([
+        getDocentes(),
+        api.get('/carreras/'),
+      ]);
+      const docentesData = docentesResponse.data.results || docentesResponse.data;
+      const carrerasData = carrerasResponse.data.results || carrerasResponse.data;
+      setDocentes(Array.isArray(docentesData) ? docentesData : []);
+      setCarreras(Array.isArray(carrerasData) ? carrerasData : []);
       setLoading(false);
     } catch (err) {
       setError('Error al cargar docentes');
@@ -726,31 +692,49 @@ function ListaDocentes({ isDark }) {
     }
   };
 
-  const abrirModalCrear = () => {
-    setDocenteSeleccionado(null);
-    setErrors({});
-    setFormData({
+  useEffect(() => {
+    const initialData = {
+      nombre_completo: '',
       nombres: '',
       apellido_paterno: '',
       apellido_materno: '',
+      carrera: '',
       ci: '',
-      categoria: 'catedratico',
-      dedicacion: 'tiempo_completo',
+      categoria: '',
+      dedicacion: '',
       fecha_ingreso: new Date().toISOString().split('T')[0],
       email: '',
       telefono: '',
       horas_contrato_semanales: null,
       activo: true,
-    });
-    setShowModal(true);
+    };
+    if (isCreating) {
+      if (restoringCreateFormRef.current) {
+        restoringCreateFormRef.current = false;
+        setErrors({});
+        return;
+      }
+      setFormData(initialData);
+      setErrors({});
+    }
+  }, [isCreating]);
+
+  const handleToggleCreateForm = () => {
+    setIsCreating(!isCreating);
   };
 
   const abrirModalEditar = (docente) => {
     setDocenteSeleccionado(docente);
     setFormData({
+      nombre_completo: buildNombreCompleto(
+        docente.nombres,
+        docente.apellido_paterno,
+        docente.apellido_materno
+      ),
       nombres: docente.nombres,
       apellido_paterno: docente.apellido_paterno,
       apellido_materno: docente.apellido_materno || '',
+      carrera: docente.carrera_id || '',
       ci: docente.ci,
       categoria: docente.categoria,
       dedicacion: docente.dedicacion,
@@ -761,80 +745,150 @@ function ListaDocentes({ isDark }) {
       activo: docente.activo,
     });
     setShowModal(true);
+    setIsCreating(false);
   };
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData(prev => {
+      let nextValue = type === 'checkbox' ? checked : value;
       const newState = {
         ...prev,
-        [name]: type === 'checkbox' ? checked : value
+        [name]: nextValue
       };
+
+      if (name === 'nombre_completo') {
+        const nombresSplit = splitNombreCompleto(String(nextValue));
+        newState.nombres = nombresSplit.nombres;
+        newState.apellido_paterno = nombresSplit.apellido_paterno;
+        newState.apellido_materno = nombresSplit.apellido_materno;
+      }
+
       if (name === 'dedicacion' && value !== 'horario') {
         newState.horas_contrato_semanales = null;
+      }
+      if (isCreating && abrirDesdeUsuarios) {
+        sessionStorage.setItem('datosCrearDocente', JSON.stringify({
+          nombres: newState.nombres,
+          apellido_paterno: newState.apellido_paterno,
+          apellido_materno: newState.apellido_materno,
+          email: newState.email,
+          telefono: newState.telefono,
+          carrera: newState.carrera,
+        }));
       }
       return newState;
     });
   };
 
-  const handleActivoSwitchChange = () => {
-    setFormData((prev) => ({ ...prev, activo: !prev.activo }));
-  };
-
-  const handleSelectFieldChange = (field, selectedValue) => {
-    setFormData((prev) => {
-      const next = { ...prev, [field]: selectedValue };
-      if (field === 'dedicacion' && selectedValue !== 'horario') {
-        next.horas_contrato_semanales = null;
-      }
-      return next;
-    });
-  };
-
-  const categoriaOptions = [
-    { value: 'catedratico', label: 'Catedrático' },
-    { value: 'adjunto', label: 'Adjunto' },
-    { value: 'asistente', label: 'Asistente' },
-  ];
-
-  const dedicacionOptions = [
-    { value: 'tiempo_completo', label: 'Tiempo Completo' },
-    { value: 'medio_tiempo', label: 'Medio Tiempo' },
-    { value: 'horario', label: 'Horario' },
-  ];
-
   const handleCreateSubmit = async (e) => {
     e.preventDefault();
+    console.log('Iniciando submit...', formData);
     setIsSubmitting(true);
     setErrors({});
+
+    if (!formData.carrera) {
+      setErrors((prev) => ({ ...prev, carrera: ['Debe seleccionar una carrera.'] }));
+      toast.error('Debe seleccionar una carrera para el docente.');
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
+      const nombresSplit = splitNombreCompleto(formData.nombre_completo);
       const payload = { ...formData };
+      payload.nombres = nombresSplit.nombres;
+      payload.apellido_paterno = nombresSplit.apellido_paterno;
+      payload.apellido_materno = nombresSplit.apellido_materno;
+      delete payload.nombre_completo;
       if (payload.email === '') payload.email = null;
       if (payload.telefono === '') payload.telefono = null;
-      await api.post('/docentes/', payload);
-      toast.success('Docente creado correctamente');
-      setShowModal(false);
-      cargarDocentes();
+      
+      console.log('Enviando payload:', payload);
+      const response = await api.post('/docentes/', payload);
+      console.log('Docente creado exitosamente');
+      if (abrirDesdeUsuarios) {
+        const docenteCreado = response?.data;
+        if (docenteCreado?.id) {
+          sessionStorage.setItem('docenteRetornadoDesdeUsuarios', JSON.stringify({
+            id: docenteCreado.id,
+            ci: docenteCreado.ci || payload.ci || '',
+            carrera: formData.carrera || '',
+          }));
+        }
+      }
+
+      // ���� Si venimos desde usuarios, volver autom+�ticamente
+      if (abrirDesdeUsuarios) {
+        toast.success('Docente creado. Volviendo a Crear Usuario...');
+        setTimeout(() => {
+          // Limpiar flag pero mantener datos en sessionStorage
+          sessionStorage.removeItem('abrirModalDesdeUsuarios');
+          sessionStorage.removeItem('datosCrearDocente');
+          navigate('/usuarios');
+        }, 800);
+      } else {
+        toast.success('Docente creado correctamente');
+        setIsCreating(false);
+        cargarDocentes();
+      }
     } catch (err) {
-      console.error(err);
+      console.error('Error al crear docente:', err);
       const apiErrors = err.response?.data;
       if (apiErrors) {
         setErrors(apiErrors);
         const errorMsg = Object.values(apiErrors).flat().join(' ');
         toast.error(`Error: ${errorMsg}`);
       } else {
-        toast.error('Ocurrió un error inesperado.');
+        toast.error('Ocurri+� un error inesperado.');
       }
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const handleCrearCuentaParaDocente = (docente) => {
+    sessionStorage.setItem(
+      'vincularDocentePendiente',
+      JSON.stringify({
+        docenteId: docente.id,
+        carrera: docente.carrera_id || '',
+        first_name: docente.nombres || '',
+        last_name: [docente.apellido_paterno, docente.apellido_materno].filter(Boolean).join(' '),
+        email: docente.email || '',
+      })
+    );
+    navigate('/usuarios');
+  };
+
   const handleUpdateSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
+
+    if (!formData.carrera) {
+      setErrors((prev) => ({ ...prev, carrera: ['Debe seleccionar una carrera.'] }));
+      toast.error('Debe seleccionar una carrera para el docente.');
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
-      await api.put(`/docentes/${docenteSeleccionado.id}/`, formData);
+      const nombresSplit = splitNombreCompleto(
+        formData.nombre_completo || buildNombreCompleto(
+          formData.nombres,
+          formData.apellido_paterno,
+          formData.apellido_materno
+        )
+      );
+      const payload = { ...formData };
+      payload.nombres = nombresSplit.nombres;
+      payload.apellido_paterno = nombresSplit.apellido_paterno;
+      payload.apellido_materno = nombresSplit.apellido_materno;
+      delete payload.nombre_completo;
+      if (payload.email === '') payload.email = null;
+      if (payload.telefono === '') payload.telefono = null;
+
+      await api.put(`/docentes/${docenteSeleccionado.id}/`, payload);
       toast.success('Docente actualizado correctamente');
       setShowModal(false);
       cargarDocentes();
@@ -870,12 +924,45 @@ function ListaDocentes({ isDark }) {
       cargarDocentes();
       closeDeleteModal();
     } catch (err) {
-      console.error(err);
-      toast.error('Error al eliminar: ' + (err.response?.data?.detail || err.message));
+      console.error('Error al eliminar docente:', err);
+      
+      // Capturar mensaje de error espec+�fico del backend
+      let errorMessage = 'Error al eliminar el docente';
+      
+      if (err.response && err.response.data && err.response.data.error) {
+        // Backend devolvi+� un error espec+�fico
+        errorMessage = err.response.data.error;
+      } else if (err.response && err.response.data && err.response.data.detail) {
+        errorMessage = err.response.data.detail;
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      toast.error(errorMessage);
     }
   };
 
   const esAdmin = () => user?.is_superuser || user?.perfil?.rol === 'admin';
+  const docentesFiltrados = (() => {
+    let result = docentes;
+
+    if (selectedCarrera) {
+      result = result.filter((docente) => String(docente?.carrera_id || '') === String(selectedCarrera));
+    }
+
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase().trim();
+      result = result.filter((docente) => {
+        const nombre = `${docente.nombres || ''} ${docente.apellido_paterno || ''} ${docente.apellido_materno || ''}`
+          .toLowerCase()
+          .trim();
+        const ci = String(docente.ci || '').toLowerCase();
+        return nombre.includes(searchLower) || ci.includes(searchLower);
+      });
+    }
+
+    return result;
+  })();
 
   if (loading) {
     return (
@@ -908,30 +995,197 @@ function ListaDocentes({ isDark }) {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent">
-                👨 Docentes
+                Docentes
               </h1>
-              <p className="text-sm text-slate-700 dark:text-slate-400 mt-1">
-                Gestión del personal docente
+              <p className="text-sm text-slate-700 dark:text-slate-400 mt-1 italic">
+                Gestion del personal docente
               </p>
             </div>
             <div className="flex items-center gap-4">
+              <SearchInput value={searchTerm} onChange={setSearchTerm} />
+              <div className="w-48">
+                <SimpleDropdown
+                  value={selectedCarrera}
+                  onChange={setSelectedCarrera}
+                  options={carreras.map((c) => ({ value: c.id, label: c.nombre }))}
+                  placeholder="Carreras"
+                  clearOnToggle
+                />
+              </div>
               {esAdmin() && (
                 <button
-                  onClick={abrirModalCrear}
+                  onClick={handleToggleCreateForm}
                   className="px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center gap-2"
                 >
-                  <span>➕</span>
-                  Nuevo Docente
+                  <span>{isCreating ? '-' : '+'}</span>
+                  {isCreating ? 'Cancelar' : 'Nuevo Docente'}
                 </button>
               )}
             </div>
           </div>
         </div>
 
+        {/* MODAL DE CREACION DE DOCENTE */}
+        {isCreating && createPortal((
+          <div
+            className="fixed top-0 right-0 bottom-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in"
+            style={{ left: sidebarCollapsed ? '5rem' : '18rem' }}
+          >
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+              {/* Header */}
+              <div className="bg-[#2C4AAE] px-6 py-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                    Nuevo Docente
+                  </h2>
+                  {abrirDesdeUsuarios && (
+                    <span className="px-3 py-1.5 bg-white/20 backdrop-blur-sm rounded-lg text-xs font-semibold text-white flex items-center gap-2">
+                      Volviendo a Crear Usuario
+                    </span>
+                  )}
+                </div>
+              </div>
+              {/* Body */}
+              <form id="crear-docente-form" onSubmit={handleCreateSubmit} noValidate className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 dark:bg-slate-900">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <InputField
+                    label="Nombre completo"
+                    name="nombre_completo"
+                    value={formData.nombre_completo}
+                    onChange={handleChange}
+                    required
+                    error={errors.nombre_completo || errors.nombres || errors.apellido_paterno || errors.apellido_materno}
+                  />
+                  <InputField label="Cedula de Identidad (CI)" name="ci" value={formData.ci} onChange={handleChange} required error={errors.ci} />
+                  <SelectConDropdown
+                    label="Carrera"
+                    name="carrera"
+                    value={formData.carrera}
+                    onChange={handleChange}
+                    options={carreras.map((c) => ({ value: c.id, label: c.nombre }))}
+                    error={errors.carrera}
+                  />
+                  <FechaIngresoPicker
+                    value={formData.fecha_ingreso}
+                    onChange={(val) => setFormData(prev => ({ ...prev, fecha_ingreso: val }))}
+                    error={errors.fecha_ingreso}
+                  />
+                  <InputField label="Email" name="email" type="email" value={formData.email} onChange={handleChange} error={errors.email} />
+                  <InputField label="Telefono" name="telefono" value={formData.telefono} onChange={handleChange} error={errors.telefono} />
+                  <SelectConDropdown
+                    label="Categoria"
+                    name="categoria"
+                    value={formData.categoria}
+                    onChange={handleChange}
+                    options={[
+                      { value: 'catedratico', label: 'Catedratico' },
+                      { value: 'adjunto', label: 'Adjunto' },
+                      { value: 'asistente', label: 'Asistente' },
+                    ]}
+                    error={errors.categoria}
+                  />
+                  <SelectConDropdown
+                    label="Dedicacion"
+                    name="dedicacion"
+                    value={formData.dedicacion}
+                    onChange={handleChange}
+                    options={[
+                      { value: 'tiempo_completo', label: 'Tiempo Completo' },
+                      { value: 'medio_tiempo', label: 'Medio Tiempo' },
+                      { value: 'horario', label: 'Horario' },
+                    ]}
+                    error={errors.dedicacion}
+                  />
+                  <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-[minmax(0,380px)_1fr] gap-4 items-start">
+                    {formData.dedicacion === 'horario' ? (
+                      <InputField
+                        label="Horas / Semana"
+                        name="horas_contrato_semanales"
+                        type="number"
+                        value={formData.horas_contrato_semanales || ''}
+                        onChange={handleChange}
+                        required={Boolean(formData.dedicacion)}
+                        error={errors.horas_contrato_semanales}
+                      />
+                    ) : (
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Horas / Semana</label>
+                        <div className="w-full px-3 py-2.5 rounded-xl border-2 bg-gradient-to-r from-slate-100 to-slate-50 dark:from-slate-700 dark:to-slate-700/50 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600 flex items-center justify-between min-h-[46px]">
+                          <span className="font-bold text-lg text-slate-700 dark:text-slate-300">
+                            {formData.dedicacion === 'tiempo_completo' ? 40 : formData.dedicacion === 'medio_tiempo' ? 20 : ''}
+                          </span>
+                          <span className="text-xs text-slate-400 dark:text-slate-500">hrs</span>
+                        </div>
+                      </div>
+                    )}
+
+                    <div
+                      className={`rounded-xl border-l-4 p-3.5 shadow-sm min-h-[92px] transition-opacity ${
+                        formData.dedicacion
+                          ? `${dedicacionStyles[formData.dedicacion]?.bg} ${dedicacionStyles[formData.dedicacion]?.border} opacity-100`
+                          : 'bg-transparent border-transparent opacity-0'
+                      }`}
+                    >
+                      {formData.dedicacion && (
+                        <div className="flex items-start gap-3">
+                          <InfoIcon className={`w-5 h-5 flex-shrink-0 mt-0.5 ${dedicacionStyles[formData.dedicacion]?.icon}`} />
+                          <div>
+                            <h5 className={`text-sm font-semibold ${dedicacionStyles[formData.dedicacion]?.title}`}>Informacion sobre Dedicacion</h5>
+                            <p className={`text-xs leading-5 mt-1 ${dedicacionStyles[formData.dedicacion]?.text}`}>
+                              {formData.dedicacion === 'tiempo_completo' && 'La dedicacion a Tiempo Completo implica un total de 40 horas semanales.'}
+                              {formData.dedicacion === 'medio_tiempo' && 'La dedicacion a Medio Tiempo implica un total de 20 horas semanales.'}
+                              {formData.dedicacion === 'horario' && 'Para la dedicacion por Horario, debe especificar el numero de horas semanales segun el contrato.'}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </form>
+              {/* Footer */}
+              <div className="px-6 py-4 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (abrirDesdeUsuarios) {
+                      // Volver a usuarios si venimos desde alli
+                      // Los datos se recuperaran automaticamente en GestionUsuarios
+                      navigate('/usuarios');
+                    } else {
+                      setIsCreating(false);
+                    }
+                  }}
+                  className="px-6 py-2.5 rounded-xl font-bold text-slate-700 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 transition-all"
+                >
+                  {abrirDesdeUsuarios ? 'Cancelar y volver' : 'Cancelar'}
+                </button>
+                <button
+                  type="submit"
+                  form="crear-docente-form"
+                  disabled={isSubmitting}
+                  className="px-6 py-2.5 rounded-xl font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg hover:shadow-xl transition-all flex items-center gap-2 disabled:opacity-50"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      {abrirDesdeUsuarios ? 'Guardando y volviendo...' : 'Guardando...'}
+                    </>
+                  ) : (
+                    <>
+                      {abrirDesdeUsuarios ? 'Guardar y volver a Usuario' : 'Guardar'}
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        ), document.body)}
+
         {/* Lista de docentes */}
-        {docentes.length > 0 ? (
+        {docentesFiltrados.length > 0 ? (
           <div className="space-y-4">
-            {docentes.map((docente) => (
+            {docentesFiltrados.map((docente) => (
               <div
                 key={docente.id}
                 className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-md hover:shadow-xl transition-all duration-200 hover:scale-[1.01]"
@@ -947,38 +1201,55 @@ function ListaDocentes({ isDark }) {
                         <h3 className="text-lg font-bold text-blue-600 dark:text-white truncate">
                           {docente.nombres} {docente.apellido_paterno} {docente.apellido_materno}
                         </h3>
+                        {!docente.usuario_id && (
+                          <button
+                            type="button"
+                            onClick={() => handleCrearCuentaParaDocente(docente)}
+                            className="mt-1 text-sm font-semibold text-red-600 transition-colors hover:text-red-700 hover:underline dark:text-red-400 dark:hover:text-red-300"
+                          >
+                            <span className="inline-flex items-center gap-1">
+                              <FaExclamationTriangle className="text-amber-500" size={12} />
+                              Sin Cuenta
+                            </span>
+                          </button>
+                        )}
                         <div className="flex flex-wrap items-center gap-2 mt-2">
                           <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-slate-50 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border-2 border-slate-300 dark:border-slate-600 shadow-sm">
-                            🆔 CI: {docente.ci}
+                            CI: {docente.ci}
                           </span>
+                          {docente.carrera_nombre && (
+                            <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 border-2 border-violet-300 dark:border-violet-700 shadow-sm">
+                              Carrera: {docente.carrera_nombre}
+                            </span>
+                          )}
                           <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-2 border-blue-300 dark:border-blue-700 shadow-sm">
-                            {docente.categoria === 'catedratico' ? '👨‍🏫 Catedrático' :
-                              docente.categoria === 'adjunto' ? '👔 Adjunto' : '🎓 Asistente'}
+                            {docente.categoria === 'catedratico' ? 'Catedratico' :
+                              docente.categoria === 'adjunto' ? 'Adjunto' : 'Asistente'}
                           </span>
                           <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-2 border-green-300 dark:border-green-700 shadow-sm">
-                            {docente.dedicacion === 'tiempo_completo' ? '⏰ Tiempo Completo' :
-                              docente.dedicacion === 'horario' ? '🕐 Horario' : '⏳ Medio Tiempo'}
+                            {docente.dedicacion === 'tiempo_completo' ? 'Tiempo Completo' :
+                              docente.dedicacion === 'horario' ? 'Horario' : 'Medio Tiempo'}
                           </span>
                         </div>
                       </div>
                     </div>
 
-                    {/* Botones de acción - Solo admin */}
+                    {/* Botones de acci+�n - Solo admin */}
                     {esAdmin() && (
-                      <div className="flex gap-2">
+                      <div className="flex gap-3">
                         <button
                           onClick={() => abrirModalEditar(docente)}
-                          className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 text-white text-sm font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105"
+                          className="text-blue-500 hover:text-blue-400 dark:text-blue-400 dark:hover:text-blue-300 transition-all duration-200 hover:scale-110"
+                          title="Editar"
                         >
-                          <PencilIcon className="w-4 h-4" />
-                          <span>Editar</span>
+                          <FaEdit size={18} />
                         </button>
                         <button
                           onClick={() => eliminarDocente(docente)}
-                          className="flex items-center justify-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 dark:bg-amber-700 dark:hover:bg-amber-800 text-white text-sm font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105"
+                          className="text-red-500 hover:text-red-400 dark:text-red-400 dark:hover:text-red-300 transition-all duration-200 hover:scale-110"
+                          title="Eliminar"
                         >
-                          <TrashIcon className="w-4 h-4" />
-                          <span>Eliminar</span>
+                          <FaTrash size={18} />
                         </button>
                       </div>
                     )}
@@ -990,20 +1261,20 @@ function ListaDocentes({ isDark }) {
         ) : (
           <div className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 p-12 text-center shadow-md">
             <div className="w-20 h-20 rounded-full bg-slate-50 dark:bg-slate-700 border-2 border-slate-300 dark:border-slate-600 flex items-center justify-center mx-auto mb-4">
-              <span className="text-5xl">👨‍🏫</span>
+              <span className="text-2xl font-bold text-slate-500 dark:text-slate-300">DOC</span>
             </div>
             <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-2">
-              No hay docentes registrados
+              {docentes.length > 0 ? 'No hay docentes que coincidan' : 'No hay docentes registrados'}
             </h3>
             <p className="text-slate-600 dark:text-slate-400 mb-6">
-              Comienza agregando tu primer docente
+              {docentes.length > 0 ? 'Prueba otro nombre, C.I. o carrera' : 'Comienza agregando tu primer docente'}
             </p>
             {esAdmin() && (
               <button
-                onClick={abrirModalCrear}
+                onClick={handleToggleCreateForm}
                 className="inline-flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105"
               >
-                <span>➕</span>
+                <span>+</span>
                 Crear Primer Docente
               </button>
             )}
@@ -1012,146 +1283,190 @@ function ListaDocentes({ isDark }) {
       </div>
 
       {/* Modal Crear/Editar */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in" style={{ animationDuration: '160ms' }}>
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xl max-w-3xl w-full max-h-[98vh] md:max-h-[95vh] overflow-visible animate-slide-up" style={{ animationDuration: '180ms' }}>
-            {/* Header Modal */}
-            <div className="px-6 py-4 border-b border-[#7F97E8]/45 bg-[#2C4AAE] rounded-t-2xl">
-              <h3 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-                {docenteSeleccionado ? '✏️ Editar Docente' : '➕ Nuevo Docente'}
-              </h3>
+      {showModal && docenteSeleccionado && createPortal((
+        <div
+          className="fixed top-0 right-0 bottom-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in"
+          style={{ left: sidebarCollapsed ? '5rem' : '18rem' }}
+        >
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="bg-[#2C4AAE] px-6 py-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  Editar Docente
+                </h2>
+              </div>
             </div>
 
-            {/* Formulario */}
-            <form onSubmit={docenteSeleccionado ? handleUpdateSubmit : handleCreateSubmit} className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
-                <div className="md:col-span-2">
-                  <InputField label="Nombres" name="nombres" value={formData.nombres} onChange={handleChange} required error={errors.nombres} />
-                </div>
-                <InputField label="Apellido Paterno" name="apellido_paterno" value={formData.apellido_paterno} onChange={handleChange} required error={errors.apellido_paterno} />
-                <InputField label="Apellido Materno" name="apellido_materno" value={formData.apellido_materno} onChange={handleChange} error={errors.apellido_materno} />
-                <InputField label="Cédula de Identidad (CI)" name="ci" value={formData.ci} onChange={handleChange} required error={errors.ci} />
-                <div>
-                  <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Categoría</label>
-                  <CustomSelect
-                    value={formData.categoria}
-                    options={categoriaOptions}
-                    onChange={(selectedValue) => handleSelectFieldChange('categoria', selectedValue)}
-                    placeholder="Seleccione categoría"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Dedicación</label>
-                  <CustomSelect
-                    value={formData.dedicacion}
-                    options={dedicacionOptions}
-                    onChange={(selectedValue) => handleSelectFieldChange('dedicacion', selectedValue)}
-                    placeholder="Seleccione dedicación"
-                  />
-                </div>
-                {formData.dedicacion === 'horario' ? (
-                  <InputField
-                    label="Horas Semanales por Contrato"
-                    name="horas_contrato_semanales"
-                    type="number"
-                    value={formData.horas_contrato_semanales || ''}
-                    onChange={handleChange}
-                    required
-                    error={errors.horas_contrato_semanales}
-                    placeholder="Ej: 8, 12, 16"
-                  />
-                ) : (
-                  <div>
-                    <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Horas Semanales Requeridas</label>
-                    <input
-                      type="number"
-                      value={formData.dedicacion === 'tiempo_completo' ? 40 : 20}
-                      disabled
-                      className="w-full px-4 py-2.5 rounded-xl border-2 bg-slate-100 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600"
-                    />
-                  </div>
-                )}
-                <DateIngresoField
+            {/* Body */}
+            <form id="editar-docente-form" onSubmit={handleUpdateSubmit} className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 dark:bg-slate-900">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <InputField
+                  label="Nombre completo"
+                  name="nombre_completo"
+                  value={formData.nombre_completo}
+                  onChange={handleChange}
+                  required
+                  error={errors.nombre_completo || errors.nombres || errors.apellido_paterno || errors.apellido_materno}
+                />
+                <InputField label="Cedula de Identidad (CI)" name="ci" value={formData.ci} onChange={handleChange} required error={errors.ci} />
+                <SelectConDropdown
+                  label="Carrera"
+                  name="carrera"
+                  value={formData.carrera}
+                  onChange={handleChange}
+                  options={carreras.map((c) => ({ value: c.id, label: c.nombre }))}
+                  error={errors.carrera}
+                />
+                <FechaIngresoPicker
                   value={formData.fecha_ingreso}
-                  onChange={(dateValue) => setFormData((prev) => ({ ...prev, fecha_ingreso: dateValue }))}
+                  onChange={(val) => setFormData((prev) => ({ ...prev, fecha_ingreso: val }))}
                   error={errors.fecha_ingreso}
                 />
                 <InputField label="Email" name="email" type="email" value={formData.email} onChange={handleChange} error={errors.email} />
-                <div>
-                  <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Teléfono</label>
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                    <input
-                      type="text"
-                      name="telefono"
-                      value={formData.telefono}
+                <InputField label="Telefono" name="telefono" value={formData.telefono} onChange={handleChange} error={errors.telefono} />
+                <SelectConDropdown
+                  label="Categoria"
+                  name="categoria"
+                  value={formData.categoria}
+                  onChange={handleChange}
+                  options={[
+                    { value: 'catedratico', label: 'Catedratico' },
+                    { value: 'adjunto', label: 'Adjunto' },
+                    { value: 'asistente', label: 'Asistente' },
+                  ]}
+                  error={errors.categoria}
+                />
+                <SelectConDropdown
+                  label="Dedicacion"
+                  name="dedicacion"
+                  value={formData.dedicacion}
+                  onChange={handleChange}
+                  options={[
+                    { value: 'tiempo_completo', label: 'Tiempo Completo' },
+                    { value: 'medio_tiempo', label: 'Medio Tiempo' },
+                    { value: 'horario', label: 'Horario' },
+                  ]}
+                  error={errors.dedicacion}
+                />
+                <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-[minmax(0,380px)_1fr] gap-4 items-start">
+                  {formData.dedicacion === 'horario' ? (
+                    <InputField
+                      label="Horas / Semana"
+                      name="horas_contrato_semanales"
+                      type="number"
+                      value={formData.horas_contrato_semanales || ''}
                       onChange={handleChange}
-                      className={`w-full px-4 py-2.5 rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md ${errors.telefono ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'}`}
+                      required={Boolean(formData.dedicacion)}
+                      error={errors.horas_contrato_semanales}
                     />
-                    <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/30 px-3 py-2 w-full sm:w-auto sm:min-w-[190px]">
-                      <span className="text-sm font-medium text-slate-800 dark:text-slate-300 whitespace-nowrap">Docente activo</span>
-                      <ToggleSwitch isActive={Boolean(formData.activo)} onChange={handleActivoSwitchChange} />
+                  ) : (
+                    <div>
+                      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Horas / Semana</label>
+                      <div className="w-full px-3 py-2.5 rounded-xl border-2 bg-gradient-to-r from-slate-100 to-slate-50 dark:from-slate-700 dark:to-slate-700/50 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600 flex items-center justify-between min-h-[46px]">
+                        <span className="font-bold text-lg text-slate-700 dark:text-slate-300">
+                          {formData.dedicacion === 'tiempo_completo' ? 40 : formData.dedicacion === 'medio_tiempo' ? 20 : ''}
+                        </span>
+                        <span className="text-xs text-slate-400 dark:text-slate-500">hrs</span>
+                      </div>
                     </div>
+                  )}
+
+                  <div
+                    className={`rounded-xl border-l-4 p-3.5 shadow-sm min-h-[92px] transition-opacity ${
+                      formData.dedicacion
+                        ? `${dedicacionStyles[formData.dedicacion]?.bg} ${dedicacionStyles[formData.dedicacion]?.border} opacity-100`
+                        : 'bg-transparent border-transparent opacity-0'
+                    }`}
+                  >
+                    {formData.dedicacion && (
+                      <div className="flex items-start gap-3">
+                        <InfoIcon className={`w-5 h-5 flex-shrink-0 mt-0.5 ${dedicacionStyles[formData.dedicacion]?.icon}`} />
+                        <div>
+                          <h5 className={`text-sm font-semibold ${dedicacionStyles[formData.dedicacion]?.title}`}>Informacion sobre Dedicacion</h5>
+                          <p className={`text-xs leading-5 mt-1 ${dedicacionStyles[formData.dedicacion]?.text}`}>
+                            {formData.dedicacion === 'tiempo_completo' && 'La dedicacion a Tiempo Completo implica un total de 40 horas semanales.'}
+                            {formData.dedicacion === 'medio_tiempo' && 'La dedicacion a Medio Tiempo implica un total de 20 horas semanales.'}
+                            {formData.dedicacion === 'horario' && 'Para la dedicacion por Horario, debe especificar el numero de horas semanales segun el contrato.'}
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  {errors.telefono && <p className="text-xs text-red-600 mt-1">{errors.telefono}</p>}
                 </div>
               </div>
 
-              <div className={`mt-6 p-4 rounded-xl ${dedicacionStyles[formData.dedicacion]?.bg} border-l-4 ${dedicacionStyles[formData.dedicacion]?.border} shadow-sm`}>
-                <div className="flex items-start gap-3">
-                  <InfoIcon className={`w-6 h-6 ${dedicacionStyles[formData.dedicacion]?.icon} flex-shrink-0 mt-0.5`} />
-                  <div>
-                    <h5 className={`font-semibold ${dedicacionStyles[formData.dedicacion]?.title}`}>Información sobre Dedicación</h5>
-                    <p className={`text-sm ${dedicacionStyles[formData.dedicacion]?.text} mt-1`}>
-                      {formData.dedicacion === 'tiempo_completo' && 'La dedicación a Tiempo Completo implica un total de 40 horas semanales.'}
-                      {formData.dedicacion === 'medio_tiempo' && 'La dedicación a Medio Tiempo implica un total de 20 horas semanales.'}
-                      {formData.dedicacion === 'horario' && 'Para la dedicación por Horario, debe especificar el número de horas semanales según el contrato.'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Botones */}
-              <div className="mt-6 pt-4 border-t-2 border-slate-300 dark:border-slate-700 flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="flex-1 px-4 py-2.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-xl font-semibold transition-all duration-200 border-2 border-slate-300 dark:border-slate-600 shadow-sm hover:shadow-md hover:scale-105"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-semibold transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105"
-                >
-                  {docenteSeleccionado ? '💾 Actualizar' : '✅ Crear Docente'}
-                </button>
+              <div className="bg-slate-50 dark:bg-slate-700/30 rounded-xl p-3 border-2 border-slate-300 dark:border-slate-600">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    name="activo"
+                    checked={formData.activo}
+                    onChange={handleChange}
+                    className="w-4 h-4 rounded border-2 border-slate-300 dark:border-slate-600"
+                  />
+                  <span className="text-sm font-medium text-slate-800 dark:text-slate-300">
+                    Docente activo
+                  </span>
+                </label>
               </div>
             </form>
+
+            {/* Footer */}
+            <div className="px-6 py-4 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="px-6 py-2.5 rounded-xl font-bold text-slate-700 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 transition-all"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                form="editar-docente-form"
+                disabled={isSubmitting}
+                className="px-6 py-2.5 rounded-xl font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg hover:shadow-xl transition-all flex items-center gap-2 disabled:opacity-50"
+              >
+                {isSubmitting ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    Actualizando...
+                  </>
+                ) : (
+                  <>
+                    Actualizar
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
-      )}
+      ), document.body)}
 
-      {/* Modal de Confirmación de Eliminación */}
-      {showDeleteModal && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+      {/* Modal de Confirmacion de Eliminacion */}
+      {showDeleteModal && createPortal((
+        <div
+          className="fixed top-0 right-0 bottom-0 z-[70] flex items-center justify-center p-4"
+          style={{ left: sidebarCollapsed ? '5rem' : '18rem' }}
+        >
           <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px]" onClick={closeDeleteModal} />
           <div className="relative w-full max-w-lg rounded-2xl border border-red-600/80 dark:border-red-700/50 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden animate-slide-up" style={{ animationDuration: '160ms' }}>
             <div className="px-5 py-4 border-b border-red-400 dark:border-slate-700/70 bg-gradient-to-r from-red-400 via-red-200 to-red-50 dark:from-red-900/30 dark:via-slate-900 dark:to-slate-900">
               <h4 className="text-lg font-bold text-red-900 dark:text-red-300 flex items-center gap-2">
-                <span>🗑️</span>
-                Confirmar Eliminación
+                <span>!</span>
+                Confirmar Eliminacion
               </h4>
             </div>
             <div className="px-5 py-4 space-y-3 text-slate-700 dark:text-slate-200">
               <p className="text-sm leading-relaxed">
-                Se eliminará el docente <strong className="text-slate-900 dark:text-white">{docenteToDelete?.nombre_completo}</strong> del sistema de forma permanente.
+                Se eliminara el docente <strong className="text-slate-900 dark:text-white">{docenteToDelete?.nombre_completo}</strong> del sistema de forma permanente.
               </p>
               <div className="rounded-lg border border-red-700/70 bg-red-200/70 dark:bg-red-500/10 px-3 py-2 text-sm text-red-900 dark:text-red-200">
-                Acción irreversible: <strong className="text-red-900 dark:text-red-300">El docente perderá su acceso definitivamente.</strong>
+                Accion irreversible: <strong className="text-red-900 dark:text-red-300">El docente perdera su acceso definitivamente.</strong>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
-                  Escribe el nombre exacto del docente para habilitar la eliminación:
+                  Escribe el nombre exacto del docente para habilitar la eliminacion:
                 </label>
                 <input
                   type="text"
@@ -1162,7 +1477,7 @@ function ListaDocentes({ isDark }) {
                 />
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Esta operación no se puede deshacer.
+                Esta operacion no se puede deshacer.
               </p>
             </div>
             <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-700/70 flex justify-end gap-3 bg-slate-50 dark:bg-slate-950/70">
@@ -1179,12 +1494,12 @@ function ListaDocentes({ isDark }) {
                 disabled={deleteConfirmText !== (docenteToDelete?.nombre_completo || '')}
                 className="px-4 py-2 rounded-lg font-bold text-white bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800 disabled:bg-red-900/40 disabled:text-slate-300 disabled:cursor-not-allowed"
               >
-                🗑️ Eliminar
+                Eliminar
               </button>
             </div>
           </div>
         </div>
-      )}
+      ), document.body)}
     </div>
   );
 }

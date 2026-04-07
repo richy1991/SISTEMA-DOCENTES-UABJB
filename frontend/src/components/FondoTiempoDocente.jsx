@@ -83,6 +83,13 @@ const FondoTiempoDocente = ({ isDark }) => {
         );
     }
 
+    // 🔒 PROTECCIÓN: Datos seguros con optional chaining
+    const nombreCompleto = `${docente?.nombres || ''} ${docente?.apellido_paterno || ''} ${docente?.apellido_materno || ''}`.trim();
+    const iniciales = getInitials(nombreCompleto);
+    const ci = docente?.ci || 'N/A';
+    const categoria = docente?.categoria || 'N/A';
+    const dedicacion = docente?.dedicacion || 'N/A';
+
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
             {/* Header Compacto y Moderno */}
@@ -91,28 +98,28 @@ const FondoTiempoDocente = ({ isDark }) => {
                     <div className="flex flex-col sm:flex-row items-center justify-between py-4 gap-4">
                         {/* Info Docente + Botón Volver */}
                         <div className="flex items-center gap-4 w-full sm:w-auto">
-                            <button 
+                            <button
                                 onClick={() => navigate(-1)}
                                 className="p-2 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
                                 title="Volver"
                             >
                                 <ArrowLeftIcon className="w-5 h-5" />
                             </button>
-                            
+
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm shadow-md">
-                                    {getInitials(docente.nombres + ' ' + docente.apellido_paterno)}
+                                    {iniciales}
                                 </div>
                                 <div>
                                     <h1 className="text-lg font-bold text-slate-800 dark:text-white leading-tight">
-                                        {docente.nombres} {docente.apellido_paterno} {docente.apellido_materno}
+                                        {nombreCompleto || 'Sin nombre'}
                                     </h1>
                                     <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                                        <span className="font-medium">{docente.ci}</span>
+                                        <span className="font-medium">{ci}</span>
                                         <span>•</span>
-                                        <span className="capitalize">{docente.categoria}</span>
+                                        <span className="capitalize">{categoria}</span>
                                         <span>•</span>
-                                        <span className="capitalize">{docente.dedicacion?.replace('_', ' ')}</span>
+                                        <span className="capitalize">{dedicacion?.replace('_', ' ') || 'N/A'}</span>
                                     </div>
                                 </div>
                             </div>
@@ -121,7 +128,7 @@ const FondoTiempoDocente = ({ isDark }) => {
                         {/* Botón Acción */}
                         {user?.perfil?.rol !== 'docente' && (
                             <button
-                                onClick={() => navigate('/fondo-tiempo/nuevo-fondo', { state: { docenteId: docente.id, docenteNombre: docente.nombre_completo || docente.nombres } })}
+                                onClick={() => navigate('/fondo-tiempo/nuevo-fondo', { state: { docenteId: docente?.id, docenteNombre: nombreCompleto || 'Sin nombre' } })}
                                 className="w-full sm:w-auto px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2"
                             >
                                 <PlusIcon className="w-5 h-5" />
