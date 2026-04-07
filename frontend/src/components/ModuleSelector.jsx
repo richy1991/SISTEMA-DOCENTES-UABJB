@@ -221,7 +221,7 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
                             title="Cerrar Sesión"
                         >
                             <LogoutIcon />
-                            <span className="hidden sm:inline">Salir</span>
+                            <span className="hidden sm:inline">Serrar Secion</span>
                         </button>
                     </div>
                 </header>
