@@ -11,7 +11,7 @@ backend/*.pyc
 backend/venv/
 
 # Database
-# backend/db.sqlite3  # base de datos de desarrollo — rastreada intencionalmente
+backend/db.sqlite3
 backend/backups/
 backend/db_corrupt_*.sqlite3
 

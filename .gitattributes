@@ -28,3 +28,8 @@
 
 # Markdown
 *.md text eol=lf working-tree-encoding=UTF-8
+
+# Databases and other binary files (never normalize line endings/encoding)
+*.sqlite3 binary -text -eol -working-tree-encoding
+*.sqlite binary -text -eol -working-tree-encoding
+*.db binary -text -eol -working-tree-encoding
