@@ -6,6 +6,23 @@ import { getDocentes } from '../apis/api';
 import api from '../apis/api';
 import toast from 'react-hot-toast';
 
+const getBackendErrorMessage = (apiErrors, fallback = 'Ocurrió un error inesperado.') => {
+  if (!apiErrors) return fallback;
+
+  if (typeof apiErrors === 'string') {
+    return apiErrors.includes('<!DOCTYPE') ? fallback : apiErrors;
+  }
+
+  if (typeof apiErrors.error === 'string' && apiErrors.error.trim()) return apiErrors.error;
+  if (typeof apiErrors.detail === 'string' && apiErrors.detail.trim()) return apiErrors.detail;
+
+  const nested = Object.values(apiErrors)
+    .flatMap((value) => Array.isArray(value) ? value : [value])
+    .find((value) => typeof value === 'string' && value.trim() && !value.includes('<!DOCTYPE'));
+
+  return nested || fallback;
+};
+
 // ============================================================================
 // COMPONENTE INTERNO: FechaIngresoPicker (Calendario personalizado)
 // ============================================================================
@@ -315,7 +332,7 @@ function FechaIngresoPicker({ value, onChange, error }) {
 }
 
 // Componente Select con dise+�o personalizado (mismo estilo que FechaIngresoPicker)
-const SelectConDropdown = ({ label, value, onChange, options, error, name }) => {
+const SelectConDropdown = ({ label, value, onChange, options, error, name, disabled = false }) => {
   const [open, setOpen] = useState(false);
   const containerRef = React.useRef(null);
 
@@ -333,10 +350,11 @@ const SelectConDropdown = ({ label, value, onChange, options, error, name }) => 
     };
   }, [open]);
 
-  const selectedLabel = value && options.find(opt => opt.value === value)?.label;
+  const selectedLabel = value && options.find(opt => String(opt.value) === String(value))?.label;
   const displayLabel = selectedLabel || 'Seleccione...';
 
   const handleSelect = (optionValue) => {
+    if (disabled) return;
     onChange({ target: { name, value: optionValue } });
     setOpen(false);
   };
@@ -346,18 +364,30 @@ const SelectConDropdown = ({ label, value, onChange, options, error, name }) => 
       <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label}</label>
       
       {/* Bot+�n principal */}
-      <div className={`relative w-full rounded-xl border-2 bg-slate-50 dark:bg-slate-700 shadow-sm ${error ? 'border-red-500' : open ? 'border-[#3A56AF] dark:border-[#3A56AF]' : 'border-slate-300 dark:border-slate-600'}`}>
+      <div className={`relative w-full rounded-xl border-2 bg-slate-50 dark:bg-slate-700 shadow-sm ${disabled ? 'opacity-70' : ''} ${error ? 'border-red-500' : open ? 'border-[#3A56AF] dark:border-[#3A56AF]' : 'border-slate-300 dark:border-slate-600'}`}>
         <button
           type="button"
-          onClick={() => setOpen((prev) => !prev)}
-          className="w-full text-left px-4 py-2.5 rounded-xl bg-transparent text-slate-800 dark:text-white flex items-center justify-between gap-2"
+          onClick={() => {
+            if (disabled) return;
+            setOpen((prev) => !prev);
+          }}
+          disabled={disabled}
+          className={`w-full text-left px-4 py-2.5 rounded-xl bg-transparent text-slate-800 dark:text-white flex items-center justify-between gap-2 ${disabled ? 'cursor-not-allowed' : ''}`}
         >
           <span className={`truncate ${!value ? 'text-slate-400 dark:text-slate-500' : ''}`}>{displayLabel}</span>
-          <span className="flex items-center justify-center h-6 w-6 rounded-md bg-[#2C4AAE] ring-1 ring-[#2C4AAE]">
-            <svg className={`w-3.5 h-3.5 text-white transition-transform duration-200 ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
-            </svg>
-          </span>
+          {!disabled ? (
+            <span className="flex items-center justify-center h-6 w-6 rounded-md bg-[#2C4AAE] ring-1 ring-[#2C4AAE]">
+              <svg className={`w-3.5 h-3.5 text-white transition-transform duration-200 ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+              </svg>
+            </span>
+          ) : (
+            <span className="flex items-center justify-center h-6 w-6 rounded-md bg-slate-500 ring-1 ring-slate-500">
+              <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 10V7a4 4 0 00-8 0v3m-2 0h12a1 1 0 011 1v8a1 1 0 01-1 1H6a1 1 0 01-1-1v-8a1 1 0 011-1z" />
+              </svg>
+            </span>
+          )}
         </button>
       </div>
 
@@ -394,7 +424,7 @@ const InfoIcon = (props) => (
   </svg>
 );
 
-const InputField = ({ label, name, type = 'text', value, onChange, required, error }) => (
+const InputField = ({ label, name, type = 'text', value, onChange, required, error, disabled = false, readOnly = false }) => (
   <div>
     <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label} {required && <span className="text-red-500">*</span>}</label>
     <input
@@ -403,7 +433,9 @@ const InputField = ({ label, name, type = 'text', value, onChange, required, err
       value={value}
       onChange={onChange}
       required={required}
-      className={`w-full px-4 py-2.5 rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md ${error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'}`}
+      disabled={disabled}
+      readOnly={readOnly}
+      className={`w-full px-4 py-2.5 rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md ${disabled ? 'cursor-not-allowed opacity-80' : ''} ${error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'}`}
     />
     {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
   </div>
@@ -638,6 +670,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
   // State for inline creation form
   const [isCreating, setIsCreating] = useState(false);
   const [abrirDesdeUsuarios, setAbrirDesdeUsuarios] = useState(false);
+  const [flujoDesdeUsuarios, setFlujoDesdeUsuarios] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCarrera, setSelectedCarrera] = useState('');
 
@@ -649,6 +682,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
     // ���� Detectar si venimos desde "Crear Usuario" para abrir modal
     const abrirModal = sessionStorage.getItem('abrirModalDesdeUsuarios');
     if (abrirModal === 'true') {
+      const flujo = sessionStorage.getItem('flujoDocenteDesdeUsuarios') || null;
       const datosDocenteGuardados = sessionStorage.getItem('datosCrearDocente');
       if (datosDocenteGuardados) {
         try {
@@ -667,6 +701,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
           console.error('Error al recuperar datos de docente:', e);
         }
       }
+      setFlujoDesdeUsuarios(flujo);
       setAbrirDesdeUsuarios(true);
       setIsCreating(true);
       sessionStorage.removeItem('abrirModalDesdeUsuarios');
@@ -721,6 +756,10 @@ function ListaDocentes({ sidebarCollapsed = false }) {
 
   const handleToggleCreateForm = () => {
     setIsCreating(!isCreating);
+    if (isCreating) {
+      setAbrirDesdeUsuarios(false);
+      setFlujoDesdeUsuarios(null);
+    }
   };
 
   const abrirModalEditar = (docente) => {
@@ -769,15 +808,25 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       }
       if (isCreating && abrirDesdeUsuarios) {
         sessionStorage.setItem('datosCrearDocente', JSON.stringify({
+          nombre_completo: newState.nombre_completo,
           nombres: newState.nombres,
           apellido_paterno: newState.apellido_paterno,
           apellido_materno: newState.apellido_materno,
-          email: newState.email,
+          ci: newState.ci,
           telefono: newState.telefono,
           carrera: newState.carrera,
         }));
       }
       return newState;
+    });
+  };
+
+  const validarCiUnicoLocal = (ciValor, docenteIdExcluir = null) => {
+    const ciNormalizado = (ciValor || '').trim().toLowerCase();
+    if (!ciNormalizado) return false;
+    return docentes.some((docente) => {
+      if (docenteIdExcluir && docente.id === docenteIdExcluir) return false;
+      return String(docente.ci || '').trim().toLowerCase() === ciNormalizado;
     });
   };
 
@@ -794,27 +843,52 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       return;
     }
 
+    const ciNormalizado = (formData.ci || '').trim();
+    if (!ciNormalizado) {
+      setErrors((prev) => ({ ...prev, ci: ['El C.I. es obligatorio.'] }));
+      toast.error('El C.I. es obligatorio.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (validarCiUnicoLocal(ciNormalizado)) {
+      setErrors((prev) => ({ ...prev, ci: ['Ya existe un docente con este C.I.'] }));
+      toast.error('Ya existe un docente con este C.I.');
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
       const nombresSplit = splitNombreCompleto(formData.nombre_completo);
       const payload = { ...formData };
       payload.nombres = nombresSplit.nombres;
       payload.apellido_paterno = nombresSplit.apellido_paterno;
       payload.apellido_materno = nombresSplit.apellido_materno;
+      payload.ci = ciNormalizado;
       delete payload.nombre_completo;
       if (payload.email === '') payload.email = null;
       if (payload.telefono === '') payload.telefono = null;
-      
+
       console.log('Enviando payload:', payload);
       const response = await api.post('/docentes/', payload);
       console.log('Docente creado exitosamente');
       if (abrirDesdeUsuarios) {
         const docenteCreado = response?.data;
         if (docenteCreado?.id) {
+          const nombreCreado = [
+            docenteCreado?.nombres || payload.nombres || '',
+            docenteCreado?.apellido_paterno || payload.apellido_paterno || '',
+            docenteCreado?.apellido_materno || payload.apellido_materno || '',
+          ].filter(Boolean).join(' ').trim();
           sessionStorage.setItem('docenteRetornadoDesdeUsuarios', JSON.stringify({
             id: docenteCreado.id,
+            nombre_completo: nombreCreado,
             ci: docenteCreado.ci || payload.ci || '',
             carrera: formData.carrera || '',
           }));
+          // Este retorno pertenece al flujo "Crear Usuario" y no debe activar
+          // el modo de "vinculo rapido" (ese modo bloquea el selector y oculta el check).
+          sessionStorage.removeItem('vincularDocentePendiente');
         }
       }
 
@@ -837,8 +911,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       const apiErrors = err.response?.data;
       if (apiErrors) {
         setErrors(apiErrors);
-        const errorMsg = Object.values(apiErrors).flat().join(' ');
-        toast.error(`Error: ${errorMsg}`);
+        toast.error(getBackendErrorMessage(apiErrors, 'Error al crear el docente.'));
       } else {
         toast.error('Ocurri+� un error inesperado.');
       }
@@ -894,7 +967,13 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       cargarDocentes();
     } catch (err) {
       console.error(err);
-      toast.error('Error al actualizar: ' + (err.response?.data?.detail || err.message));
+      const apiErrors = err.response?.data;
+      if (apiErrors) {
+        setErrors(apiErrors);
+        toast.error(getBackendErrorMessage(apiErrors, 'Error al actualizar docente'));
+      } else {
+        toast.error('Error al actualizar: ' + (err.message || 'Error desconocido'));
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -938,11 +1017,12 @@ function ListaDocentes({ sidebarCollapsed = false }) {
         errorMessage = err.message;
       }
       
-      toast.error(errorMessage);
+      toast.error(getBackendErrorMessage(err.response?.data, errorMessage));
     }
   };
 
   const esAdmin = () => user?.is_superuser || user?.perfil?.rol === 'admin';
+  const docenteVinculadoAUsuario = Boolean(docenteSeleccionado?.usuario_id);
   const docentesFiltrados = (() => {
     let result = docentes;
 
@@ -1057,33 +1137,33 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                     error={errors.nombre_completo || errors.nombres || errors.apellido_paterno || errors.apellido_materno}
                   />
                   <InputField label="Cedula de Identidad (CI)" name="ci" value={formData.ci} onChange={handleChange} required error={errors.ci} />
-                  <SelectConDropdown
-                    label="Carrera"
-                    name="carrera"
-                    value={formData.carrera}
-                    onChange={handleChange}
-                    options={carreras.map((c) => ({ value: c.id, label: c.nombre }))}
-                    error={errors.carrera}
-                  />
+                  {abrirDesdeUsuarios && flujoDesdeUsuarios === 'crear_usuario' ? (
+                    <InputField
+                      label="Carrera"
+                      name="carrera_readonly"
+                      value={carreras.find((c) => String(c.id) === String(formData.carrera))?.nombre || ''}
+                      onChange={() => {}}
+                      required
+                      disabled
+                      error={errors.carrera}
+                    />
+                  ) : (
+                    <SelectConDropdown
+                      label="Carrera"
+                      name="carrera"
+                      value={formData.carrera}
+                      onChange={handleChange}
+                      options={carreras.map((c) => ({ value: c.id, label: c.nombre }))}
+                      error={errors.carrera}
+                      disabled={abrirDesdeUsuarios}
+                    />
+                  )}
                   <FechaIngresoPicker
                     value={formData.fecha_ingreso}
                     onChange={(val) => setFormData(prev => ({ ...prev, fecha_ingreso: val }))}
                     error={errors.fecha_ingreso}
                   />
-                  <InputField label="Email" name="email" type="email" value={formData.email} onChange={handleChange} error={errors.email} />
                   <InputField label="Telefono" name="telefono" value={formData.telefono} onChange={handleChange} error={errors.telefono} />
-                  <SelectConDropdown
-                    label="Categoria"
-                    name="categoria"
-                    value={formData.categoria}
-                    onChange={handleChange}
-                    options={[
-                      { value: 'catedratico', label: 'Catedratico' },
-                      { value: 'adjunto', label: 'Adjunto' },
-                      { value: 'asistente', label: 'Asistente' },
-                    ]}
-                    error={errors.categoria}
-                  />
                   <SelectConDropdown
                     label="Dedicacion"
                     name="dedicacion"
@@ -1096,7 +1176,19 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                     ]}
                     error={errors.dedicacion}
                   />
-                  <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-[minmax(0,380px)_1fr] gap-4 items-start">
+                  <SelectConDropdown
+                    label="Categoria"
+                    name="categoria"
+                    value={formData.categoria}
+                    onChange={handleChange}
+                    options={[
+                      { value: 'catedratico', label: 'Catedratico' },
+                      { value: 'adjunto', label: 'Adjunto' },
+                      { value: 'asistente', label: 'Asistente' },
+                    ]}
+                    error={errors.categoria}
+                  />
+                  <div>
                     {formData.dedicacion === 'horario' ? (
                       <InputField
                         label="Horas / Semana"
@@ -1118,7 +1210,9 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                         </div>
                       </div>
                     )}
+                  </div>
 
+                  <div className="md:col-span-2">
                     <div
                       className={`rounded-xl border-l-4 p-3.5 shadow-sm min-h-[92px] transition-opacity ${
                         formData.dedicacion
@@ -1154,6 +1248,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                       navigate('/fondo-tiempo/usuarios');
                     } else {
                       setIsCreating(false);
+                      setFlujoDesdeUsuarios(null);
                     }
                   }}
                   className="px-6 py-2.5 rounded-xl font-bold text-slate-700 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 transition-all"
@@ -1188,17 +1283,25 @@ function ListaDocentes({ sidebarCollapsed = false }) {
             {docentesFiltrados.map((docente) => (
               <div
                 key={docente.id}
-                className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-md hover:shadow-xl transition-all duration-200 hover:scale-[1.01]"
+                className={`rounded-2xl border-2 shadow-md hover:shadow-xl transition-all duration-200 hover:scale-[1.01] ${
+                  docente.activo
+                    ? 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700'
+                    : 'bg-red-50 dark:bg-red-900/15 border-red-400 dark:border-red-700'
+                }`}
               >
                 <div className="p-5">
                   <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                     {/* Info del docente */}
                     <div className="flex items-center gap-4 flex-1">
-                      <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center text-white font-bold shadow-md text-xl flex-shrink-0">
+                      <div className={`w-14 h-14 rounded-xl flex items-center justify-center text-white font-bold shadow-md text-xl flex-shrink-0 ${
+                        docente.activo
+                          ? 'bg-gradient-to-br from-blue-500 to-indigo-600'
+                          : 'bg-gradient-to-br from-red-500 to-rose-700'
+                      }`}>
                         {docente.nombres[0]}{docente.apellido_paterno[0]}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h3 className="text-lg font-bold text-blue-600 dark:text-white truncate">
+                        <h3 className={`text-lg font-bold truncate ${docente.activo ? 'text-blue-600 dark:text-white' : 'text-red-700 dark:text-red-300'}`}>
                           {docente.nombres} {docente.apellido_paterno} {docente.apellido_materno}
                         </h3>
                         {!docente.usuario_id && (
@@ -1222,14 +1325,22 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                               Carrera: {docente.carrera_nombre}
                             </span>
                           )}
-                          <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-2 border-blue-300 dark:border-blue-700 shadow-sm">
-                            {docente.categoria === 'catedratico' ? 'Catedratico' :
-                              docente.categoria === 'adjunto' ? 'Adjunto' : 'Asistente'}
-                          </span>
-                          <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-2 border-green-300 dark:border-green-700 shadow-sm">
-                            {docente.dedicacion === 'tiempo_completo' ? 'Tiempo Completo' :
-                              docente.dedicacion === 'horario' ? 'Horario' : 'Medio Tiempo'}
-                          </span>
+                          {docente.activo ? (
+                            <>
+                              <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-2 border-blue-300 dark:border-blue-700 shadow-sm">
+                                {docente.categoria === 'catedratico' ? 'Catedratico' :
+                                  docente.categoria === 'adjunto' ? 'Adjunto' : 'Asistente'}
+                              </span>
+                              <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-2 border-green-300 dark:border-green-700 shadow-sm">
+                                {docente.dedicacion === 'tiempo_completo' ? 'Tiempo Completo' :
+                                  docente.dedicacion === 'horario' ? 'Horario' : 'Medio Tiempo'}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-2 border-red-300 dark:border-red-700 shadow-sm">
+                              Docente inactivo
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1317,14 +1428,33 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                   onChange={handleChange}
                   options={carreras.map((c) => ({ value: c.id, label: c.nombre }))}
                   error={errors.carrera}
+                  disabled={docenteVinculadoAUsuario}
                 />
-                <FechaIngresoPicker
-                  value={formData.fecha_ingreso}
-                  onChange={(val) => setFormData((prev) => ({ ...prev, fecha_ingreso: val }))}
-                  error={errors.fecha_ingreso}
+                <div>
+                  <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Fecha de Ingreso</label>
+                  <div className="relative w-full rounded-xl border-2 bg-slate-50 dark:bg-slate-700 shadow-sm opacity-70 border-slate-300 dark:border-slate-600">
+                    <div className="w-full text-left px-4 py-2.5 rounded-xl bg-transparent text-slate-800 dark:text-white flex items-center justify-between gap-2 cursor-not-allowed">
+                      <span className="truncate">{formatDisplayDate(formData.fecha_ingreso) || formData.fecha_ingreso}</span>
+                      <span className="flex items-center justify-center h-6 w-6 rounded-md bg-slate-500 ring-1 ring-slate-500">
+                        <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 10V7a4 4 0 00-8 0v3m-2 0h12a1 1 0 011 1v8a1 1 0 01-1 1H6a1 1 0 01-1-1v-8a1 1 0 011-1z" />
+                        </svg>
+                      </span>
+                    </div>
+                  </div>
+                  {errors.fecha_ingreso && <p className="text-xs text-red-600 mt-1">{errors.fecha_ingreso}</p>}
+                </div>
+                <InputField
+                  label="Email"
+                  name="email"
+                  type="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  error={errors.email}
+                  readOnly
                 />
-                <InputField label="Email" name="email" type="email" value={formData.email} onChange={handleChange} error={errors.email} />
                 <InputField label="Telefono" name="telefono" value={formData.telefono} onChange={handleChange} error={errors.telefono} />
+
                 <SelectConDropdown
                   label="Categoria"
                   name="categoria"
@@ -1351,15 +1481,20 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                 />
                 <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-[minmax(0,380px)_1fr] gap-4 items-start">
                   {formData.dedicacion === 'horario' ? (
-                    <InputField
-                      label="Horas / Semana"
-                      name="horas_contrato_semanales"
-                      type="number"
-                      value={formData.horas_contrato_semanales || ''}
-                      onChange={handleChange}
-                      required={Boolean(formData.dedicacion)}
-                      error={errors.horas_contrato_semanales}
-                    />
+                    <div>
+                      <InputField
+                        label="Horas / Semana"
+                        name="horas_contrato_semanales"
+                        type="number"
+                        value={formData.horas_contrato_semanales || ''}
+                        onChange={handleChange}
+                        required={Boolean(formData.dedicacion)}
+                        error={errors.horas_contrato_semanales}
+                      />
+                      <p className="mt-1 text-xs font-semibold text-red-600 dark:text-red-400">
+                        Tiempo Horario: máximo 32 horas por semana.
+                      </p>
+                    </div>
                   ) : (
                     <div>
                       <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Horas / Semana</label>
@@ -1369,6 +1504,11 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                         </span>
                         <span className="text-xs text-slate-400 dark:text-slate-500">hrs</span>
                       </div>
+                      <p className="mt-1 text-xs font-semibold text-slate-600 dark:text-slate-400">
+                        {formData.dedicacion === 'tiempo_completo'
+                          ? 'Tiempo Completo: 40 horas fijas por semana.'
+                          : 'Medio Tiempo: 20 horas fijas por semana.'}
+                      </p>
                     </div>
                   )}
 
@@ -1396,17 +1536,37 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                 </div>
               </div>
 
-              <div className="bg-slate-50 dark:bg-slate-700/30 rounded-xl p-3 border-2 border-slate-300 dark:border-slate-600">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    name="activo"
-                    checked={formData.activo}
-                    onChange={handleChange}
-                    className="w-4 h-4 rounded border-2 border-slate-300 dark:border-slate-600"
-                  />
-                  <span className="text-sm font-medium text-slate-800 dark:text-slate-300">
-                    Docente activo
+              <div className={`rounded-xl p-3 border-2 ${
+                formData.activo
+                  ? 'bg-slate-50 dark:bg-slate-700/30 border-slate-300 dark:border-slate-600'
+                  : 'bg-red-50 dark:bg-red-900/20 border-red-300 dark:border-red-700'
+              }`}>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={formData.activo}
+                    onClick={() => handleChange({
+                      target: {
+                        name: 'activo',
+                        type: 'checkbox',
+                        checked: !formData.activo,
+                      },
+                    })}
+                    className={`relative inline-flex h-8 w-14 items-center rounded-full border transition-all ${
+                      formData.activo
+                        ? 'bg-blue-600 border-blue-500'
+                        : 'bg-slate-500 border-slate-400'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-6 w-6 transform rounded-full bg-white shadow-md transition-transform ${
+                        formData.activo ? 'translate-x-7' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                  <span className={`text-sm font-medium ${formData.activo ? 'text-slate-800 dark:text-slate-300' : 'text-red-700 dark:text-red-300'}`}>
+                    {formData.activo ? 'Docente activo' : 'Docente inactivo'}
                   </span>
                 </label>
               </div>

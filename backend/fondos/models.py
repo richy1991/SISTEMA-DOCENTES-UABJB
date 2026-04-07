@@ -34,6 +34,7 @@ class Docente(models.Model):
     apellido_paterno = models.CharField(max_length=100)
     apellido_materno = models.CharField(max_length=100, blank=True)
     ci = models.CharField(max_length=20, unique=True, verbose_name="Cédula de Identidad")
+    carrera = models.ForeignKey('Carrera', on_delete=models.PROTECT, related_name='docentes')
     categoria = models.CharField(max_length=20, choices=CATEGORIA_CHOICES)
     dedicacion = models.CharField(max_length=20, choices=DEDICACION_CHOICES)
     email = models.EmailField(blank=True, null=True)
@@ -93,16 +94,18 @@ class Docente(models.Model):
     def clean(self):
         """Validaciones personalizadas para el modelo Docente."""
         super().clean()
+        if not self.carrera_id:
+            raise ValidationError({'carrera': 'La carrera del docente es obligatoria.'})
         if self.dedicacion == 'horario':
             if not self.horas_contrato_semanales or self.horas_contrato_semanales <= 0:
                 raise ValidationError({
                     'horas_contrato_semanales': 'Para dedicación "Horario", debe especificar un número de horas de contrato semanales mayor a cero.'
                 })
             
-            # VALIDACIÓN DE RANGO MÁXIMO: 56 horas semanales
-            if self.horas_contrato_semanales > 56:
+            # VALIDACIÓN DE RANGO MÁXIMO: 32 horas semanales para tiempo horario
+            if self.horas_contrato_semanales > 32:
                 raise ValidationError({
-                    'horas_contrato_semanales': 'La carga horaria no puede superar las 56 horas semanales.'
+                    'horas_contrato_semanales': 'Un docente a tiempo horario no puede superar las 32 horas semanales.'
                 })
         else:  # Para 'tiempo_completo' o 'medio_tiempo'
             # Este campo no es relevante, así que lo forzamos a None para mantener la consistencia.

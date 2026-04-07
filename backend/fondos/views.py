@@ -148,60 +148,127 @@ class DocenteViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         """
-        BORRADO INTELIGENTE DE DOCENTE
-        PROHIBIDO borrar si tiene registros activos.
-        Si está limpio, borra Docente y limpia User/Perfil si existen.
+        Borrado inteligente del docente.
+        Si existe trazabilidad, se bloquea explicando la causa exacta.
+        Si no tiene historial, se elimina el docente y se limpian perfiles huérfanos
+        para liberar el C.I. y evitar registros fantasmas.
         """
-        from .models import SaldoVacacionesGestion, CargaHoraria, PerfilUsuario
-        
         docente = self.get_object()
-        
-        # ============================================
-        # CHEQUEO DE ACTIVIDAD - Tablas Hijas
-        # ============================================
-        
-        # 1. Verificar Fondos de Tiempo (cualquier estado)
+
         fondos_count = FondoTiempo.objects.filter(docente=docente).count()
         if fondos_count > 0:
+            mensaje = (
+                f'No se puede eliminar al docente porque tiene {fondos_count} '
+                f'fondo(s) de tiempo registrados en el sistema.'
+            )
             return Response(
-                {'error': f'No se puede eliminar: El docente tiene {fondos_count} Fondo(s) de Tiempo vinculados. Desactívelo en su lugar.'},
+                {'error': mensaje, 'detail': mensaje},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
-        # 2. Verificar Saldos de Vacaciones
+
         saldos_count = SaldoVacacionesGestion.objects.filter(docente=docente).count()
         if saldos_count > 0:
+            mensaje = (
+                f'No se puede eliminar al docente porque tiene {saldos_count} '
+                f'registro(s) de saldo de vacaciones asociados.'
+            )
             return Response(
-                {'error': f'No se puede eliminar: El docente tiene {saldos_count} registro(s) de saldo de vacaciones. Desactívelo en su lugar.'},
+                {'error': mensaje, 'detail': mensaje},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
-        # 3. Verificar Cargas Horarias
-        cargas_count = CargaHoraria.objects.filter(docente=docente).count()
+
+        cargas_qs = CargaHoraria.objects.filter(docente=docente)
+        cargas_count = cargas_qs.count()
         if cargas_count > 0:
+            gestiones = list(
+                cargas_qs.order_by().values_list('calendario__gestion', flat=True).distinct()
+            )
+            detalle_gestiones = f" en la(s) gestión(es) {', '.join(map(str, gestiones))}" if gestiones else ''
+            mensaje = (
+                f'No se puede eliminar al docente porque tiene {cargas_count} '
+                f'materia(s) o carga(s) horaria(s) asignada(s){detalle_gestiones}.'
+            )
             return Response(
-                {'error': f'No se puede eliminar: El docente tiene {cargas_count} Carga(s) Horaria(s) asignada(s). Desactívelo en su lugar.'},
+                {'error': mensaje, 'detail': mensaje},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
-        # ============================================
-        # CASO A: DOCENTE LIMPIO - BORRADO SEGURO
-        # ============================================
+
+        perfiles = list(PerfilUsuario.objects.filter(docente=docente).select_related('user'))
+        for perfil in perfiles:
+            if not perfil.user_id:
+                continue
+
+            user = perfil.user
+
+            historial_count = HistorialFondo.objects.filter(usuario=user).count()
+            if historial_count > 0:
+                mensaje = (
+                    f'No se puede eliminar al docente porque el usuario "{user.username}" '
+                    f'tiene {historial_count} registro(s) de historial de fondos.'
+                )
+                return Response({'error': mensaje, 'detail': mensaje}, status=status.HTTP_400_BAD_REQUEST)
+
+            informes_elaborados = InformeFondo.objects.filter(elaborado_por=user).count()
+            if informes_elaborados > 0:
+                mensaje = (
+                    f'No se puede eliminar: ya existen {informes_elaborados} informe(s) '
+                    f'elaborado(s) por el usuario "{user.username}".'
+                )
+                return Response({'error': mensaje, 'detail': mensaje}, status=status.HTTP_400_BAD_REQUEST)
+
+            informes_evaluados = InformeFondo.objects.filter(evaluado_por=user).count()
+            if informes_evaluados > 0:
+                mensaje = (
+                    f'No se puede eliminar: ya existen {informes_evaluados} informe(s) '
+                    f'evaluado(s) por el usuario "{user.username}".'
+                )
+                return Response({'error': mensaje, 'detail': mensaje}, status=status.HTTP_400_BAD_REQUEST)
+
+            observaciones_resueltas = ObservacionFondo.objects.filter(resuelta_por=user).count()
+            if observaciones_resueltas > 0:
+                mensaje = (
+                    f'No se puede eliminar: el usuario "{user.username}" ya resolvió '
+                    f'{observaciones_resueltas} observación(es) de fondos.'
+                )
+                return Response({'error': mensaje, 'detail': mensaje}, status=status.HTTP_400_BAD_REQUEST)
+
+            mensajes_count = MensajeObservacion.objects.filter(autor=user).count()
+            if mensajes_count > 0:
+                mensaje = (
+                    f'No se puede eliminar: ya existen {mensajes_count} mensaje(s) u observación(es) '
+                    f'firmados por el usuario "{user.username}".'
+                )
+                return Response({'error': mensaje, 'detail': mensaje}, status=status.HTTP_400_BAD_REQUEST)
+
+            cargas_creadas = CargaHoraria.objects.filter(creado_por=user).count()
+            if cargas_creadas > 0:
+                mensaje = (
+                    f'No se puede eliminar: el usuario "{user.username}" creó '
+                    f'{cargas_creadas} registro(s) de carga horaria.'
+                )
+                return Response({'error': mensaje, 'detail': mensaje}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
             with transaction.atomic():
-                # Borrado físico del docente; las FK configuradas con SET_NULL
-                # se encargarán de desacoplar perfiles y asignaciones.
-                docente_id = docente.id
+                for perfil in perfiles:
+                    if not perfil.user_id:
+                        perfil.delete()
+
+                docente_nombre = docente.nombre_completo
                 docente.delete()
-                
+
                 return Response(
-                    {'success': f'Docente {docente_id} eliminado correctamente'},
+                    {
+                        'success': f'Docente "{docente_nombre}" eliminado correctamente.',
+                        'detail': 'Se eliminó el docente sin historial y se liberó el C.I. asociado.'
+                    },
                     status=status.HTTP_204_NO_CONTENT
                 )
-                
+
         except Exception as e:
+            mensaje = f'Error interno al eliminar docente: {str(e)}'
             return Response(
-                {'error': f'Error interno al eliminar docente: {str(e)}'},
+                {'error': mensaje, 'detail': mensaje},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -2355,16 +2422,14 @@ class UsuarioViewSet(viewsets.ModelViewSet):
             with transaction.atomic():
                 logger.info(f"Iniciando borrado de usuario {user.username}")
 
-                # Borrado físico total permitido solo sin huella operativa.
                 user_id = user.id
-                perfil_usuario = getattr(user, 'perfil', None)
-
-                if perfil_usuario:
-                    perfil_usuario.docente = None
-                    perfil_usuario.save(update_fields=['docente'])
-                    perfil_usuario.delete()
+                perfil = PerfilUsuario.objects.filter(user=user).select_related('docente').first()
 
                 user.delete()
+                if perfil:
+                    perfil.refresh_from_db()
+                    if perfil.user_id is None:
+                        perfil.delete()
                 logger.info(f"Usuario {user.username} (ID: {user_id}) eliminado exitosamente")
 
                 return Response(
@@ -2434,6 +2499,17 @@ class UsuarioViewSet(viewsets.ModelViewSet):
 
         user.is_active = not user.is_active
         user.save()
+
+        # Regla de independencia: si el usuario se desactiva,
+        # su docente vinculado tambien queda inactivo.
+        if user.is_active is False:
+            perfil = PerfilUsuario.objects.filter(user=user).select_related('docente').first()
+            if perfil and perfil.docente and perfil.docente.activo:
+                perfil.docente.activo = False
+                perfil.docente.save(update_fields=['activo'])
+
+            # Revocar asignaciones operativas de rol docente para este usuario.
+            user.asignaciones_carrera.filter(rol='docente', activo=True).update(activo=False)
         
         output_serializer = UsuarioSerializer(user)
         output_serializer = UsuarioSerializer(user, context={'request': request})
