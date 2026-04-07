@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(del *)",
+      "Bash(tasklist)",
+      "Bash(findstr *)",
+      "Bash(do *)",
+      "Bash(rd *)",
+      "Bash(python *)",
+      "Bash(\"c:\\users\\rich\\documents\\github\\sistema-docentes-uabjb\\venv\\scripts\\activate.bat\")",
+      "Bash(pip install *)",
+      "Bash(type *)",
+      "Bash(ren *)",
+      "Bash(dir *)"
+    ]
+  },
+  "$version": 3
+}
