@@ -1,0 +1,3 @@
+# Ensure SQLite databases are always treated as binary to avoid line-ending conversions
+*.sqlite3 binary
+*.db binary

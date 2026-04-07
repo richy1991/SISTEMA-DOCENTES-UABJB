@@ -1,0 +1,247 @@
+import { BrowserRouter as Router, Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useTheme } from './useTheme';
+import { Toaster } from 'react-hot-toast';
+
+// Vistas y Componentes
+import api from './apis/api';
+// Importaciones POA - Usar el layout principal que incluye sidebar/header
+import POAApp from './modules/poa/poa_App';
+import POAHomePage from './modules/poa/pages/POAHomePage';
+import DireccionesPage from './modules/poa/pages/DireccionesPage';
+import AccesosPOAPage from './modules/poa/pages/AccesosPOAPage';
+import DocumentosPOAPage from './modules/poa/pages/DocumentosPOAPage';
+import DocumentosRevisionPOAPage from './modules/poa/pages/DocumentosRevisionPOAPage';
+import ActividadesPage from './modules/poa/pages/ActividadesPage';
+import ObjetivosEspecificosPage from './modules/poa/pages/ObjetivosEspecificosPage';
+import CatalogoItems from './modules/poa/pages/CatalogoItems';
+import CatalogosMenu from './modules/poa/pages/CatalogosMenu';
+import Reportes from './modules/poa/pages/Reportes';
+import PresupuestosPage from './modules/poa/pages/PresupuestosPage';
+import Login from './components/Login';
+import ModuleSelector from './components/ModuleSelector';
+import FondoTiempoLayout from './components/FondoTiempoLayout';
+import ListaFondos from './components/ListaFondos';
+import DetalleFondo from './components/DetalleFondo';
+import Comparador from './components/Comparador';
+import FormularioFondo from './components/FormularioFondo';
+import GestionUsuarios from './components/GestionUsuarios';
+import FondosArchivados from './components/FondosArchivados';
+import ListaDocentes from './components/ListaDocentes';
+import ListaCarreras from './components/ListaCarreras';
+import ListaCalendarios from './components/ListaCalendarios';
+import MateriaList from './components/MateriaList';
+import MateriaForm from './components/MateriaForm';
+import VistaCalendarioActivo from './VistaCalendarioActivo';
+import Proximamente from './components/Proximamente';
+import FondosLargoPlazo from './components/FondosLargoPlazo';
+import SeguimientoGlobal from './components/SeguimientoGlobal';
+import AdminPanel from './components/AdminPanel';
+import SimpleLayout from './components/SimpleLayout';
+import AdminDashboard from './components/AdminDashboard';
+import CambiarPassword from './components/CambiarPassword';
+import CargaHorariaGeneral from './components/CargaHorariaGeneral';
+import FondoTiempoDocente from './components/FondoTiempoDocente';
+import './App.css';
+
+// Componente wrapper para aplicar una animación de entrada a las páginas
+const AnimatedRoute = ({ children }) => {
+  const location = useLocation();
+  return (
+    <div key={location.pathname} className="animate-page-enter">{children}</div>
+  );
+};
+
+function App() {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  
+  const { theme, setTheme, isDark } = useTheme();
+
+  useEffect(() => {
+    // Requisito: Forzar el login siempre.
+    // Se limpia cualquier sesión guardada en el navegador al cargar la aplicación.
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('user');
+    
+    setLoading(false);
+  }, []);
+
+  const handleLogin = (userData) => {
+    setUser(userData);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('user');
+    setUser(null);
+  };
+
+  const handleProfileUpdate = async () => {
+    try {
+      const response = await api.get('/usuario/');
+      setUser(response.data);
+      localStorage.setItem('user', JSON.stringify(response.data));
+    } catch (error) {
+      console.error("Error updating profile:", error);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 to-blue-950">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-white mx-auto"></div>
+          <p className="mt-4 font-medium text-white">Cargando sistema...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Lógica de bloqueo: Si el usuario debe cambiar contraseña, solo mostramos esa pantalla
+  if (user && user.perfil?.debe_cambiar_password) {
+    return (
+      <Router>
+        <Toaster position="top-right" />
+        <Routes>
+          <Route path="/cambiar-password" element={<CambiarPassword onPasswordChanged={handleLogin} />} />
+          <Route path="*" element={<Navigate to="/cambiar-password" replace />} />
+        </Routes>
+      </Router>
+    );
+  }
+
+  return (
+    <Router>
+      <Toaster 
+        position="top-right"
+        toastOptions={{
+          style: {
+            background: isDark ? '#1e293b' : '#ffffff',
+            color: isDark ? '#f1f5f9' : '#0f172a',
+          },
+          success: { style: { background: '#10b981', color: 'white' } },
+          error: { style: { background: '#ef4444', color: 'white' } },
+        }}
+      />
+      <style>{`
+        @keyframes page-enter-animation {
+          from {
+            opacity: 0;
+            transform: translateY(15px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        .animate-page-enter {
+          animation: page-enter-animation 0.4s ease-out forwards;
+        }
+      `}</style>
+      
+      <Routes>
+        {!user ? (
+          <>
+            <Route path="/login" element={<Login onLogin={handleLogin} />} />
+            <Route path="*" element={<Navigate to="/login" replace />} />
+          </>
+        ) : (
+          <>
+            <Route path="/" element={<ModuleSelector user={user} onLogout={handleLogout} theme={theme} setTheme={setTheme} />} />
+
+            {/* AHORA SÍ: Estructura de enrutamiento anidada correctamente */}
+            <Route 
+              path="/fondo-tiempo" 
+              element={
+                <FondoTiempoLayout 
+                  user={user}
+                  onLogout={handleLogout}
+                  sidebarCollapsed={sidebarCollapsed}
+                  setSidebarCollapsed={setSidebarCollapsed}
+                  theme={theme}
+                  setTheme={setTheme}
+                  onProfileUpdate={handleProfileUpdate}
+                />
+              }
+            >
+              {/* La ruta 'index' coincide con la ruta padre ('/fondo-tiempo') */}
+              <Route index element={<AnimatedRoute><ListaFondos isDark={isDark} /></AnimatedRoute>} />
+              
+              {/* Las rutas hijas son relativas al padre */}
+              <Route path="fondo/:id" element={<AnimatedRoute><DetalleFondo isDark={isDark} /></AnimatedRoute>} />
+              <Route path="comparar" element={<AnimatedRoute><Comparador isDark={isDark} /></AnimatedRoute>} />
+              <Route path="nuevo-fondo" element={<AnimatedRoute><FormularioFondo isDark={isDark} /></AnimatedRoute>} />
+              <Route path="editar-fondo/:id" element={<AnimatedRoute><FormularioFondo isDark={isDark} editar={true} /></AnimatedRoute>} />
+
+              <Route path="cargas-horarias" element={<AnimatedRoute><CargaHorariaGeneral isDark={isDark} /></AnimatedRoute>} />
+              <Route path="docentes/:id" element={<AnimatedRoute><FondoTiempoDocente isDark={isDark} /></AnimatedRoute>} />
+              {/* Ruta para los fondos archivados dentro del módulo de Fondo de Tiempo */}
+              <Route path="archivados" element={<AnimatedRoute><FondosArchivados isDark={isDark} /></AnimatedRoute>} />
+
+              {/* Rutas de Administración (Integradas en el Sidebar) */}
+              <Route path="usuarios" element={<AnimatedRoute><GestionUsuarios isDark={isDark} /></AnimatedRoute>} />
+              <Route path="docentes" element={<AnimatedRoute><ListaDocentes isDark={isDark} /></AnimatedRoute>} />
+              <Route path="calendarios" element={<AnimatedRoute><ListaCalendarios /></AnimatedRoute>} />
+              <Route path="carreras" element={<AnimatedRoute><ListaCarreras isDark={isDark} /></AnimatedRoute>} />
+              <Route path="materias" element={<AnimatedRoute><MateriaList isDark={isDark} /></AnimatedRoute>} />
+              <Route path="materias/nueva" element={<AnimatedRoute><MateriaForm /></AnimatedRoute>} />
+              <Route path="materias/editar/:id" element={<AnimatedRoute><MateriaForm /></AnimatedRoute>} />
+
+              <Route path="*" element={<Navigate to="/fondo-tiempo" replace />} />
+            </Route>
+
+            {/* Módulo: Fondos a Largo Plazo */}
+            <Route path="/largo-plazo" element={<SimpleLayout />}>
+              <Route index element={<Proximamente isDark={isDark} />} />
+            </Route>
+
+            {/* Módulo: Seguimiento Global */}
+            <Route path="/seguimiento" element={<SimpleLayout />}>
+              <Route index element={<Proximamente isDark={isDark} />} />
+            </Route>
+
+            {/* Módulo: POA - Usando el layout con sidebar y header propios */}
+            <Route path="/poa" element={<POAApp user={user} />}>
+              <Route index element={<AnimatedRoute><POAHomePage /></AnimatedRoute>} />
+              <Route path="direcciones" element={<AnimatedRoute><DireccionesPage /></AnimatedRoute>} />
+              <Route path="accesos" element={<AnimatedRoute><AccesosPOAPage /></AnimatedRoute>} />
+              <Route path="documentos" element={<AnimatedRoute><DocumentosPOAPage /></AnimatedRoute>} />
+              <Route path="documentos-revision" element={<AnimatedRoute><DocumentosRevisionPOAPage /></AnimatedRoute>} />
+              <Route path="documentos/nuevo" element={<AnimatedRoute><DocumentosPOAPage /></AnimatedRoute>} />
+              <Route path="actividades" element={<AnimatedRoute><ActividadesPage /></AnimatedRoute>} />
+              <Route path="actividades/:objetivoEspecificoId" element={<AnimatedRoute><ActividadesPage /></AnimatedRoute>} />
+              <Route path="objetivos" element={<AnimatedRoute><ObjetivosEspecificosPage /></AnimatedRoute>} />
+              <Route path="objetivos-especificos/:documentId" element={<AnimatedRoute><ObjetivosEspecificosPage /></AnimatedRoute>} />
+              <Route path="catalogos" element={<AnimatedRoute><CatalogosMenu /></AnimatedRoute>} />
+              <Route path="catalogos/items" element={<AnimatedRoute><CatalogoItems /></AnimatedRoute>} />
+              <Route path="catalogos/indicadores" element={<AnimatedRoute><DireccionesPage /></AnimatedRoute>} />
+              <Route path="catalogos-menu" element={<AnimatedRoute><CatalogosMenu /></AnimatedRoute>} />
+              <Route path="catalogo-items" element={<AnimatedRoute><CatalogoItems /></AnimatedRoute>} />
+              <Route path="indicadores" element={<AnimatedRoute><DireccionesPage /></AnimatedRoute>} />
+              <Route path="reportes" element={<AnimatedRoute><Reportes /></AnimatedRoute>} />
+              <Route path="presupuestos" element={<AnimatedRoute><PresupuestosPage /></AnimatedRoute>} />
+            </Route>
+
+            {/* Módulos de Administración y Catálogos (protegidos) */}
+            {user.is_staff && (
+              <Route path="/admin" element={<AdminPanel user={user} onLogout={handleLogout} />}>
+                <Route index element={<AdminDashboard user={user} />} />
+                {/* Redirección por si se entra a /admin/ sin nada más */}
+                <Route path="*" element={<Navigate to="/admin" replace />} />
+              </Route>
+            )}
+
+            {/* Ruta para cualquier otra URL no encontrada, redirige al panel de módulos */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </>
+        )}
+      </Routes>
+    </Router>
+  );
+}
+
+export default App;

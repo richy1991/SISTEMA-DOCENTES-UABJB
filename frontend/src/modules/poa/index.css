@@ -1,0 +1,1505 @@
+﻿/* ═══════════════════════════════════════════════════════════
+   COMPONENTES DE FORMULARIO - INPUT, SELECT, TEXTAREA
+   Soporte completo para temas claro/oscuro
+   ═══════════════════════════════════════════════════════════ */
+
+/* Wrapper base para todos los componentes de formulario */
+.poa-input-wrapper,
+.poa-select-wrapper,
+.poa-textarea-wrapper {
+  position: relative;
+}
+
+/* Labels */
+.poa-input-label,
+.poa-select-label,
+.poa-textarea-label {
+  color: #374151; /* gray-700 */
+  margin-bottom: 0.25rem;
+}
+
+.dark .poa-input-label,
+.dark .poa-select-label,
+.dark .poa-textarea-label {
+  color: #cbd5e1; /* slate-300 */
+}
+
+/* Inputs base styles - MODO CLARO */
+.poa-input,
+.poa-select,
+.poa-textarea {
+  background-color: #ffffff;
+  color: #0f172a; /* slate-900 */
+  border-color: #d1d5db; /* gray-300 */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.poa-input::placeholder,
+.poa-textarea::placeholder {
+  color: #9ca3af; /* gray-400 */
+}
+
+.poa-input:focus,
+.poa-select:focus,
+.poa-textarea:focus {
+  border-color: #3b82f6; /* blue-500 */
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+/* Inputs base styles - MODO OSCURO */
+.dark .poa-input,
+.dark .poa-select,
+.dark .poa-textarea {
+  background-color: #0f172a; /* slate-900 */
+  color: #e2e8f0; /* slate-200 */
+  border-color: rgba(14, 165, 233, 0.4); /* sky-500/40 */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.dark .poa-input::placeholder,
+.dark .poa-textarea::placeholder {
+  color: #64748b; /* slate-500 */
+}
+
+.dark .poa-input:focus,
+.dark .poa-select:focus,
+.dark .poa-textarea:focus {
+  border-color: #0ea5e9; /* sky-500 */
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2);
+}
+
+/* Disabled state */
+.poa-input:disabled,
+.poa-select:disabled,
+.poa-textarea:disabled {
+  background-color: #f3f4f6;
+  color: #6b7280;
+  cursor: not-allowed;
+}
+
+.dark .poa-input:disabled,
+.dark .poa-select:disabled,
+.dark .poa-textarea:disabled {
+  background-color: #1e293b;
+  color: #94a3b8;
+}
+
+/* Error state */
+.poa-input.error,
+.poa-select.error,
+.poa-textarea.error,
+.poa-input-wrapper.error .poa-input,
+.poa-select-wrapper.error .poa-select,
+.poa-textarea-wrapper.error .poa-textarea {
+  border-color: #ef4444;
+}
+
+.poa-input.error:focus,
+.poa-select.error:focus,
+.poa-textarea.error:focus {
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
+}
+
+.dark .poa-input.error,
+.dark .poa-select.error,
+.dark .poa-textarea.error {
+  border-color: #f87171;
+}
+
+.dark .poa-input.error:focus,
+.dark .poa-select.error:focus,
+.dark .poa-textarea.error:focus {
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.2);
+}
+
+/* Helper text */
+.poa-input-helper,
+.poa-select-helper,
+.poa-textarea-helper {
+  color: #6b7280; /* gray-500 */
+}
+
+.dark .poa-input-helper,
+.dark .poa-select-helper,
+.dark .poa-textarea-helper {
+  color: #94a3b8; /* slate-400 */
+}
+
+/* Error text */
+.poa-input-error,
+.poa-select-error,
+.poa-textarea-error {
+  color: #dc2626; /* red-600 */
+}
+
+.dark .poa-input-error,
+.dark .poa-select-error,
+.dark .poa-textarea-error {
+  color: #f87171; /* red-400 */
+}
+
+/* Select arrow icon - custom styling for dark mode */
+.dark .poa-select {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%2394a3b8' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+  background-position: right 0.5rem center;
+  background-repeat: no-repeat;
+  background-size: 1.5em 1.5em;
+  padding-right: 2.5rem;
+  appearance: none;
+}
+
+.poa-select {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+  background-position: right 0.5rem center;
+  background-repeat: no-repeat;
+  background-size: 1.5em 1.5em;
+  padding-right: 2.5rem;
+  appearance: none;
+}
+
+/* Date input specific */
+.dark .poa-input[type="date"] {
+  color-scheme: dark;
+}
+
+.dark .poa-input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+}
+
+/* Number input spin buttons */
+.poa-input[type="number"]::-webkit-inner-spin-button,
+.poa-input[type="number"]::-webkit-outer-spin-button {
+  height: auto;
+}
+
+.dark .poa-input[type="number"]::-webkit-inner-spin-button,
+.dark .poa-input[type="number"]::-webkit-outer-spin-button {
+  filter: invert(1);
+}
+
+/* Textarea specific */
+.poa-textarea {
+  min-height: 80px;
+  resize: vertical;
+}
+
+/* Clamp de 2 líneas para celdas de tabla, con expansión al seleccionar */
+.table-cell-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.table-cell-expand {
+  display: block;
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
+  -webkit-box-orient: initial;
+  overflow: visible;
+}
+
+/* Opcional: suavizar transición al expandir */
+.is-selected .table-cell-clamp,
+.is-selected .table-cell-expand {
+  transition: all 150ms ease-in-out;
+}
+/* Tarjetas Objetivos: refuerzo de sombras y gradientes para look moderno */
+.oe-modern {
+  position: relative;
+  box-shadow: 0 28px 72px rgba(15,23,42,0.22), inset 0 0 0 1px rgba(255,255,255,0.2);
+}
+.oe-modern::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: 1rem;
+  pointer-events: none;
+  background: linear-gradient(120deg, rgba(59,130,246,0.25), rgba(99,102,241,0.25));
+  mix-blend-mode: overlay;
+  opacity: 0.35;
+}
+.oe-modern:hover {
+  box-shadow: 0 36px 110px rgba(15,23,42,0.28), inset 0 0 0 1px rgba(255,255,255,0.3);
+}
+
+.dark .oe-modern {
+  box-shadow: 0 36px 110px rgba(2,6,23,0.9), inset 0 0 0 1px rgba(14,165,233,0.15);
+}
+.dark .oe-modern::after {
+  background: linear-gradient(120deg, rgba(14,165,233,0.22), rgba(79,70,229,0.22));
+  opacity: 0.45;
+}
+.dark .oe-modern:hover {
+  box-shadow: 0 42px 130px rgba(2,6,23,0.95), inset 0 0 0 1px rgba(14,165,233,0.22);
+}
+/* Badge para código del objetivo: variantes claro/oscuro */
+.code-badge {
+  /* Más color en encabezados (tema claro) */
+  background: linear-gradient(90deg, rgba(59,130,246,0.12), rgba(14,165,233,0.12)); /* azul/índigo suave */
+  color: #0f172a; /* slate-900 aprox */
+  border: 1px solid rgba(99,102,241,0.35); /* indigo-500/35 */
+  box-shadow: 0 2px 6px rgba(99,102,241,0.12);
+}
+
+.dark .code-badge {
+  /* Más color en encabezados (tema oscuro) */
+  background: linear-gradient(90deg, rgba(14,165,233,0.18), rgba(79,70,229,0.18));
+  color: #e5e7eb; /* text-gray-200 */
+  border: 1px solid rgba(99,102,241,0.4); /* indigo-500/40 */
+  box-shadow: 0 2px 8px rgba(14,165,233,0.22);
+}
+
+/* Badge para cantidad de actividades: armonizar paleta claro/oscuro */
+.activity-badge {
+  background: linear-gradient(90deg, rgba(224,231,255,0.95), rgba(199,210,254,0.95)); /* indigo-100 → indigo-200 */
+  color: #312e81; /* indigo-900 */
+  border: 1px solid rgba(99,102,241,0.45); /* indigo-500/45 */
+  box-shadow: 0 2px 6px rgba(99,102,241,0.12);
+}
+
+.dark .activity-badge {
+  background: linear-gradient(90deg, rgba(59,73,172,0.28), rgba(91,33,182,0.28)); /* indigo mix */
+  color: #dbeafe; /* indigo-100 */
+  border: 1px solid rgba(99,102,241,0.6); /* indigo-500/60 */
+  box-shadow: 0 2px 8px rgba(14,165,233,0.22);
+}
+
+.activity-badge.is-zero {
+  background: linear-gradient(90deg, rgba(254,226,226,0.96), rgba(254,202,202,0.96)); /* red-100 → red-200 */
+  color: #7f1d1d; /* red-900 */
+  border: 1px solid rgba(239,68,68,0.6); /* red-500/60 */
+  box-shadow: 0 2px 6px rgba(239,68,68,0.15);
+}
+
+.dark .activity-badge.is-zero {
+  background: linear-gradient(90deg, rgba(127,29,29,0.28), rgba(153,27,27,0.28)); /* red mix oscuro */
+  color: #fee2e2; /* red-100 */
+  border: 1px solid rgba(239,68,68,0.6); /* red-500/60 */
+  box-shadow: 0 2px 8px rgba(239,68,68,0.22);
+}
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
+
+/* ============================================
+   ESTILOS GLOBALES - MODO CLARO Y OSCURO
+   ============================================ */
+
+/* Modo claro - fondo base */
+body {
+  font-family: 'Poppins', sans-serif;
+  background-color: #f8fafc;
+}
+
+/* ============================================
+   MODO OSCURO - Colores del sistema principal
+   ============================================ */
+.dark {
+  background-color: #020617;
+}
+
+.dark body {
+  background: linear-gradient(to bottom, #020617, #050a16, #070b17);
+  color: #e2e8f0;
+}
+
+.dark #root {
+  background: linear-gradient(to bottom, #020617, #050a16, #070b17);
+}
+
+/* Fondos para contenedores principales en modo oscuro (solo módulo POA) */
+.dark .poa-app .bg-white {
+  background-color: rgba(15, 23, 42, 0.95) !important;
+}
+
+.dark .poa-app .bg-gray-50,
+.dark .poa-app .bg-slate-50 {
+  background-color: rgba(9, 14, 28, 0.6) !important;
+}
+
+.dark .poa-app .bg-gray-100,
+.dark .poa-app .bg-slate-100 {
+  background-color: rgba(15, 23, 42, 0.8) !important;
+}
+
+.dark .poa-app .bg-gray-200 {
+  background-color: rgba(30, 41, 59, 0.8) !important;
+}
+
+.dark .poa-app .bg-blue-50 {
+  background-color: rgba(23, 37, 84, 0.4) !important;
+}
+
+.dark .poa-app .bg-blue-100 {
+  background-color: rgba(30, 58, 138, 0.5) !important;
+}
+
+.dark .poa-app .bg-indigo-50 {
+  background-color: rgba(30, 27, 75, 0.4) !important;
+}
+
+/* Textos en modo oscuro (solo módulo POA) */
+.dark .poa-app .text-gray-900,
+.dark .poa-app .text-gray-800,
+.dark .poa-app .text-gray-700 {
+  color: #e2e8f0 !important;
+}
+
+.dark .poa-app .text-gray-600 {
+  color: #cbd5e1 !important;
+}
+
+.dark .poa-app .text-gray-500 {
+  color: #94a3b8 !important;
+}
+
+.dark .poa-app .text-blue-900,
+.dark .poa-app .text-blue-800 {
+  color: #dbeafe !important;
+}
+
+.dark .poa-app .text-slate-900,
+.dark .poa-app .text-slate-800,
+.dark .poa-app .text-slate-700 {
+  color: #e2e8f0 !important;
+}
+
+.dark .poa-app .text-slate-600 {
+  color: #cbd5e1 !important;
+}
+
+.dark .poa-app .text-slate-500 {
+  color: #94a3b8 !important;
+}
+
+/* Bordes en modo oscuro (solo módulo POA) */
+.dark .poa-app .border-gray-200,
+.dark .poa-app .border-gray-300 {
+  border-color: rgba(56, 189, 248, 0.2) !important;
+}
+
+.dark .poa-app .border-blue-200,
+.dark .poa-app .border-blue-300 {
+  border-color: rgba(96, 165, 250, 0.3) !important;
+}
+
+.dark .poa-app .border {
+  border-color: rgba(148, 163, 184, 0.2) !important;
+}
+
+.dark .poa-app .border-t,
+.dark .poa-app .border-b,
+.dark .poa-app .border-l,
+.dark .poa-app .border-r {
+  border-color: rgba(148, 163, 184, 0.15) !important;
+}
+
+/* Inputs y formularios en modo oscuro (solo módulo POA) */
+.dark .poa-app input,
+.dark .poa-app textarea,
+.dark .poa-app select {
+  background-color: #0b1224 !important;
+  color: #e2e8f0 !important;
+  border-color: rgba(148, 163, 184, 0.4) !important;
+}
+
+.dark .poa-app input::placeholder,
+.dark .poa-app textarea::placeholder {
+  color: rgba(226, 232, 240, 0.5) !important;
+}
+
+/* Scrollbars en modo oscuro */
+.dark ::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: #0b1224;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #1e3a8a, #3b82f6);
+  border-radius: 3px;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #3b82f6, #60a5fa);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.6s ease-out forwards;
+}
+
+.slide-in-left {
+  animation: slideInLeft 0.5s ease-out forwards;
+}
+
+.hover-scale {
+  transition: transform 0.2s ease-in-out;
+}
+
+.hover-scale:hover {
+  transform: scale(1.05);
+}
+
+.wave-bg {
+  position: relative;
+  overflow: hidden;
+}
+
+.wave-bg::before {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 150px;
+  background: linear-gradient(45deg, #8B5CF6, #3B82F6);
+  border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+  z-index: -1;
+  transform: scaleX(1.5);
+}
+
+/* Responsive adjustments: reduce button padding, font-size and header title/logo on small screens */
+@media (max-width: 640px) {
+  /* Make buttons more compact globally (header + page buttons) */
+  button {
+    padding: 0.35rem 0.6rem !important; /* reduce padding */
+    font-size: 0.78rem !important; /* smaller text */
+  }
+
+  /* Buttons that use px-3 etc might still be large; force smaller border-radius for compactness */
+  button, .btn {
+    border-radius: 0.375rem !important;
+  }
+
+  /* Header title: allow truncation and smaller size */
+  header h1 {
+    font-size: 1rem !important;
+    line-height: 1.1 !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Reduce logo size in header to preserve space */
+  header img {
+    height: 36px !important;
+  }
+
+  /* Make small auxiliary texts and badges smaller */
+  .text-sm, .text-xs {
+    font-size: 0.7rem !important;
+  }
+
+  /* Reduce margins/paddings in common utility containers inside header */
+  .flex-1.text-center {
+    padding-left: 0.25rem !important;
+    padding-right: 0.25rem !important;
+  }
+}
+
+/* Multi-line clamp utilities */
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.line-clamp-4 {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Global button hover: subtle lift, shadow and brightness (skip disabled) */
+button {
+  transition: transform 160ms cubic-bezier(.2,.8,.2,1), box-shadow 160ms cubic-bezier(.2,.8,.2,1), filter 160ms cubic-bezier(.2,.8,.2,1);
+}
+.dark .btn-futuristic,
+.btn-futuristic {
+  position: relative;
+  border-radius: 0.9rem;
+  overflow: hidden;
+}
+
+/* Futuristic gradient core */
+.btn-futuristic {
+  background: linear-gradient(90deg, #22d3ee, #3b82f6 45%, #7c3aed);
+  color: #fff;
+  box-shadow: 0 12px 28px rgba(14,165,233,0.35);
+}
+.dark .btn-futuristic {
+  background: linear-gradient(90deg, #22d3ee, #0ea5e9 40%, #6366f1);
+  box-shadow: 0 16px 40px rgba(14,165,233,0.45);
+}
+
+/* Animated light sweep */
+.btn-futuristic::before {
+  content: "";
+  position: absolute;
+  top: 0; left: -30%;
+  width: 40%; height: 100%;
+  background: linear-gradient(90deg, rgba(255,255,255,0.35), rgba(255,255,255,0));
+  transform: skewX(-20deg);
+  filter: blur(0.5px);
+  transition: left 0.8s ease;
+}
+.btn-futuristic:hover::before { left: 110%; }
+
+/* Border glow */
+.btn-futuristic::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(120deg, rgba(14,165,233,0.85), rgba(99,102,241,0.75));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+}
+
+.btn-futuristic:hover {
+  transform: translateY(-3px);
+  filter: brightness(1.06);
+  box-shadow: 0 20px 55px rgba(14,165,233,0.55);
+}
+
+.btn-futuristic:active {
+  transform: translateY(-1px) scale(0.995);
+}
+button:not(:disabled):hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgba(2,6,23,0.08);
+  filter: brightness(1.03);
+}
+button:active {
+  transform: translateY(-1px) scale(0.997);
+}
+button:disabled {
+  transform: none;
+  filter: none;
+  box-shadow: none;
+  opacity: 0.75;
+}
+
+/* Keep focus visible for accessibility */
+button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.18);
+}
+
+.dark .poa-app input,
+.dark .poa-app textarea,
+.dark .poa-app select {
+  background-color: #0b1224;
+  color: #e2e8f0;
+  border-color: rgba(148,163,184,0.6);
+  box-shadow: 0 0 0 1px rgba(148,163,184,0.4);
+}
+
+.dark .poa-app input::placeholder,
+.dark .poa-app textarea::placeholder,
+.dark .poa-app select::placeholder {
+  color: rgba(226,232,240,0.6);
+}
+
+/* Date input: ocultar ícono nativo del calendario (se usa botón externo) */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+/* Ajuste de esquema de color para mantener legibilidad en oscuro */
+.dark .poa-app input[type="date"] {
+  color-scheme: dark;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MODALES - Overlay y centrado
+   ═══════════════════════════════════════════════════════════ */
+
+/* Contenedor principal del modal - centrado sobre todo */
+.poa-modal {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 999999 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 1rem !important;
+  /* Overlay transparente que bloquea la interacción pero no tapa los toasts */
+  background-color: transparent !important;
+  backdrop-filter: none;
+  pointer-events: all !important;
+  cursor: default;
+}
+
+/* Panel del modal - contenedor passthrough, el card interno lleva el estilo visual */
+.poa-modal .modal-panel-overlay {
+  position: relative !important;
+  z-index: 1000000 !important;
+  background: none;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+  overflow: visible;
+  max-height: 90vh;
+  pointer-events: auto !important;
+  cursor: default;
+}
+
+.poa-modal .modal-panel {
+  position: relative !important;
+  z-index: 1000000 !important;
+  background: linear-gradient(180deg, #eef6ff 0%, #dcecff 100%);
+  border: 1px solid rgba(37, 99, 235, 0.48);
+  border-radius: 1.15rem;
+  box-shadow: 0 25px 65px rgba(30, 64, 175, 0.34);
+  overflow: hidden;
+  /* Evitar que card-elegant aplique transform en el modal */
+  transform: none !important;
+  min-width: 520px;
+  max-height: 90vh;
+  overflow-y: auto;
+  pointer-events: auto !important;
+  cursor: default;
+}
+
+.poa-modal .modal-header {
+  background: linear-gradient(90deg, #2563eb, #0ea5e9 60%);
+  color: white;
+  padding: 1rem 1.5rem;
+}
+
+.poa-modal .modal-body {
+  background-color: rgba(223, 238, 255, 0.96);
+  color: #0f172a;
+}
+
+.poa-modal .modal-panel .modal-actions {
+  background: rgba(214, 231, 255, 0.95);
+}
+
+/* Inputs dentro del modal */
+.poa-modal .modal-panel .modal-input {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #3b82f6 !important;
+  box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.2);
+}
+.poa-modal .modal-panel .modal-input:focus {
+  border-color: #1d4ed8 !important;
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.3) !important;
+}
+.poa-modal .modal-panel .modal-input::placeholder {
+  color: #64748b;
+}
+
+.poa-modal .modal-panel .poa-input,
+.poa-modal .modal-panel .poa-select,
+.poa-modal .modal-panel .poa-textarea {
+  background-color: #ffffff !important;
+  border-color: #3b82f6 !important;
+}
+
+.poa-modal .modal-panel .poa-input:focus,
+.poa-modal .modal-panel .poa-select:focus,
+.poa-modal .modal-panel .poa-textarea:focus {
+  border-color: #1d4ed8 !important;
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.3) !important;
+}
+
+/* Reglas dark para inputs del modal (anulan los estilos claros con !important) */
+.dark .poa-modal .modal-panel .poa-input,
+.dark .poa-modal .modal-panel .poa-select,
+.dark .poa-modal .modal-panel .poa-textarea,
+.dark .poa-modal .modal-panel .modal-input {
+  background-color: rgba(13, 18, 40, 0.95) !important;
+  color: #e2e8f0 !important;
+  border-color: rgba(56, 189, 248, 0.38) !important;
+  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.12) !important;
+}
+
+.dark .poa-modal .modal-panel .poa-input:focus,
+.dark .poa-modal .modal-panel .poa-select:focus,
+.dark .poa-modal .modal-panel .poa-textarea:focus,
+.dark .poa-modal .modal-panel .modal-input:focus {
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.22) !important;
+}
+
+.dark .poa-modal .modal-panel .poa-input::placeholder,
+.dark .poa-modal .modal-panel .poa-textarea::placeholder,
+.dark .poa-modal .modal-panel .modal-input::placeholder {
+  color: #64748b !important;
+}
+
+/* Botones de modal — modo claro */
+.poa-modal .btn-primary {
+  background: linear-gradient(90deg, #2563eb, #0ea5e9);
+  color: #ffffff;
+  box-shadow: 0 10px 26px rgba(37,99,235,0.25);
+  border: 1px solid rgba(37,99,235,0.5);
+}
+.poa-modal .btn-primary:hover {
+  filter: brightness(1.05);
+}
+
+.poa-modal .btn-success {
+  background: linear-gradient(90deg, #059669, #10b981);
+  color: #ffffff;
+  box-shadow: 0 10px 26px rgba(16,185,129,0.25);
+  border: 1px solid rgba(16,185,129,0.6);
+}
+.poa-modal .btn-success:hover {
+  filter: brightness(1.05);
+}
+
+.poa-modal .btn-cancel {
+  background: linear-gradient(90deg, #e2e8f0, #cbd5e1);
+  color: #0f172a;
+  box-shadow: 0 8px 20px rgba(15,23,42,0.12);
+  border: 1px solid rgba(148,163,184,0.6);
+}
+.poa-modal .btn-cancel:hover {
+  filter: brightness(1.03);
+}
+
+/* Botón de cierre en headers de modales */
+.poa-modal .btn-header-icon {
+  background: linear-gradient(120deg, rgba(37,99,235,0.28), rgba(14,165,233,0.28));
+  color: #ffffff;
+  border: 1px solid rgba(99,102,241,0.45);
+  box-shadow: 0 8px 22px rgba(15,23,42,0.22);
+}
+.poa-modal .btn-header-icon:hover {
+  filter: brightness(1.06);
+  background: linear-gradient(120deg, rgba(37,99,235,0.38), rgba(14,165,233,0.38));
+}
+
+/* ── Modales modo OSCURO ────────────────────────────────────────────────── */
+/* .modal-panel-overlay es solo un contenedor invisible - no estilos en oscuro */
+
+.dark .poa-modal .modal-panel {
+  background: rgba(3,7,18,0.97) !important;
+  border-color: rgba(56,189,248,0.35) !important;
+  box-shadow: 0 30px 90px rgba(2,6,23,0.8) !important;
+  -webkit-backdrop-filter: blur(22px) !important;
+  backdrop-filter: blur(22px) !important;
+  color: #e2e8f0 !important;
+}
+
+.dark .poa-modal .modal-panel .modal-header {
+  background: linear-gradient(120deg, rgba(14,165,233,0.95), rgba(79,70,229,0.9));
+  box-shadow: inset 0 -3px 12px rgba(15,23,42,0.7);
+}
+
+.dark .poa-modal .modal-panel .modal-body {
+  background: rgba(5,8,20,0.95);
+  color: #e2e8f0;
+}
+
+.dark .poa-modal .modal-panel .modal-actions {
+  background: rgba(5,8,20,0.92);
+}
+
+.dark .poa-modal .modal-panel label {
+  color: #cbd5f5;
+}
+
+.dark .poa-modal .modal-panel .text-sm,
+.dark .poa-modal .modal-panel .text-xs {
+  color: #e2e8f0;
+}
+
+.dark .poa-modal .modal-panel .bg-white {
+  background-color: rgba(13,18,40,0.9) !important;
+  border-color: rgba(148,163,184,0.2) !important;
+  color: #e2e8f0;
+}
+
+/* Inputs en modo oscuro */
+.dark .poa-modal .modal-panel .modal-input {
+  background-color: rgba(13,18,40,0.95) !important;
+  color: #e2e8f0 !important;
+  border-color: rgba(56,189,248,0.3) !important;
+}
+.dark .poa-modal .modal-panel .modal-input:focus {
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 0 3px rgba(56,189,248,0.18) !important;
+}
+.dark .poa-modal .modal-panel .modal-input::placeholder {
+  color: #64748b;
+}
+
+/* Gestion selector en modo oscuro */
+.dark .poa-modal .gestion-input-group {
+  background: rgba(13,18,40,0.95) !important;
+  border-color: rgba(56,189,248,0.35) !important;
+}
+.dark .poa-modal .gestion-input-group input {
+  background: #0b1224 !important;
+  color: #eaf2ff !important;
+}
+
+/* Botones de modal en modo oscuro */
+.dark .poa-modal .btn-cancel {
+  background: rgba(30,41,59,0.85);
+  color: #e6edf7;
+  border: 1px solid rgba(148,163,184,0.45);
+}
+.dark .poa-modal .btn-cancel:hover {
+  background: rgba(39,55,82,0.9);
+}
+
+.dark .poa-modal .btn-primary {
+  background: linear-gradient(90deg, #2563eb, #0ea5e9);
+  color: #ffffff;
+  box-shadow: 0 10px 28px rgba(2,6,23,0.6);
+  border: 1px solid rgba(56,189,248,0.55);
+}
+.dark .poa-modal .btn-primary:hover {
+  filter: brightness(1.05);
+}
+
+.dark .poa-modal .btn-success {
+  background: linear-gradient(90deg, #059669, #10b981);
+  color: #ffffff;
+  box-shadow: 0 10px 28px rgba(2,6,23,0.6);
+  border: 1px solid rgba(16,185,129,0.6);
+}
+.dark .poa-modal .btn-success:hover {
+  filter: brightness(1.05);
+}
+
+.dark .poa-modal .btn-header-icon {
+  background: linear-gradient(120deg, rgba(14,165,233,0.28), rgba(79,70,229,0.28));
+  border-color: rgba(99,102,241,0.6);
+  color: #eaf2ff;
+  box-shadow: 0 12px 30px rgba(2,6,23,0.6);
+}
+.dark .poa-modal .btn-header-icon:hover {
+  filter: brightness(1.06);
+}
+
+/* Tarjeta de aviso 'no docs' en oscuro */
+.dark .poa-modal .no-docs-card {
+  background: linear-gradient(180deg, rgba(9,14,28,0.92), rgba(13,20,35,0.95));
+  border: 1px solid rgba(250,204,21,0.35);
+  box-shadow: inset 0 0 0 1px rgba(250,204,21,0.15), 0 20px 60px rgba(2,6,23,0.7);
+}
+
+/* Inputs/textareas/selects en modo oscuro para portales (.poa-modal fuera de .poa-app) */
+.dark .poa-modal input,
+.dark .poa-modal textarea,
+.dark .poa-modal select {
+  background-color: #0b1224;
+  color: #e2e8f0;
+  border-color: rgba(148, 163, 184, 0.6);
+  box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.4);
+}
+.dark .poa-modal input::placeholder,
+.dark .poa-modal textarea::placeholder {
+  color: rgba(226, 232, 240, 0.6);
+}
+
+.card-refined,
+.card-refined > .card-surface,
+.card-refined .order-card {
+  position: relative;
+  border-radius: 1rem;
+  border: 1px solid rgba(107,114,128,0.3);
+  box-shadow: 0 25px 60px rgba(15,23,42,0.18);
+  transition: transform 0.35s ease, box-shadow 0.35s ease, border-color 0.35s ease;
+  background: linear-gradient(180deg, #ffffff, #f1f5f9);
+  overflow: hidden;
+}
+
+.card-refined:hover,
+.card-refined > .card-surface:hover,
+.card-refined .order-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(59,130,246,0.5);
+  box-shadow: 0 30px 70px rgba(15,23,42,0.25);
+}
+
+.dark .card-refined,
+.dark .card-refined > .card-surface,
+.dark .card-refined .order-card,
+.dark .poa-app .bg-white.border,
+.dark .poa-app .bg-white.border.rounded-lg,
+.dark .poa-app .shadow-lg {
+  border: 1px solid rgba(56,189,248,0.3);
+  box-shadow: 0 30px 80px rgba(3,7,18,0.8);
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+  background: radial-gradient(circle at top right, rgba(14,165,233,0.18), rgba(31,41,55,0.9)), rgba(7,11,20,0.95);
+}
+
+.dark .poa-app .bg-white.border:hover,
+.dark .poa-app .shadow-lg:hover,
+.dark .card-refined:hover,
+.dark .card-refined > .card-surface:hover,
+.dark .card-refined .order-card:hover {
+  border-color: rgba(14,165,233,0.8);
+  box-shadow: 0 35px 110px rgba(2,6,23,0.85);
+}
+
+/* Badges/códigos dentro de tarjetas (modo oscuro): alto contraste */
+.dark .card-refined .badge,
+.dark .card-refined .chip,
+.dark .card-refined .pill,
+.dark .card-refined .rounded-full {
+  background: rgba(14,165,233,0.22);
+  color: #eaf2ff;
+  border: 1px solid rgba(56,189,248,0.45);
+}
+
+.dark .card-refined .text-gray-300,
+.dark .card-refined .text-slate-300,
+.dark .card-refined .text-blue-300 {
+  color: #eaf2ff !important;
+}
+
+/* Objetivos Específicos cards: moderno y con contraste en modo oscuro */
+.dark .oe-card {
+  border: 1px solid rgba(56,189,248,0.35);
+  box-shadow: 0 28px 72px rgba(2,6,23,0.85);
+  background: linear-gradient(180deg, rgba(9,14,28,0.92), rgba(15,23,42,0.94));
+}
+.dark .catalogo-card {
+  border: 1px solid rgba(56,189,248,0.3);
+  border-radius: 0.75rem;
+  box-shadow: 0 28px 72px rgba(2,6,23,0.8);
+  background: linear-gradient(180deg, rgba(9,14,28,0.94), rgba(13,20,35,0.96));
+}
+.dark .catalogo-item-header {
+  background: linear-gradient(90deg, rgba(14,165,233,0.08), rgba(79,70,229,0.06));
+  border-bottom: 1px solid rgba(56,189,248,0.18);
+}
+.dark .catalogo-item {
+  border-color: rgba(56,189,248,0.22);
+  background: transparent;
+}
+.dark .catalogo-item-body {
+  background: rgba(9,14,28,0.4);
+}
+.dark .catalogo-code {
+  color: #9dd1ff !important;
+}
+.dark .catalogo-name {
+  color: #e6edf7 !important;
+}
+.dark .oe-card:hover {
+  border-color: rgba(14,165,233,0.75);
+  box-shadow: 0 36px 110px rgba(2,6,23,0.9);
+}
+.dark .oe-title {
+  color: #e6edf7 !important;
+}
+.dark .oe-card .text-gray-500 {
+  color: #cbd5e1 !important;
+}
+.dark .oe-card .text-gray-900,
+.dark .oe-card .text-gray-800 {
+  color: #eaf2ff !important;
+}
+
+/* Código OE: badge con alto contraste y un brillo sutil */
+.dark .oe-badge {
+  background: radial-gradient(circle at 30% 30%, rgba(14,165,233,0.3), rgba(79,70,229,0.22));
+  color: #eef4ff;
+  border: 1px solid rgba(56,189,248,0.5);
+  box-shadow: 0 8px 22px rgba(2,6,23,0.6), inset 0 0 8px rgba(14,165,233,0.25);
+}
+
+/* Home cards: alto contraste en modo oscuro */
+.dark .card-kv-label {
+  color: #9dd1ff !important;
+}
+.dark .card-kv-value,
+.dark .card-objective {
+  color: #e6edf7 !important;
+}
+.dark .objective-pill {
+  background: rgba(14,165,233,0.22) !important;
+  color: #eaf2ff !important;
+  border: 1px solid rgba(56,189,248,0.45) !important;
+}
+.dark .card-cta-text {
+  color: #a7e3ff !important;
+}
+
+/* Divisor vertical en tarjetas (modo oscuro) */
+.dark .card-divider {
+  border-color: rgba(56,189,248,0.25) !important;
+}
+
+/* ── Tarjeta DocumentoPOA: colores modo CLARO ───────────────────── */
+.poa-doc-aside {
+  background: rgba(241,245,249,0.7);     /* slate-100/70 */
+  border-color: rgba(148,163,184,0.35);  /* slate-300/35 */
+}
+.poa-doc-label {
+  color: #64748b;   /* slate-500 */
+}
+.poa-doc-value {
+  color: #1e293b;   /* slate-900 */
+}
+.poa-doc-icon {
+  color: #3b82f6;   /* blue-500 */
+}
+.poa-doc-obj-box {
+  background: #eef2ff;                   /* indigo-50 */
+  border: 1px solid #c7d2fe;            /* indigo-200 */
+}
+.poa-doc-obj-label {
+  color: #4338ca;   /* indigo-700 */
+}
+.poa-doc-obj-icon {
+  color: #6366f1;   /* indigo-500 */
+}
+.poa-doc-actions-border {
+  border-color: rgba(100,116,139,0.2);  /* slate-400/20 */
+}
+
+/* ── Tarjeta DocumentoPOA: overrides modo OSCURO ─────────────────── */
+.dark .poa-doc-aside {
+  background: rgba(255,255,255,0.04) !important;
+  border-color: rgba(255,255,255,0.08) !important;
+}
+.dark .poa-doc-label {
+  color: #9dd1ff !important;
+}
+.dark .poa-doc-value {
+  color: #e6edf7 !important;
+}
+.dark .poa-doc-icon {
+  color: #93c5fd !important;   /* blue-300 */
+}
+.dark .poa-doc-obj-box {
+  background: rgba(79,70,229,0.12) !important;
+  border: 1px solid rgba(129,140,248,0.3) !important;
+}
+.dark .poa-doc-obj-label {
+  color: #a5b4fc !important;   /* indigo-300 */
+}
+.dark .poa-doc-obj-icon {
+  color: #818cf8 !important;   /* indigo-400 */
+}
+.dark .poa-doc-actions-border {
+  border-color: rgba(255,255,255,0.08) !important;
+}
+
+/* Divisor para tarjetas y modales: sutil y consistente */
+.card-divider {
+  height: 1px;
+  width: 100%;
+  background: linear-gradient(90deg, rgba(148,163,184,0.25), rgba(148,163,184,0.45), rgba(148,163,184,0.25));
+  border: none;
+}
+
+/* Elegant card variant: más sofisticado y sutil en ambos temas */
+.card-elegant {
+  position: relative;
+  border-radius: 1rem;
+  /* Fondo con tinte azul suave para evitar blanco plano */
+  background: linear-gradient(180deg, #e9efff 0%, #dde6ff 100%);
+  /* Borde más saturado/oscuro en modo claro */
+  border: 2px solid rgba(29,78,216,0.6);
+  box-shadow: 0 26px 65px rgba(15,23,42,0.18), inset 0 0 0 1px rgba(255,255,255,0.42);
+}
+.card-elegant::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  /* Overlay menos brillante y con radial azul */
+  background: linear-gradient(145deg, rgba(255,255,255,0.20), rgba(255,255,255,0) 40%),
+              radial-gradient(120% 120% at -10% -10%, rgba(59,130,246,0.14), rgba(59,130,246,0) 52%);
+}
+.card-elegant::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  /* Fallback universal: borde doble con box-shadow (funciona en todos los navegadores) */
+  box-shadow:
+    inset 0 0 0 1.5px rgba(59,130,246,0.45),
+    inset 0 0 0 3px rgba(99,102,241,0.20);
+}
+/* Override solo para navegadores que soportan mask (borde gradiente premium) */
+@supports ((-webkit-mask: linear-gradient(#000 0 0)) or (mask: linear-gradient(#000 0 0))) {
+  .card-elegant::after {
+    box-shadow: none;
+    padding: 1.5px;
+    background: linear-gradient(120deg, rgba(59,130,246,0.55), rgba(99,102,241,0.55));
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+  }
+}
+.card-elegant:hover {
+  transform: translateY(-4px);
+  border-color: rgba(29,78,216,0.7);
+  box-shadow: 0 28px 72px rgba(15,23,42,0.22), inset 0 0 0 1px rgba(255,255,255,0.4);
+}
+
+/* Legibilidad: textos más oscuros dentro de la tarjeta en tema claro */
+:root:not(.dark) .card-elegant .text-gray-800,
+:root:not(.dark) .card-elegant .text-slate-800,
+:root:not(.dark) .card-elegant .text-gray-900,
+:root:not(.dark) .card-elegant .text-slate-900 {
+  color: #0b1a3a !important;
+}
+
+.dark .card-elegant {
+  background: linear-gradient(180deg, rgba(9,14,28,0.94) 0%, rgba(12,18,32,0.96) 100%);
+  border: 2px solid rgba(56,189,248,0.38);
+  box-shadow: 0 36px 98px rgba(2,6,23,0.9);
+}
+.dark .card-elegant::before {
+  background: linear-gradient(145deg, rgba(14,165,233,0.18), rgba(99,102,241,0.14) 38%, rgba(0,0,0,0) 60%),
+              radial-gradient(140% 140% at -15% -15%, rgba(59,130,246,0.10), rgba(59,130,246,0) 50%);
+}
+.dark .card-elegant::after {
+  background: linear-gradient(120deg, rgba(14,165,233,0.6), rgba(99,102,241,0.6));
+}
+.dark .card-elegant:hover {
+  border-color: rgba(14,165,233,0.5);
+  box-shadow: 0 38px 110px rgba(2,6,23,0.9);
+}
+
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: rgba(255,255,255,0.92);
+  border: 1px solid rgba(148,163,184,0.4);
+  border-radius: 1.1rem;
+  overflow: hidden;
+  box-shadow: 0 25px 60px rgba(15,23,42,0.15);
+  transition: box-shadow 0.35s ease, transform 0.35s ease;
+}
+
+table:hover {
+  box-shadow: 0 35px 80px rgba(15,23,42,0.25);
+}
+
+table th,
+table td {
+  padding: 0.75rem 0.9rem;
+  border-bottom: 1px solid rgba(148,163,184,0.35);
+  /* reducir más el tamaño de texto para mayor densidad */
+  font-size: 0.84rem;
+  color: #0f172a;
+  background: transparent;
+}
+
+table th {
+  background: linear-gradient(120deg, rgba(37,99,235,0.12), rgba(14,165,233,0.08));
+  color: #1e3a8a;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+table tbody tr {
+  background: #ffffff;
+}
+
+table tbody tr:nth-child(even) {
+  background: #eff6ff;
+}
+
+table tr:last-child td {
+  border-bottom: none;
+}
+
+table tbody tr:hover {
+  background: rgba(59,130,246,0.08);
+}
+
+/* Selección persistente de filas (tema claro) */
+table tbody tr.is-selected,
+table tbody tr[aria-selected="true"],
+table tbody tr[data-selected="true"] {
+  background: #dbeafe !important;
+  outline: 2px solid rgba(59,130,246,0.35);
+  outline-offset: -2px;
+}
+
+/* Dark theme tables: solid surface for strong legibility */
+.dark table {
+  background: #0b1224; /* solid deep navy */
+  border-color: rgba(56,189,248,0.35);
+  box-shadow: 0 30px 90px rgba(2,6,23,0.7);
+}
+
+.dark table th,
+.dark table td {
+  border-bottom-color: rgba(56,189,248,0.26);
+  color: #e6edf7;
+  background: transparent; /* evitar velos translúcidos en celdas */
+}
+
+/* Dark table header: subtle indigo/cyan glaze over solid base */
+.dark table th {
+  background: linear-gradient(120deg, rgba(14,165,233,0.18), rgba(79,70,229,0.16)), #0d1630;
+  color: #dbeafe;
+}
+
+/* Zebra striping y hover para lectura */
+.dark table tbody tr:nth-child(odd) {
+  background: rgba(255,255,255,0.02);
+}
+.dark table tbody tr:nth-child(even) {
+  background: rgba(9,14,28,0.35);
+}
+.dark table tbody tr:hover {
+  background: rgba(37,99,235,0.16);
+}
+
+/* Selección persistente de filas (tema oscuro) */
+.dark table tbody tr.is-selected,
+.dark table tbody tr[aria-selected="true"],
+.dark table tbody tr[data-selected="true"] {
+  background: linear-gradient(120deg, rgba(14,165,233,0.22), rgba(79,70,229,0.2)), #0d1630 !important;
+  outline: 2px solid rgba(56,189,248,0.6);
+  outline-offset: -2px;
+}
+
+.dark table th,
+.dark table td,
+.dark .poa-app .text-gray-800,
+.dark .poa-app .text-gray-900,
+.dark .poa-app .text-gray-700,
+.dark .poa-app .text-blue-900,
+.dark .poa-app .text-blue-800,
+.dark .poa-app .text-blue-700 {
+  color: #e2e8f0 !important;
+}
+
+.dark table {
+  font-size: 0.82rem;
+}
+
+.dark table th,
+.dark table td {
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.dark table th {
+  color: #c7d2fe !important;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   TARJETA POA FUTURISTA — poa-futura-*
+   ═══════════════════════════════════════════════════════════ */
+
+/* Contenedor principal */
+.poa-futura-card,
+.poa-doc-card {
+  position: relative;
+  border-radius: 0.875rem;
+  border: 1px solid rgba(6, 182, 212, 0.12);
+  border-left-width: 3px;
+  background: #05101e;
+  box-shadow:
+    0 0 0 1px rgba(6,182,212,0.04),
+    0 4px 20px rgba(0,0,0,0.6),
+    inset 0 1px 0 rgba(255,255,255,0.03);
+  overflow: hidden;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.poa-doc-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(6,182,212,0.35);
+  box-shadow: 0 0 0 1px rgba(6,182,212,0.12), 0 8px 30px rgba(0,0,0,0.7), 0 0 20px rgba(6,182,212,0.05);
+}
+.poa-doc-card:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(6,182,212,0.3);
+}
+
+/* divisor horizontal entre filas del grid */
+.poa-doc-divide {
+  border-color: rgba(56,189,248,0.12);
+}
+
+.poa-futura-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background:
+    radial-gradient(ellipse 80% 60% at 100% 0%, rgba(14,165,233,0.07), transparent 65%),
+    radial-gradient(ellipse 60% 80% at 0% 100%, rgba(99,102,241,0.05), transparent 65%);
+}
+.poa-futura-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(56,189,248,0.4);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.55);
+}
+.poa-futura-card:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(14,165,233,0.2);
+}
+
+/* Divisor vertical entre año y entidad */
+.poa-futura-divider-v {
+  width: 1px;
+  height: 2.2rem;
+  flex-shrink: 0;
+  background: linear-gradient(to bottom, transparent, rgba(56,189,248,0.35), transparent);
+}
+:root:not(.dark) .poa-futura-divider-v {
+  background: linear-gradient(to bottom, transparent, rgba(99,102,241,0.35), transparent);
+}
+
+/* Textos y colores internos */
+.poa-futura-label {
+  color: #3d5a7a;
+}
+.poa-futura-title {
+  color: #c8e6ff;
+  letter-spacing: -0.02em;
+}
+.poa-futura-body {
+  color: #8eb4ce;
+}
+.poa-futura-icon {
+  color: #22d3ee;
+}
+.poa-futura-accent {
+  color: #a78bfa;
+}
+
+/* Iconos de estado */
+.poa-icon-bg-amber   { background: rgba(251,191,36,0.10); }
+.poa-icon-bg-cyan    { background: rgba(34,211,238,0.10); }
+.poa-icon-bg-emerald { background: rgba(52,211,153,0.10); }
+.poa-icon-bg-violet  { background: rgba(167,139,250,0.10); }
+
+/* Chip para unidad */
+.poa-futura-chip {
+  background: rgba(34,211,238,0.07);
+  color: #67e8f9;
+  border: 1px solid rgba(34,211,238,0.2);
+}
+
+/* Separador luminoso */
+.poa-futura-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(34,211,238,0.2) 30%, rgba(167,139,250,0.2) 70%, transparent);
+}
+
+/* divisor de grid */
+.poa-doc-divide {
+  border-color: rgba(34,211,238,0.08);
+  background: rgba(6,182,212,0.025);
+}
+
+/* Caja de objetivo */
+.poa-futura-obj-box {
+  background: rgba(14,116,144,0.08);
+  border: 1px solid rgba(34,211,238,0.12);
+}
+
+/* Botones */
+.poa-futura-btn-edit {
+  background: rgba(6,182,212,0.12);
+  color: #22d3ee;
+  border: 1px solid rgba(6,182,212,0.3);
+  box-shadow: 0 0 8px rgba(6,182,212,0.12);
+}
+.poa-futura-btn-edit:hover {
+  background: rgba(6,182,212,0.22);
+  border-color: rgba(6,182,212,0.6);
+  box-shadow: 0 0 14px rgba(6,182,212,0.2);
+}
+.poa-futura-btn-delete {
+  background: rgba(244,63,94,0.10);
+  color: #fb7185;
+  border: 1px solid rgba(244,63,94,0.28);
+  box-shadow: 0 0 8px rgba(244,63,94,0.08);
+}
+.poa-futura-btn-delete:hover {
+  background: rgba(244,63,94,0.20);
+  border-color: rgba(244,63,94,0.55);
+  box-shadow: 0 0 14px rgba(244,63,94,0.15);
+}
+
+/* ── Overrides modo CLARO ─────────── */
+:root:not(.dark) .poa-futura-card,
+:root:not(.dark) .poa-doc-card {
+  background: #ffffff;
+  border-color: rgba(99,102,241,0.25);
+  box-shadow: 0 4px 16px rgba(15,23,42,0.10);
+}
+:root:not(.dark) .poa-doc-card:hover {
+  box-shadow: 0 8px 24px rgba(15,23,42,0.16);
+}
+:root:not(.dark) .poa-doc-divide {
+  border-color: rgba(99,102,241,0.15);
+}
+:root:not(.dark) .poa-futura-card:hover {
+  border-color: rgba(99,102,241,0.5);
+  box-shadow: 0 8px 24px rgba(15,23,42,0.14);
+}
+:root:not(.dark) .poa-futura-label  { color: #64748b; }
+:root:not(.dark) .poa-futura-title  { color: #0f172a; }
+:root:not(.dark) .poa-futura-body   { color: #334155; }
+:root:not(.dark) .poa-futura-icon   { color: #0891b2; }
+:root:not(.dark) .poa-futura-accent { color: #6d28d9; }
+:root:not(.dark) .poa-icon-bg-amber   { background: rgba(251,191,36,0.12); }
+:root:not(.dark) .poa-icon-bg-cyan    { background: rgba(8,145,178,0.10); }
+:root:not(.dark) .poa-icon-bg-emerald { background: rgba(5,150,105,0.10); }
+:root:not(.dark) .poa-icon-bg-violet  { background: rgba(109,40,217,0.10); }
+:root:not(.dark) .poa-futura-chip {
+  background: rgba(99,102,241,0.10);
+  color: #3730a3;
+  border-color: rgba(99,102,241,0.3);
+}
+:root:not(.dark) .poa-futura-obj-box {
+  background: rgba(238,242,255,0.90);
+  border-color: rgba(99,102,241,0.25);
+}
+:root:not(.dark) .poa-futura-divider {
+  background: linear-gradient(90deg, transparent, rgba(99,102,241,0.25) 30%, rgba(56,189,248,0.25) 70%, transparent);
+}
