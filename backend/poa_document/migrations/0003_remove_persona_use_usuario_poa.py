@@ -21,7 +21,5 @@ class Migration(migrations.Migration):
             name='jefe_unidad',
             field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='documentos_jefe', to='poa_document.usuariopoa'),
         ),
-        migrations.DeleteModel(
-            name='Persona',
-        ),
+        # No-op: `Persona` ya no existe en el estado base actual de la app.
     ]
