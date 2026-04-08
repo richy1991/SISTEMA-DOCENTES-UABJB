@@ -4,7 +4,7 @@ import IconButton from './IconButton';
 import { FaTimes, FaFileImport, FaSave } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import { Input, Textarea, Modal } from './base';
-import { buildClientErrorMessages, formatApiErrors, ModalErrorAlert } from './formErrorUtils';
+import { buildClientErrorMessages, formatApiErrors, mapApiErrorsToFieldErrors, ModalErrorAlert } from './formErrorUtils';
 
 const NuevoObjetivoModal = ({ onClose, onCreated, documentoId, objetivo, existingObjetivos = [], onUpdated, onImport }) => {
   const isEdit = Boolean(objetivo && objetivo.id !== undefined);
@@ -14,6 +14,19 @@ const NuevoObjetivoModal = ({ onClose, onCreated, documentoId, objetivo, existin
   const codigoRef = useRef(null);
   const [loading, setLoading] = useState(false);
   const [errorMessages, setErrorMessages] = useState([]);
+  const [fieldErrors, setFieldErrors] = useState({});
+
+  const focusFirstError = (errors) => {
+    const firstKey = Object.keys(errors || {})[0];
+    if (!firstKey) return;
+    requestAnimationFrame(() => {
+      const field = document.querySelector(`[name="${firstKey}"]`);
+      if (field) {
+        field.focus();
+        field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    });
+  };
 
   useEffect(() => {
     if (objetivo) {
@@ -23,6 +36,7 @@ const NuevoObjetivoModal = ({ onClose, onCreated, documentoId, objetivo, existin
       setDescripcion('');
     }
     setErrorMessages([]);
+    setFieldErrors({});
   }, [objetivo]);
 
   useEffect(() => {
@@ -49,8 +63,12 @@ const NuevoObjetivoModal = ({ onClose, onCreated, documentoId, objetivo, existin
   const handleCreate = async (e) => {
     e && e.preventDefault && e.preventDefault();
     setErrorMessages([]);
+    setFieldErrors({});
     if (!descripcion) {
-      setErrorMessages(buildClientErrorMessages({ descripcion: 'La descripción es obligatoria.' }));
+      const nextErrors = { descripcion: 'La descripción es obligatoria.' };
+      setFieldErrors(nextErrors);
+      setErrorMessages(buildClientErrorMessages(nextErrors));
+      focusFirstError(nextErrors);
       return;
     }
 
@@ -63,8 +81,11 @@ const NuevoObjetivoModal = ({ onClose, onCreated, documentoId, objetivo, existin
     }
     const duplicateCode = existingObjetivos.find(o => String(o.codigo || '').trim().toLowerCase() === codeLower && codeLower !== '' && (!isEdit || Number(o.id) !== Number(objetivo.id)));
     if (duplicateCode) {
+      const nextErrors = { codigo: 'Ya existe un objetivo con el mismo código en este documento.' };
+      setFieldErrors(nextErrors);
       setErrorMessages(['Código: ya existe un objetivo con el mismo código en este documento.']);
       toast.error('Ya existe un objetivo con el mismo código en este documento.');
+      focusFirstError(nextErrors);
       return;
     }
     setLoading(true);
@@ -85,9 +106,12 @@ const NuevoObjetivoModal = ({ onClose, onCreated, documentoId, objetivo, existin
       else toast.success('Objetivo creado');
       if (onClose) onClose();
     } catch (err) {
+      const nextFieldErrors = mapApiErrorsToFieldErrors(err?.response?.data || {});
+      setFieldErrors(nextFieldErrors);
       const messages = formatApiErrors(err?.response?.data || err.message || 'Error al guardar objetivo');
       setErrorMessages(messages);
       toast.error(messages[0] || 'Error al guardar objetivo');
+      focusFirstError(nextFieldErrors);
     } finally {
       setLoading(false);
     }
@@ -116,10 +140,14 @@ const NuevoObjetivoModal = ({ onClose, onCreated, documentoId, objetivo, existin
               <div className="mt-1 flex items-center gap-2">
                 <Input
                   ref={codigoRef}
-                  name="codigo-input"
+                  name="codigo"
                   value={codigo}
-                  onChange={e => setCodigo(e.target.value)}
+                  onChange={e => {
+                    setCodigo(e.target.value);
+                    if (fieldErrors.codigo) setFieldErrors(prev => ({ ...prev, codigo: '' }));
+                  }}
                   className="flex-1"
+                  error={fieldErrors.codigo}
                 />
                 <IconButton icon={<FaFileImport />} onClick={handleImport} className="btn-cancel border px-3 py-2 rounded text-sm" title="Importar">Importar</IconButton>
               </div>
@@ -127,9 +155,14 @@ const NuevoObjetivoModal = ({ onClose, onCreated, documentoId, objetivo, existin
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Descripción</label>
               <Textarea
+                name="descripcion"
                 value={descripcion}
-                onChange={e => setDescripcion(e.target.value)}
+                onChange={e => {
+                  setDescripcion(e.target.value);
+                  if (fieldErrors.descripcion) setFieldErrors(prev => ({ ...prev, descripcion: '' }));
+                }}
                 rows={4}
+                error={fieldErrors.descripcion}
               />
             </div>
 

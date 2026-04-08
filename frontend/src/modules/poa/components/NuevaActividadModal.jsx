@@ -3,7 +3,7 @@ import { createActividad, updateActividad, getCatalogoOperaciones, searchOperaci
 import IconButton from './IconButton';
 import { FaTimes, FaSave } from 'react-icons/fa';
 import { Input, Textarea, Select, Modal } from './base';
-import { buildClientErrorMessages, formatApiErrors, ModalErrorAlert } from './formErrorUtils';
+import { buildClientErrorMessages, formatApiErrors, mapApiErrorsToFieldErrors, ModalErrorAlert } from './formErrorUtils';
 
 const NuevaActividadModal = ({ onClose, onCreated, onUpdated, objetivoId, actividad }) => {
   const [codigo, setCodigo] = useState('');
@@ -26,7 +26,20 @@ const NuevaActividadModal = ({ onClose, onCreated, onUpdated, objetivoId, activi
   const [indicadorSuggestions, setIndicadorSuggestions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [errorMessages, setErrorMessages] = useState([]);
+  const [fieldErrors, setFieldErrors] = useState({});
   const skipNextSearchRef = useRef(false);
+
+  const focusFirstError = (errors) => {
+    const firstKey = Object.keys(errors || {})[0];
+    if (!firstKey) return;
+    requestAnimationFrame(() => {
+      const field = document.querySelector(`[name="${firstKey}"]`);
+      if (field) {
+        field.focus();
+        field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    });
+  };
 
   const indicadorLabel = useCallback((item) => {
     if (!item) return '';
@@ -99,11 +112,14 @@ const NuevaActividadModal = ({ onClose, onCreated, onUpdated, objetivoId, activi
   const handleCreate = async (e) => {
     e && e.preventDefault && e.preventDefault();
     setErrorMessages([]);
+    setFieldErrors({});
     const clientErrors = {};
     if (!codigo || String(codigo).trim() === '' || String(codigo).trim() === 'AC-') clientErrors.codigo = 'El código es obligatorio y no puede quedarse como "AC-".';
     if (!nombre || String(nombre).trim() === '') clientErrors.nombre = 'El nombre es obligatorio.';
     if (Object.keys(clientErrors).length > 0) {
+      setFieldErrors(clientErrors);
       setErrorMessages(buildClientErrorMessages(clientErrors));
+      focusFirstError(clientErrors);
       return;
     }
     setLoading(true);
@@ -139,7 +155,10 @@ const NuevaActividadModal = ({ onClose, onCreated, onUpdated, objetivoId, activi
       if (onClose) onClose();
     } catch (err) {
       const messages = formatApiErrors(err?.response?.data ?? err?.message ?? err);
+      const nextFieldErrors = mapApiErrorsToFieldErrors(err?.response?.data || {});
+      setFieldErrors(nextFieldErrors);
       setErrorMessages(messages);
+      focusFirstError(nextFieldErrors);
     } finally {
       setLoading(false);
     }
@@ -197,19 +216,26 @@ const NuevaActividadModal = ({ onClose, onCreated, onUpdated, objetivoId, activi
               <div className="col-span-2">
                 <Input
                   label="Código"
+                  name="codigo"
                   value={codigo}
-                  onChange={e => setCodigo(e.target.value)}
+                  onChange={e => {
+                    setCodigo(e.target.value);
+                    if (fieldErrors.codigo) setFieldErrors(prev => ({ ...prev, codigo: '' }));
+                  }}
                   maxLength={6}
+                  error={fieldErrors.codigo}
                 />
               </div>
               <div className="col-span-7">
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Nombre</label>
                 <Textarea
+                  name="nombre"
                   ref={nombreRef}
                   value={nombre}
                   onChange={e => {
                     const val = e.target.value;
                     setNombre(val);
+                    if (fieldErrors.nombre) setFieldErrors(prev => ({ ...prev, nombre: '' }));
                     requestAnimationFrame(() => {
                       if (nombreRef.current) {
                         nombreRef.current.scrollTop = nombreRef.current.scrollHeight;
@@ -218,16 +244,19 @@ const NuevaActividadModal = ({ onClose, onCreated, onUpdated, objetivoId, activi
                   }}
                   className="overflow-auto"
                   rows={2}
+                  error={fieldErrors.nombre}
                 />
               </div>
               <div className="col-span-3">
                 <Input
                   label="Responsable"
+                  name="responsable"
                   value={responsable}
                   ref={responsableRef}
                   onChange={e => {
                     const val = e.target.value;
                     setResponsable(val);
+                    if (fieldErrors.responsable) setFieldErrors(prev => ({ ...prev, responsable: '' }));
                     requestAnimationFrame(() => {
                       if (responsableRef.current) {
                         responsableRef.current.scrollLeft = responsableRef.current.scrollWidth;
@@ -235,6 +264,7 @@ const NuevaActividadModal = ({ onClose, onCreated, onUpdated, objetivoId, activi
                     });
                   }}
                   className="overflow-x-auto whitespace-nowrap"
+                  error={fieldErrors.responsable}
                 />
               </div>
             </div>
@@ -242,11 +272,13 @@ const NuevaActividadModal = ({ onClose, onCreated, onUpdated, objetivoId, activi
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Productos esperados</label>
               <Textarea
+                name="productos_esperados"
                 ref={productosRef}
                 value={productos}
                 onChange={e => {
                   const val = e.target.value;
                   setProductos(val);
+                  if (fieldErrors.productos_esperados) setFieldErrors(prev => ({ ...prev, productos_esperados: '' }));
                   requestAnimationFrame(() => {
                     if (productosRef.current) {
                       productosRef.current.scrollTop = productosRef.current.scrollHeight;
@@ -255,6 +287,7 @@ const NuevaActividadModal = ({ onClose, onCreated, onUpdated, objetivoId, activi
                 }}
                 className="overflow-auto"
                 rows={3}
+                error={fieldErrors.productos_esperados}
               />
             </div>
 
@@ -263,11 +296,16 @@ const NuevaActividadModal = ({ onClose, onCreated, onUpdated, objetivoId, activi
               <div className="col-span-7">
                 <label className="block text-xs font-medium text-gray-700 dark:text-slate-300">Indicador (buscar)</label>
                 <input
+                  name="indicador_descripcion"
                   value={indicadorQuery}
-                  onChange={e => { setIndicadorQuery(e.target.value); setIndicadorSeleccionado(null); }}
+                  onChange={e => {
+                    setIndicadorQuery(e.target.value);
+                    setIndicadorSeleccionado(null);
+                    if (fieldErrors.indicador_descripcion) setFieldErrors(prev => ({ ...prev, indicador_descripcion: '' }));
+                  }}
                   placeholder="Escribe para buscar..."
                   autoComplete="off"
-                  className="poa-input mt-1 block w-full rounded px-2 py-1 text-xs"
+                  className={`poa-input mt-1 block w-full rounded px-2 py-1 text-xs ${fieldErrors.indicador_descripcion ? 'border-red-500 dark:border-red-500 focus:ring-red-500 dark:focus:ring-red-500' : ''}`}
                 />
                 {indicadorSuggestions && indicadorSuggestions.length > 0 && (
                   <ul className="absolute bg-white dark:bg-slate-800 border dark:border-slate-600 rounded mt-1 w-full max-h-44 overflow-auto z-30 shadow-lg">
@@ -294,9 +332,14 @@ const NuevaActividadModal = ({ onClose, onCreated, onUpdated, objetivoId, activi
               <div className="col-span-3">
                 <Select
                   label="Unidad"
+                  name="indicador_unidad"
                   value={indicadorUnidad}
-                  onChange={e => setIndicadorUnidad(e.target.value)}
+                  onChange={e => {
+                    setIndicadorUnidad(e.target.value);
+                    if (fieldErrors.indicador_unidad) setFieldErrors(prev => ({ ...prev, indicador_unidad: '' }));
+                  }}
                   className="text-xs"
+                  error={fieldErrors.indicador_unidad}
                 >
                   <option value="numero">Número</option>
                   <option value="porcentaje">Porcentaje</option>
@@ -305,10 +348,15 @@ const NuevaActividadModal = ({ onClose, onCreated, onUpdated, objetivoId, activi
               <div className="col-span-2">
                 <Input
                   label="Línea base"
+                  name="indicador_linea_base"
                   type="number"
                   value={indicadorLineaBase}
-                  onChange={e => setIndicadorLineaBase(e.target.value)}
+                  onChange={e => {
+                    setIndicadorLineaBase(e.target.value);
+                    if (fieldErrors.indicador_linea_base) setFieldErrors(prev => ({ ...prev, indicador_linea_base: '' }));
+                  }}
                   className="text-xs"
+                  error={fieldErrors.indicador_linea_base}
                 />
               </div>
             </div>
@@ -317,18 +365,28 @@ const NuevaActividadModal = ({ onClose, onCreated, onUpdated, objetivoId, activi
               <div className="col-span-1 md:col-span-3">
                 <Input
                   label="Meta"
+                  name="indicador_meta"
                   type="number"
                   value={indicadorMeta}
-                  onChange={e => setIndicadorMeta(e.target.value)}
+                  onChange={e => {
+                    setIndicadorMeta(e.target.value);
+                    if (fieldErrors.indicador_meta) setFieldErrors(prev => ({ ...prev, indicador_meta: '' }));
+                  }}
                   className="text-xs"
+                  error={fieldErrors.indicador_meta}
                 />
               </div>
               <div className="col-span-1 md:col-span-3">
                 <Select
                   label="Estado"
+                  name="estado"
                   value={estado}
-                  onChange={e => setEstado(e.target.value)}
+                  onChange={e => {
+                    setEstado(e.target.value);
+                    if (fieldErrors.estado) setFieldErrors(prev => ({ ...prev, estado: '' }));
+                  }}
                   className="text-xs"
+                  error={fieldErrors.estado}
                 >
                   <option value="programado">Programado</option>
                   <option value="en_ejecucion">En ejecución</option>
@@ -339,17 +397,27 @@ const NuevaActividadModal = ({ onClose, onCreated, onUpdated, objetivoId, activi
               <div className="col-span-1 md:col-span-3">
                 <Input
                   label="Mes inicio"
+                  name="mes_inicio"
                   value={mesInicio}
-                  onChange={e => setMesInicio(e.target.value)}
+                  onChange={e => {
+                    setMesInicio(e.target.value);
+                    if (fieldErrors.mes_inicio) setFieldErrors(prev => ({ ...prev, mes_inicio: '' }));
+                  }}
                   className="text-xs"
+                  error={fieldErrors.mes_inicio}
                 />
               </div>
               <div className="col-span-1 md:col-span-3">
                 <Input
                   label="Mes fin"
+                  name="mes_fin"
                   value={mesFin}
-                  onChange={e => setMesFin(e.target.value)}
+                  onChange={e => {
+                    setMesFin(e.target.value);
+                    if (fieldErrors.mes_fin) setFieldErrors(prev => ({ ...prev, mes_fin: '' }));
+                  }}
                   className="text-xs"
+                  error={fieldErrors.mes_fin}
                 />
               </div>
             </div>

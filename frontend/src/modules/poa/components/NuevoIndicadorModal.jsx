@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import IconButton from './IconButton';
 import { FaTimes, FaSave } from 'react-icons/fa';
 import { Input, Textarea, Modal } from './base';
-import { buildClientErrorMessages, formatApiErrors, ModalErrorAlert } from './formErrorUtils';
+import { buildClientErrorMessages, formatApiErrors, mapApiErrorsToFieldErrors, ModalErrorAlert } from './formErrorUtils';
 
 const NuevoIndicadorModal = ({ onClose, direccion, operacion: operacionProp }) => {
   const [servicio, setServicio] = useState('');
@@ -14,10 +14,24 @@ const NuevoIndicadorModal = ({ onClose, direccion, operacion: operacionProp }) =
   const [indicador, setIndicador] = useState('');
   const [saving, setSaving] = useState(false);
   const [errorMessages, setErrorMessages] = useState([]);
+  const [fieldErrors, setFieldErrors] = useState({});
+
+  const focusFirstError = (errors) => {
+    const firstKey = Object.keys(errors || {})[0];
+    if (!firstKey) return;
+    requestAnimationFrame(() => {
+      const field = document.querySelector(`[name="${firstKey}"]`);
+      if (field) {
+        field.focus();
+        field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    });
+  };
 
   useEffect(() => {
     setServicio(''); setProceso(''); setOperacion(''); setProductoIntermedio(''); setIndicador('');
     setErrorMessages([]);
+    setFieldErrors({});
     if (operacionProp) {
       setServicio(operacionProp.servicio || operacionProp.unidad || '');
       setProceso(operacionProp.proceso || operacionProp.proceso_nombre || '');
@@ -31,12 +45,15 @@ const NuevoIndicadorModal = ({ onClose, direccion, operacion: operacionProp }) =
     e.preventDefault();
     const clientErrors = {};
     setErrorMessages([]);
+    setFieldErrors({});
     if (!operacion || operacion.trim() === '') clientErrors.operacion = 'Ingrese el nombre de la operación.';
     if (!direccion || !direccion.id) clientErrors.detail = 'No hay dirección seleccionada.';
     if (Object.keys(clientErrors).length > 0) {
       const messages = buildClientErrorMessages(clientErrors);
+      setFieldErrors(clientErrors);
       setErrorMessages(messages);
       toast.error(messages[0]);
+      focusFirstError(clientErrors);
       return;
     }
     setSaving(true);
@@ -62,9 +79,12 @@ const NuevoIndicadorModal = ({ onClose, direccion, operacion: operacionProp }) =
       onClose && onClose();
     } catch (err) {
       console.error('Error al crear operación:', err);
+      const nextFieldErrors = mapApiErrorsToFieldErrors(err?.response?.data || {});
       const messages = formatApiErrors(err?.response?.data || err?.message || 'Error al crear operación');
+      setFieldErrors(nextFieldErrors);
       setErrorMessages(messages);
       toast.error(messages[0] || 'Error al crear operación');
+      focusFirstError(nextFieldErrors);
     } finally {
       setSaving(false);
     }
@@ -83,33 +103,58 @@ const NuevoIndicadorModal = ({ onClose, direccion, operacion: operacionProp }) =
             <div className="grid grid-cols-1 gap-3">
               <Input
                 label="Servicio"
+                name="servicio"
                 value={servicio}
-                onChange={(e) => setServicio(e.target.value)}
+                onChange={(e) => {
+                  setServicio(e.target.value);
+                  if (fieldErrors.servicio) setFieldErrors(prev => ({ ...prev, servicio: '' }));
+                }}
+                error={fieldErrors.servicio}
               />
 
               <Input
                 label="Proceso"
+                name="proceso"
                 value={proceso}
-                onChange={(e) => setProceso(e.target.value)}
+                onChange={(e) => {
+                  setProceso(e.target.value);
+                  if (fieldErrors.proceso) setFieldErrors(prev => ({ ...prev, proceso: '' }));
+                }}
+                error={fieldErrors.proceso}
               />
 
               <Input
                 label="Operación"
+                name="operacion"
                 value={operacion}
-                onChange={(e) => setOperacion(e.target.value)}
+                onChange={(e) => {
+                  setOperacion(e.target.value);
+                  if (fieldErrors.operacion) setFieldErrors(prev => ({ ...prev, operacion: '' }));
+                }}
+                error={fieldErrors.operacion}
               />
 
               <Input
                 label="Producto intermedio (opcional)"
+                name="producto_intermedio"
                 value={productoIntermedio}
-                onChange={(e) => setProductoIntermedio(e.target.value)}
+                onChange={(e) => {
+                  setProductoIntermedio(e.target.value);
+                  if (fieldErrors.producto_intermedio) setFieldErrors(prev => ({ ...prev, producto_intermedio: '' }));
+                }}
+                error={fieldErrors.producto_intermedio}
               />
 
               <Textarea
                 label="Indicador (opcional)"
+                name="indicador"
                 value={indicador}
-                onChange={(e) => setIndicador(e.target.value)}
+                onChange={(e) => {
+                  setIndicador(e.target.value);
+                  if (fieldErrors.indicador) setFieldErrors(prev => ({ ...prev, indicador: '' }));
+                }}
                 rows={3}
+                error={fieldErrors.indicador}
               />
             </div>
 

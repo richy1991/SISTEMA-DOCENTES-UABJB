@@ -20,6 +20,18 @@ const AsignarAccesoPOAModal = ({ onClose, accesoToEdit, onCreated, onUpdated }) 
   const [fieldErrors, setFieldErrors] = useState({});
   const searchTimeout = useRef(null);
 
+  const focusFirstError = (errors) => {
+    const firstKey = Object.keys(errors || {})[0];
+    if (!firstKey) return;
+    requestAnimationFrame(() => {
+      const field = document.querySelector(`[name="${firstKey}"]`);
+      if (field) {
+        field.focus();
+        field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    });
+  };
+
   useEffect(() => {
     if (!accesoToEdit) return;
     setRol(accesoToEdit.rol || 'elaborador');
@@ -86,6 +98,7 @@ const AsignarAccesoPOAModal = ({ onClose, accesoToEdit, onCreated, onUpdated }) 
       setFieldErrors(nextFieldErrors);
       setErrorMessages(messages);
       toast.error(messages[0]);
+      focusFirstError(nextFieldErrors);
       return;
     }
     setLoading(true);
@@ -109,9 +122,11 @@ const AsignarAccesoPOAModal = ({ onClose, accesoToEdit, onCreated, onUpdated }) 
     } catch (err) {
       const data = err?.response?.data;
       const messages = formatApiErrors(data || err?.message || 'Error al guardar');
-      setFieldErrors(mapApiErrorsToFieldErrors(data));
+      const nextFieldErrors = mapApiErrorsToFieldErrors(data);
+      setFieldErrors(nextFieldErrors);
       setErrorMessages(messages);
       toast.error(messages[0] || 'Error al guardar');
+      focusFirstError(nextFieldErrors);
     } finally {
       setLoading(false);
     }
@@ -146,11 +161,12 @@ const AsignarAccesoPOAModal = ({ onClose, accesoToEdit, onCreated, onUpdated }) 
                 <FaSearch size={13} />
               </span>
               <input
+                name="user"
                 value={searchQ}
                 onChange={e => handleSearch(e.target.value)}
                 disabled={isEditor}
                 placeholder="Buscar por nombre, usuario o correo..."
-                className="poa-input block w-full rounded-lg pl-9 pr-4 py-2.5 text-sm"
+                className={`poa-input block w-full rounded-lg pl-9 pr-4 py-2.5 text-sm ${fieldErrors.user ? 'border-red-500 dark:border-red-500 focus:ring-red-500 dark:focus:ring-red-500' : ''}`}
               />
               {searching && (
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-blue-500 dark:text-sky-400">Buscando…</span>
@@ -237,10 +253,14 @@ const AsignarAccesoPOAModal = ({ onClose, accesoToEdit, onCreated, onUpdated }) 
                 Nombre de la Entidad Revisora <span className="text-red-500">*</span>
               </label>
               <input
+                name="nombre_entidad"
                 value={nombreEntidad}
-                onChange={e => setNombreEntidad(e.target.value)}
+                onChange={e => {
+                  setNombreEntidad(e.target.value);
+                  if (fieldErrors.nombre_entidad) setFieldErrors(prev => ({ ...prev, nombre_entidad: '' }));
+                }}
                 placeholder="Ej: DAF, VRA, DI, Rectorado…"
-                className="poa-input block w-full border border-gray-300 dark:border-slate-600 rounded-lg px-4 py-2.5 text-sm"
+                className={`poa-input block w-full border border-gray-300 dark:border-slate-600 rounded-lg px-4 py-2.5 text-sm ${fieldErrors.nombre_entidad ? 'border-red-500 dark:border-red-500 focus:ring-red-500 dark:focus:ring-red-500' : ''}`}
               />
               <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
                 Nombre de la institución o unidad que revisa y aprueba documentos POA.

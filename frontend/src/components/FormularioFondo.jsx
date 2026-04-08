@@ -264,6 +264,48 @@ function FormularioFondo({ isDark, editar = false }) {
     return 'Datos inválidos.';
   };
 
+  const mapearErroresBackendACampos = (data) => {
+    const origen = data?.details || data;
+    if (!origen || typeof origen !== 'object') return {};
+
+    const mapaClaves = {
+      calendario: 'calendario_academico',
+      materia: 'asignatura',
+    };
+
+    const errores = {};
+
+    Object.entries(origen).forEach(([clave, valor]) => {
+      if (['error', 'detail', 'details', 'non_field_errors'].includes(clave)) return;
+
+      const claveCampo = mapaClaves[clave] || clave;
+      const mensaje = Array.isArray(valor)
+        ? String(valor[0])
+        : typeof valor === 'string'
+          ? valor
+          : extraerMensajeValidacion(valor);
+
+      if (mensaje && !errores[claveCampo]) {
+        errores[claveCampo] = mensaje;
+      }
+    });
+
+    return errores;
+  };
+
+  const enfocarPrimerCampoConError = (errores) => {
+    const primerCampo = Object.keys(errores)[0];
+    if (!primerCampo) return;
+
+    setTimeout(() => {
+      const campo = document.querySelector(`[name="${primerCampo}"]`);
+      if (campo) {
+        campo.focus();
+        campo.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 0);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -326,6 +368,12 @@ function FormularioFondo({ isDark, editar = false }) {
         const data = err.response.data;
 
         if (status === 400) {
+          const erroresBackend = mapearErroresBackendACampos(data);
+          if (Object.keys(erroresBackend).length > 0) {
+            setErroresCampos(erroresBackend);
+            enfocarPrimerCampoConError(erroresBackend);
+          }
+
           const mensajeEspecifico = simplificarMensajeError(extraerMensajeValidacion(data));
           const mensajeValidacion = `ERROR DE VALIDACIÓN: ${mensajeEspecifico}`;
           setError(mensajeValidacion);

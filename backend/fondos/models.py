@@ -423,7 +423,7 @@ class FondoTiempo(models.Model):
     semanas_año = models.DecimalField(
         max_digits=4,
         decimal_places=1,
-        default=45.8,
+        default=Decimal('45.8'),
         help_text="Número de semanas efectivas del año para cálculo de horas anuales"
     )
     horas_semana = models.DecimalField(max_digits=5, decimal_places=2, default=0, help_text="Horas semanales del docente según su dedicación")

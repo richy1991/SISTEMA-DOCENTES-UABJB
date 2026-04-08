@@ -4,26 +4,44 @@ import toast from 'react-hot-toast';
 import IconButton from './IconButton';
 import { FaTimes, FaSave } from 'react-icons/fa';
 import { Input, Modal } from './base';
-import { buildClientErrorMessages, formatApiErrors, ModalErrorAlert } from './formErrorUtils';
+import { buildClientErrorMessages, formatApiErrors, mapApiErrorsToFieldErrors, ModalErrorAlert } from './formErrorUtils';
 
 const NuevaDireccionModal = ({ onClose, direccion, onCreated, onUpdated }) => {
   const [descripcion, setDescripcion] = useState('');
   const [saving, setSaving] = useState(false);
   const [errorMessages, setErrorMessages] = useState([]);
+  const [fieldErrors, setFieldErrors] = useState({});
+
+  const focusFirstError = (errors) => {
+    const firstKey = Object.keys(errors || {})[0];
+    if (!firstKey) return;
+    requestAnimationFrame(() => {
+      const field = document.querySelector(`[name="${firstKey}"]`);
+      if (field) {
+        field.focus();
+        field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    });
+  };
 
   useEffect(() => {
     if (direccion) setDescripcion(direccion.nombre || direccion.descripcion || direccion.direccion || direccion.nombre_completo || '');
     else setDescripcion('');
     setErrorMessages([]);
+    setFieldErrors({});
   }, [direccion]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMessages([]);
+    setFieldErrors({});
     if (!descripcion || descripcion.trim() === '') {
-      const messages = buildClientErrorMessages({ descripcion: 'Ingrese el nombre de la dirección.' });
+      const nextErrors = { nombre: 'Ingrese el nombre de la dirección.' };
+      const messages = buildClientErrorMessages(nextErrors);
+      setFieldErrors(nextErrors);
       setErrorMessages(messages);
       toast.error(messages[0]);
+      focusFirstError(nextErrors);
       return;
     }
     setSaving(true);
@@ -41,9 +59,12 @@ const NuevaDireccionModal = ({ onClose, direccion, onCreated, onUpdated }) => {
       }
     } catch (err) {
       console.error(err);
+      const nextFieldErrors = mapApiErrorsToFieldErrors(err?.response?.data || {});
       const messages = formatApiErrors(err?.response?.data || err?.message || 'Error al guardar');
+      setFieldErrors(nextFieldErrors);
       setErrorMessages(messages);
       toast.error(messages[0] || 'Error al guardar');
+      focusFirstError(nextFieldErrors);
     } finally {
       setSaving(false);
     }
@@ -61,9 +82,14 @@ const NuevaDireccionModal = ({ onClose, direccion, onCreated, onUpdated }) => {
           <form onSubmit={handleSubmit} className="space-y-4">
             <Input
               label="Nombre de la dirección"
+              name="nombre"
               value={descripcion}
-              onChange={(e) => setDescripcion(e.target.value)}
+              onChange={(e) => {
+                setDescripcion(e.target.value);
+                if (fieldErrors.nombre) setFieldErrors(prev => ({ ...prev, nombre: '' }));
+              }}
               placeholder="Ej: Dirección de Sistemas"
+              error={fieldErrors.nombre}
             />
             <div className="flex justify-end gap-2 modal-actions">
               <IconButton icon={<FaTimes />} onClick={onClose} className="btn-cancel px-3 py-2 rounded" title="Cancelar">Cancelar</IconButton>

@@ -5,7 +5,7 @@ import { FaTimes, FaSave, FaCalendarAlt } from 'react-icons/fa';
 import { createDocumentoPOA, updateDocumentoPOA, getUsuariosPOA, getDocumentosPOAPorGestion } from '../../../apis/poa.api';
 import { Textarea, Modal } from './base';
 import { DEFAULT_ENTIDAD } from '../config/defaults';
-import { DEFAULT_ERROR_LABELS, formatApiErrors, ModalErrorAlert } from './formErrorUtils';
+import { DEFAULT_ERROR_LABELS, formatApiErrors, mapApiErrorsToFieldErrors, ModalErrorAlert } from './formErrorUtils';
 
 const ELABORADOR_ROLE = 'elaborador';
 const DIRECTOR_ROLE = 'director_carrera';
@@ -60,6 +60,19 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
   const dateInputRef = React.useRef(null);
   const [loading, setLoading] = useState(false);
   const [errorMessages, setErrorMessages] = useState([]);
+  const [fieldErrors, setFieldErrors] = useState({});
+
+  const focusFirstError = (errors) => {
+    const firstKey = Object.keys(errors || {})[0];
+    if (!firstKey) return;
+    requestAnimationFrame(() => {
+      const field = document.querySelector(`[name="${firstKey}"]`);
+      if (field) {
+        field.focus();
+        field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    });
+  };
 
   const [personas, setPersonas] = useState([]);
   const [personasLoading, setPersonasLoading] = useState(true);
@@ -162,21 +175,34 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
   const handleChange = (e) => {
     const { name, value } = e.target;
     setForm(f => ({ ...f, [name]: value }));
+    if (fieldErrors[name]) setFieldErrors(prev => ({ ...prev, [name]: '' }));
   };
 
   const handleCreate = async (e) => {
     e && e.preventDefault && e.preventDefault();
     setErrorMessages([]);
+    setFieldErrors({});
     if (!form.gestion || !form.unidad_solicitante) {
+      const nextErrors = {};
+      if (!form.gestion) nextErrors.gestion = 'Este campo es obligatorio.';
+      if (!form.unidad_solicitante) nextErrors.unidad_solicitante = 'Este campo es obligatorio.';
+      setFieldErrors(nextErrors);
       setErrorMessages(['Gestión: este campo es obligatorio.', 'Unidad solicitante: este campo es obligatorio.']);
+      focusFirstError(nextErrors);
       return;
     }
     if (form.elaborado_por && form.jefe_unidad && String(form.elaborado_por) === String(form.jefe_unidad)) {
+      const nextErrors = { elaborado_por_id: 'Debe ser diferente de Jefe de unidad.', jefe_unidad_id: 'Debe ser diferente de Elaborado por.' };
+      setFieldErrors(nextErrors);
       setErrorMessages(['Validación general: "Elaborado por" y "Jefe de unidad" deben ser personas diferentes.']);
+      focusFirstError(nextErrors);
       return;
     }
     if (docToEdit?.id && requiereJustificacionEdicion && !String(justificacionEdicion || '').trim()) {
+      const nextErrors = { justificacion_edicion: 'Este campo es obligatorio para editar documentos aprobados o en ejecución.' };
+      setFieldErrors(nextErrors);
       setErrorMessages(['Justificación de edición: este campo es obligatorio para editar documentos aprobados o en ejecución.']);
+      focusFirstError(nextErrors);
       return;
     }
     setLoading(true);
@@ -230,9 +256,12 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
       }
     } catch (err) {
       const resp = err?.response?.data;
+      const nextFieldErrors = mapApiErrorsToFieldErrors(resp || {});
+      setFieldErrors(nextFieldErrors);
       const messages = formatApiErrors(resp || err?.message || 'Error al crear documento');
       setErrorMessages(messages);
       toast.error(messages[0] || 'Error al guardar documento');
+      focusFirstError(nextFieldErrors);
     } finally {
       setLoading(false);
     }
@@ -263,10 +292,14 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
               <div className="flex items-center gap-2">
                 <input
                   ref={dateInputRef}
+                  name="fecha_elaboracion"
                   type="date"
                   value={fechaElab}
-                  onChange={e => setFechaElab(e.target.value)}
-                  className="poa-input w-36 text-sm"
+                  onChange={e => {
+                    setFechaElab(e.target.value);
+                    if (fieldErrors.fecha_elaboracion) setFieldErrors(prev => ({ ...prev, fecha_elaboracion: '' }));
+                  }}
+                  className={`poa-input w-36 text-sm ${fieldErrors.fecha_elaboracion ? 'border-red-500 dark:border-red-500 focus:ring-red-500 dark:focus:ring-red-500' : ''}`}
                 />
                 <IconButton
                   icon={<FaCalendarAlt />}
@@ -293,7 +326,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
                   name="unidad_solicitante"
                   value={form.unidad_solicitante}
                   onChange={handleChange}
-                  className="poa-input block w-full"
+                  className={`poa-input block w-full ${fieldErrors.unidad_solicitante ? 'border-red-500 dark:border-red-500 focus:ring-red-500 dark:focus:ring-red-500' : ''}`}
                   placeholder="Ingrese la unidad solicitante..."
                 />
               </div>
@@ -303,7 +336,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
                   name="programa"
                   value={form.programa}
                   onChange={handleChange}
-                  className="poa-input block w-full"
+                  className={`poa-input block w-full ${fieldErrors.programa ? 'border-red-500 dark:border-red-500 focus:ring-red-500 dark:focus:ring-red-500' : ''}`}
                 />
               </div>
             </div>
@@ -317,6 +350,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
                 onChange={handleChange}
                 rows={3}
                 className="resize-y"
+                error={fieldErrors.objetivo_gestion_institucional}
               />
             </div>
 
@@ -332,8 +366,14 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
                 ) : (
                   <div className="relative min-w-0">
                     <input
+                      name="elaborado_por_id"
                       value={elabQuery}
-                      onChange={e => { setElabQuery(e.target.value); setForm(f => ({ ...f, elaborado_por: '' })); setShowElabDropdown(true); }}
+                      onChange={e => {
+                        setElabQuery(e.target.value);
+                        setForm(f => ({ ...f, elaborado_por: '' }));
+                        setShowElabDropdown(true);
+                        if (fieldErrors.elaborado_por_id) setFieldErrors(prev => ({ ...prev, elaborado_por_id: '' }));
+                      }}
                       onKeyDown={e => {
                         if (e.key === 'ArrowDown') { e.preventDefault(); setElabHighlight(i => Math.min(i + 1, elabFilteredPersonas.length - 1)); setShowElabDropdown(true); }
                         if (e.key === 'ArrowUp') { e.preventDefault(); setElabHighlight(i => Math.max(i - 1, 0)); }
@@ -341,7 +381,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
                         if (e.key === 'Escape') { setShowElabDropdown(false); }
                       }}
                       placeholder="Buscar persona..."
-                      className="poa-input mt-1 block w-full bg-white dark:bg-slate-900"
+                      className={`poa-input mt-1 block w-full bg-white dark:bg-slate-900 ${fieldErrors.elaborado_por_id ? 'border-red-500 dark:border-red-500 focus:ring-red-500 dark:focus:ring-red-500' : ''}`}
                     />
                     {showElabDropdown && elabFilteredPersonas.length > 0 && (
                       <ul className="absolute z-50 mt-1 w-full max-w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded shadow-lg max-h-56 overflow-auto">
@@ -370,8 +410,15 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
                 ) : (
                   <div className="relative min-w-0">
                     <input
+                      name="jefe_unidad_id"
                       value={jefeQuery || (form.jefe_unidad ? (personas.find(p => String(p.id) === String(form.jefe_unidad))?.nombre || '') : '')}
-                      onChange={e => { const q = e.target.value; setJefeQuery(q); setForm(f => ({ ...f, jefe_unidad: '' })); setShowJefeDropdown(true); }}
+                      onChange={e => {
+                        const q = e.target.value;
+                        setJefeQuery(q);
+                        setForm(f => ({ ...f, jefe_unidad: '' }));
+                        setShowJefeDropdown(true);
+                        if (fieldErrors.jefe_unidad_id) setFieldErrors(prev => ({ ...prev, jefe_unidad_id: '' }));
+                      }}
                       onKeyDown={e => {
                         if (e.key === 'ArrowDown') { e.preventDefault(); setJefeHighlight(i => Math.min(i + 1, jefeFilteredPersonas.length - 1)); setShowJefeDropdown(true); }
                         if (e.key === 'ArrowUp') { e.preventDefault(); setJefeHighlight(i => Math.max(i - 1, 0)); }
@@ -379,7 +426,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
                         if (e.key === 'Escape') { setShowJefeDropdown(false); }
                       }}
                       placeholder="Buscar jefe de unidad..."
-                      className="poa-input mt-1 block w-full bg-white dark:bg-slate-900"
+                      className={`poa-input mt-1 block w-full bg-white dark:bg-slate-900 ${fieldErrors.jefe_unidad_id ? 'border-red-500 dark:border-red-500 focus:ring-red-500 dark:focus:ring-red-500' : ''}`}
                     />
                     {showJefeDropdown && jefeFilteredPersonas.length > 0 && (
                       <ul className="absolute z-50 mt-1 w-full max-w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded shadow-lg max-h-56 overflow-auto">
@@ -407,11 +454,16 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
                   Este comentario se guardará en la bitácora con fecha y usuario que realizó la modificación.
                 </p>
                 <Textarea
+                  name="justificacion_edicion"
                   value={justificacionEdicion}
-                  onChange={(e) => setJustificacionEdicion(e.target.value)}
+                  onChange={(e) => {
+                    setJustificacionEdicion(e.target.value);
+                    if (fieldErrors.justificacion_edicion) setFieldErrors(prev => ({ ...prev, justificacion_edicion: '' }));
+                  }}
                   rows={3}
                   className="resize-y"
                   placeholder="Explique por qué se modifica este documento después de su aprobación..."
+                  error={fieldErrors.justificacion_edicion}
                 />
               </div>
             )}
