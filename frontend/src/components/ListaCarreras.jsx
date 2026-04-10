@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { FaEdit, FaTrash, FaEye } from 'react-icons/fa';
-import { getCarreras, getFacultadesCarrera } from '../apis/api';
+import { getCarreras, getFacultadesCarrera, addFacultadCarrera, deleteFacultadCarrera } from '../apis/api';
 import api from '../apis/api';
 import toast from 'react-hot-toast';
 import html2pdf from 'html2pdf.js';
@@ -10,7 +10,7 @@ const FECHA_MAXIMA_HOY = new Date().toISOString().split('T')[0];
 
 const InputField = ({ label, name, type = 'text', value, onChange, required, error }) => (
   <div>
-    <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label} {required && <span className="text-red-500">*</span>}</label>
+    <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label} {error && <span className="text-red-500">*</span>}</label>
     <input
       type={type}
       name={name}
@@ -33,11 +33,23 @@ const SelectConDropdown = ({
   disabled = false,
   required = false,
   placeholder = 'Seleccione...',
-  searchable = false
+  searchable = false,
+  showManageButton = false,
+  onManageClick,
+  onAddFacultad,
+  setFacultadOptions,
+  getFacultadesCarrera,
+  formData,
+  setFormData
 }) => {
   const [open, setOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [inputValue, setInputValue] = useState('');
+  const [manageMode, setManageMode] = useState(false);
+  const [newFacultadName, setNewFacultadName] = useState('');
+  const [editingFacultad, setEditingFacultad] = useState(null);
+  const [editFacultadName, setEditFacultadName] = useState('');
+  const [selectedFacultades, setSelectedFacultades] = useState([]);
   const containerRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -45,6 +57,7 @@ const SelectConDropdown = ({
     const handleOutside = (event) => {
       if (containerRef.current && !containerRef.current.contains(event.target)) {
         setOpen(false);
+        setManageMode(false);
       }
     };
 
@@ -54,6 +67,110 @@ const SelectConDropdown = ({
 
     return () => document.removeEventListener('mousedown', handleOutside);
   }, [open]);
+
+  const handleManageToggle = () => {
+    setManageMode((prev) => !prev);
+    if (!open) setOpen(true);
+  };
+
+  const handleSelectMode = () => {
+    setManageMode(false);
+    setOpen((prev) => !prev);
+  };
+
+  const handleStartEditFacultad = (option) => {
+    setEditingFacultad(option.value);
+    setEditFacultadName(option.label);
+  };
+
+  const handleSaveEditFacultad = async () => {
+    if (!editingFacultad || !editFacultadName.trim()) return;
+
+    const oldNombre = options.find(opt => opt.value === editingFacultad)?.label;
+    const newNombre = editFacultadName.trim();
+
+    if (!oldNombre || oldNombre === newNombre) {
+      setEditingFacultad(null);
+      setEditFacultadName('');
+      return;
+    }
+
+    try {
+      // Agregar la nueva facultad
+      await addFacultadCarrera(newNombre);
+      // Eliminar la antigua
+      await deleteFacultadCarrera(oldNombre);
+      
+      // Actualizar el estado local inmediatamente
+      const updatedOptions = options.map(opt => {
+        if (opt.value === editingFacultad) {
+          return { ...opt, label: newNombre, value: newNombre };
+        }
+        return opt;
+      });
+      setFacultadOptions(updatedOptions);
+      
+      // Actualizar el valor seleccionado si era la facultad editada
+      if (value === editingFacultad) {
+        setFormData((prev) => ({ ...prev, facultad: newNombre }));
+      }
+      
+      toast.success('Facultad actualizada correctamente.');
+    } catch (err) {
+      const detail = err.response?.data?.detail || err.message;
+      toast.error(`No se pudo actualizar: ${detail}`);
+    } finally {
+      setEditingFacultad(null);
+      setEditFacultadName('');
+    }
+  };
+
+  const handleCancelEditFacultad = () => {
+    setEditingFacultad(null);
+    setEditFacultadName('');
+  };
+
+  const toggleSelectFacultad = (facultadValue) => {
+    setSelectedFacultades(prev => 
+      prev.includes(facultadValue)
+        ? prev.filter(v => v !== facultadValue)
+        : [...prev, facultadValue]
+    );
+  };
+
+  const handleDeleteSelectedFacultades = async () => {
+    if (selectedFacultades.length === 0) return;
+
+    // Filtrar solo las facultades que realmente se pueden eliminar (las que están en el catálogo)
+    const facultadesAEliminar = selectedFacultades.filter(facValue => {
+      const facOption = options.find(opt => opt.value === facValue);
+      // No eliminar la opción vacía
+      return facOption && facOption.value !== '';
+    });
+
+    if (facultadesAEliminar.length === 0) {
+      toast.error('No hay facultades válidas para eliminar.');
+      return;
+    }
+
+    try {
+      for (const facValue of facultadesAEliminar) {
+        const facOption = options.find(opt => opt.value === facValue);
+        if (facOption && facOption.label) {
+          await deleteFacultadCarrera(facOption.label);
+        }
+      }
+      
+      // Actualizar el estado local inmediatamente filtrando las eliminadas
+      const facultadesRestantes = options.filter(opt => !facultadesAEliminar.includes(opt.value));
+      setFacultadOptions(facultadesRestantes);
+      setSelectedFacultades([]);
+      toast.success(`${facultadesAEliminar.length} facultad(es) eliminada(s) correctamente.`);
+    } catch (err) {
+      const detail = err.response?.data?.detail || err.message;
+      toast.error(`No se pudo eliminar: ${detail}`);
+    }
+  };
 
   const selectedLabel = options.find((opt) => opt.value === value)?.label;
   const errorMessage = Array.isArray(error) ? (error[0] || '') : error;
@@ -76,23 +193,43 @@ const SelectConDropdown = ({
   return (
     <div ref={containerRef} className="relative">
       {label && (
-        <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
-          {label} {required && <span className="text-red-500">*</span>}
+        <label className="block text-sm font-semibold text-slate-800 dark:text-slate-300 mb-2">
+          {manageMode ? 'Agregar, Editar, Eliminar Facultades' : label} {error && <span className="text-red-500">*</span>}
         </label>
       )}
 
-      <div
-        className={`w-full px-4 py-3 rounded-2xl text-left flex items-center justify-between transition-all ${
-          disabled ? 'cursor-not-allowed opacity-60' : 'hover:shadow-md'
-        } ${
-          error
-            ? 'border-2 border-red-500 bg-white dark:bg-slate-800'
-            : open
-              ? 'border-2 border-[#2C4AAE] bg-white dark:bg-slate-800'
-              : 'border-2 border-slate-400 bg-slate-100 dark:bg-slate-700 hover:border-[#2C4AAE]'
-        }`}
-      >
-        {searchable ? (
+      <div className="flex gap-0.5">
+        <div
+          className={`flex-1 px-4 py-2.5 rounded-2xl text-left flex transition-all min-w-0 h-auto ${
+            disabled ? 'cursor-not-allowed opacity-60' : 'hover:shadow-md'
+          } ${
+            error
+              ? 'border-2 border-red-500 bg-white dark:bg-slate-800'
+              : open
+                ? 'border-2 border-[#2C4AAE] bg-white dark:bg-slate-800'
+                : 'border-2 border-slate-400 bg-slate-100 dark:bg-slate-700 hover:border-[#2C4AAE]'
+          }`}
+        >
+        {manageMode ? (
+          <input
+            ref={inputRef}
+            type="text"
+            value={newFacultadName}
+            onChange={(e) => setNewFacultadName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                e.stopPropagation();
+                if (newFacultadName.trim() && onAddFacultad) {
+                  onAddFacultad(newFacultadName.trim());
+                  setNewFacultadName('');
+                }
+              }
+            }}
+            placeholder="Agregar nueva facultad"
+            className="flex-1 bg-transparent focus:outline-none text-sm min-w-0 text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-500"
+          />
+        ) : searchable ? (
           <input
             ref={inputRef}
             type="text"
@@ -111,62 +248,202 @@ const SelectConDropdown = ({
             }}
             placeholder={placeholder}
             disabled={disabled}
-            className={`flex-1 bg-transparent focus:outline-none text-sm ${selectedLabel && !open ? 'text-slate-800 dark:text-white font-semibold leading-tight' : 'text-slate-800 dark:text-white'} placeholder-slate-400 dark:placeholder-slate-500`}
+            className={`flex-1 bg-transparent focus:outline-none text-sm min-w-0 ${selectedLabel && !open ? 'text-slate-800 dark:text-white font-semibold leading-tight' : 'text-slate-800 dark:text-white'} placeholder-slate-400 dark:placeholder-slate-500`}
           />
+        ) : (
+          <div className="flex-1 min-w-0 max-w-full">
+            <button
+              type="button"
+              onClick={handleSelectMode}
+              disabled={disabled}
+              className="inline-block text-left bg-transparent pr-2 py-1 max-w-full min-w-0 align-top"
+            >
+              <span className={`block break-words leading-tight ${selectedLabel ? 'text-slate-800 dark:text-white font-semibold text-sm' : 'text-slate-400 dark:text-slate-500'}`} style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+                {selectedLabel || placeholder}
+              </span>
+            </button>
+          </div>
+        )}
+
+        {manageMode ? (
+          <div className="flex items-start gap-1 self-start mt-1">
+            {selectedFacultades.length > 0 && (
+              <button
+                type="button"
+                onClick={handleDeleteSelectedFacultades}
+                className="w-8 h-8 bg-red-600 hover:bg-red-700 rounded-lg flex items-center justify-center transition-colors flex-shrink-0"
+                title={`Eliminar ${selectedFacultades.length} facultad(es) seleccionada(s)`}
+              >
+                <svg
+                  className="w-4 h-4 text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                if (newFacultadName.trim() && onAddFacultad) {
+                  onAddFacultad(newFacultadName.trim());
+                  setNewFacultadName('');
+                } else {
+                  setManageMode(false);
+                  setOpen(false);
+                  setNewFacultadName('');
+                  setSelectedFacultades([]);
+                }
+              }}
+              disabled={disabled}
+              className="w-8 h-8 bg-[#2C4AAE] hover:bg-[#1a3a8a] rounded-lg flex items-center justify-center transition-colors flex-shrink-0"
+            >
+              {newFacultadName.trim() ? (
+                <svg
+                  className="w-4 h-4 text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              ) : (
+                <svg
+                  className="w-4 h-4 text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              )}
+            </button>
+          </div>
         ) : (
           <button
             type="button"
-            onClick={() => setOpen((prev) => !prev)}
+            onClick={handleSelectMode}
             disabled={disabled}
-            className="flex-1 text-left bg-transparent"
+            className="w-8 h-8 bg-[#2C4AAE] hover:bg-[#1a3a8a] rounded-lg flex items-center justify-center transition-colors flex-shrink-0 self-start mt-2"
           >
-            <span className={`${selectedLabel ? 'text-slate-800 dark:text-white font-semibold text-sm leading-tight' : 'text-slate-400 dark:text-slate-500'}`}>
-              {selectedLabel || placeholder}
-            </span>
+            <svg
+              className={`w-4 h-4 text-white transition-transform duration-200 ${open && !manageMode ? 'rotate-180' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
           </button>
         )}
+        </div>
 
-        <button
-          type="button"
-          onClick={() => {
-            if (disabled) return;
-            setOpen((prev) => !prev);
-          }}
-          disabled={disabled}
-          className="w-8 h-8 bg-[#2C4AAE] hover:bg-[#1a3a8a] rounded-lg flex items-center justify-center transition-colors"
-        >
-          <svg
-            className={`w-4 h-4 text-white transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+        {showManageButton && !manageMode && (
+          <button
+            type="button"
+            onClick={() => {
+              setManageMode(true);
+              setOpen(true);
+            }}
+            title="Gestionar facultades"
+            className="h-[46px] w-[46px] bg-[#2C4AAE] hover:bg-[#1a3a8a] text-white font-bold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center justify-center flex-shrink-0 self-start mt-1"
           >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
+            <span className="text-lg">+</span>
+          </button>
+        )}
       </div>
 
       {open && (
         <div className="absolute z-50 mt-1 w-full rounded-xl border-2 border-[#2C4AAE] bg-white dark:bg-slate-800 shadow-xl max-h-48 overflow-auto">
           {filteredOptions.length > 0 ? (
-            filteredOptions.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => {
-                  onChange({ target: { name, value: option.value } });
-                  setInputValue(option.label);
-                  setOpen(false);
-                }}
-                className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
-                  value === option.value
-                    ? 'bg-[#2C4AAE] text-white font-semibold'
-                    : 'text-slate-700 dark:text-slate-300 hover:bg-[#2C4AAE] hover:text-white'
-                }`}
-              >
-                {option.label}
-              </button>
-            ))
+            manageMode ? (
+              <>
+                {filteredOptions.filter(opt => opt.value !== '').map((option) => (
+                  <div
+                    key={option.value}
+                    className="flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-[#2C4AAE] transition-colors group/facultad"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedFacultades.includes(option.value)}
+                      onChange={() => toggleSelectFacultad(option.value)}
+                      className="w-4 h-4 text-[#2C4AAE] border-slate-400 dark:border-slate-600 rounded focus:ring-[#2C4AAE] flex-shrink-0 accent-[#2C4AAE] group-hover/facultad:accent-white"
+                    />
+                    {editingFacultad === option.value ? (
+                      <input
+                        type="text"
+                        value={editFacultadName}
+                        onChange={(e) => setEditFacultadName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleSaveEditFacultad();
+                          if (e.key === 'Escape') handleCancelEditFacultad();
+                        }}
+                        className="flex-1 px-2 py-1 text-sm border border-[#2C4AAE] rounded bg-white dark:bg-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#2C4AAE]"
+                        autoFocus
+                      />
+                    ) : (
+                      <span className="flex-1 text-slate-700 dark:text-slate-300 group-hover/facultad:text-white">{option.label}</span>
+                    )}
+                    {editingFacultad === option.value ? (
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={handleSaveEditFacultad}
+                          className="w-4 h-4 flex items-center justify-center text-emerald-600 dark:text-emerald-400 hover:text-white dark:hover:text-white transition-colors"
+                          title="Guardar"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCancelEditFacultad}
+                          className="w-4 h-4 flex items-center justify-center text-red-600 dark:text-red-400 hover:text-white dark:hover:text-white transition-colors"
+                          title="Cancelar"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleStartEditFacultad(option)}
+                        className="w-4 h-4 flex items-center justify-center text-[#2C4AAE] dark:text-blue-400 group-hover/facultad:text-white transition-colors flex-shrink-0"
+                        title="Editar facultad"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </>
+            ) : (
+              filteredOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => {
+                    onChange({ target: { name, value: option.value } });
+                    setInputValue(option.label);
+                    setOpen(false);
+                  }}
+                  className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                    value === option.value
+                      ? 'bg-[#2C4AAE] text-white font-semibold'
+                      : 'text-slate-700 dark:text-slate-300 hover:bg-[#2C4AAE] hover:text-white'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))
+            )
           ) : (
             <div className="px-4 py-3 text-sm text-center text-slate-500 dark:text-slate-400">
               No se encontraron opciones
@@ -372,7 +649,7 @@ const DatePickerField = ({ label, name, value, onDateChange, error, required, ma
 
   return (
     <div ref={containerRef} className="relative">
-      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label} {required && <span className="text-red-500">*</span>}</label>
+      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label} {error && <span className="text-red-500">*</span>}</label>
       <div className={`relative w-full rounded-xl border-2 bg-slate-50 dark:bg-slate-700 shadow-sm ${error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'} focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent`}>
         <input
           type="text"
@@ -695,6 +972,9 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
   const [error, setError] = useState(null);
   const [user, setUser] = useState(null);
   const [facultadOptions, setFacultadOptions] = useState([]);
+  const [showFacultadManager, setShowFacultadManager] = useState(false);
+  const [nuevaFacultad, setNuevaFacultad] = useState('');
+  const [facultadManageLoading, setFacultadManageLoading] = useState(false);
 
   // Modal de editar
   const [showModal, setShowModal] = useState(false);
@@ -770,6 +1050,71 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
       console.error('Error cargando facultades:', err);
       setFacultadOptions([]);
     }
+  };
+
+  const abrirGestorFacultades = () => {
+    setNuevaFacultad('');
+    setShowFacultadManager(true);
+  };
+
+  const handleAgregarFacultad = async (nombreFacultad) => {
+    const nombre = String(nombreFacultad || '').trim();
+    if (!nombre) {
+      toast.error('Escribe una facultad antes de agregar.');
+      return;
+    }
+
+    setFacultadManageLoading(true);
+    try {
+      const response = await addFacultadCarrera(nombre);
+      const data = response.data || [];
+      setFacultadOptions(Array.isArray(data) ? data : []);
+      setFormData((prev) => ({ ...prev, facultad: nombre }));
+      setErrors((prev) => {
+        if (!prev.facultad) return prev;
+        const next = { ...prev };
+        delete next.facultad;
+        return next;
+      });
+      toast.success('Facultad agregada correctamente.');
+    } catch (err) {
+      const detail = err.response?.data?.detail || err.message;
+      toast.error(`No se pudo agregar: ${detail}`);
+    } finally {
+      setFacultadManageLoading(false);
+    }
+  };
+
+  const handleEliminarFacultad = async (nombre) => {
+    const facultad = String(nombre || '').trim();
+    if (!facultad) return;
+
+    setFacultadManageLoading(true);
+    try {
+      const response = await deleteFacultadCarrera(facultad);
+      const data = response.data || [];
+      setFacultadOptions(Array.isArray(data) ? data : []);
+      if (String(formData.facultad || '').trim() === facultad) {
+        setFormData((prev) => ({ ...prev, facultad: '' }));
+      }
+      toast.success('Facultad eliminada correctamente.');
+    } catch (err) {
+      const detail = err.response?.data?.detail || err.message;
+      toast.error(`No se pudo eliminar: ${detail}`);
+    } finally {
+      setFacultadManageLoading(false);
+    }
+  };
+
+  const handleSeleccionarFacultad = (nombre) => {
+    setFormData((prev) => ({ ...prev, facultad: nombre }));
+    setErrors((prev) => {
+      if (!prev.facultad) return prev;
+      const next = { ...prev };
+      delete next.facultad;
+      return next;
+    });
+    setShowFacultadManager(false);
   };
 
   const cargarCarreras = async () => {
@@ -1226,9 +1571,11 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
 
   const esSuperusuario = () => user?.is_superuser === true;
   const rolActual = user?.perfil?.rol;
+  const esAdminCarrera = () => rolActual === 'admin';
   const puedeEditarLogo = () => esSuperusuario() || ['admin', 'director', 'jefe_estudios'].includes(rolActual);
   const puedeEditarEstructura = () => esSuperusuario();
   const soloEditarLogo = () => !esSuperusuario() && ['admin', 'director', 'jefe_estudios'].includes(rolActual);
+  const puedeGestionarFacultades = () => esSuperusuario() || esAdminCarrera();
 
   const escapeHtml = (value = '') => String(value)
     .replace(/&/g, '&amp;')
@@ -1377,7 +1724,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                     <div className="md:col-span-3 space-y-4">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Nombre de la Carrera <span className="text-red-500">*</span></label>
+                          <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Nombre de la Carrera {errors.nombre && <span className="text-red-500">*</span>}</label>
                           <input type="text" name="nombre" value={formData.nombre} onChange={handleChange} required placeholder="Ej: Ingeniería de Sistemas" className={`w-full px-4 py-2.5 rounded-xl border-2 ${errors.nombre ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'} bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 placeholder:text-xs placeholder:italic transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:shadow-md`} />
                           {errors.nombre && <p className="text-xs text-red-600 mt-1">{getErrorMessage(errors.nombre)}</p>}
                         </div>
@@ -1387,12 +1734,16 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                           name="facultad"
                           value={formData.facultad}
                           onChange={handleChange}
+                          showManageButton={puedeGestionarFacultades()}
+                          onManageClick={abrirGestorFacultades}
+                          onAddFacultad={handleAgregarFacultad}
+                          setFacultadOptions={setFacultadOptions}
+                          getFacultadesCarrera={getFacultadesCarrera}
+                          formData={formData}
+                          setFormData={setFormData}
                           required
                           searchable
-                          options={[
-                            { value: '', label: 'Seleccione una facultad...' },
-                            ...facultadOptions
-                          ]}
+                          options={facultadOptions}
                           error={errors.facultad}
                           placeholder="Seleccione una facultad..."
                         />
@@ -1400,13 +1751,13 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Código <span className="text-red-500">*</span></label>
+                          <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Código {errors.codigo && <span className="text-red-500">*</span>}</label>
                           <input type="text" name="codigo" value={formData.codigo} onChange={handleChange} required placeholder="Ej: IS" className={`w-full px-4 py-2.5 rounded-xl border-2 ${errors.codigo ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'} bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 placeholder:text-xs placeholder:italic transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:shadow-md`} />
                           {errors.codigo && <p className="text-xs text-red-600 mt-1">{getErrorMessage(errors.codigo)}</p>}
                         </div>
 
                         <div>
-                          <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Resolución Ministerial <span className="text-red-500">*</span></label>
+                          <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Resolución Ministerial {errors.resolucion_ministerial && <span className="text-red-500">*</span>}</label>
                           <input type="text" name="resolucion_ministerial" value={formData.resolucion_ministerial} onChange={handleChange} required placeholder="Ej: RM 123/2020" className={`w-full px-4 py-2.5 rounded-xl border-2 ${errors.resolucion_ministerial ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'} bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 placeholder:text-xs placeholder:italic transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:shadow-md`} />
                           {errors.resolucion_ministerial && <p className="text-xs text-red-600 mt-1">{getErrorMessage(errors.resolucion_ministerial)}</p>}
                         </div>
@@ -1441,7 +1792,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                     <div className="md:col-span-2 h-full">
                       <div className="rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/60 p-4 h-full flex flex-col">
                         <div className="mb-3 flex items-center justify-between gap-2">
-                          <label className="block text-sm font-semibold text-slate-800 dark:text-slate-300">Logo de Carrera <span className="text-red-500">*</span></label>
+                          <label className="block text-sm font-semibold text-slate-800 dark:text-slate-300">Logo de Carrera {errors.logo_carrera_file && <span className="text-red-500">*</span>}</label>
                         </div>
 
                         <input
@@ -1852,7 +2203,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                 <div className="md:col-span-3 space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Nombre de la Carrera <span className="text-red-500">*</span></label>
+                      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Nombre de la Carrera {errors.nombre && <span className="text-red-500">*</span>}</label>
                       <input type="text" name="nombre" value={formData.nombre} onChange={handleChange} required placeholder="Ej: Ingeniería de Sistemas" className={`w-full px-4 py-2.5 rounded-xl border-2 ${errors.nombre ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'} bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 placeholder:text-xs placeholder:italic transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:shadow-md`} />
                       {errors.nombre && <p className="text-xs text-red-600 mt-1">{getErrorMessage(errors.nombre)}</p>}
                     </div>
@@ -1862,12 +2213,16 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                       name="facultad"
                       value={formData.facultad}
                       onChange={handleChange}
+                      showManageButton={puedeGestionarFacultades()}
+                      onManageClick={abrirGestorFacultades}
+                      onAddFacultad={handleAgregarFacultad}
+                      setFacultadOptions={setFacultadOptions}
+                      getFacultadesCarrera={getFacultadesCarrera}
+                      formData={formData}
+                      setFormData={setFormData}
                       required
                       searchable
-                      options={[
-                        { value: '', label: 'Seleccione una facultad...' },
-                        ...facultadOptions
-                      ]}
+                      options={facultadOptions}
                       error={errors.facultad}
                       placeholder="Seleccione una facultad..."
                     />
@@ -1875,13 +2230,13 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Código <span className="text-red-500">*</span></label>
+                      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Código {errors.codigo && <span className="text-red-500">*</span>}</label>
                       <input type="text" name="codigo" value={formData.codigo} onChange={handleChange} required placeholder="Ej: IS" className={`w-full px-4 py-2.5 rounded-xl border-2 ${errors.codigo ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'} bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 placeholder:text-xs placeholder:italic transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:shadow-md`} />
                       {errors.codigo && <p className="text-xs text-red-600 mt-1">{getErrorMessage(errors.codigo)}</p>}
                     </div>
 
                     <div>
-                      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Resolución Ministerial <span className="text-red-500">*</span></label>
+                      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Resolución Ministerial {errors.resolucion_ministerial && <span className="text-red-500">*</span>}</label>
                       <input type="text" name="resolucion_ministerial" value={formData.resolucion_ministerial} onChange={handleChange} required placeholder="Ej: RM 123/2020" className={`w-full px-4 py-2.5 rounded-xl border-2 ${errors.resolucion_ministerial ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'} bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 placeholder:text-xs placeholder:italic transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:shadow-md`} />
                       {errors.resolucion_ministerial && <p className="text-xs text-red-600 mt-1">{getErrorMessage(errors.resolucion_ministerial)}</p>}
                     </div>

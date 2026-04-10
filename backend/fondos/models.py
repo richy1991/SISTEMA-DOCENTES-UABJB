@@ -172,22 +172,37 @@ class SaldoVacacionesGestion(models.Model):
         super().save(*args, **kwargs)
 
 
+class FacultadCatalogo(models.Model):
+    """Catálogo editable de facultades para formularios de carrera."""
+
+    nombre = models.CharField(max_length=200, unique=True)
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Facultad"
+        verbose_name_plural = "Facultades"
+        ordering = ['nombre']
+
+    def __str__(self):
+        return self.nombre
+
+
 class Carrera(models.Model):
     """Carreras de la universidad"""
 
-    FACULTAD_CHOICES = [
-        ('Facultad de Ingeniería y Tecnología', 'Facultad de Ingeniería y Tecnología'),
-        ('Facultad de Ciencias y Tecnologia', 'Facultad de Ciencias y Tecnologia'),
-        ('Facultad de Ciencias de la Salud', 'Facultad de Ciencias de la Salud'),
-        ('Facultad de Ciencias Juridicas, Politicas y Sociales', 'Facultad de Ciencias Juridicas, Politicas y Sociales'),
-        ('Facultad de Ciencias Economicas y Financieras', 'Facultad de Ciencias Economicas y Financieras'),
-        ('Facultad de Humanidades y Ciencias de la Educacion', 'Facultad de Humanidades y Ciencias de la Educacion'),
-        ('Facultad de Ciencias Agropecuarias', 'Facultad de Ciencias Agropecuarias'),
+    DEFAULT_FACULTADES = [
+        'Facultad de Ingeniería y Tecnología',
+        'Facultad de Ciencias y Tecnologia',
+        'Facultad de Ciencias de la Salud',
+        'Facultad de Ciencias Juridicas, Politicas y Sociales',
+        'Facultad de Ciencias Economicas y Financieras',
+        'Facultad de Humanidades y Ciencias de la Educacion',
+        'Facultad de Ciencias Agropecuarias',
     ]
     
     nombre = models.CharField(max_length=200, unique=True)
     codigo = models.CharField(max_length=20, unique=True, validators=[MinLengthValidator(2)])
-    facultad = models.CharField(max_length=200, choices=FACULTAD_CHOICES)
+    facultad = models.CharField(max_length=200)
     mision = models.TextField(blank=True, default='')
     vision = models.TextField(blank=True, default='')
     perfil_profesional = models.TextField(blank=True, default='', help_text='Descripción del perfil profesional del egresado')
@@ -219,6 +234,14 @@ class Carrera(models.Model):
     def __str__(self):
         return f"{self.nombre} - {self.facultad}"
 
+    @classmethod
+    def get_facultad_values(cls):
+        # Solo devolver facultades del catálogo editable
+        # Sin valores por defecto - el usuario las gestiona manualmente
+        return list(
+            FacultadCatalogo.objects.order_by('nombre').values_list('nombre', flat=True)
+        )
+
     def clean(self):
         super().clean()
         self.codigo = (self.codigo or '').strip().upper()
@@ -228,9 +251,12 @@ class Carrera(models.Model):
             raise ValidationError({'codigo': 'El codigo de carrera es obligatorio.'})
         if not (self.facultad or '').strip():
             raise ValidationError({'facultad': 'La facultad es obligatoria y no puede estar vacía.'})
-        facultades_validas = {value for value, _ in self.FACULTAD_CHOICES}
-        if self.facultad not in facultades_validas:
+        
+        # Validar facultad solo si hay facultades en el catálogo
+        facultades_validas = set(self.get_facultad_values())
+        if facultades_validas and self.facultad not in facultades_validas:
             raise ValidationError({'facultad': 'La facultad seleccionada no es valida.'})
+        
         if self.fecha_resolucion and self.fecha_resolucion > timezone.now().date():
             raise ValidationError({'fecha_resolucion': 'La fecha de resolución no puede ser futura.'})
 

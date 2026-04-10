@@ -638,7 +638,7 @@ class CarreraSerializer(serializers.ModelSerializer):
         facultad_normalizada = (facultad or '').strip()
         if not facultad_normalizada:
             raise serializers.ValidationError({'facultad': 'La facultad es obligatoria y no puede estar vacía.'})
-        facultades_validas = {value for value, _ in Carrera.FACULTAD_CHOICES}
+        facultades_validas = set(Carrera.get_facultad_values())
         if facultad_normalizada not in facultades_validas:
             raise serializers.ValidationError({'facultad': 'La facultad seleccionada no es valida.'})
         attrs['facultad'] = facultad_normalizada

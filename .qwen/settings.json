@@ -11,7 +11,11 @@
       "Bash(pip install *)",
       "Bash(type *)",
       "Bash(ren *)",
-      "Bash(dir *)"
+      "Bash(dir *)",
+      "Bash(git stash)",
+      "Bash(git pull)",
+      "Bash(git stash *)",
+      "Bash(git show *)"
     ]
   },
   "$version": 3

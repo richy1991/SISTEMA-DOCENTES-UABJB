@@ -200,9 +200,9 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
                 <div className="absolute -bottom-40 -left-40 w-80 h-80 rounded-full blur-3xl opacity-20 dark:opacity-30 animate-pulse bg-purple-400 dark:bg-purple-500" style={{ animationDelay: '1s' }}></div>
             </div>
 
-            {/* Selector de Tema - Flotante */}
+            {/* Selector de Tema - Flotante Global (misma posición que en Fondo de Tiempo) */}
             <ThemeToggle theme={theme} setTheme={setTheme} />
-            
+
             {/* Contenido Principal */}
             <div className="relative min-h-screen flex flex-col items-center justify-center p-4 z-10">
                 

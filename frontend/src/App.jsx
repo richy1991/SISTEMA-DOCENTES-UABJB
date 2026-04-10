@@ -268,21 +268,21 @@ function App() {
             </Route>
 
             {/* Módulo: Fondos a Largo Plazo */}
-            <Route path="/largo-plazo" element={<SimpleLayout />}>
+            <Route path="/largo-plazo" element={<SimpleLayout theme={theme} setTheme={setTheme} />}>
               <Route index element={<Proximamente isDark={isDark} />} />
             </Route>
 
             {/* Módulo Principal: Gestión Global de Usuarios/Carreras */}
-            <Route path="/usuarios" element={<SimpleLayout />}>
+            <Route path="/usuarios" element={<SimpleLayout theme={theme} setTheme={setTheme} />}>
               <Route index element={<AnimatedRoute><GestionUsuarios isDark={isDark} user={user} hasSidebar={false} /></AnimatedRoute>} />
             </Route>
 
-            <Route path="/carreras" element={<SimpleLayout />}>
+            <Route path="/carreras" element={<SimpleLayout theme={theme} setTheme={setTheme} />}>
               <Route index element={<AnimatedRoute><ListaCarreras isDark={isDark} hasSidebar={false} /></AnimatedRoute>} />
             </Route>
 
             {/* Módulo: Seguimiento Global */}
-            <Route path="/seguimiento" element={<SimpleLayout />}>
+            <Route path="/seguimiento" element={<SimpleLayout theme={theme} setTheme={setTheme} />}>
               <Route index element={<Proximamente isDark={isDark} />} />
             </Route>
 

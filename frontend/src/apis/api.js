@@ -106,6 +106,8 @@ export const restaurarFondo = (id) => api.post(`/fondos-tiempo/${id}/restaurar/`
 export const getDocentes = () => api.get('/docentes/');
 export const getCarreras = () => api.get('/carreras/');
 export const getFacultadesCarrera = () => api.get('/carreras/facultades/');
+export const addFacultadCarrera = (value) => api.post('/carreras/facultades/agregar/', { value });
+export const deleteFacultadCarrera = (value) => api.post('/carreras/facultades/eliminar/', { value });
 
 // ===================================
 // ENDPOINTS - USUARIOS

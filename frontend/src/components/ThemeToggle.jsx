@@ -1,37 +1,30 @@
-import { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
-
 function ThemeToggle({ theme, setTheme }) {
-  // Usar estado reactivo en vez de leer directamente del DOM
-  const [isDarkMode, setIsDarkMode] = useState(
-    () => document.documentElement.classList.contains('dark')
-  );
-  const location = useLocation();
-
-  // Detectar si estamos en DetalleFondo
-  const enDetalleFondo = location.pathname.includes('/fondo/');
-
-  // Dashboard: va a posición media (donde está PDF)
-  // DetalleFondo: va arriba
-  const slotPosition = enDetalleFondo ? 'bottom-[11rem]' : 'bottom-[5.5rem]';
-
-  useEffect(() => {
-    const effective = theme === 'system'
-      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-      : theme;
-    setIsDarkMode(effective === 'dark');
-  }, [theme]);
-
   const toggleTheme = () => {
-    const nextTheme = isDarkMode ? 'light' : 'dark';
-    setIsDarkMode(!isDarkMode);
-    setTheme(nextTheme);
+    const isDark = document.documentElement.classList.contains('dark');
+    const nextTheme = isDark ? 'light' : 'dark';
+    
+    // Aplicar inmediatamente al DOM
+    if (nextTheme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    localStorage.setItem('theme', nextTheme);
+    
+    // Notificar al padre
+    if (setTheme) setTheme(nextTheme);
+    
+    // Forzar re-render de toda la página
+    window.dispatchEvent(new Event('storage'));
   };
+
+  // Leer estado actual del DOM
+  const isDarkMode = document.documentElement.classList.contains('dark');
 
   return (
     <button
       onClick={toggleTheme}
-      className={`fixed ${slotPosition} right-16 w-14 h-14 rounded-full shadow-2xl transition-all duration-500 ease-out hover:scale-110 flex items-center justify-center text-white z-[120] group overflow-hidden border-2
+      className={`fixed bottom-[5.5rem] right-16 w-14 h-14 rounded-full shadow-2xl transition-all duration-500 ease-out hover:scale-110 flex items-center justify-center text-white z-[120] group overflow-hidden border-2
         ${isDarkMode
           ? 'bg-gradient-to-br from-slate-700 via-blue-800 to-indigo-900 border-blue-500/30 hover:shadow-indigo-500/40'
           : 'bg-gradient-to-br from-blue-400 via-blue-500 to-indigo-500 border-white/30 hover:shadow-blue-500/40'
@@ -40,7 +33,7 @@ function ThemeToggle({ theme, setTheme }) {
       title={isDarkMode ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
     >
       <div className="relative w-full h-full flex items-center justify-center">
-        {/* Sun Icon - Mejorado */}
+        {/* Sun Icon */}
         <svg
           className={`w-8 h-8 absolute transition-all duration-700 ease-[cubic-bezier(0.68,-0.55,0.27,1.55)] ${isDarkMode ? 'opacity-0 rotate-[180deg] scale-0' : 'opacity-100 rotate-0 scale-100'
             }`}
@@ -52,7 +45,7 @@ function ThemeToggle({ theme, setTheme }) {
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
         </svg>
 
-        {/* Moon Icon - Mejorado */}
+        {/* Moon Icon */}
         <svg
           className={`w-7 h-7 absolute transition-all duration-700 ease-[cubic-bezier(0.68,-0.55,0.27,1.55)] ${isDarkMode ? 'opacity-100 rotate-0 scale-100' : 'opacity-0 -rotate-[180deg] scale-0'
             }`}

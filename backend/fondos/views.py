@@ -18,7 +18,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from .models import (
     Docente, Carrera, Materia, FondoTiempo, CategoriaFuncion, Actividad, PerfilUsuario, CargaHoraria,
     CalendarioAcademico, Proyecto, InformeFondo, ObservacionFondo, MensajeObservacion, HistorialFondo,
-    SaldoVacacionesGestion
+    SaldoVacacionesGestion, FacultadCatalogo
 )
 from .serializers import (
     DocenteSerializer, CarreraSerializer, MateriaSerializer, FondoTiempoSerializer,
@@ -392,6 +392,19 @@ class CarreraViewSet(viewsets.ModelViewSet):
         if not self._is_superuser(request.user):
             raise PermissionDenied('Solo el superusuario puede crear o eliminar carreras.')
 
+    def _enforce_manage_facultad_permission(self, request):
+        rol = self._rol_usuario(request.user)
+        if not (self._is_superuser(request.user) or rol == 'admin'):
+            raise PermissionDenied('Solo el superusuario o el rol admin pueden gestionar facultades.')
+
+    def _serialize_facultades(self):
+        # Solo devolver facultades que están en el catálogo editable
+        # No incluir las por defecto para evitar confusión al eliminar
+        return [
+            {'value': facultad.nombre, 'label': facultad.nombre}
+            for facultad in FacultadCatalogo.objects.order_by('nombre')
+        ]
+
     def create(self, request, *args, **kwargs):
         self._enforce_create_destroy_permission(request)
         return super().create(request, *args, **kwargs)
@@ -430,11 +443,55 @@ class CarreraViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def facultades(self, request):
-        opciones = [
-            {'value': value, 'label': label}
-            for value, label in Carrera.FACULTAD_CHOICES
-        ]
+        opciones = self._serialize_facultades()
         return Response(opciones, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated], url_path='facultades/agregar')
+    def agregar_facultad(self, request):
+        self._enforce_manage_facultad_permission(request)
+
+        nombre = str(request.data.get('value') or request.data.get('nombre') or '').strip()
+        if not nombre:
+            return Response(
+                {'detail': 'Debe enviar el nombre de la facultad.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if FacultadCatalogo.objects.filter(nombre__iexact=nombre).exists():
+            return Response(
+                {'detail': 'La facultad ya existe en el catálogo.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        FacultadCatalogo.objects.create(nombre=nombre)
+        return Response(self._serialize_facultades(), status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated], url_path='facultades/eliminar')
+    def eliminar_facultad(self, request):
+        self._enforce_manage_facultad_permission(request)
+
+        nombre = str(request.data.get('value') or request.data.get('nombre') or '').strip()
+        if not nombre:
+            return Response(
+                {'detail': 'Debe enviar la facultad a eliminar.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        facultad = FacultadCatalogo.objects.filter(nombre__iexact=nombre).first()
+        if not facultad:
+            return Response(
+                {'detail': 'La facultad no existe en el catálogo.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if Carrera.objects.filter(facultad__iexact=facultad.nombre).exists():
+            return Response(
+                {'detail': 'No se puede eliminar una facultad que ya está asignada a una carrera.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        facultad.delete()
+        return Response(self._serialize_facultades(), status=status.HTTP_200_OK)
 
     def destroy(self, request, *args, **kwargs):
         self._enforce_create_destroy_permission(request)
