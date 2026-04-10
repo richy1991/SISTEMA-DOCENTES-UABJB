@@ -133,7 +133,7 @@ const Header = ({
       );
     }
     
-    if (p === '/poa/direcciones') {
+    if (p === '/poa/direcciones' || p === '/poa/catalogos/indicadores' || p === '/poa/indicadores') {
       if (!canEdit) return null;
       if (headerSelectedDireccion) {
         return (

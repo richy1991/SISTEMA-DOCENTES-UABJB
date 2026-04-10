@@ -15,6 +15,7 @@ const DireccionesPage = () => {
   const [editing, setEditing] = useState(null);
   const [selectedDireccion, setSelectedDireccion] = useState(null);
   const [operaciones, setOperaciones] = useState([]);
+  const [opsQuery, setOpsQuery] = useState('');
   const [selectedOperacion, setSelectedOperacion] = useState(null);
   const [opsLoading, setOpsLoading] = useState(false);
   const [opsError, setOpsError] = useState(null);
@@ -55,6 +56,24 @@ const DireccionesPage = () => {
       return s.includes(q);
     });
   }, [direcciones, debouncedQuery]);
+
+  const filteredOperaciones = useMemo(() => {
+    const q = String(opsQuery || '').trim().toLowerCase();
+    if (!q) return operaciones;
+    return operaciones.filter((op) => {
+      const text = [
+        op?.servicio,
+        op?.proceso,
+        op?.operacion,
+        op?.producto_intermedio,
+        op?.indicador,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return text.includes(q);
+    });
+  }, [operaciones, opsQuery]);
 
   const handleCreated = (nueva) => {
     if (!nueva) return;
@@ -101,6 +120,7 @@ const DireccionesPage = () => {
   const fetchOperaciones = async (dir) => {
     if (!dir || dir.id === undefined || dir.id === null) return;
     setSelectedDireccion(dir);
+    setOpsQuery('');
     setSelectedOperacion(null);
     try { window.dispatchEvent(new CustomEvent('operacion-selected', { detail: null })); } catch (e) { /* ignore */ }
     try { window.dispatchEvent(new CustomEvent('direccion-selected', { detail: dir })); } catch (e) { /* ignore */ }
@@ -186,11 +206,20 @@ const DireccionesPage = () => {
             </div>
           </div>
           <div className="mt-3">
+            <div className="mb-3">
+              <input
+                type="text"
+                value={opsQuery}
+                onChange={(e) => setOpsQuery(e.target.value)}
+                placeholder="Buscar en operaciones e indicadores..."
+                className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              />
+            </div>
             {opsLoading ? (
               <div>Cargando operaciones...</div>
             ) : opsError ? (
               <div className="text-red-600">{opsError}</div>
-            ) : operaciones && operaciones.length > 0 ? (
+            ) : filteredOperaciones && filteredOperaciones.length > 0 ? (
               <div className="relative">
                 <div className="flex items-center justify-end mb-2 gap-2"></div>
                 <div ref={scrollRef} className="overflow-x-auto no-scrollbar">
@@ -205,7 +234,7 @@ const DireccionesPage = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {operaciones.map((op, index) => {
+                      {filteredOperaciones.map((op) => {
                         const isSelected = selectedOperacion && selectedOperacion.id === op.id;
                         return (
                           <tr
@@ -234,7 +263,9 @@ const DireccionesPage = () => {
                 </div>
               </div>
             ) : (
-              <div className="text-gray-500">No hay operaciones para esta dirección.</div>
+              <div className="text-gray-500">
+                {operaciones.length > 0 ? 'No hay resultados para la busqueda actual.' : 'No hay operaciones para esta direccion.'}
+              </div>
             )}
           </div>
         </div>
@@ -245,6 +276,15 @@ const DireccionesPage = () => {
 
       {!loading && !error && (
         <div className="flex flex-col gap-3">
+          <div className="mb-1">
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar direccion..."
+              className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+          </div>
           {Array.isArray(filtered) && filtered.length > 0 ? (
             filtered.map(dir => (
               <div

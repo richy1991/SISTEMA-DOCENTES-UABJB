@@ -175,6 +175,22 @@ function POAApp({ user }) {
     return () => window.removeEventListener('open-edit-operacion', h);
   }, []);
 
+  // Escuchar peticion global para crear nuevo indicador desde el header.
+  useEffect(() => {
+    const h = (e) => {
+      const page = e?.detail?.page ?? null;
+      if (page !== 'indicadores') return;
+      if (!headerSelectedDireccion) {
+        window.alert('Primero selecciona una direccion para crear un indicador.');
+        return;
+      }
+      setEditOperacion(null);
+      setShowNuevoIndicadorModal(true);
+    };
+    window.addEventListener('open-new', h);
+    return () => window.removeEventListener('open-new', h);
+  }, [headerSelectedDireccion]);
+
   return (
     <div className={`poa-app flex min-h-screen transition-colors duration-500`}>
       {/* Toast notifications */}
