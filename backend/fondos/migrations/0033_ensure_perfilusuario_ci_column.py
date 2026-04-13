@@ -27,8 +27,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunPython(
-            ensure_perfilusuario_ci_column,
-            reverse_code=migrations.RunPython.noop,
-        ),
+        # No-op: 0001_initial already handles this.
     ]

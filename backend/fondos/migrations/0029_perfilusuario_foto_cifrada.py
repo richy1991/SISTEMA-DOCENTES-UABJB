@@ -8,14 +8,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AddField(
-            model_name='perfilusuario',
-            name='foto_perfil_cifrada',
-            field=models.BinaryField(blank=True, editable=False, null=True),
-        ),
-        migrations.AddField(
-            model_name='perfilusuario',
-            name='foto_perfil_mime',
-            field=models.CharField(blank=True, default='', max_length=64),
-        ),
+        # No-op: 0001_initial already handles this.
     ]

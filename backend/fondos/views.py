@@ -1858,11 +1858,19 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         return ''
 
     def _build_checklist_salud_pdf(self, fondo):
+        from .models import DocenteCarrera
+
         errores = []
         advertencias = []
 
         carrera = fondo.carrera
         docente = fondo.docente
+
+        # Obtener el vínculo DocenteCarrera para esta carrera
+        vinculo = DocenteCarrera.objects.filter(
+            docente=docente, carrera=carrera, activo=True
+        ).first()
+        horas_semanales = vinculo.horas_semanales_maximas if vinculo else 0
 
         # 1) Datos legales de la carrera
         if not carrera:
@@ -1900,7 +1908,7 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
             total_horas_anuales += float(carga.horas or 0)
             total_horas_semanales_horario += self._duracion_horas_bloque(carga.hora_inicio, carga.hora_fin)
 
-        dedicacion_esperada = float(docente.horas_semanales_maximas or 0) if docente else 0.0
+        dedicacion_esperada = float(horas_semanales) if horas_semanales else 0.0
         diferencia = abs(total_horas_semanales_horario - dedicacion_esperada)
         if diferencia > 0.01:
             errores.append(

@@ -18,8 +18,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunPython(
-            ensure_asignacioncarrera_table,
-            reverse_code=migrations.RunPython.noop,
-        ),
+        # No-op: 0001_initial already handles this.
     ]

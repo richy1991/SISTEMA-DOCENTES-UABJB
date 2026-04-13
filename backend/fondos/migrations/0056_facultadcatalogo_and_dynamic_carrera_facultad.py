@@ -25,23 +25,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.CreateModel(
-            name='FacultadCatalogo',
-            fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('nombre', models.CharField(max_length=200, unique=True)),
-                ('fecha_creacion', models.DateTimeField(auto_now_add=True)),
-            ],
-            options={
-                'verbose_name': 'Facultad',
-                'verbose_name_plural': 'Facultades',
-                'ordering': ['nombre'],
-            },
-        ),
-        migrations.AlterField(
-            model_name='carrera',
-            name='facultad',
-            field=models.CharField(max_length=200),
-        ),
-        migrations.RunPython(seed_facultades, migrations.RunPython.noop),
+        # No-op: 0001_initial already handles this.
     ]

@@ -16,63 +16,65 @@ import os
 
 
 class Docente(models.Model):
-    """Modelo para almacenar información de docentes"""
-    
+    """Modelo para almacenar información personal de docentes (sin carrera)."""
+
     CATEGORIA_CHOICES = [
         ('catedratico', 'Catedrático'),
         ('adjunto', 'Adjunto'),
         ('asistente', 'Asistente'),
     ]
-    
+
     DEDICACION_CHOICES = [
         ('tiempo_completo', 'Tiempo Completo'),
-        ('horario', 'Horario'),
         ('medio_tiempo', 'Medio Tiempo'),
+        ('horario_16', 'Horario 16hrs/mes'),
+        ('horario_24', 'Horario 24hrs/mes'),
+        ('horario_40', 'Horario 40hrs/mes'),
+        ('horario_48', 'Horario 48hrs/mes'),
     ]
-    
+
+    # === Datos personales (independientes de carrera) ===
     nombres = models.CharField(max_length=100)
     apellido_paterno = models.CharField(max_length=100)
     apellido_materno = models.CharField(max_length=100, blank=True)
     ci = models.CharField(max_length=20, unique=True, verbose_name="Cédula de Identidad")
-    carrera = models.ForeignKey('Carrera', on_delete=models.PROTECT, related_name='docentes')
-    categoria = models.CharField(max_length=20, choices=CATEGORIA_CHOICES)
-    dedicacion = models.CharField(max_length=20, choices=DEDICACION_CHOICES)
+
+    # === Contacto ===
     email = models.EmailField(blank=True, null=True)
     telefono = models.CharField(max_length=20, blank=True, null=True)
-    dias_vacacion = models.IntegerField(default=15, help_text="Días de vacación correspondientes según antigüedad")
-    horas_feriados_gestion = models.IntegerField(default=128, help_text="Total de horas de feriados en la gestión académica")
-    fecha_ingreso = models.DateField(default=timezone.now, help_text="Fecha de ingreso a la institución para cálculo de antigüedad")
-    horas_contrato_semanales = models.DecimalField(
-        max_digits=5,
-        decimal_places=2,
-        null=True,
-        blank=True,
-        help_text="ATENCIÓN: Ingrese la carga SEMANAL. (Ejemplo: Si el contrato es de 40 hrs/mes, ingrese 10)")
-    activo = models.BooleanField(default=True)
+
+    # === Institucionales (aplican a todas las carreras) ===
+    fecha_ingreso = models.DateField(
+        default=timezone.now,
+        help_text="Fecha de ingreso a la institución para cálculo de antigüedad"
+    )
+    dias_vacacion = models.IntegerField(
+        default=15,
+        help_text="Días de vacación correspondientes según antigüedad"
+    )
+    horas_feriados_gestion = models.IntegerField(
+        default=128,
+        help_text="Total de horas de feriados en la gestión académica"
+    )
+    activo = models.BooleanField(
+        default=True,
+        help_text="Indica si el docente está activo en la institución"
+    )
+
     fecha_creacion = models.DateTimeField(auto_now_add=True)
     fecha_modificacion = models.DateTimeField(auto_now=True)
-    
+
     class Meta:
         verbose_name = "Docente"
         verbose_name_plural = "Docentes"
         ordering = ['apellido_paterno', 'apellido_materno', 'nombres']
-    
+
     def __str__(self):
         return f"{self.apellido_paterno} {self.apellido_materno} {self.nombres}"
-    
+
     @property
     def nombre_completo(self):
         return f"{self.nombres} {self.apellido_paterno} {self.apellido_materno}".strip()
-    
-    @property
-    def horas_semanales_maximas(self):
-        """Retorna el máximo de horas semanales según tipo de dedicación"""
-        if self.dedicacion == 'tiempo_completo':
-            return 40
-        elif self.dedicacion == 'medio_tiempo':
-            return 20
-        else:  # horario
-            return self.horas_contrato_semanales if self.horas_contrato_semanales is not None else 0
 
     def calcular_antiguedad(self, gestion=None):
         """Calcula la antigüedad en años para una gestión dada."""
@@ -89,28 +91,99 @@ class Docente(models.Model):
             return 30
         elif antiguedad >= 5:
             return 20
-        return 15 # De 1 a 5 años (y por defecto)
+        return 15  # De 1 a 5 años (y por defecto)
 
     def clean(self):
         """Validaciones personalizadas para el modelo Docente."""
         super().clean()
-        if not self.carrera_id:
-            raise ValidationError({'carrera': 'La carrera del docente es obligatoria.'})
-        if self.dedicacion == 'horario':
-            if not self.horas_contrato_semanales or self.horas_contrato_semanales <= 0:
+
+        # Validación de fecha_ingreso: no futura y no anterior a la fundación de la UABJB (18/11/1967).
+        if self.fecha_ingreso:
+            fecha_fundacion = timezone.now().date().replace(year=1967, month=11, day=18)
+            hoy = timezone.now().date()
+            if self.fecha_ingreso > hoy:
                 raise ValidationError({
-                    'horas_contrato_semanales': 'Para dedicación "Horario", debe especificar un número de horas de contrato semanales mayor a cero.'
+                    'fecha_ingreso': 'La fecha de ingreso no puede ser una fecha futura.'
                 })
-            
-            # VALIDACIÓN DE RANGO MÁXIMO: 32 horas semanales para tiempo horario
-            if self.horas_contrato_semanales > 32:
+            if self.fecha_ingreso < fecha_fundacion:
                 raise ValidationError({
-                    'horas_contrato_semanales': 'Un docente a tiempo horario no puede superar las 32 horas semanales.'
+                    'fecha_ingreso': 'La fecha de ingreso no puede ser anterior a la fundación de la UABJB (18 de noviembre de 1967).'
                 })
-        else:  # Para 'tiempo_completo' o 'medio_tiempo'
-            # Este campo no es relevante, así que lo forzamos a None para mantener la consistencia.
-            if self.horas_contrato_semanales is not None:
-                self.horas_contrato_semanales = None
+
+
+class DocenteCarrera(models.Model):
+    """Vínculo de un docente con una carrera específica.
+
+    Un mismo Docente puede tener múltiples DocenteCarrera,
+    cada uno con su propia categoría y dedicación.
+    """
+
+    docente = models.ForeignKey(
+        Docente,
+        on_delete=models.CASCADE,
+        related_name='vinculos_carrera'
+    )
+    carrera = models.ForeignKey(
+        'Carrera',
+        on_delete=models.PROTECT,
+        related_name='docentes_carrera'
+    )
+
+    # === Datos específicos del vínculo con esta carrera ===
+    categoria = models.CharField(max_length=20, choices=Docente.CATEGORIA_CHOICES)
+    dedicacion = models.CharField(max_length=20, choices=Docente.DEDICACION_CHOICES)
+    activo = models.BooleanField(default=True)
+
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+    fecha_modificacion = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Vínculo Docente-Carrera"
+        verbose_name_plural = "Vínculos Docente-Carrera"
+        unique_together = ['docente', 'carrera']
+        ordering = ['carrera__nombre', 'docente__apellido_paterno']
+
+    def __str__(self):
+        return f"{self.docente.nombre_completo} — {self.carrera.nombre}"
+
+    @property
+    def horas_semanales_maximas(self):
+        """Retorna las horas semanales fijas según tipo de dedicación."""
+        mapa_horas = {
+            'tiempo_completo': 40,
+            'medio_tiempo': 20,
+            'horario_16': 4,
+            'horario_24': 6,
+            'horario_40': 10,
+            'horario_48': 12,
+        }
+        return mapa_horas.get(self.dedicacion, 0)
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        super().clean()
+
+        # Validación de capacidad: no superar 40h/sem entre todos los vínculos activos.
+        if self.pk:
+            otros = DocenteCarrera.objects.filter(
+                docente=self.docente, activo=True
+            ).exclude(pk=self.pk)
+        else:
+            otros = DocenteCarrera.objects.filter(
+                docente=self.docente, activo=True
+            )
+
+        horas_totales = sum(v.horas_semanales_maximas for v in otros)
+        horas_totales += self.horas_semanales_maximas
+
+        if horas_totales > 40:
+            raise ValidationError({
+                'dedicacion': (
+                    f'No se puede asignar esta dedicación: el docente ya tiene '
+                    f'{horas_totales - self.horas_semanales_maximas}h/sem asignadas en otras carreras. '
+                    f'Con esta dedicación llegaría a {horas_totales}h/sem, superando el límite de 40h/sem.'
+                )
+            })
 
 
 class SaldoVacacionesGestion(models.Model):
@@ -594,17 +667,25 @@ class FondoTiempo(models.Model):
         """Solo admin puede archivar"""
         return usuario.is_staff
 
+    def _obtener_vinculo(self):
+        """Obtiene el vínculo DocenteCarrera activo para este fondo."""
+        if not self.docente_id or not self.carrera_id:
+            return None
+        return DocenteCarrera.objects.filter(
+            docente=self.docente,
+            carrera=self.carrera,
+            activo=True
+        ).first()
+
     def _obtener_horas_vacacion_docente(self):
         """
         Obtiene las horas de vacación para el docente en la gestión actual.
-        
-        Flujo:
-        1. Busca un registro en SaldoVacacionesGestion para (docente, gestion)
-        2. Si existe, multiplica los días por 8 (horas/día) y los retorna
-        3. Si NO existe (fallback), usa los días del perfil del docente
-        4. Si aún no hay valor, calcula automáticamente por antigüedad
+
+        Vacaciones son de la PERSONA (Docente.dias_vacacion).
+        Horas diarias se calculan según la dedicación del VÍNCULO (DocenteCarrera).
         """
-        if not self.docente:
+        vinculo = self._obtener_vinculo()
+        if not self.docente or not vinculo:
             return 0
 
         # Intenta obtener del saldo específico de la gestión
@@ -614,103 +695,81 @@ class FondoTiempo(models.Model):
                 gestion=self.gestion
             )
             dias_vacacion = saldo.dias_disponibles
-            # Horas diarias según dedicación
-            horas_diarias = Decimal(self.docente.horas_semanales_maximas) / 5
+            horas_diarias = Decimal(vinculo.horas_semanales_maximas) / 5
             return int(Decimal(dias_vacacion) * horas_diarias)
         except SaldoVacacionesGestion.DoesNotExist:
             pass
 
-        # Fallback: usa el valor del perfil del docente
+        # Fallback: usa el valor del docente
         dias_vacacion = self.docente.dias_vacacion or 0
         if dias_vacacion <= 0:
             dias_vacacion = self.docente.calcular_dias_vacacion(self.gestion)
 
-        # Horas diarias según dedicación (horas_semanales / 5 días)
-        horas_diarias = Decimal(self.docente.horas_semanales_maximas) / 5
-        
-        # Horas de vacación = días × horas_diarias
+        horas_diarias = Decimal(vinculo.horas_semanales_maximas) / 5
         return int(Decimal(dias_vacacion) * horas_diarias)
 
     def _obtener_horas_feriados_docente(self):
         """
-        Calcula horas de feriados PROPORCIONALES a la dedicación del docente.
-        
-        Según normativa UABJB:
-        - 16 días feriados al año (aproximadamente 128 horas para TC)
-        
-        CÁLCULO PROPORCIONAL:
-        - Tiempo Completo (40h/semana): 8 horas diarias → 16 × 8 = 128 horas
-        - Medio Tiempo (20h/semana): 4 horas diarias → 16 × 4 = 64 horas
-        - Horario (N h/semana): N/5 horas diarias → 16 × (N/5) horas
-        
-        Fórmula: 16 días × (horas_semanales / 5)
-        
-        Ejemplos:
-        - TC: 16 × (40/5) = 16 × 8 = 128 horas
-        - MT: 16 × (20/5) = 16 × 4 = 64 horas
-        - Horario 10h: 16 × (10/5) = 16 × 2 = 32 horas
+        Calcula horas de feriados PROPORCIONALES a la dedicación del vínculo.
+
+        Feriados son de la PERSONA (Docente.horas_feriados_gestion).
+        Horas diarias se calculan según la dedicación del VÍNCULO (DocenteCarrera).
         """
-        if not self.docente:
+        vinculo = self._obtener_vinculo()
+        if not self.docente or not vinculo:
             return 0
-        
-        # Días de feriados estándar (16 días al año)
-        # Esto puede venir del campo horas_feriados_gestion si está personalizado
+
         dias_feriados = self.docente.horas_feriados_gestion or 128
-        
-        # Si el valor es el default (128), calcular proporcionalmente
-        # Si es un valor personalizado, usarlo directamente
+
         if dias_feriados == 128:
-            # Calcular horas diarias según dedicación
-            horas_diarias = Decimal(self.docente.horas_semanales_maximas) / 5
-            # 16 días feriados estándar
+            horas_diarias = Decimal(vinculo.horas_semanales_maximas) / 5
             return int(Decimal(16) * horas_diarias)
         else:
-            # Valor personalizado (ya está en horas)
             return int(dias_feriados)
 
     def _recalcular_horas_automaticas(self):
         """
-        Regla UABJB - Cálculo PROPORCIONAL según dedicación del docente:
-        
-        FONDO DE TIEMPO DINÁMICO:
-        - Tiempo Completo (40h/semana): 40 × 52 = 2080 horas anuales
-        - Medio Tiempo (20h/semana): 20 × 52 = 1040 horas anuales
-        - Horario (N horas/semana): N × 52 horas anuales
-        
-        VACACIONES PROPORCIONALES:
-        - Se calculan en horas diarias según dedicación
-        - Tiempo Completo: 15 días × 8h = 120 horas
-        - Medio Tiempo: 15 días × 4h = 60 horas
-        
-        FERIADOS PROPORCIONALES:
-        - Se ajustan a la jornada diaria del docente
-        - Tiempo Completo: 16 días × 8h = 128 horas
-        - Medio Tiempo: 16 días × 4h = 64 horas
+        Regla UABJB — Cálculo de horas efectivas según dedicación del docente.
+
+        HORAS SEMANALES: se obtienen del vínculo DocenteCarrera(docente, carrera).
+        VACACIONES Y FERIADOS: se obtienen del Docente (son de la persona).
         """
         if not self.docente:
             return
 
-        # 1. Horas semanales según dedicación (40, 20, o horas_contrato)
-        self.horas_semana = Decimal(self.docente.horas_semanales_maximas)
+        # Buscar el vínculo DocenteCarrera para esta carrera
+        vinculo = DocenteCarrera.objects.filter(
+            docente=self.docente,
+            carrera=self.carrera,
+            activo=True
+        ).first()
+
+        if not vinculo:
+            # Si no hay vínculo, no se puede calcular
+            return
+
+        horas_semana = vinculo.horas_semanales_maximas
+
+        # 1. Horas semanales del vínculo
+        self.horas_semana = Decimal(horas_semana)
 
         # 2. CONTRATO HORAS DINÁMICO: horas_semanales × 52 semanas
-        # Esto elimina la base fija de 2080 y hace el cálculo proporcional
         self.contrato_horas = int(self.horas_semana * 52)
 
         # 3. Horas de vacación PROPORCIONALES a la dedicación
         self.horas_vacacion = self._obtener_horas_vacacion_docente()
-        
+
         # 4. Horas de feriados PROPORCIONALES a la dedicación
         self.horas_feriados = self._obtener_horas_feriados_docente()
 
-        # 5. Cálculo final: contrato - vacacion - feriados
+        # 5. Cálculo final: contrato - vacacion - feriados (redondeo hacia abajo)
         horas_disponibles_reglamentarias = (
-            Decimal(self.contrato_horas)
-            - Decimal(self.horas_vacacion)
-            - Decimal(self.horas_feriados)
+            int(self.contrato_horas)
+            - int(self.horas_vacacion)
+            - int(self.horas_feriados)
         )
 
-        self.horas_efectivas = max(horas_disponibles_reglamentarias, Decimal('0.00'))
+        self.horas_efectivas = Decimal(max(horas_disponibles_reglamentarias, 0))
 
     def clean(self):
         super().clean()
@@ -928,15 +987,15 @@ class CargaHoraria(models.Model):
         Materia,
         on_delete=models.PROTECT,
         related_name='asignaciones_horarias',
-        null=False,
-        blank=False,
+        null=True,
+        blank=True,
         help_text='Materia del plan de estudios asignada al docente.'
     )
     paralelo = models.CharField(max_length=1, choices=PARALELO_CHOICES, default='A')
-    dia_semana = models.CharField(max_length=10, choices=DIA_SEMANA_CHOICES, null=False)
-    hora_inicio = models.TimeField(null=False)
-    hora_fin = models.TimeField(null=False)
-    aula = models.CharField(max_length=100)
+    dia_semana = models.CharField(max_length=10, choices=DIA_SEMANA_CHOICES, default='lunes')
+    hora_inicio = models.TimeField(null=True, blank=True)
+    hora_fin = models.TimeField(null=True, blank=True)
+    aula = models.CharField(max_length=100, default='', blank=True)
     horas = models.PositiveIntegerField(help_text="Cantidad de horas anuales asignadas para esta actividad.")
     documento_respaldo = models.CharField(
         max_length=100,
@@ -1366,8 +1425,40 @@ def actualizar_horas_categoria(sender, instance, **kwargs):
 def actualizar_fondos_docente(sender, instance, **kwargs):
     """
     Sincroniza los fondos de tiempo cuando cambian datos críticos del docente
-    (antigüedad, dedicación) para recalcular horas efectivas.
+    (antigüedad, vacaciones) para recalcular horas efectivas.
     """
     fondos = FondoTiempo.objects.filter(docente=instance)
     for fondo in fondos:
         fondo.save()
+
+@receiver(post_save, sender=DocenteCarrera)
+def actualizar_fondos_al_cambiar_vinculo(sender, instance, **kwargs):
+    """
+    Sincroniza los fondos de tiempo cuando cambia la dedicación del vínculo.
+    """
+    fondos = FondoTiempo.objects.filter(
+        docente=instance.docente,
+        carrera=instance.carrera
+    )
+    for fondo in fondos:
+        fondo.save()
+
+@receiver(post_save, sender=DocenteCarrera)
+@receiver(post_delete, sender=DocenteCarrera)
+def actualizar_docente_al_cambiar_vinculo(sender, instance, **kwargs):
+    """
+    Propaga cambios de DocenteCarrera a las referencias de Docente
+    para mantener compatibilidad con código que aún usa docente.carrera/categoria/dedicacion.
+    """
+    # Mantener referencia al primer vínculo activo como "principal"
+    primer_vinculo = DocenteCarrera.objects.filter(
+        docente=instance.docente, activo=True
+    ).first()
+    if primer_vinculo:
+        # Actualizar Fondos de esa carrera
+        fondos = FondoTiempo.objects.filter(
+            docente=instance.docente,
+            carrera=primer_vinculo.carrera
+        )
+        for fondo in fondos:
+            fondo.save()

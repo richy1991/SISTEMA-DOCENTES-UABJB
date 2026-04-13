@@ -11,38 +11,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AlterUniqueTogether(
-            name='fondotiempo',
-            unique_together=set(),
-        ),
-        migrations.AddField(
-            model_name='fondotiempo',
-            name='tipo_fondo',
-            field=models.CharField(choices=[('semestral', 'Semestral/Anual'), ('largo_plazo', 'Largo Plazo')], default='semestral', help_text='Define si el fondo es para un periodo académico específico o a largo plazo.', max_length=20),
-        ),
-        migrations.AlterField(
-            model_name='fondotiempo',
-            name='asignatura',
-            field=models.CharField(blank=True, help_text='Asignatura o descripción general del fondo', max_length=200),
-        ),
-        migrations.AlterField(
-            model_name='fondotiempo',
-            name='calendario_academico',
-            field=models.ForeignKey(blank=True, help_text='Calendario académico al que pertenece este fondo (si aplica)', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='fondos', to='fondos.calendarioacademico'),
-        ),
-        migrations.AlterField(
-            model_name='fondotiempo',
-            name='estado',
-            field=models.CharField(choices=[('borrador', 'Borrador'), ('presentado_director', 'Presentado a Director de Carrera'), ('revision_director', 'En Revisión por Director'), ('aprobado_director', 'Aprobado por Director de Carrera'), ('validado', 'Validado'), ('en_ejecucion', 'En Ejecución'), ('informe_presentado', 'Informe Presentado'), ('evaluado_director', 'Evaluado por Director'), ('informado_decanatura', 'Informado a Decanatura'), ('informado_vicerrectorado', 'Informado a Vicerrectorado'), ('finalizado', 'Finalizado'), ('observado', 'Con Observaciones'), ('rechazado', 'Rechazado'), ('archivado', 'Archivado')], default='borrador', max_length=30),
-        ),
-        migrations.AlterField(
-            model_name='fondotiempo',
-            name='periodo',
-            field=models.CharField(blank=True, choices=[('1', 'Primer Semestre'), ('2', 'Segundo Semestre'), ('anual', 'Anual')], help_text='Periodo académico según calendario (si aplica)', max_length=10),
-        ),
-        migrations.AlterField(
-            model_name='historialfondo',
-            name='tipo_cambio',
-            field=models.CharField(choices=[('creacion', 'Creación'), ('edicion', 'Edición'), ('presentacion', 'Presentación'), ('aprobacion', 'Aprobación'), ('observacion', 'Observación'), ('rechazo', 'Rechazo'), ('inicio_ejecucion', 'Inicio de Ejecución'), ('informe_presentado', 'Informe Presentado'), ('finalizacion', 'Finalización'), ('archivado', 'Archivado')], max_length=20),
-        ),
+        # No-op: 0001_initial already handles this.
     ]

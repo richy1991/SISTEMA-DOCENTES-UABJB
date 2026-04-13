@@ -10,9 +10,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AddField(
-            model_name='informefondo',
-            name='dificultades',
-            field=models.TextField(blank=True, help_text='Dificultades encontradas'),
-        ),
+        # No-op: 0001_initial already handles this.
     ]

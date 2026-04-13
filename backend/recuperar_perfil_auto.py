@@ -88,7 +88,7 @@ def recuperar_perfil_auto(username, ci, rol, codigo_carrera=None):
                 apellido_materno=apellido_materno or '',
                 ci=ci,
                 categoria='asistente',
-                dedicacion='horario',
+                dedicacion='horario_40',
                 email=user.email or '',
                 telefono=''
             )

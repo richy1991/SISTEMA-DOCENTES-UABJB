@@ -10,7 +10,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        # No-op: el campo `total_asignado` ya no forma parte del estado base
-        # actual del modelo. Mantener esta migracion vacia evita fallos al
-        # reconstruir el estado historico en entornos actualizados.
+        # No-op: 0001_initial already handles this.
     ]

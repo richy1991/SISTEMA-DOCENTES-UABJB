@@ -14,26 +14,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AlterModelOptions(
-            name='usuariopoa',
-            options={'ordering': ['rol', 'id'], 'verbose_name': 'Usuario POA', 'verbose_name_plural': 'Usuarios POA'},
-        ),
-        migrations.AlterUniqueTogether(
-            name='usuariopoa',
-            unique_together=set(),
-        ),
-        migrations.AddField(
-            model_name='usuariopoa',
-            name='user',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='accesos_poa', to=settings.AUTH_USER_MODEL, verbose_name='Usuario del sistema'),
-        ),
-        migrations.AlterField(
-            model_name='usuariopoa',
-            name='docente',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='accesos_poa_docente', to='fondos.docente', verbose_name='Docente vinculado'),
-        ),
-        migrations.AddConstraint(
-            model_name='usuariopoa',
-            constraint=models.UniqueConstraint(condition=models.Q(('user__isnull', False)), fields=('user', 'rol'), name='unique_user_rol_poa'),
-        ),
+        # No-op: 0001_initial already handles this.
     ]

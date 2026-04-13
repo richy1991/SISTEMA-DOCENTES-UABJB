@@ -539,47 +539,41 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
                   <InputField label="C.I." name="ci" value={formData.ci} onChange={handleChange} error={errors.ci} />
                 ) : (
                   <div>
-                    <SelectConDropdown
-                      label="Vincular a Docente Existente"
-                      name="docente"
-                      value={formData.docente}
-                      onChange={handleChange}
-                      options={docentes.map((d) => ({ value: d.id, label: d.nombre_completo }))}
-                      error={errors.docente}
-                      disabled={tieneDocenteVinculado}
-                      placeholder={tieneDocenteVinculado ? nombreDocenteVinculado : 'Seleccione un docente'}
-                    />
+                    <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
+                      Vincular a Docente Existente
+                    </label>
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1">
+                        <SelectConDropdown
+                          name="docente"
+                          value={formData.docente}
+                          onChange={handleChange}
+                          options={docentes.map((d) => ({ value: d.id, label: d.nombre_completo }))}
+                          error={errors.docente}
+                          disabled={tieneDocenteVinculado}
+                          placeholder={tieneDocenteVinculado ? nombreDocenteVinculado : 'Seleccione un docente'}
+                        />
+                      </div>
+                      {!tieneDocenteVinculado && formData.rol === 'docente' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCrearNuevoDocente(true);
+                            handleCrearNuevoDocente();
+                          }}
+                          title="Crear nuevo registro de docente"
+                          className="h-[46px] w-[46px] bg-[#2C4AAE] hover:bg-[#1a3a8a] text-white font-bold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center justify-center flex-shrink-0"
+                        >
+                          <span className="text-lg">+</span>
+                        </button>
+                      )}
+                    </div>
                     {mostrarInfoDocente && (
                       <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-300">
                         Docente vinculado: {nombreDocenteVinculado}
                       </p>
                     )}
                   </div>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
-                  Crear nuevo registro de docente
-                </label>
-                <div className={`flex h-[52px] items-center justify-center rounded-xl border-2 ${formData.rol === 'docente' ? 'border-slate-300 bg-slate-100 dark:border-slate-600 dark:bg-slate-700/50' : 'border-slate-300 bg-slate-200/70 dark:border-slate-600 dark:bg-slate-700/30'}`}>
-                  <ToggleSwitch
-                    isActive={crearNuevoDocente}
-                    onChange={() => {
-                      if (formData.rol !== 'docente') return;
-                      if (!crearNuevoDocente) {
-                        setCrearNuevoDocente(true);
-                        handleCrearNuevoDocente();
-                      } else {
-                        setCrearNuevoDocente(false);
-                      }
-                    }}
-                  />
-                </div>
-                {formData.rol !== 'docente' && (
-                  <p className="mt-1 text-xs text-amber-600 dark:text-amber-300">
-                    No disponible para este rol
-                  </p>
                 )}
               </div>
 

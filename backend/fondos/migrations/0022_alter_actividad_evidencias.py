@@ -10,9 +10,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AlterField(
-            model_name='actividad',
-            name='evidencias',
-            field=models.TextField(blank=True, default=''),
-        ),
+        # No-op: 0001_initial already handles this.
     ]

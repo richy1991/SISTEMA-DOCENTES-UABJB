@@ -10,9 +10,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AlterField(
-            model_name='materia',
-            name='sigla',
-            field=models.CharField(max_length=20, unique=True),
-        ),
+        # No-op: 0001_initial already handles this.
     ]

@@ -200,14 +200,16 @@ const SelectConDropdown = ({
 
       <div className="flex gap-0.5">
         <div
-          className={`flex-1 px-4 py-2.5 rounded-2xl text-left flex transition-all min-w-0 h-auto ${
+          className={`flex-1 px-4 py-2.5 rounded-xl text-left flex transition-all min-w-0 ${
+            !manageMode && !open && !selectedLabel ? 'h-[46px]' : 'min-h-[46px]'
+          } ${
             disabled ? 'cursor-not-allowed opacity-60' : 'hover:shadow-md'
           } ${
             error
-              ? 'border-2 border-red-500 bg-white dark:bg-slate-800'
+              ? 'border-2 border-red-500 bg-slate-50 dark:bg-slate-700'
               : open
-                ? 'border-2 border-[#2C4AAE] bg-white dark:bg-slate-800'
-                : 'border-2 border-slate-400 bg-slate-100 dark:bg-slate-700 hover:border-[#2C4AAE]'
+                ? 'border-2 border-[#2C4AAE] bg-slate-50 dark:bg-slate-700'
+                : 'border-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 hover:border-[#2C4AAE]'
           }`}
         >
         {manageMode ? (
@@ -230,26 +232,49 @@ const SelectConDropdown = ({
             className="flex-1 bg-transparent focus:outline-none text-sm min-w-0 text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-500"
           />
         ) : searchable ? (
-          <input
-            ref={inputRef}
-            type="text"
-            value={open ? inputValue : (selectedLabel || '')}
-            onFocus={() => {
-              if (disabled) return;
-              setOpen(true);
-              setInputValue('');
-              setSearchTerm('');
-            }}
-            onChange={(e) => {
-              const term = e.target.value;
-              setInputValue(term);
-              setSearchTerm(term);
-              if (!open) setOpen(true);
-            }}
-            placeholder={placeholder}
-            disabled={disabled}
-            className={`flex-1 bg-transparent focus:outline-none text-sm min-w-0 ${selectedLabel && !open ? 'text-slate-800 dark:text-white font-semibold leading-tight' : 'text-slate-800 dark:text-white'} placeholder-slate-400 dark:placeholder-slate-500`}
-          />
+          open ? (
+            <input
+              ref={inputRef}
+              type="text"
+              value={inputValue}
+              onChange={(e) => {
+                const term = e.target.value;
+                setInputValue(term);
+                setSearchTerm(term);
+                if (!open) setOpen(true);
+              }}
+              placeholder={placeholder}
+              disabled={disabled}
+              className="flex-1 bg-transparent focus:outline-none text-sm min-w-0 text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-500"
+            />
+          ) : (
+            <div className="flex-1 min-w-0 max-w-full">
+              <button
+                type="button"
+                onClick={() => {
+                  if (disabled) return;
+                  setOpen(true);
+                  setInputValue('');
+                  setSearchTerm('');
+                }}
+                disabled={disabled}
+                className={`block w-full text-left bg-transparent pr-2 min-w-0 ${
+                  selectedLabel ? 'py-0.5 self-center' : 'py-0 self-center'
+                }`}
+              >
+                <span
+                  className={`block leading-tight ${
+                    selectedLabel
+                      ? 'text-sm whitespace-normal break-words text-slate-800 dark:text-white font-semibold'
+                      : 'text-xs italic whitespace-nowrap overflow-hidden text-ellipsis text-slate-500 dark:text-slate-400'
+                  }`}
+                  style={selectedLabel ? { overflowWrap: 'anywhere', wordBreak: 'break-word' } : undefined}
+                >
+                  {selectedLabel || placeholder}
+                </span>
+              </button>
+            </div>
+          )
         ) : (
           <div className="flex-1 min-w-0 max-w-full">
             <button
@@ -326,7 +351,7 @@ const SelectConDropdown = ({
             type="button"
             onClick={handleSelectMode}
             disabled={disabled}
-            className="w-8 h-8 bg-[#2C4AAE] hover:bg-[#1a3a8a] rounded-lg flex items-center justify-center transition-colors flex-shrink-0 self-start mt-2"
+            className="w-8 h-8 bg-[#2C4AAE] hover:bg-[#1a3a8a] rounded-lg flex items-center justify-center transition-colors flex-shrink-0 self-center"
           >
             <svg
               className={`w-4 h-4 text-white transition-transform duration-200 ${open && !manageMode ? 'rotate-180' : ''}`}
@@ -348,7 +373,7 @@ const SelectConDropdown = ({
               setOpen(true);
             }}
             title="Gestionar facultades"
-            className="h-[46px] w-[46px] bg-[#2C4AAE] hover:bg-[#1a3a8a] text-white font-bold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center justify-center flex-shrink-0 self-start mt-1"
+            className="h-[46px] w-[46px] bg-[#2C4AAE] hover:bg-[#1a3a8a] text-white font-bold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center justify-center flex-shrink-0"
           >
             <span className="text-lg">+</span>
           </button>
@@ -831,8 +856,7 @@ const ToggleSwitch = ({ isActive, onChange, size = 'md' }) => (
   </button>
 );
 
-// Componente ExpandableTextarea
-const ExpandableTextarea = ({ label, name, value, onChange, onExpand, placeholder, rows = 3 }) => (
+const ExpandableTextField = ({ label, name, value, onChange, onExpand, placeholder, rows = 3 }) => (
   <div>
     <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label}</label>
     <div className="relative">
@@ -848,13 +872,17 @@ const ExpandableTextarea = ({ label, name, value, onChange, onExpand, placeholde
         type="button"
         onClick={onExpand}
         title="Expandir"
-        className="absolute right-2 top-2 p-1 rounded-md bg-blue-500 hover:bg-blue-600 text-white transition-colors text-xs"
+        className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-lg bg-[#2C4AAE] text-white shadow-sm transition-all duration-200 hover:bg-[#1a3a8a] hover:scale-105"
       >
-        ⤢
+        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 3H5a2 2 0 00-2 2v3m16-5h-3a2 2 0 012 2v3M3 16v3a2 2 0 002 2h3m11-5v3a2 2 0 01-2 2h-3" />
+        </svg>
       </button>
     </div>
   </div>
 );
+
+const LegacyExpandableTextarea = null;
 
 // Componente de Filtro de Carreras con Búsqueda
 const FilterCarreras = ({ carreras, onSelect, placeholder = 'Buscar carrera...' }) => {
@@ -910,8 +938,8 @@ const FilterCarreras = ({ carreras, onSelect, placeholder = 'Buscar carrera...' 
     <div ref={containerRef} className="relative w-64">
       <div className={`flex items-center px-4 py-3 rounded-2xl transition-all ${
         open 
-          ? 'border-2 border-[#2C4AAE] bg-white dark:bg-slate-800' 
-          : 'border-2 border-slate-400 bg-slate-100 dark:bg-slate-700 hover:border-[#2C4AAE]'
+          ? 'border-2 border-[#2C4AAE] bg-slate-50 dark:bg-slate-700' 
+          : 'border-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 hover:border-[#2C4AAE]'
       }`}>
         <input
           ref={inputRef}
@@ -1023,7 +1051,6 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
 
   // States para modal expandido de campos de texto
   const [expandedField, setExpandedField] = useState(null);
-  const [expandedContent, setExpandedContent] = useState('');
 
   // Handler para el filtro de carreras
   const handleSelectCarreraFromFilter = (carrera) => {
@@ -1309,20 +1336,10 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
   // Handlers para modal expandido de campos
   const openExpandedField = (fieldName) => {
     setExpandedField(fieldName);
-    setExpandedContent(formData[fieldName] || '');
   };
 
   const closeExpandedField = () => {
     setExpandedField(null);
-    setExpandedContent('');
-  };
-
-  const saveExpandedField = () => {
-    setFormData(prev => ({
-      ...prev,
-      [expandedField]: expandedContent
-    }));
-    closeExpandedField();
   };
 
   const getErrorMessage = (fieldError) => {
@@ -1675,7 +1692,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 p-6">
       {/* Header */}
       <div className="max-w-7xl mx-auto space-y-6">
-        <div className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-lg p-6">
+        <div className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-600 shadow-lg p-6">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div>
               <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent">
@@ -1851,7 +1868,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                     </div>
 
                     <div className="md:col-span-5 grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <ExpandableTextarea
+                      <ExpandableTextField
                         label="Misión"
                         name="mision"
                         value={formData.mision}
@@ -1861,7 +1878,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                         rows={3}
                       />
 
-                      <ExpandableTextarea
+                      <ExpandableTextField
                         label="Visión"
                         name="vision"
                         value={formData.vision}
@@ -1873,7 +1890,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                     </div>
 
                     <div className="md:col-span-5 grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <ExpandableTextarea
+                      <ExpandableTextField
                         label="Perfil Profesional"
                         name="perfil_profesional"
                         value={formData.perfil_profesional}
@@ -1883,7 +1900,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                         rows={3}
                       />
 
-                      <ExpandableTextarea
+                      <ExpandableTextField
                         label="Objetivo de Carrera"
                         name="objetivo_carrera"
                         value={formData.objetivo_carrera}
@@ -1926,7 +1943,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                 key={carrera.id} 
                 className={`rounded-xl border shadow-sm hover:shadow-md transition-all duration-200 flex flex-col h-[240px] ${
                   carrera.activo
-                    ? 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700'
+                    ? 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600'
                     : 'bg-red-100 dark:bg-red-900/35 border-red-400 dark:border-red-700'
                 }`}
               >
@@ -1940,7 +1957,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                           <h3 className={`text-base font-bold ${carrera.activo ? 'text-slate-800 dark:text-white' : 'text-red-900 dark:text-red-100'}`}>
                             {carrera.nombre}
                           </h3>
-                          <p className={`text-sm ${carrera.activo ? 'text-slate-600 dark:text-slate-400' : 'text-red-800 dark:text-red-200'}`}>
+                          <p className={`text-sm italic ${carrera.activo ? 'text-slate-600 dark:text-slate-400' : 'text-red-800 dark:text-red-200'}`}>
                             {carrera.facultad}
                           </p>
                         </div>
@@ -1998,7 +2015,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
             ))}
           </div>
         ) : (
-          <div className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 p-12 text-center shadow-md">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-600 p-12 text-center shadow-md">
             <div className="w-20 h-20 rounded-full bg-slate-50 dark:bg-slate-700 border-2 border-slate-300 dark:border-slate-600 flex items-center justify-center mx-auto mb-4">
               <span className="text-5xl">🎓</span>
             </div>
@@ -2316,7 +2333,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                 </div>
 
                 <div className="md:col-span-5 grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <ExpandableTextarea
+                  <ExpandableTextField
                     label="Misión"
                     name="mision"
                     value={formData.mision}
@@ -2326,7 +2343,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                     rows={3}
                   />
 
-                  <ExpandableTextarea
+                  <ExpandableTextField
                     label="Visión"
                     name="vision"
                     value={formData.vision}
@@ -2338,7 +2355,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                 </div>
 
                 <div className="md:col-span-5 grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <ExpandableTextarea
+                  <ExpandableTextField
                     label="Perfil Profesional"
                     name="perfil_profesional"
                     value={formData.perfil_profesional}
@@ -2348,7 +2365,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                     rows={3}
                   />
 
-                  <ExpandableTextarea
+                  <ExpandableTextField
                     label="Objetivo de Carrera"
                     name="objetivo_carrera"
                     value={formData.objetivo_carrera}
@@ -2478,49 +2495,43 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
       )}
 
       {/* Modal Expandido para Campos de Texto */}
-      {expandedField && (
-        <div className="fixed inset-0 flex items-center justify-center z-[60] p-4">
-          <div className="relative w-full max-w-xl max-h-[80vh] bg-white dark:bg-slate-900 rounded-xl shadow-2xl overflow-hidden">
+      {expandedField && createPortal((
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/55 backdrop-blur-sm p-4 animate-fade-in" style={{ animationDuration: '160ms' }}>
+          <div className="relative w-full max-w-4xl overflow-hidden rounded-2xl border border-[#7F97E8]/45 bg-white shadow-2xl animate-slide-up dark:bg-slate-900/95" style={{ animationDuration: '180ms' }}>
             {/* Header */}
-            <div className="px-4 py-2 border-b border-slate-200 dark:border-slate-700 bg-blue-500 dark:bg-blue-700">
-              <h3 className="text-sm font-semibold text-white capitalize">
+            <div className="flex items-center justify-between gap-3 border-b border-[#7F97E8]/45 bg-[#2C4AAE] px-5 py-4">
+              <h3 className="text-base font-bold text-slate-100">
                 {expandedField === 'mision' && 'Misión'}
                 {expandedField === 'vision' && 'Visión'}
                 {expandedField === 'perfil_profesional' && 'Perfil Profesional'}
                 {expandedField === 'objetivo_carrera' && 'Objetivo de Carrera'}
               </h3>
+              <button
+                type="button"
+                onClick={closeExpandedField}
+                title="Volver al tamaño normal"
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15 text-white transition-all duration-200 hover:bg-white/25 hover:scale-105"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H5v4m0 6v4h4m6 0h4v-4m0-6V5h-4" />
+                </svg>
+              </button>
             </div>
 
             {/* Content */}
             <div className="p-4 overflow-y-auto max-h-[calc(80vh-100px)]">
               <textarea
-                value={expandedContent}
-                onChange={(e) => setExpandedContent(e.target.value)}
-                className="w-full h-[250px] px-3 py-2 rounded-lg border-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 placeholder:text-xs placeholder:italic transition-all shadow-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                name={expandedField}
+                value={formData[expandedField] || ''}
+                onChange={handleChange}
+                className="w-full h-[250px] rounded-2xl border-2 border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-800 shadow-sm transition-all placeholder:text-xs placeholder:italic placeholder:text-slate-500 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:placeholder:text-slate-400"
                 placeholder="Ingresa el contenido aquí..."
               />
             </div>
 
-            {/* Footer */}
-            <div className="px-4 py-2 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex gap-2 justify-end">
-              <button
-                type="button"
-                onClick={closeExpandedField}
-                className="px-3 py-1.5 rounded-md bg-slate-300 dark:bg-slate-700 hover:bg-slate-400 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 text-sm transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={saveExpandedField}
-                className="px-3 py-1.5 rounded-md bg-blue-500 hover:bg-blue-600 text-white text-sm transition-colors"
-              >
-                Guardar
-              </button>
-            </div>
           </div>
         </div>
-      )}
+      ), document.body)}
     </div>
   );
 }

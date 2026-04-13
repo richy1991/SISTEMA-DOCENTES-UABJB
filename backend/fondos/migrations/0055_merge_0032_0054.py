@@ -7,4 +7,6 @@ class Migration(migrations.Migration):
         ("fondos", "0054_docente_carrera_obligatoria"),
     ]
 
-    operations = []
+    operations = [
+        # No-op: 0001_initial already handles this.
+    ]

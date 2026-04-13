@@ -8,14 +8,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AlterField(
-            model_name='materia',
-            name='carrera',
-            field=models.ForeignKey(on_delete=models.PROTECT, related_name='materias', to='fondos.carrera'),
-        ),
-        migrations.AlterField(
-            model_name='fondotiempo',
-            name='carrera',
-            field=models.ForeignKey(on_delete=models.PROTECT, related_name='fondos_tiempo', to='fondos.carrera'),
-        ),
+        # No-op: 0001_initial already handles this.
     ]

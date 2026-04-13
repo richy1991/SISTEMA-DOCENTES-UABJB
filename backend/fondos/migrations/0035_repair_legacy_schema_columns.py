@@ -72,8 +72,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunPython(
-            repair_legacy_schema,
-            reverse_code=migrations.RunPython.noop,
-        ),
+        # No-op: 0001_initial already handles this.
     ]

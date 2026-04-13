@@ -10,28 +10,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RemoveField(
-            model_name='informefondo',
-            name='archivo_url',
-        ),
-        migrations.AddField(
-            model_name='informefondo',
-            name='archivo_adjunto',
-            field=models.FileField(blank=True, help_text='Archivo de evidencia adjunto al informe (PDF, ZIP, etc.)', null=True, upload_to='informes_evidencia/'),
-        ),
-        migrations.AlterField(
-            model_name='fondotiempo',
-            name='estado',
-            field=models.CharField(choices=[('borrador', 'Borrador'), ('presentado_jefe', 'Presentado a Jefe de Estudios'), ('observado', 'Con Observaciones'), ('presentado_director', 'Presentado a Director de Carrera'), ('aprobado_director', 'Aprobado por Director de Carrera'), ('en_ejecucion', 'En Ejecución'), ('informe_presentado', 'Informe Presentado'), ('finalizado', 'Finalizado'), ('rechazado', 'Rechazado'), ('archivado', 'Archivado')], default='borrador', max_length=30),
-        ),
-        migrations.AlterField(
-            model_name='historialfondo',
-            name='tipo_cambio',
-            field=models.CharField(choices=[('creacion', 'Creación'), ('edicion', 'Edición'), ('presentacion', 'Presentación'), ('validacion', 'Validación'), ('aprobacion', 'Aprobación'), ('observacion', 'Observación'), ('rechazo', 'Rechazo'), ('inicio_ejecucion', 'Inicio de Ejecución'), ('informe_presentado', 'Informe Presentado'), ('finalizacion', 'Finalización'), ('archivado', 'Archivado')], max_length=20),
-        ),
-        migrations.AlterField(
-            model_name='perfilusuario',
-            name='rol',
-            field=models.CharField(choices=[('admin', 'Administrador'), ('director', 'Director de Carrera'), ('jefe_estudios', 'Jefe de Estudios'), ('docente', 'Docente')], default='docente', max_length=20),
-        ),
+        # No-op: 0001_initial already handles this.
     ]

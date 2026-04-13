@@ -8,10 +8,24 @@ import DistribuirHoras from './DistribuirHoras';
 import FormularioActividad from './FormularioActividad';
 import FormularioObservar from './FormularioObservar';
 import BotonFlotanteObservaciones from './BotonFlotanteObservaciones';
+
+// Helpers para extraer datos del vínculo DocenteCarrera desde docente.vinculos
+const getVinculoCarrera = (docente, carreraId) => {
+  if (!docente?.vinculos) return null;
+  return docente.vinculos.find(v => String(v.carrera) === String(carreraId)) || docente.vinculos[0] || null;
+};
 import FormularioPresentarInforme from './FormularioPresentarInforme';
 import FormularioEvaluarInforme from './FormularioEvaluarInforme';
 import ThemeToggle from './ThemeToggle';
 import CargaHorariaManager from './CargaHorariaManager';
+import ConfirmModal from './ConfirmModal';
+import ConfirmacionEliminar from './ConfirmacionEliminar';
+import {
+  ArchivoIcon, CheckIcon, TrashIcon, AlertTriangleIcon,
+  InfoIcon, SendIcon, EyeIcon, EyeOffIcon, XIcon,
+  PlusIcon, ChevronDownIcon, ChevronUpIcon,
+  PencilIcon, CalendarIcon, UserIcon,
+} from './Icons';
 import toast from 'react-hot-toast';
 import EstadoTimeline from './fondos/EstadoTimeline';
 import TimelineObservaciones from './fondos/TimelineObservaciones';
@@ -157,6 +171,11 @@ function DetalleFondo({ isDark }) {
   const [mostrarFormActividad, setMostrarFormActividad] = useState(false);
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState(null);
   const [mostrarFormObservar, setMostrarFormObservar] = useState(false);
+
+  // Extraer datos del vínculo DocenteCarrera para el docente de este fondo
+  const vinculo = getVinculoCarrera(fondo?.docente, fondo?.carrera);
+  const dedicacionDocente = vinculo?.dedicacion || null;
+  const categoriaDocente = vinculo?.categoria || null;
   const [mostrarModalAprobar, setMostrarModalAprobar] = useState(false);
   const observacionesRef = useRef();
   const [observacionesPendientes, setObservacionesPendientes] = useState(0);
@@ -991,7 +1010,7 @@ function DetalleFondo({ isDark }) {
 
               {/* Widgets de Información Secundaria apilados verticalmente (Categoría arriba de Balance) */}
               <div className="flex flex-col gap-2.5 justify-center w-full lg:w-48 shrink-0">
-                {fondo.docente?.categoria && (
+                {categoriaDocente && (
                   <div className="bg-slate-50/70 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700/80 px-4 py-2 flex items-center justify-start gap-3 w-full shadow-sm hover:shadow transition-shadow">
                     <div className="text-slate-500 dark:text-slate-400 flex items-center justify-center shrink-0">
                       <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>
@@ -999,13 +1018,13 @@ function DetalleFondo({ isDark }) {
                     <div className="flex flex-col text-left">
                       <span className="text-[10px] font-bold tracking-widest text-slate-800 dark:text-slate-200 uppercase leading-none pb-0.5">Categoría</span>
                       <span className="font-bold text-slate-800 dark:text-slate-200 text-sm capitalize leading-tight">
-                        {fondo.docente?.categoria}
+                        {categoriaDocente}
                       </span>
                     </div>
                   </div>
                 )}
 
-                {fondo.docente?.dedicacion && (
+                {dedicacionDocente && (
                   <div className="bg-slate-50/70 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700/80 px-4 py-2 flex items-center justify-start gap-3 w-full shadow-sm hover:shadow transition-shadow">
                     <div className="text-slate-500 dark:text-slate-400 flex items-center justify-center shrink-0">
                       <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" /></svg>
@@ -1013,7 +1032,15 @@ function DetalleFondo({ isDark }) {
                     <div className="flex flex-col text-left">
                       <span className="text-[10px] font-bold tracking-widest text-slate-800 dark:text-slate-200 uppercase leading-none pb-0.5">Balance Legal</span>
                       <div className="flex items-center gap-1.5 leading-tight">
-                        <span className="font-bold text-slate-800 dark:text-slate-200 text-sm">{fondo.docente?.dedicacion === 'tiempo_completo' ? 'TC' : fondo.docente?.dedicacion === 'medio_tiempo' ? 'MT' : 'TH'}</span>
+                        <span className="font-bold text-slate-800 dark:text-slate-200 text-sm">
+                            {dedicacionDocente === 'tiempo_completo' ? 'TC'
+                             : dedicacionDocente === 'medio_tiempo' ? 'MT'
+                             : dedicacionDocente === 'horario_16' ? 'TH-16'
+                             : dedicacionDocente === 'horario_24' ? 'TH-24'
+                             : dedicacionDocente === 'horario_40' ? 'TH-40'
+                             : dedicacionDocente === 'horario_48' ? 'TH-48'
+                             : 'TH'}
+                        </span>
                         <span className="text-green-500 font-bold">•</span>
                         <span className="font-bold text-slate-800 dark:text-slate-200 text-xs">{fondo.antiguedad} años</span>
                       </div>

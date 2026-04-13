@@ -1497,16 +1497,43 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
 
                     <div>
                       {formData.rol === 'docente' ? (
-                        <FilterDocentes
-                          label="Vincular a Docente Existente"
-                          name="docente"
-                          value={formData.docente}
-                          onChange={handleChange}
-                          docentes={docentesActivosDisponibles}
-                          error={docenteError}
-                          disabled={vinculacionRapidaDocente}
-                          placeholder="Buscar docente..."
-                        />
+                        <div>
+                          <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
+                            Vincular a Docente Existente
+                          </label>
+                          <div className="flex items-start gap-2">
+                            <div className="flex-1">
+                              <FilterDocentes
+                                name="docente"
+                                value={formData.docente}
+                                onChange={handleChange}
+                                docentes={docentesActivosDisponibles}
+                                error={docenteError}
+                                disabled={vinculacionRapidaDocente}
+                                placeholder="Buscar docente..."
+                              />
+                            </div>
+                            {!vinculacionRapidaDocente && (
+                              <button
+                                type="button"
+                                disabled={bloquearCrearNuevoDocente || formData.rol !== 'docente'}
+                                onClick={() => {
+                                  if (bloquearCrearNuevoDocente || formData.rol !== 'docente') return;
+                                  handleCrearNuevoDocente();
+                                }}
+                                title="Crear nuevo registro de docente"
+                                className="h-[52px] w-[52px] bg-[#2C4AAE] hover:bg-[#1a3a8a] disabled:bg-slate-400 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center justify-center flex-shrink-0"
+                              >
+                                <span className="text-xl leading-none">+</span>
+                              </button>
+                            )}
+                          </div>
+                          {formData.rol !== 'docente' && (
+                            <p className="text-xs text-amber-500 dark:text-amber-300 mt-1">
+                              No disponible para este rol
+                            </p>
+                          )}
+                        </div>
                       ) : (formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') ? (
                         <div>
                           <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">C.I.</label>
@@ -1526,40 +1553,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
                       )}
                     </div>
 
-                    <div>
-                      {!vinculacionRapidaDocente ? (
-                        <div>
-                          <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
-                            Crear nuevo registro de docente
-                          </label>
-                          <div className="flex items-center justify-center rounded-xl border-2 border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-700/50 w-full h-[52px]">
-                            <ToggleSwitch
-                              isActive={crearNuevoDocente}
-                              disabled={bloquearCrearNuevoDocente || formData.rol !== 'docente'}
-                              onChange={() => {
-                                if (bloquearCrearNuevoDocente || formData.rol !== 'docente') return;
-                                if (!crearNuevoDocente) {
-                                  handleCrearNuevoDocente();
-                                } else {
-                                  setCrearNuevoDocente(false);
-                                  setFormData((prev) => ({ ...prev, docente_data: null }));
-                                  sessionStorage.removeItem('docenteTemporalDesdeUsuarios');
-                                }
-                              }}
-                            />
-                          </div>
-                          {formData.rol !== 'docente' && (
-                            <p className="text-xs text-amber-500 dark:text-amber-300 mt-1">
-                              No disponible para este rol
-                            </p>
-                          )}
-                        </div>
-                      ) : (
-                        <div />
-                      )}
-                    </div>
-
-                    {(formData.rol === 'docente' || formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && !crearNuevoDocente && (
+                    {(formData.rol === 'docente' || formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && !crearNuevoDocente ? (
                       <InputField
                         label="Email"
                         name="email"
@@ -1568,6 +1562,8 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
                         onChange={handleChange}
                         error={errors.email}
                       />
+                    ) : (
+                      <div />
                     )}
 
                     {/* Fila 4 (Docente): Contraseña inicial - Asignaciones adicionales */}

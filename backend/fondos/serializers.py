@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from .models import Docente, Carrera, Materia, FondoTiempo, CategoriaFuncion, Actividad, PerfilUsuario, AsignacionCarrera, InformeFondo, ObservacionFondo, MensajeObservacion, HistorialFondo, CargaHoraria, SaldoVacacionesGestion
+from .models import Docente, DocenteCarrera, Carrera, Materia, FondoTiempo, CategoriaFuncion, Actividad, PerfilUsuario, AsignacionCarrera, InformeFondo, ObservacionFondo, MensajeObservacion, HistorialFondo, CargaHoraria, SaldoVacacionesGestion
 from django.db.models import Sum
 from django.db import transaction
 from decimal import Decimal
@@ -187,6 +187,8 @@ class CargaHorariaSerializer(serializers.ModelSerializer):
         read_only_fields = ['creado_por']
 
     def validate(self, data):
+        from .models import DocenteCarrera
+
         docente = data.get('docente', self.instance.docente if self.instance else None)
         materia = data.get('materia', self.instance.materia if self.instance else None)
         calendario = data.get('calendario', self.instance.calendario if self.instance else None)
@@ -268,7 +270,11 @@ class CargaHorariaSerializer(serializers.ModelSerializer):
         total_horas_anuales = Decimal(horas_existentes) + Decimal(horas_nuevas or 0)
         total_horas_semanales = total_horas_anuales / Decimal('52')
 
-        horas_maximas = Decimal(str(docente.horas_semanales_maximas or 0))
+        # Obtener horas semanales del primer vínculo activo del docente
+        primer_vinculo = DocenteCarrera.objects.filter(
+            docente=docente, activo=True
+        ).first()
+        horas_maximas = Decimal(str(primer_vinculo.horas_semanales_maximas if primer_vinculo else 0))
 
         if total_horas_semanales > horas_maximas:
             raise serializers.ValidationError(
@@ -287,20 +293,51 @@ class CargaHorariaSerializer(serializers.ModelSerializer):
 
 
 
+# ============================================================
+# DOCENTECARRERA SERIALIZER
+# ============================================================
+class DocenteCarreraSerializer(serializers.ModelSerializer):
+    docente_nombre = serializers.CharField(source='docente.nombre_completo', read_only=True)
+    carrera_nombre = serializers.CharField(source='carrera.nombre', read_only=True)
+    tipo_dedicacion = serializers.CharField(source='get_dedicacion_display', read_only=True)
+    tipo_categoria = serializers.CharField(source='get_categoria_display', read_only=True)
+    horas_semanales = serializers.ReadOnlyField(source='horas_semanales_maximas')
+
+    class Meta:
+        model = DocenteCarrera
+        fields = [
+            'id', 'docente', 'docente_nombre',
+            'carrera', 'carrera_nombre',
+            'categoria', 'tipo_categoria',
+            'dedicacion', 'tipo_dedicacion',
+            'horas_semanales', 'activo',
+            'fecha_creacion', 'fecha_modificacion',
+        ]
+        read_only_fields = ['fecha_creacion', 'fecha_modificacion']
+
+
+# ============================================================
+# DOCENTE SERIALIZER (datos personales solamente)
+# ============================================================
 class DocenteSerializer(serializers.ModelSerializer):
     nombre_completo = serializers.ReadOnlyField()
     usuario_email = serializers.SerializerMethodField()
     usuario_id = serializers.SerializerMethodField()
-    carrera_id = serializers.SerializerMethodField()
-    carrera_nombre = serializers.SerializerMethodField()
-    carrera = serializers.PrimaryKeyRelatedField(
-        queryset=Carrera.objects.all(),
-        required=False,
+    vinculos = DocenteCarreraSerializer(
+        source='vinculos_carrera', many=True, read_only=True
     )
 
     class Meta:
         model = Docente
-        fields = '__all__'
+        fields = [
+            'id', 'nombres', 'apellido_paterno', 'apellido_materno',
+            'ci', 'email', 'telefono',
+            'fecha_ingreso', 'dias_vacacion', 'horas_feriados_gestion',
+            'nombre_completo', 'usuario_email', 'usuario_id',
+            'vinculos', 'activo',
+            'fecha_creacion', 'fecha_modificacion',
+        ]
+        read_only_fields = ['fecha_creacion', 'fecha_modificacion']
 
     def _perfil_asociado(self, obj):
         return PerfilUsuario.objects.filter(docente=obj, user__isnull=False).select_related('user', 'carrera').first()
@@ -318,35 +355,6 @@ class DocenteSerializer(serializers.ModelSerializer):
         if perfil and perfil.user:
             return perfil.user.id
         return None
-
-    def get_carrera_id(self, obj):
-        """Obtiene la carrera propia del docente."""
-        if obj.carrera:
-            return obj.carrera.id
-        return None
-
-    def get_carrera_nombre(self, obj):
-        """Obtiene el nombre de la carrera propia del docente."""
-        if obj.carrera:
-            return obj.carrera.nombre
-        return None
-
-    def validate_horas_contrato_semanales(self, value):
-        """
-        🔒 BLINDAJE: Valida que las horas de contrato semanales estén dentro del rango permitido.
-        Para dedicación Horario, el máximo permitido es 32 horas semanales.
-        """
-        if value is not None:
-            if value < 1:
-                raise serializers.ValidationError(
-                    'Las horas semanales deben ser al menos 1 hora.'
-                )
-            if value > 32:
-                raise serializers.ValidationError(
-                    '⚠️ Límite excedido: Un docente a tiempo horario no puede exceder las 32 horas semanales. '
-                    'Si requiere más horas, debe recategorizarse a Tiempo Completo.'
-                )
-        return value
 
     def validate_ci(self, value):
         ci_normalizado = (value or '').strip()
@@ -377,86 +385,32 @@ class DocenteSerializer(serializers.ModelSerializer):
         return ci_normalizado
 
     def validate(self, data):
-        """
-        🔒 BLINDAJE: Validaciones adicionales para el docente.
-        - Verifica límite de 32 horas semanales para dedicación Horario
-        - Valida coherencia entre dedicación y horas
-        """
-        dedicacion = data.get('dedicacion', self.instance.dedicacion if self.instance else None)
-        horas_contrato = data.get('horas_contrato_semanales',
-                                   self.instance.horas_contrato_semanales if self.instance else None)
+        """Validaciones adicionales para el docente (datos personales)."""
+        from django.utils import timezone
 
-        # Regla de régimen: Horario requiere horas explícitas y máximo 32.
-        if dedicacion == 'horario':
-            if not horas_contrato or horas_contrato <= 0:
+        # Validación de fecha_ingreso
+        fecha_ingreso = data.get('fecha_ingreso',
+                                  self.instance.fecha_ingreso if self.instance else None)
+        if fecha_ingreso:
+            fecha = fecha_ingreso.date() if hasattr(fecha_ingreso, 'time') else fecha_ingreso
+            hoy = timezone.now().date()
+            fecha_fundacion_uabjb = fecha.replace(year=1967, month=11, day=18)
+            if fecha > hoy:
                 raise serializers.ValidationError({
-                    'horas_contrato_semanales': 'Para dedicación "Horario", debe especificar un número de horas de contrato semanales mayor a cero.'
+                    'fecha_ingreso': 'La fecha de ingreso no puede ser una fecha futura.'
                 })
-
-            if horas_contrato > 32:
+            if fecha < fecha_fundacion_uabjb:
                 raise serializers.ValidationError({
-                    'horas_contrato_semanales': 
-                    f'⚠️ LÍMITE EXCEDIDO: Has ingresado {horas_contrato} horas semanales, pero el máximo permitido para tiempo horario es 32. '
-                    'Si requiere más horas, recategorice al docente a Tiempo Completo.'
+                    'fecha_ingreso': 'La fecha de ingreso no puede ser anterior a la fundación de la UABJB (18 de noviembre de 1967).'
                 })
-
-        # Regla de régimen: Tiempo Completo siempre 40 horas.
-        if dedicacion == 'tiempo_completo' and horas_contrato not in [None, '']:
-            raise serializers.ValidationError({
-                'horas_contrato_semanales': 'Tiempo Completo siempre corresponde a 40 horas y no admite horas de contrato personalizadas.'
-            })
-
-        # Regla de régimen: Medio Tiempo siempre 20 horas.
-        if dedicacion == 'medio_tiempo' and horas_contrato not in [None, '']:
-            raise serializers.ValidationError({
-                'horas_contrato_semanales': 'Medio Tiempo siempre corresponde a 20 horas y no admite horas de contrato personalizadas.'
-            })
-
-        carrera = data.get('carrera')
-        if self.instance is None and not carrera:
-            raise serializers.ValidationError({
-                'carrera': 'Debe seleccionar una carrera para el docente.'
-            })
-        if self.instance is not None and 'carrera' in data and not carrera:
-            raise serializers.ValidationError({
-                'carrera': 'Debe seleccionar una carrera valida para el docente.'
-            })
 
         if self.instance is not None:
-            perfil_vinculado = self._perfil_asociado(self.instance)
-
-            dedicacion_actual = self.instance.dedicacion
-            if dedicacion_actual != 'horario' and dedicacion == 'horario':
-                cargas_docentes = CargaHoraria.objects.filter(docente=self.instance, categoria='docente')
-                minutos_totales_semana = 0
-                for carga in cargas_docentes:
-                    if not carga.hora_inicio or not carga.hora_fin:
-                        continue
-                    inicio_min = (carga.hora_inicio.hour * 60) + carga.hora_inicio.minute
-                    fin_min = (carga.hora_fin.hour * 60) + carga.hora_fin.minute
-                    if fin_min > inicio_min:
-                        minutos_totales_semana += (fin_min - inicio_min)
-
-                horas_totales_semana = Decimal(minutos_totales_semana) / Decimal('60')
-                if horas_totales_semana > Decimal('32'):
-                    raise serializers.ValidationError({
-                        'dedicacion': (
-                            'No se puede cambiar a Tiempo Horario porque la carga semanal asignada '
-                            f'({horas_totales_semana:.2f}h) excede el límite de 32h. '
-                            'Reduzca la carga académica primero.'
-                        )
-                    })
-
             if 'fecha_ingreso' in data and data.get('fecha_ingreso') != self.instance.fecha_ingreso:
                 raise serializers.ValidationError({
                     'fecha_ingreso': 'La fecha de ingreso es de solo lectura en la edición.'
                 })
 
-            if perfil_vinculado and 'carrera' in data and data.get('carrera') and data.get('carrera') != self.instance.carrera:
-                raise serializers.ValidationError({
-                    'carrera': 'No se puede cambiar la carrera de un docente vinculado a un usuario.'
-                })
-
+            perfil_vinculado = self._perfil_asociado(self.instance)
             if perfil_vinculado and 'email' in data:
                 nuevo_email = (data.get('email') or '').strip()
                 email_actual = (self.instance.email or '').strip()
@@ -539,8 +493,15 @@ class DocenteSerializer(serializers.ModelSerializer):
         if carrera is not serializers.empty:
             if not carrera:
                 raise serializers.ValidationError({'carrera': 'Debe seleccionar una carrera válida para el docente.'})
-            docente.carrera = carrera
-            docente.save(update_fields=['carrera'])
+            # Crear o actualizar el vínculo DocenteCarrera
+            DocenteCarrera.objects.update_or_create(
+                docente=docente,
+                carrera=carrera,
+                defaults={
+                    'categoria': docente.vinculos_carrera.filter(carrera=carrera).first().categoria if docente.vinculos_carrera.filter(carrera=carrera).exists() else 'asistente',
+                    'dedicacion': docente.vinculos_carrera.filter(carrera=carrera).first().dedicacion if docente.vinculos_carrera.filter(carrera=carrera).exists() else 'horario_40',
+                },
+            )
             perfil, _ = PerfilUsuario.objects.get_or_create(
                 docente=docente,
                 defaults={
@@ -958,8 +919,11 @@ class FondoTiempoSerializer(serializers.ModelSerializer):
         if not docente:
             return data
         
-        # Obtener horas máximas del docente según su dedicación
-        horas_maximas_semanales = docente.horas_semanales_maximas
+        # Obtener horas máximas del docente según su primer vínculo activo
+        primer_vinculo = DocenteCarrera.objects.filter(
+            docente=docente, activo=True
+        ).first()
+        horas_maximas_semanales = primer_vinculo.horas_semanales_maximas if primer_vinculo else 0
         
         # Calcular total de horas asignadas en este fondo de tiempo
         total_horas_asignadas = Decimal(0)
@@ -984,9 +948,10 @@ class FondoTiempoSerializer(serializers.ModelSerializer):
         
         # Validación adicional: comparar con el límite específico del docente
         if horas_semanales_asignadas > horas_maximas_semanales:
+            dedicacion_label = primer_vinculo.get_dedicacion_display() if primer_vinculo else 'N/A'
             raise serializers.ValidationError({
-                'horas_efectivas': 
-                f'⚠️ LÍMITE PERSONAL EXCEDIDO: Tu dedicación ({docente.dedicacion}) tiene un límite de '
+                'horas_efectivas':
+                f'⚠️ LÍMITE PERSONAL EXCEDIDO: Tu dedicación ({dedicacion_label}) tiene un límite de '
                 f'{horas_maximas_semanales} horas semanales, pero has asignado {horas_semanales_asignadas:.2f} horas. '
                 f'Por favor, ajusta las actividades para cumplir con tu dedicación.'
             })
@@ -1716,13 +1681,15 @@ class ActualizarUsuarioSerializer(serializers.ModelSerializer):
             instance.is_staff = False
 
         # 4. Gestionar 'carrera'
-        # Se permite guardar carrera para docente cuando viene desde el flujo de creacion/vinculacion.
         if 'carrera' in validated_data:
             carrera = validated_data.get('carrera')
             perfil.carrera = carrera
-            if perfil.docente:
-                perfil.docente.carrera = carrera
-                perfil.docente.save(update_fields=['carrera'])
+            if perfil.docente and carrera:
+                DocenteCarrera.objects.get_or_create(
+                    docente=perfil.docente,
+                    carrera=carrera,
+                    defaults={'categoria': 'asistente', 'dedicacion': 'horario_40'},
+                )
 
         # 4.1 Gestionar 'ci' (se guarda en Docente si existe vínculo)
         if ci is not None:
@@ -2067,18 +2034,17 @@ class HistorialFondoSerializer(serializers.ModelSerializer):
 class DocenteDetalleSerializer(serializers.ModelSerializer):
     """Serializer completo con propiedades calculadas"""
     nombre_completo = serializers.ReadOnlyField()
-    horas_semanales_maximas = serializers.ReadOnlyField()
-    horas_anuales_maximas = serializers.ReadOnlyField()
-    dedicacion_display = serializers.CharField(source='get_dedicacion_display', read_only=True)
-    categoria_display = serializers.CharField(source='get_categoria_display', read_only=True)
-    
+    vinculos = DocenteCarreraSerializer(
+        source='vinculos_carrera', many=True, read_only=True
+    )
+
     class Meta:
         model = Docente
         fields = [
             'id', 'nombres', 'apellido_paterno', 'apellido_materno', 'ci',
-            'categoria', 'categoria_display', 'dedicacion', 'dedicacion_display', 'fecha_ingreso',
+            'fecha_ingreso', 'dias_vacacion', 'horas_feriados_gestion',
             'email', 'telefono', 'activo', 'fecha_creacion',
-            'nombre_completo', 'horas_semanales_maximas', 'horas_anuales_maximas'
+            'nombre_completo', 'vinculos',
         ]
 
 

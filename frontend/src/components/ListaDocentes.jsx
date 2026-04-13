@@ -105,8 +105,9 @@ function FechaIngresoPicker({ value, onChange, error }) {
   const month = visibleMonth.getMonth();
   const today = new Date();
   const currentYearRef = today.getFullYear();
-  const startYear = currentYearRef - 25;
-  const endYear = currentYearRef + 25;
+  const minYear = 1967; // Año de fundación de la UABJB
+  const startYear = minYear;
+  const endYear = currentYearRef; // No permitir años futuros
   const yearOptions = Array.from({ length: endYear - startYear + 1 }, (_, idx) => startYear + idx);
   const monthOptions = monthNames.map((label, valueIndex) => ({ value: valueIndex, label }));
   const firstDay = new Date(year, month, 1);
@@ -312,12 +313,20 @@ function FechaIngresoPicker({ value, onChange, error }) {
               }
               const isToday = isSameDate(cellDate, today);
               const isSelected = draftDay !== null && cellDate.getDate() === draftDay;
+              const isFuture = cellDate > today;
+              const isBeforeFundacion = cellDate < new Date(1967, 10, 18); // 18 de noviembre de 1967
+              const isDisabled = isFuture || isBeforeFundacion;
               return (
                 <button
                   key={toIsoDate(cellDate)}
                   type="button"
-                  onClick={() => handlePickDate(cellDate)}
-                  className={`h-8 rounded-lg text-xs ${isSelected ? 'bg-[#4654E8] text-white font-semibold' : 'text-slate-100 hover:bg-white/15'} ${isToday && !isSelected ? 'border border-white/55' : 'border border-transparent'}`}
+                  disabled={isDisabled}
+                  onClick={() => !isDisabled && handlePickDate(cellDate)}
+                  className={`h-8 rounded-lg text-xs ${
+                    isDisabled ? 'opacity-30 cursor-not-allowed text-slate-500'
+                    : isSelected ? 'bg-[#4654E8] text-white font-semibold'
+                    : 'text-slate-100 hover:bg-white/15'
+                  } ${isToday && !isSelected && !isDisabled ? 'border border-white/55' : 'border border-transparent'}`}
                 >
                   {cellDate.getDate()}
                 </button>
@@ -599,7 +608,28 @@ const dedicacionStyles = {
     title: 'text-green-800 dark:text-green-300',
     text: 'text-green-700 dark:text-green-400',
   },
-  horario: {
+  horario_16: {
+    bg: 'bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-900/20 dark:to-amber-900/20',
+    border: 'border-orange-500',
+    icon: 'text-orange-500',
+    title: 'text-orange-800 dark:text-orange-300',
+    text: 'text-orange-700 dark:text-orange-400',
+  },
+  horario_24: {
+    bg: 'bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-900/20 dark:to-amber-900/20',
+    border: 'border-orange-500',
+    icon: 'text-orange-500',
+    title: 'text-orange-800 dark:text-orange-300',
+    text: 'text-orange-700 dark:text-orange-400',
+  },
+  horario_40: {
+    bg: 'bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-900/20 dark:to-amber-900/20',
+    border: 'border-orange-500',
+    icon: 'text-orange-500',
+    title: 'text-orange-800 dark:text-orange-300',
+    text: 'text-orange-700 dark:text-orange-400',
+  },
+  horario_48: {
     bg: 'bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-900/20 dark:to-amber-900/20',
     border: 'border-orange-500',
     icon: 'text-orange-500',
@@ -631,6 +661,45 @@ function ListaDocentes({ sidebarCollapsed = false }) {
 
   const buildNombreCompleto = (nombres, apellidoPaterno, apellidoMaterno) =>
     [nombres, apellidoPaterno, apellidoMaterno].filter(Boolean).join(' ').trim();
+
+  /**
+   * Calcula horas efectivas anuales reales según dedicación y fecha de ingreso.
+   * Replica la lógica del backend (FondoTiempo._recalcular_horas_automaticas).
+   */
+  const calcularHorasEfectivas = (dedicacion, fechaIngreso, gestion = null) => {
+    const mapaHorasSemanales = {
+      tiempo_completo: 40,
+      medio_tiempo: 20,
+      horario_16: 4,
+      horario_24: 6,
+      horario_40: 10,
+      horario_48: 12,
+    };
+    const horasSemanales = mapaHorasSemanales[dedicacion];
+    if (!horasSemanales) return null;
+
+    // Calcular antigüedad
+    const fechaIng = fechaIngreso ? new Date(fechaIngreso + 'T00:00:00') : null;
+    if (!fechaIng || isNaN(fechaIng)) return null;
+
+    const gestionActual = gestion || new Date().getFullYear();
+    const antiguedad = Math.max(0, gestionActual - fechaIng.getFullYear());
+
+    // Días de vacaciones según antigüedad
+    let diasVacacion;
+    if (antiguedad >= 10) diasVacacion = 30;
+    else if (antiguedad >= 5) diasVacacion = 20;
+    else diasVacacion = 15;
+
+    // Cálculo de horas
+    const contratoHoras = horasSemanales * 52;
+    const horasDiarias = horasSemanales / 5;
+    const horasVacacion = diasVacacion * horasDiarias;
+    const horasFeriados = 16 * horasDiarias; // 16 días feriados estándar
+    const horasEfectivas = contratoHoras - horasVacacion - horasFeriados;
+
+    return Math.max(Math.floor(horasEfectivas), 0);
+  };
 
   const navigate = useNavigate();
   const restoringCreateFormRef = React.useRef(false);
@@ -773,14 +842,14 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       nombres: docente.nombres,
       apellido_paterno: docente.apellido_paterno,
       apellido_materno: docente.apellido_materno || '',
-      carrera: docente.carrera_id || '',
+      carrera: docente.vinculos?.[0]?.carrera || '',
       ci: docente.ci,
-      categoria: docente.categoria,
-      dedicacion: docente.dedicacion,
+      categoria: docente.vinculos?.[0]?.categoria || '',
+      dedicacion: docente.vinculos?.[0]?.dedicacion || '',
       fecha_ingreso: docente.fecha_ingreso || new Date().toISOString().split('T')[0],
       email: docente.email || '',
       telefono: docente.telefono || '',
-      horas_contrato_semanales: docente.horas_contrato_semanales || null,
+      horas_contrato_semanales: null,
       activo: docente.activo,
     });
     setShowModal(true);
@@ -803,7 +872,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
         newState.apellido_materno = nombresSplit.apellido_materno;
       }
 
-      if (name === 'dedicacion' && value !== 'horario') {
+      if (name === 'dedicacion') {
         newState.horas_contrato_semanales = null;
       }
       if (isCreating && abrirDesdeUsuarios) {
@@ -856,6 +925,26 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       toast.error('Ya existe un docente con este C.I.');
       setIsSubmitting(false);
       return;
+    }
+
+    // Validación de fecha_ingreso
+    if (formData.fecha_ingreso) {
+      const fechaIngreso = new Date(formData.fecha_ingreso + 'T00:00:00');
+      const hoy = new Date();
+      hoy.setHours(0, 0, 0, 0);
+      const fundacionUABJB = new Date(1967, 10, 18); // 18 de noviembre de 1967
+      if (fechaIngreso > hoy) {
+        setErrors((prev) => ({ ...prev, fecha_ingreso: ['La fecha de ingreso no puede ser una fecha futura.'] }));
+        toast.error('La fecha de ingreso no puede ser una fecha futura.');
+        setIsSubmitting(false);
+        return;
+      }
+      if (fechaIngreso < fundacionUABJB) {
+        setErrors((prev) => ({ ...prev, fecha_ingreso: ['La fecha de ingreso no puede ser anterior a la fundación de la UABJB (18 de noviembre de 1967).'] }));
+        toast.error('La fecha de ingreso no puede ser anterior a la fundación de la UABJB (18 de noviembre de 1967).');
+        setIsSubmitting(false);
+        return;
+      }
     }
 
     try {
@@ -943,6 +1032,26 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       toast.error('Debe seleccionar una carrera para el docente.');
       setIsSubmitting(false);
       return;
+    }
+
+    // Validación de fecha_ingreso
+    if (formData.fecha_ingreso) {
+      const fechaIngreso = new Date(formData.fecha_ingreso + 'T00:00:00');
+      const hoy = new Date();
+      hoy.setHours(0, 0, 0, 0);
+      const fundacionUABJB = new Date(1967, 10, 18); // 18 de noviembre de 1967
+      if (fechaIngreso > hoy) {
+        setErrors((prev) => ({ ...prev, fecha_ingreso: ['La fecha de ingreso no puede ser una fecha futura.'] }));
+        toast.error('La fecha de ingreso no puede ser una fecha futura.');
+        setIsSubmitting(false);
+        return;
+      }
+      if (fechaIngreso < fundacionUABJB) {
+        setErrors((prev) => ({ ...prev, fecha_ingreso: ['La fecha de ingreso no puede ser anterior a la fundación de la UABJB (18 de noviembre de 1967).'] }));
+        toast.error('La fecha de ingreso no puede ser anterior a la fundación de la UABJB (18 de noviembre de 1967).');
+        setIsSubmitting(false);
+        return;
+      }
     }
 
     try {
@@ -1172,7 +1281,10 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                     options={[
                       { value: 'tiempo_completo', label: 'Tiempo Completo' },
                       { value: 'medio_tiempo', label: 'Medio Tiempo' },
-                      { value: 'horario', label: 'Horario' },
+                      { value: 'horario_16', label: 'Horario 16hrs/mes' },
+                      { value: 'horario_24', label: 'Horario 24hrs/mes' },
+                      { value: 'horario_40', label: 'Horario 40hrs/mes' },
+                      { value: 'horario_48', label: 'Horario 48hrs/mes' },
                     ]}
                     error={errors.dedicacion}
                   />
@@ -1189,27 +1301,31 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                     error={errors.categoria}
                   />
                   <div>
-                    {formData.dedicacion === 'horario' ? (
-                      <InputField
-                        label="Horas / Semana"
-                        name="horas_contrato_semanales"
-                        type="number"
-                        value={formData.horas_contrato_semanales || ''}
-                        onChange={handleChange}
-                        required={Boolean(formData.dedicacion)}
-                        error={errors.horas_contrato_semanales}
-                      />
-                    ) : (
-                      <div>
-                        <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Horas / Semana</label>
-                        <div className="w-full px-3 py-2.5 rounded-xl border-2 bg-gradient-to-r from-slate-100 to-slate-50 dark:from-slate-700 dark:to-slate-700/50 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600 flex items-center justify-between min-h-[46px]">
-                          <span className="font-bold text-lg text-slate-700 dark:text-slate-300">
-                            {formData.dedicacion === 'tiempo_completo' ? 40 : formData.dedicacion === 'medio_tiempo' ? 20 : ''}
-                          </span>
-                          <span className="text-xs text-slate-400 dark:text-slate-500">hrs</span>
-                        </div>
+                    <div>
+                      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
+                        Horas Semanales (derivadas)
+                      </label>
+                      <div className="w-full px-3 py-2.5 rounded-xl border-2 bg-gradient-to-r from-slate-100 to-slate-50 dark:from-slate-700 dark:to-slate-700/50 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600 flex items-center justify-between min-h-[46px]">
+                        <span className="font-bold text-lg text-slate-700 dark:text-slate-300">
+                          {formData.dedicacion === 'tiempo_completo' ? 40
+                           : formData.dedicacion === 'medio_tiempo' ? 20
+                           : formData.dedicacion === 'horario_16' ? 4
+                           : formData.dedicacion === 'horario_24' ? 6
+                           : formData.dedicacion === 'horario_40' ? 10
+                           : formData.dedicacion === 'horario_48' ? 12
+                           : ''}
+                        </span>
+                        <span className="text-xs text-slate-400 dark:text-slate-500">hrs/sem</span>
                       </div>
-                    )}
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
+                        {formData.dedicacion === 'horario_16' && 'Este docente trabaja 16 horas al mes (4 horas por semana).'}
+                        {formData.dedicacion === 'horario_24' && 'Este docente trabaja 24 horas al mes (6 horas por semana).'}
+                        {formData.dedicacion === 'horario_40' && 'Este docente trabaja 40 horas al mes (10 horas por semana).'}
+                        {formData.dedicacion === 'horario_48' && 'Este docente trabaja 48 horas al mes (12 horas por semana).'}
+                        {(formData.dedicacion === 'tiempo_completo' || formData.dedicacion === 'medio_tiempo')
+                          && 'Horas semanales fijas por reglamento.'}
+                      </p>
+                    </div>
                   </div>
 
                   <div className="md:col-span-2">
@@ -1226,9 +1342,25 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                           <div>
                             <h5 className={`text-sm font-semibold ${dedicacionStyles[formData.dedicacion]?.title}`}>Informacion sobre Dedicacion</h5>
                             <p className={`text-xs leading-5 mt-1 ${dedicacionStyles[formData.dedicacion]?.text}`}>
-                              {formData.dedicacion === 'tiempo_completo' && 'La dedicacion a Tiempo Completo implica un total de 40 horas semanales.'}
-                              {formData.dedicacion === 'medio_tiempo' && 'La dedicacion a Medio Tiempo implica un total de 20 horas semanales.'}
-                              {formData.dedicacion === 'horario' && 'Para la dedicacion por Horario, debe especificar el numero de horas semanales segun el contrato.'}
+                              {(() => {
+                                const horas = calcularHorasEfectivas(formData.dedicacion, formData.fecha_ingreso);
+                                const antiguedad = formData.fecha_ingreso
+                                  ? Math.max(0, new Date().getFullYear() - new Date(formData.fecha_ingreso + 'T00:00:00').getFullYear())
+                                  : 0;
+                                const dedicacionLabels = {
+                                  tiempo_completo: 'Tiempo Completo',
+                                  medio_tiempo: 'Medio Tiempo',
+                                  horario_16: 'Horario 16hrs/mes',
+                                  horario_24: 'Horario 24hrs/mes',
+                                  horario_40: 'Horario 40hrs/mes',
+                                  horario_48: 'Horario 48hrs/mes',
+                                };
+                                const label = dedicacionLabels[formData.dedicacion] || formData.dedicacion;
+                                if (horas !== null) {
+                                  return `${label}: ${horas.toFixed(0)} horas efectivas anuales (${antiguedad} año${antiguedad !== 1 ? 's' : ''} de antigüedad, vacaciones calculadas según antigüedad).`;
+                                }
+                                return `${label}: complete la fecha de ingreso para calcular las horas efectivas.`;
+                              })()}
                             </p>
                           </div>
                         </div>
@@ -1328,12 +1460,17 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                           {docente.activo ? (
                             <>
                               <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-2 border-blue-300 dark:border-blue-700 shadow-sm">
-                                {docente.categoria === 'catedratico' ? 'Catedratico' :
-                                  docente.categoria === 'adjunto' ? 'Adjunto' : 'Asistente'}
+                                {docente.vinculos?.[0]?.categoria === 'catedratico' ? 'Catedratico' :
+                                  docente.vinculos?.[0]?.categoria === 'adjunto' ? 'Adjunto' : 'Asistente'}
                               </span>
                               <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-2 border-green-300 dark:border-green-700 shadow-sm">
-                                {docente.dedicacion === 'tiempo_completo' ? 'Tiempo Completo' :
-                                  docente.dedicacion === 'horario' ? 'Horario' : 'Medio Tiempo'}
+                                {docente.vinculos?.[0]?.dedicacion === 'tiempo_completo' ? 'Tiempo Completo'
+                                  : docente.vinculos?.[0]?.dedicacion === 'medio_tiempo' ? 'Medio Tiempo'
+                                  : docente.vinculos?.[0]?.dedicacion === 'horario_16' ? 'Horario 16hrs/mes'
+                                  : docente.vinculos?.[0]?.dedicacion === 'horario_24' ? 'Horario 24hrs/mes'
+                                  : docente.vinculos?.[0]?.dedicacion === 'horario_40' ? 'Horario 40hrs/mes'
+                                  : docente.vinculos?.[0]?.dedicacion === 'horario_48' ? 'Horario 48hrs/mes'
+                                  : docente.vinculos?.[0]?.dedicacion}
                               </span>
                             </>
                           ) : (
@@ -1475,42 +1612,39 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                   options={[
                     { value: 'tiempo_completo', label: 'Tiempo Completo' },
                     { value: 'medio_tiempo', label: 'Medio Tiempo' },
-                    { value: 'horario', label: 'Horario' },
+                    { value: 'horario_16', label: 'Horario 16hrs/mes' },
+                    { value: 'horario_24', label: 'Horario 24hrs/mes' },
+                    { value: 'horario_40', label: 'Horario 40hrs/mes' },
+                    { value: 'horario_48', label: 'Horario 48hrs/mes' },
                   ]}
                   error={errors.dedicacion}
                 />
                 <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-[minmax(0,380px)_1fr] gap-4 items-start">
-                  {formData.dedicacion === 'horario' ? (
-                    <div>
-                      <InputField
-                        label="Horas / Semana"
-                        name="horas_contrato_semanales"
-                        type="number"
-                        value={formData.horas_contrato_semanales || ''}
-                        onChange={handleChange}
-                        required={Boolean(formData.dedicacion)}
-                        error={errors.horas_contrato_semanales}
-                      />
-                      <p className="mt-1 text-xs font-semibold text-red-600 dark:text-red-400">
-                        Tiempo Horario: máximo 32 horas por semana.
-                      </p>
+                  <div>
+                    <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
+                      Horas Semanales (derivadas)
+                    </label>
+                    <div className="w-full px-3 py-2.5 rounded-xl border-2 bg-gradient-to-r from-slate-100 to-slate-50 dark:from-slate-700 dark:to-slate-700/50 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600 flex items-center justify-between min-h-[46px]">
+                      <span className="font-bold text-lg text-slate-700 dark:text-slate-300">
+                        {formData.dedicacion === 'tiempo_completo' ? 40
+                         : formData.dedicacion === 'medio_tiempo' ? 20
+                         : formData.dedicacion === 'horario_16' ? 4
+                         : formData.dedicacion === 'horario_24' ? 6
+                         : formData.dedicacion === 'horario_40' ? 10
+                         : formData.dedicacion === 'horario_48' ? 12
+                         : ''}
+                      </span>
+                      <span className="text-xs text-slate-400 dark:text-slate-500">hrs/sem</span>
                     </div>
-                  ) : (
-                    <div>
-                      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Horas / Semana</label>
-                      <div className="w-full px-3 py-2.5 rounded-xl border-2 bg-gradient-to-r from-slate-100 to-slate-50 dark:from-slate-700 dark:to-slate-700/50 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600 flex items-center justify-between min-h-[46px]">
-                        <span className="font-bold text-lg text-slate-700 dark:text-slate-300">
-                          {formData.dedicacion === 'tiempo_completo' ? 40 : formData.dedicacion === 'medio_tiempo' ? 20 : ''}
-                        </span>
-                        <span className="text-xs text-slate-400 dark:text-slate-500">hrs</span>
-                      </div>
-                      <p className="mt-1 text-xs font-semibold text-slate-600 dark:text-slate-400">
-                        {formData.dedicacion === 'tiempo_completo'
-                          ? 'Tiempo Completo: 40 horas fijas por semana.'
-                          : 'Medio Tiempo: 20 horas fijas por semana.'}
-                      </p>
-                    </div>
-                  )}
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
+                      {formData.dedicacion === 'horario_16' && 'Este docente trabaja 16 horas al mes (4 horas por semana).'}
+                      {formData.dedicacion === 'horario_24' && 'Este docente trabaja 24 horas al mes (6 horas por semana).'}
+                      {formData.dedicacion === 'horario_40' && 'Este docente trabaja 40 horas al mes (10 horas por semana).'}
+                      {formData.dedicacion === 'horario_48' && 'Este docente trabaja 48 horas al mes (12 horas por semana).'}
+                      {(formData.dedicacion === 'tiempo_completo' || formData.dedicacion === 'medio_tiempo')
+                        && 'Horas semanales fijas por reglamento.'}
+                    </p>
+                  </div>
 
                   <div
                     className={`rounded-xl border-l-4 p-3.5 shadow-sm min-h-[92px] transition-opacity ${
@@ -1525,9 +1659,25 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                         <div>
                           <h5 className={`text-sm font-semibold ${dedicacionStyles[formData.dedicacion]?.title}`}>Informacion sobre Dedicacion</h5>
                           <p className={`text-xs leading-5 mt-1 ${dedicacionStyles[formData.dedicacion]?.text}`}>
-                            {formData.dedicacion === 'tiempo_completo' && 'La dedicacion a Tiempo Completo implica un total de 40 horas semanales.'}
-                            {formData.dedicacion === 'medio_tiempo' && 'La dedicacion a Medio Tiempo implica un total de 20 horas semanales.'}
-                            {formData.dedicacion === 'horario' && 'Para la dedicacion por Horario, debe especificar el numero de horas semanales segun el contrato.'}
+                            {(() => {
+                              const horas = calcularHorasEfectivas(formData.dedicacion, formData.fecha_ingreso);
+                              const antiguedad = formData.fecha_ingreso
+                                ? Math.max(0, new Date().getFullYear() - new Date(formData.fecha_ingreso + 'T00:00:00').getFullYear())
+                                : 0;
+                              const dedicacionLabels = {
+                                tiempo_completo: 'Tiempo Completo',
+                                medio_tiempo: 'Medio Tiempo',
+                                horario_16: 'Horario 16hrs/mes',
+                                horario_24: 'Horario 24hrs/mes',
+                                horario_40: 'Horario 40hrs/mes',
+                                horario_48: 'Horario 48hrs/mes',
+                              };
+                              const label = dedicacionLabels[formData.dedicacion] || formData.dedicacion;
+                              if (horas !== null) {
+                                return `${label}: ${horas.toFixed(0)} horas efectivas anuales (${antiguedad} año${antiguedad !== 1 ? 's' : ''} de antigüedad, vacaciones calculadas según antigüedad).`;
+                              }
+                              return `${label}: complete la fecha de ingreso para calcular las horas efectivas.`;
+                            })()}
                           </p>
                         </div>
                       </div>

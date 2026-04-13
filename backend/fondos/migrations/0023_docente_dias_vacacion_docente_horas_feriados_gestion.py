@@ -10,14 +10,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AddField(
-            model_name='docente',
-            name='dias_vacacion',
-            field=models.IntegerField(default=15, help_text='Días de vacación correspondientes según antigüedad'),
-        ),
-        migrations.AddField(
-            model_name='docente',
-            name='horas_feriados_gestion',
-            field=models.IntegerField(default=128, help_text='Total de horas de feriados en la gestión académica'),
-        ),
+        # No-op: 0001_initial already handles this.
     ]

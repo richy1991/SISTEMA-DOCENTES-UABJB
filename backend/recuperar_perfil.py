@@ -115,7 +115,7 @@ def recuperar_perfil(username):
                 apellido_paterno = input("Apellido Paterno: ").strip()
                 apellido_materno = input("Apellido Materno (opcional): ").strip()
                 categoria = input("Categoría [catedratico/adjunto/asistente]: ").strip() or 'asistente'
-                dedicacion = input("Dedicación [tiempo_completo/horario/medio_tiempo]: ").strip() or 'horario'
+                dedicacion = input("Dedicación [tiempo_completo/medio_tiempo/horario_16/horario_24/horario_40/horario_48]: ").strip() or 'horario_40'
                 
                 docente = Docente.objects.create(
                     nombres=nombres,

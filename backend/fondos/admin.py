@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from .models import (
-    Docente, Carrera, CalendarioAcademico, FondoTiempo,
+    Docente, DocenteCarrera, Carrera, CalendarioAcademico, FondoTiempo,
     CategoriaFuncion, Actividad, Proyecto, InformeFondo,
     ObservacionFondo, HistorialFondo, PerfilUsuario,
     MensajeObservacion, HistorialFondo
@@ -16,39 +16,49 @@ from .models import (
 @admin.register(Docente)
 class DocenteAdmin(admin.ModelAdmin):
     list_display = [
-        'id','nombre_completo', 'ci', 'carrera', 'categoria', 'dedicacion',
-        'horas_semanales_badge', 'email', 'activo'
+        'id','nombre_completo', 'ci',
+        'email', 'activo'
     ]
-    list_filter = ['carrera', 'categoria', 'dedicacion', 'activo']
-    search_fields = ['nombres', 'apellido_paterno', 'apellido_materno', 'ci', 'email', 'carrera__nombre']
-    ordering = ['carrera__facultad', 'carrera__nombre', 'apellido_paterno', 'apellido_materno', 'nombres']
+    list_filter = ['activo']
+    search_fields = ['nombres', 'apellido_paterno', 'apellido_materno', 'ci', 'email']
+    ordering = ['apellido_paterno', 'apellido_materno', 'nombres']
     
     fieldsets = (
         ('Información Personal', {
-            'fields': ('nombres', 'apellido_paterno', 'apellido_materno', 'ci', 'carrera')
-        }),
-        ('Información Laboral', {
-            'fields': ('categoria', 'dedicacion'),
-            'description': 'Tipo de dedicación según Reglamento UAB Art. 11'
+            'fields': ('nombres', 'apellido_paterno', 'apellido_materno', 'ci')
         }),
         ('Contacto', {
-            'fields': ('email', 'telefono', 'horas_contrato_semanales')
+            'fields': ('email', 'telefono')
+        }),
+        ('Institucional', {
+            'fields': ('fecha_ingreso', 'dias_vacacion', 'horas_feriados_gestion'),
         }),
         ('Estado', {
             'fields': ('activo',)
         }),
     )
-    
-    def horas_semanales_badge(self, obj):
-        horas = obj.horas_semanales_maximas
-        if horas:
-            color = '#10b981' if horas == 40 else '#f59e0b'
-            return format_html(
-                '<span style="color: white; background: {}; padding: 3px 10px; border-radius: 3px; font-weight: bold;">{} hrs/sem</span>',
-                color, horas
-            )
-        return mark_safe('<span style="color: gray;">Sin límite</span>')
-    horas_semanales_badge.short_description = 'Límite Semanal'
+    readonly_fields = ('fecha_creacion', 'fecha_modificacion')
+
+
+class DocenteCarreraInline(admin.TabularInline):
+    model = DocenteCarrera
+    extra = 1
+    fields = ('carrera', 'categoria', 'dedicacion', 'activo')
+
+
+@admin.register(DocenteCarrera)
+class DocenteCarreraAdmin(admin.ModelAdmin):
+    list_display = ['docente', 'carrera', 'categoria', 'dedicacion', 'horas_semanales', 'activo']
+    list_filter = ['dedicacion', 'categoria', 'activo']
+    search_fields = ['docente__nombres', 'docente__apellido_paterno', 'carrera__nombre']
+    ordering = ['carrera__nombre', 'docente__apellido_paterno']
+
+    def horas_semanales(self, obj):
+        return obj.horas_semanales_maximas
+    horas_semanales.short_description = 'Hrs/Sem'
+
+# Register inline on DocenteAdmin
+DocenteAdmin.inlines = [DocenteCarreraInline]
 
 
 # =====================================================
