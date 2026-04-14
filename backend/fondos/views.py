@@ -457,13 +457,15 @@ class CarreraViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if FacultadCatalogo.objects.filter(nombre__iexact=nombre).exists():
+        from django.core.exceptions import ValidationError
+        try:
+            FacultadCatalogo.objects.create(nombre=nombre)
+        except ValidationError as e:
             return Response(
-                {'detail': 'La facultad ya existe en el catálogo.'},
+                {'detail': str(e)},
                 status=status.HTTP_409_CONFLICT,
             )
 
-        FacultadCatalogo.objects.create(nombre=nombre)
         return Response(self._serialize_facultades(), status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated], url_path='facultades/eliminar')
@@ -477,7 +479,14 @@ class CarreraViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        facultad = FacultadCatalogo.objects.filter(nombre__iexact=nombre).first()
+        # Buscar usando comparación normalizada (acentos + case insensitive)
+        nombre_norm = FacultadCatalogo._normalizar(nombre)
+        facultad = None
+        for fac in FacultadCatalogo.objects.all():
+            if FacultadCatalogo._normalizar(fac.nombre) == nombre_norm:
+                facultad = fac
+                break
+
         if not facultad:
             return Response(
                 {'detail': 'La facultad no existe en el catálogo.'},
