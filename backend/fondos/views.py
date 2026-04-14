@@ -555,6 +555,25 @@ class CarreraViewSet(viewsets.ModelViewSet):
 
         # Superusuario: edición total de carrera.
         if self._is_superuser(user):
+            # 1) Bloquear cambio de codigo si ya tiene datos asociados
+            codigo = request.data.get('codigo', None)
+            if codigo is not None and codigo != instance.codigo:
+                counts_codigo = self._build_dependency_counts(instance)
+                if (
+                    counts_codigo['materias'] > 0
+                    or counts_codigo['fondos'] > 0
+                    or counts_codigo['docentes'] > 0
+                ):
+                    raise drf_serializers.ValidationError({
+                        'codigo': (
+                            f'No se puede cambiar el codigo de la carrera "{instance.nombre}" '
+                            f'porque ya tiene datos asociados '
+                            f'({counts_codigo["materias"]} materias, {counts_codigo["fondos"]} fondos, '
+                            f'{counts_codigo["docentes"]} docentes vinculados).'
+                        )
+                    })
+
+            # 2) Desactivar carrera: advertir con conteo pero permitir
             raw_activo = request.data.get('activo', None)
             if raw_activo is not None:
                 normalized = str(raw_activo).strip().lower()
@@ -565,21 +584,28 @@ class CarreraViewSet(viewsets.ModelViewSet):
                     if (
                         counts['materias'] > 0
                         or counts['informes'] > 0
+                        or counts['fondos'] > 0
                         or counts['usuarios'] > 0
                         or counts['docentes'] > 0
                     ):
-                        raise drf_serializers.ValidationError({
-                            'activo': (
-                                'No se puede desactivar esta carrera porque tiene '
-                                f"{counts['materias']} materias, {counts['informes']} informes, "
-                                f"{counts['usuarios']} usuarios y {counts['docentes']} docentes vinculados."
-                            )
-                        })
+                        # Se permite desactivar pero con advertencia en la respuesta
+                        request._desactivar_warning = (
+                            f'Advertencia: se está desactivando la carrera "{instance.nombre}" '
+                            f'que tiene datos activos: '
+                            f'{counts["materias"]} materias, {counts["fondos"]} fondos, '
+                            f'{counts["informes"]} informes, {counts["usuarios"]} usuarios, '
+                            f'{counts["docentes"]} docentes.'
+                        )
 
             serializer = self.get_serializer(instance, data=request.data, partial=partial)
             serializer.is_valid(raise_exception=True)
             self.perform_update(serializer)
-            return Response(serializer.data, status=status.HTTP_200_OK)
+
+            response_data = serializer.data.copy()
+            if hasattr(request, '_desactivar_warning'):
+                response_data['_warning'] = request._desactivar_warning
+
+            return Response(response_data, status=status.HTTP_200_OK)
 
         # Autoridades (admin/director/jefe): solo edición de logo desde modal Ver.
         if self._can_edit_logo_only(user):
