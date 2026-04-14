@@ -66,14 +66,14 @@ def recuperar_perfil(username):
         '1': 'docente',
         '2': 'director',
         '3': 'jefe_estudios',
-        '4': 'admin'
+        '4': 'iiisyp'
     }
     rol = roles_map.get(rol_opcion, 'docente')
     print(f"✓ Rol seleccionado: {rol}")
-    
+
     # Carrera (si es director, jefe o admin)
     carrera = None
-    if rol in ['director', 'jefe_estudios', 'admin']:
+    if rol in ['director', 'jefe_estudios', 'iiisyp']:
         print("\nCarreras disponibles:")
         carreras = list(Carrera.objects.all())
         for i, c in enumerate(carreras, 1):

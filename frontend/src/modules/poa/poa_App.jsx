@@ -74,7 +74,7 @@ function POAApp({ user }) {
     return () => { mounted = false; };
   }, [user?.id]);
 
-  const isAdminPrincipal = user?.is_superuser || user?.perfil?.rol === 'admin';
+  const isAdminPrincipal = user?.is_superuser || user?.perfil?.rol === 'iiisyp';
 
   const poaPermissions = {
     canEdit: poaRoles.includes('elaborador'),

@@ -79,7 +79,7 @@ def _docentes_por_carreras(carreras):
 
 class IsFullAdmin(BasePermission):
     """
-    Permite acceso solo a usuarios autenticados con perfil y rol 'admin'.
+    Permite acceso solo a usuarios autenticados con perfil y rol 'iiisyp'.
     Bloquea a cualquier otro rol aunque tenga is_staff=True.
     """
     def has_permission(self, request, view):
@@ -87,14 +87,14 @@ class IsFullAdmin(BasePermission):
             request.user
             and request.user.is_authenticated
             and hasattr(request.user, 'perfil')
-            and request.user.perfil.rol == 'admin'
+            and request.user.perfil.rol == 'iiisyp'
         )
 
 class IsAdminOrDirector(BasePermission):
     def has_permission(self, request, view):
         return bool(request.user and request.user.is_authenticated and (
             request.user.is_superuser or 
-            (hasattr(request.user, 'perfil') and request.user.perfil.rol in ['admin', 'director'])
+            (hasattr(request.user, 'perfil') and request.user.perfil.rol in ['iiisyp', 'director'])
         ))
 
 class DocenteViewSet(viewsets.ModelViewSet):
@@ -129,7 +129,7 @@ class DocenteViewSet(viewsets.ModelViewSet):
             return Docente.objects.all()
         
         # Admin y Director de carrera ven docentes de sus carreras activas
-        if hasattr(user, 'perfil') and user.perfil.rol in ['admin', 'director']:
+        if hasattr(user, 'perfil') and user.perfil.rol in ['iiisyp', 'director']:
             carreras_activas = _obtener_carreras_activas_usuario(user)
             if carreras_activas.exists():
                 return _docentes_por_carreras(carreras_activas)
@@ -386,7 +386,7 @@ class CarreraViewSet(viewsets.ModelViewSet):
         return user.perfil.rol
 
     def _can_edit_logo_only(self, user):
-        return self._rol_usuario(user) in ['admin', 'director', 'jefe_estudios']
+        return self._rol_usuario(user) in ['iiisyp', 'director', 'jefe_estudios']
 
     def _enforce_create_destroy_permission(self, request):
         if not self._is_superuser(request.user):
@@ -394,8 +394,8 @@ class CarreraViewSet(viewsets.ModelViewSet):
 
     def _enforce_manage_facultad_permission(self, request):
         rol = self._rol_usuario(request.user)
-        if not (self._is_superuser(request.user) or rol == 'admin'):
-            raise PermissionDenied('Solo el superusuario o el rol admin pueden gestionar facultades.')
+        if not (self._is_superuser(request.user) or rol == 'iiisyp'):
+            raise PermissionDenied('Solo el superusuario o el rol iiisyp pueden gestionar facultades.')
 
     def _serialize_facultades(self):
         # Solo devolver facultades que están en el catálogo editable
@@ -664,8 +664,8 @@ class MateriaViewSet(viewsets.ModelViewSet):
         if self._usuario_carrera_inactiva():
             return queryset.none()
         
-        # Admin de carrera solo ve materias de sus carreras activas
-        if hasattr(user, 'perfil') and user.perfil.rol == 'admin':
+        # IIISYP de carrera solo ve materias de sus carreras activas
+        if hasattr(user, 'perfil') and user.perfil.rol == 'iiisyp':
             carreras_activas = _obtener_carreras_activas_usuario(user)
             if carreras_activas.exists():
                 return queryset.filter(carrera__in=carreras_activas)
@@ -742,7 +742,7 @@ class CargaHorariaViewSet(viewsets.ModelViewSet):
             raise PermissionDenied('Acceso bloqueado: tu carrera está inactiva.')
 
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            if not hasattr(self.request.user, 'perfil') or self.request.user.perfil.rol not in ['admin', 'jefe_estudios']:
+            if not hasattr(self.request.user, 'perfil') or self.request.user.perfil.rol not in ['iiisyp', 'jefe_estudios']:
                 raise PermissionDenied("Solo Jefes de Estudio o Administradores pueden modificar cargas horarias.")
         
         return super().get_permissions()
@@ -761,7 +761,7 @@ class CargaHorariaViewSet(viewsets.ModelViewSet):
         if self._usuario_carrera_inactiva():
             return queryset.none()
 
-        if not perfil or perfil.rol == 'admin' or user.is_staff:
+        if not perfil or perfil.rol == 'iiisyp' or user.is_staff:
             return queryset
 
         if perfil.rol in ['director', 'jefe_estudios']:
@@ -933,8 +933,8 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         if not perfil:
             return queryset.none()
 
-        # Admin ve todo
-        if perfil.rol == 'admin':
+        # IIISYP ve todo
+        if perfil.rol == 'iiisyp':
             return queryset
 
         # Director y Jefe de Estudios ven los de sus carreras activas
@@ -986,7 +986,7 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
 
             if not perfil:
                 queryset = queryset.none()
-            elif perfil.rol == 'admin':
+            elif perfil.rol == 'iiisyp':
                 pass
             elif perfil.rol in ['director', 'jefe_estudios']:
                 carreras_activas = _obtener_carreras_activas_usuario(user)
@@ -1070,7 +1070,7 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
             perfil = None
 
         # 1. Permitir Admin/Superuser
-        if user.is_superuser or (perfil and perfil.rol == 'admin'):
+        if user.is_superuser or (perfil and perfil.rol == 'iiisyp'):
             pass
         # 2. Bloquear a Docentes
         elif perfil and perfil.rol == 'docente':
@@ -2222,7 +2222,7 @@ class ObservacionFondoViewSet(viewsets.ModelViewSet):
             observacion=observacion,
             autor=request.user,
             texto=texto,
-            es_admin=request.user.perfil.rol in ['admin', 'director', 'jefe_estudios']
+            es_admin=request.user.perfil.rol in ['iiisyp', 'director', 'jefe_estudios']
        )
     
         # NUEVO: Si estaba resuelta y el admin envía mensaje, reabrir Y cambiar fondo a observado
@@ -2359,7 +2359,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         que puedan causar que la lista en el frontend esté incompleta.
         """
         roles = [
-            ('admin', 'Administrador'),
+            ('iiisyp', 'Instituto I.I.S. y P.'),
             ('director', 'Director de Carrera'),
             ('jefe_estudios', 'Jefe de Estudios'),
             ('docente', 'Docente'),
@@ -2390,8 +2390,8 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         if user.is_superuser:
             return queryset
 
-        # Admin de carrera solo ve usuarios de su misma carrera
-        if hasattr(user, 'perfil') and user.perfil.rol == 'admin':
+        # IIISYP de carrera solo ve usuarios de su misma carrera
+        if hasattr(user, 'perfil') and user.perfil.rol == 'iiisyp':
             carreras_activas = _obtener_carreras_activas_usuario(user)
             if carreras_activas.exists():
                 return queryset.filter(

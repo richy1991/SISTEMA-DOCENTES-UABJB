@@ -190,7 +190,7 @@ const MateriaList = ({ isDark, sidebarCollapsed = false }) => {
         }
     };
 
-    const canEdit = user?.is_superuser || user?.perfil?.rol === 'admin' || user?.perfil?.rol === 'director';
+    const canEdit = user?.is_superuser || user?.perfil?.rol === 'iiisyp' || user?.perfil?.rol === 'director';
 
     // Obtener carreras desde la API
     const carrerasDisponibles = carreras.map(c => c.nombre || c.nombre_corto || c.codigo).filter(Boolean).sort();

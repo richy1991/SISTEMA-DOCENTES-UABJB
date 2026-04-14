@@ -11,15 +11,15 @@ from django.utils import timezone
 
 def validar_unicidad_cargo_por_carrera(carrera, rol, exclude_user_id=None):
     """
-    Garantiza que solo exista un Director, Jefe de Estudios o Admin activo por carrera.
+    Garantiza que solo exista un Director, Jefe de Estudios o IIISYP activo por carrera.
     """
-    if rol not in ['director', 'jefe_estudios', 'admin'] or not carrera:
+    if rol not in ['director', 'jefe_estudios', 'iiisyp'] or not carrera:
         return
 
     cargos = {
         'director': 'Director',
         'jefe_estudios': 'Jefe de Estudios',
-        'admin': 'Administrador',
+        'iiisyp': 'Instituto I.I.S. y P.',
     }
 
     queryset = PerfilUsuario.objects.filter(
@@ -1100,9 +1100,9 @@ class UsuarioSerializer(serializers.ModelSerializer):
                 data['error_vinculo'] = True
                 data['mensaje_error'] = 'Usuario sin docente vinculado. Contacta al administrador.'
 
-            # GARANTÍA DE ACCESO: Si es superusuario, el frontend SIEMPRE debe verlo como admin
+            # GARANTÍA DE ACCESO: Si es superusuario, el frontend SIEMPRE debe verlo como iiisyp
             if obj.is_superuser:
-                data['rol'] = 'admin'
+                data['rol'] = 'iiisyp'
                 # FIX: Forzar que al admin NUNCA se le pida cambio de contraseña, ignorando la BD
                 data['debe_cambiar_password'] = False
                 # Los superusuarios nunca tienen error de vínculo
@@ -1115,7 +1115,7 @@ class UsuarioSerializer(serializers.ModelSerializer):
         if obj.is_superuser:
             return {
                 'id': None,
-                'rol': 'admin',
+                'rol': 'iiisyp',
                 'carrera': None,
                 'carrera_codigo': None,
                 'docente': None,
@@ -1188,7 +1188,7 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
     # Se definen los roles explícitamente para evitar problemas de carga
     # en el servidor de desarrollo que puedan mostrar una lista incompleta.
     rol = serializers.ChoiceField(choices=[
-        ('admin', 'Administrador'),
+        ('iiisyp', 'Instituto I.I.S. y P.'),
         ('director', 'Director de Carrera'),
         ('jefe_estudios', 'Jefe de Estudios'),
         ('docente', 'Docente')], required=True)
@@ -1243,8 +1243,8 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
                 'password_confirm': 'Las contraseñas no coinciden'
             })
 
-        # Validar que solo superuser pueda asignar rol 'admin'
-        if data['rol'] == 'admin' or any(item.get('rol') == 'admin' for item in asignaciones):
+        # Validar que solo superuser pueda asignar rol 'iiisyp'
+        if data['rol'] == 'iiisyp' or any(item.get('rol') == 'iiisyp' for item in asignaciones):
             if not current_user or not current_user.is_superuser:
                 raise serializers.ValidationError({
                     'rol': 'Solo un SuperAdmin puede asignar el rol de Administrador de Carrera.'
@@ -1253,14 +1253,14 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
         # Validar que admin, director y jefe_estudios tengan carrera asignada en cada bloque
         for bloque in bloques:
             bloque_rol = bloque.get('rol')
-            if bloque_rol in ['admin', 'director', 'jefe_estudios'] and not bloque.get('carrera'):
+            if bloque_rol in ['iiisyp', 'director', 'jefe_estudios'] and not bloque.get('carrera'):
                 raise serializers.ValidationError({
                     'carrera': 'Los administradores, directores y jefes de estudio deben tener una carrera asignada'
                 })
 
         # CI obligatorio para usuarios de sistema (no docentes)
         ci_normalizado = (data.get('ci') or '').strip()
-        if any(item.get('rol') in ['admin', 'director', 'jefe_estudios'] for item in bloques) and not ci_normalizado:
+        if any(item.get('rol') in ['iiisyp', 'director', 'jefe_estudios'] for item in bloques) and not ci_normalizado:
             raise serializers.ValidationError({
                 'ci': 'El C.I. es obligatorio para este tipo de usuario.'
             })
@@ -1281,7 +1281,7 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
         # Validar unicidad de cargos por carrera (admin, director, jefe_estudios)
         for bloque in bloques:
             bloque_rol = bloque.get('rol')
-            if bloque_rol in ['admin', 'director', 'jefe_estudios']:
+            if bloque_rol in ['iiisyp', 'director', 'jefe_estudios']:
                 validar_unicidad_cargo_por_carrera(_resolver_carrera_asignacion(bloque.get('carrera')) or data.get('carrera'), bloque_rol)
 
         # Validar rol docente: debe tener un docente existente o datos para uno nuevo
@@ -1360,7 +1360,7 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
                     })
 
             # Asignar is_staff para roles de autoridad que lo requieran
-            if rol in ['admin', 'director', 'jefe_estudios']:
+            if rol in ['iiisyp', 'director', 'jefe_estudios']:
                 user.is_staff = True
                 user.save(update_fields=['is_staff'])
 
@@ -1454,7 +1454,7 @@ class ActualizarUsuarioSerializer(serializers.ModelSerializer):
     # Se definen los roles explícitamente para asegurar que la opción 'Jefe de Estudios'
     # siempre esté disponible en los formularios de edición.
     rol = serializers.ChoiceField(choices=[
-        ('admin', 'Administrador'),
+        ('iiisyp', 'Instituto I.I.S. y P.'),
         ('director', 'Director de Carrera'),
         ('jefe_estudios', 'Jefe de Estudios'),
         ('docente', 'Docente')], required=False)
@@ -1537,7 +1537,7 @@ class ActualizarUsuarioSerializer(serializers.ModelSerializer):
             })
         
         perfil_actual = self._get_perfil_actual()
-        rol_actual = perfil_actual.rol if perfil_actual else ('admin' if self.instance.is_superuser else 'docente')
+        rol_actual = perfil_actual.rol if perfil_actual else ('iiisyp' if self.instance.is_superuser else 'docente')
         carrera_actual = perfil_actual.carrera if perfil_actual else None
         docente_actual = perfil_actual.docente if perfil_actual else None
 
@@ -1560,13 +1560,13 @@ class ActualizarUsuarioSerializer(serializers.ModelSerializer):
         if es_superusuario_objetivo:
             if 'is_active' in data and data.get('is_active') is False:
                 raise serializers.ValidationError({'is_active': 'El Super Admin no puede desactivarse.'})
-            if 'rol' in data and data.get('rol') != 'admin':
+            if 'rol' in data and data.get('rol') != 'iiisyp':
                 raise serializers.ValidationError({'rol': 'El rol del Super Admin no puede modificarse.'})
             if asignaciones:
                 raise serializers.ValidationError({'asignaciones': 'El Super Admin no maneja asignaciones de carrera.'})
 
-        # Regla 0: Solo superuser puede asignar rol 'admin'
-        if (rol == 'admin' or any(item.get('rol') == 'admin' for item in asignaciones)) and rol_actual != 'admin':
+        # Regla 0: Solo superuser puede asignar rol 'iiisyp'
+        if (rol == 'iiisyp' or any(item.get('rol') == 'iiisyp' for item in asignaciones)) and rol_actual != 'iiisyp':
             # Se está intentando asignar rol admin a alguien que no era admin
             if not current_user or not current_user.is_superuser:
                 raise serializers.ValidationError({
@@ -1577,7 +1577,7 @@ class ActualizarUsuarioSerializer(serializers.ModelSerializer):
         if not es_superusuario_objetivo:
             for bloque in bloques:
                 bloque_rol = bloque.get('rol')
-                if bloque_rol in ['admin', 'director', 'jefe_estudios']:
+                if bloque_rol in ['iiisyp', 'director', 'jefe_estudios']:
                     if 'carrera' in bloque and bloque.get('carrera') is None:
                         raise serializers.ValidationError({'carrera': 'Los administradores, directores y jefes de estudio deben tener una carrera asignada.'})
                     if bloque is bloques[0] and 'carrera' not in data and not carrera_actual:
@@ -1595,7 +1595,7 @@ class ActualizarUsuarioSerializer(serializers.ModelSerializer):
             pass  # La validación ya se hizo arriba
 
         # Regla 1.5: Admin, Director, Jefe de Estudios NO pueden tener docente vinculado
-        if rol in ['admin', 'director', 'jefe_estudios']:
+        if rol in ['iiisyp', 'director', 'jefe_estudios']:
             if 'docente' in data and data.get('docente') is not None:
                 raise serializers.ValidationError({
                     'docente': f'Un usuario con rol {rol.replace("_", " ")} no puede tener un docente vinculado.'
@@ -1633,7 +1633,7 @@ class ActualizarUsuarioSerializer(serializers.ModelSerializer):
             ci_normalizado = (ci_en_request or '').strip()
             data['ci'] = ci_normalizado
 
-        if any(item.get('rol') in ['admin', 'director', 'jefe_estudios'] for item in bloques) and not ci_normalizado:
+        if any(item.get('rol') in ['iiisyp', 'director', 'jefe_estudios'] for item in bloques) and not ci_normalizado:
             raise serializers.ValidationError({'ci': 'El C.I. es obligatorio para este tipo de usuario.'})
 
         if rol == 'docente':
@@ -1651,7 +1651,7 @@ class ActualizarUsuarioSerializer(serializers.ModelSerializer):
         perfil, _ = PerfilUsuario.objects.get_or_create(
             user=instance,
             defaults={
-                'rol': 'admin' if instance.is_superuser else 'docente',
+                'rol': 'iiisyp' if instance.is_superuser else 'docente',
                 'activo': instance.is_active,
                 'debe_cambiar_password': not instance.is_superuser,
             }
@@ -1675,7 +1675,7 @@ class ActualizarUsuarioSerializer(serializers.ModelSerializer):
         perfil.activo = instance.is_active
 
         # 3. Ajustar 'is_staff' según el rol final
-        if final_rol in ['admin', 'director', 'jefe_estudios']:
+        if final_rol in ['iiisyp', 'director', 'jefe_estudios']:
             instance.is_staff = True
         else:
             instance.is_staff = False

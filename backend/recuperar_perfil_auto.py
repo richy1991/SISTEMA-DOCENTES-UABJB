@@ -32,7 +32,7 @@ def recuperar_perfil_auto(username, ci, rol, codigo_carrera=None):
     print("=" * 70)
     
     # Validar rol
-    roles_validos = ['docente', 'director', 'jefe_estudios', 'admin']
+    roles_validos = ['docente', 'director', 'jefe_estudios', 'iiisyp']
     if rol not in roles_validos:
         print(f"\n❌ ERROR: Rol '{rol}' no es válido")
         print(f"Roles válidos: {', '.join(roles_validos)}")
@@ -96,7 +96,7 @@ def recuperar_perfil_auto(username, ci, rol, codigo_carrera=None):
     
     # 4. Obtener Carrera (si el rol lo requiere)
     carrera = None
-    if rol in ['director', 'jefe_estudios', 'admin'] and codigo_carrera:
+    if rol in ['director', 'jefe_estudios', 'iiisyp'] and codigo_carrera:
         print(f"\n🔍 Buscando carrera con código: {codigo_carrera}")
         carrera = Carrera.objects.filter(codigo=codigo_carrera).first()
         

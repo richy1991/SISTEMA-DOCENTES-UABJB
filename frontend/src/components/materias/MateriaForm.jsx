@@ -602,7 +602,7 @@ const MateriaForm = ({ sidebarCollapsed = false }) => {
         const carreraFromFilter = searchParams.get('carrera');
 
         const userData = JSON.parse(localStorage.getItem('user') || '{}');
-        const esAdmin = userData?.is_superuser || userData?.perfil?.rol === 'admin' || userData?.perfil?.rol === 'director';
+        const esAdmin = userData?.is_superuser || userData?.perfil?.rol === 'iiisyp' || userData?.perfil?.rol === 'director';
 
         if (!esAdmin) {
             toast.error("No tienes permisos para gestionar materias");

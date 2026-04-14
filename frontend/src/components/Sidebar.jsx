@@ -95,15 +95,15 @@ function Sidebar({ user, onLogout, collapsed, setCollapsed, theme, setTheme, onP
   // Define los roles que pueden ver cada item.
   const menuItems = {
     principal: [
-      { path: '/fondo-tiempo', icon: DashboardIcon, label: 'Dashboard', roles: ['admin', 'director', 'jefe_estudios', 'docente'] },
-      { path: '/fondo-tiempo/comparar', icon: CompararIcon, label: 'Comparar Fondos', roles: ['admin', 'director', 'jefe_estudios', 'docente'] },
-      { path: '/fondo-tiempo/archivados', icon: ArchiveIcon, label: 'Fondos Archivados', roles: ['admin', 'director', 'jefe_estudios', 'docente'] },
+      { path: '/fondo-tiempo', icon: DashboardIcon, label: 'Dashboard', roles: ['iiisyp', 'director', 'jefe_estudios', 'docente'] },
+      { path: '/fondo-tiempo/comparar', icon: CompararIcon, label: 'Comparar Fondos', roles: ['iiisyp', 'director', 'jefe_estudios', 'docente'] },
+      { path: '/fondo-tiempo/archivados', icon: ArchiveIcon, label: 'Fondos Archivados', roles: ['iiisyp', 'director', 'jefe_estudios', 'docente'] },
     ],
     administracion: [
-      { path: '/fondo-tiempo/docentes', icon: AcademicCapIcon, label: 'Docentes', roles: ['admin', 'director', 'jefe_estudios'] },
-      { path: '/fondo-tiempo/cargas-horarias', icon: ClockIcon, label: 'Carga Horaria', roles: ['admin', 'jefe_estudios'] },
-      { path: '/fondo-tiempo/calendarios', icon: CalendarioIcon, label: 'Calendario Académico', roles: ['admin'] },
-      { path: '/fondo-tiempo/materias', icon: BookOpenIcon, label: 'Materias', roles: ['admin', 'director', 'jefe_estudios'] },
+      { path: '/fondo-tiempo/docentes', icon: AcademicCapIcon, label: 'Docentes', roles: ['iiisyp', 'director', 'jefe_estudios'] },
+      { path: '/fondo-tiempo/cargas-horarias', icon: ClockIcon, label: 'Carga Horaria', roles: ['iiisyp', 'jefe_estudios'] },
+      { path: '/fondo-tiempo/calendarios', icon: CalendarioIcon, label: 'Calendario Académico', roles: ['iiisyp'] },
+      { path: '/fondo-tiempo/materias', icon: BookOpenIcon, label: 'Materias', roles: ['iiisyp', 'director', 'jefe_estudios'] },
     ]
   };
 

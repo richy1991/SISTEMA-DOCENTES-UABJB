@@ -1130,7 +1130,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
     }
   };
 
-  const esAdmin = () => user?.is_superuser || user?.perfil?.rol === 'admin';
+  const esAdmin = () => user?.is_superuser || user?.perfil?.rol === 'iiisyp';
   const docenteVinculadoAUsuario = Boolean(docenteSeleccionado?.usuario_id);
   const docentesFiltrados = (() => {
     let result = docentes;

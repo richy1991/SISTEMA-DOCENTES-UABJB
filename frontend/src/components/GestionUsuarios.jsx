@@ -865,11 +865,11 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
       setDocentes(docentesRes.data.results || docentesRes.data);
       setCarreras(carrerasRes.data.results || carrerasRes.data);
       
-      // Filtrar roles: solo superuser puede ver y asignar rol 'admin'
+      // Filtrar roles: solo superuser puede ver y asignar rol 'iiisyp'
       const todosRoles = rolesRes.data || [];
       const esSuperuser = user?.is_superuser === true;
       const rolesFiltrados = todosRoles.filter(rol => 
-        esSuperuser ? true : rol.value !== 'admin'
+        esSuperuser ? true : rol.value !== 'iiisyp'
       );
       setRoles(rolesFiltrados);
       
@@ -915,7 +915,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
 
     // Orden jerárquico: Admin → Director → Jefe Estudios → Docente
     const ordenJerarquico = {
-      'admin': 0,
+      'iiisyp': 0,
       'director': 1,
       'jefe_estudios': 2,
       'docente': 3
@@ -951,7 +951,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
       }
       
       // Admin de carrera: bloquear con su propia carrera
-      const esAdminCarrera = user?.perfil?.rol === 'admin' && !user?.is_superuser;
+      const esAdminCarrera = user?.perfil?.rol === 'iiisyp' && !user?.is_superuser;
       const carreraDefault = esAdminCarrera ? user?.perfil?.carrera : '';
       
       const initialData = {
@@ -1114,7 +1114,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
     if (vinculacionRapidaDocente) return;
 
     const newRol = e.target.value;
-    const esAdminCarrera = user?.perfil?.rol === 'admin' && !user?.is_superuser;
+    const esAdminCarrera = user?.perfil?.rol === 'iiisyp' && !user?.is_superuser;
 
     setErrors((prev) => ({ ...prev, rol: null }));
     
@@ -1122,7 +1122,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
       ...prev,
       rol: newRol,
       // Admin de carrera siempre mantiene su carrera, otros roles la pierden al cambiar
-      carrera: (newRol === 'director' || newRol === 'jefe_estudios' || newRol === 'admin') 
+      carrera: (newRol === 'director' || newRol === 'jefe_estudios' || newRol === 'iiisyp') 
         ? (esAdminCarrera ? user?.perfil?.carrera : prev.carrera) 
         : (newRol === 'docente' ? prev.carrera : ''),
       docente: newRol !== 'docente' ? '' : prev.docente,
@@ -1195,7 +1195,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
     setIsSubmitting(true);
     setErrors({});
 
-    const esUsuarioSistema = ['admin', 'director', 'jefe_estudios'].includes(formData.rol);
+    const esUsuarioSistema = ['iiisyp', 'director', 'jefe_estudios'].includes(formData.rol);
     const ciNormalizado = (formData.ci || '').trim();
 
     if (esUsuarioSistema && !ciNormalizado) {
@@ -1281,7 +1281,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
     }
 
     // Admin, Director y Jefe de Estudios deben enviar carrera
-    if (formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') {
+    if (formData.rol === 'iiisyp' || formData.rol === 'director' || formData.rol === 'jefe_estudios') {
       payload.carrera = formData.carrera;
       payload.ci = ciNormalizado;
     }
@@ -1442,7 +1442,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
 
                     {/* Fila 2: Carrera - Vincular docente */}
                     <div>
-                      {(formData.rol === 'docente' || formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') ? (
+                      {(formData.rol === 'docente' || formData.rol === 'iiisyp' || formData.rol === 'director' || formData.rol === 'jefe_estudios') ? (
                         <FilterCarreras
                           label="Carrera"
                           name="carrera"
@@ -1450,7 +1450,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
                           onChange={handleChange}
                           carreras={carreras}
                           error={errors.carrera}
-                          disabled={formData.rol !== 'docente' && user?.perfil?.rol === 'admin' && !user?.is_superuser}
+                          disabled={formData.rol !== 'docente' && user?.perfil?.rol === 'iiisyp' && !user?.is_superuser}
                           required={formData.rol !== 'docente'}
                           placeholder="Buscar carrera..."
                         />
@@ -1534,7 +1534,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
                             </p>
                           )}
                         </div>
-                      ) : (formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') ? (
+                      ) : (formData.rol === 'iiisyp' || formData.rol === 'director' || formData.rol === 'jefe_estudios') ? (
                         <div>
                           <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">C.I.</label>
                           <input
@@ -1553,7 +1553,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
                       )}
                     </div>
 
-                    {(formData.rol === 'docente' || formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && !crearNuevoDocente ? (
+                    {(formData.rol === 'docente' || formData.rol === 'iiisyp' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && !crearNuevoDocente ? (
                       <InputField
                         label="Email"
                         name="email"
@@ -1576,7 +1576,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
                       </div>
                     )}
 
-                    {(formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && !crearNuevoDocente && (
+                    {(formData.rol === 'iiisyp' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && !crearNuevoDocente && (
                       <div>
                         <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Contraseña inicial</label>
                         <div className="w-full px-4 py-3 rounded-xl border-2 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 font-mono font-semibold">
@@ -1586,7 +1586,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
                     )}
 
                     {/* C.I. para admin/director/jefe_estudios - abajo de Rol */}
-                    {false && (formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && (
+                    {false && (formData.rol === 'iiisyp' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && (
                       <div className="md:col-span-2">
                         <div className="grid grid-cols-2 gap-4">
                           <div>
@@ -1837,13 +1837,13 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
                       <span className={`px-3 py-1.5 inline-flex text-xs font-bold rounded-lg border-2 shadow-sm ${
                         usuario.is_superuser ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 border-amber-400 dark:border-amber-600' :
                         docenteInactivo ? 'bg-red-200 dark:bg-red-900/30 text-red-900 dark:text-red-200 border-red-600 dark:border-red-700' :
-                        usuario.perfil?.rol === 'admin' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-700' :
+                        usuario.perfil?.rol === 'iiisyp' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-700' :
                         usuario.perfil?.rol === 'director' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700' :
                         usuario.perfil?.rol === 'jefe_estudios' ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 border-cyan-300 dark:border-cyan-700' :
                         'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700'
                       }`}>
                         {usuario.is_superuser ? '👑 Super Admin' :
-                         usuario.perfil?.rol === 'admin' ? '🛡️ Admin' :
+                         usuario.perfil?.rol === 'iiisyp' ? '🛡️ Admin' :
                          usuario.perfil?.rol === 'director' ? '🏛️ Director de Carrera' :
                          usuario.perfil?.rol === 'jefe_estudios' ? '📚 Jefe de Estudios' :
                          docenteInactivo ? '👨‍🏫 Docente (inactivo)' : '👨‍🏫 Docente'}

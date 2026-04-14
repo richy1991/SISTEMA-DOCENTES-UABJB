@@ -662,8 +662,8 @@ class FondoTiempo(models.Model):
         """Determina si un usuario puede editar este fondo"""
         estados_editables = ['borrador', 'observado', 'en_ejecucion']
 
-        # Solo un admin (que es staff) puede editar. Directores y Jefes no.
-        if usuario.is_staff and hasattr(usuario, 'perfil') and usuario.perfil.rol == 'admin':
+        # Solo un iiisyp (que es staff) puede editar. Directores y Jefes no.
+        if usuario.is_staff and hasattr(usuario, 'perfil') and usuario.perfil.rol == 'iiisyp':
             return self.estado in estados_editables
         
         # El docente dueño puede editar si el estado lo permite.
@@ -691,7 +691,7 @@ class FondoTiempo(models.Model):
             # Solo admin o jefe_estudios pueden cambiar a 'observado'
             if hasattr(usuario, 'perfil') and usuario.perfil:
                 rol = usuario.perfil.rol
-                if rol in ['admin', 'jefe_estudios']:
+                if rol in ['iiisyp', 'jefe_estudios']:
                     return True
             return False
         
@@ -1269,7 +1269,7 @@ class AsignacionCarrera(models.Model):
     """Vincula un usuario con una carrera, un rol y, opcionalmente, un docente."""
 
     ROLES = [
-        ('admin', 'Administrador'),
+        ('iiisyp', 'Instituto I.I.S. y P.'),
         ('director', 'Director de Carrera'),
         ('jefe_estudios', 'Jefe de Estudios'),
         ('docente', 'Docente'),
@@ -1302,7 +1302,7 @@ class PerfilUsuario(models.Model):
     """Perfil extendido para usuarios del sistema"""
 
     ROLES = [
-        ('admin', 'Administrador'),
+        ('iiisyp', 'Instituto I.I.S. y P.'),
         ('director', 'Director de Carrera'),
         ('jefe_estudios', 'Jefe de Estudios'),
         ('docente', 'Docente'),
@@ -1327,8 +1327,8 @@ class PerfilUsuario(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=['carrera', 'rol'],
-                name='unico_admin_por_carrera',
-                condition=models.Q(rol='admin', activo=True)
+                name='unico_iiisyp_por_carrera',
+                condition=models.Q(rol='iiisyp', activo=True)
             ),
             models.UniqueConstraint(
                 fields=['carrera', 'rol'],
@@ -1424,7 +1424,7 @@ class PerfilUsuario(models.Model):
 @receiver(post_save, sender=User)
 def crear_perfil_usuario(sender, instance, created, **kwargs):
     if created:
-        rol_inicial = 'admin' if instance.is_superuser else 'docente'
+        rol_inicial = 'iiisyp' if instance.is_superuser else 'docente'
         # Si es superusuario (creado por consola), no obligar cambio de contraseña
         debe_cambiar = not instance.is_superuser
         PerfilUsuario.objects.create(user=instance, rol=rol_inicial, debe_cambiar_password=debe_cambiar)
@@ -1439,7 +1439,7 @@ def guardar_perfil_usuario(sender, instance, **kwargs):
     updates = {'activo': instance.is_active}
 
     if instance.is_superuser:
-        updates['rol'] = 'admin'
+        updates['rol'] = 'iiisyp'
         updates['debe_cambiar_password'] = False
 
     for field, value in updates.items():

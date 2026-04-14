@@ -220,13 +220,13 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
 
   const handleRolChange = (e) => {
     const newRol = e.target.value;
-    const esAdminCarrera = currentUser?.perfil?.rol === 'admin' && !currentUser?.is_superuser;
+    const esAdminCarrera = currentUser?.perfil?.rol === 'iiisyp' && !currentUser?.is_superuser;
     
     setFormData((prev) => ({
       ...prev,
       rol: newRol,
       // Admin de carrera siempre mantiene su carrera, otros roles la pierden al cambiar
-      carrera: (newRol === 'admin' || newRol === 'director' || newRol === 'jefe_estudios') 
+      carrera: (newRol === 'iiisyp' || newRol === 'director' || newRol === 'jefe_estudios') 
         ? (esAdminCarrera ? currentUser?.perfil?.carrera : prev.carrera) 
         : (newRol === 'docente' ? prev.carrera : ''),
       docente: newRol === 'docente' ? prev.docente : '',
@@ -289,7 +289,7 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
   const esSuperusuarioEditado = Boolean(userToEdit?.is_superuser);
   const mostrarOpcionesVinculacion = formData.rol === 'docente' && !tieneDocenteVinculado;
   const mostrarInfoDocente = formData.rol === 'docente' && tieneDocenteVinculado;
-  const mostrarCiAutoridad = formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios';
+  const mostrarCiAutoridad = formData.rol === 'iiisyp' || formData.rol === 'director' || formData.rol === 'jefe_estudios';
 
   const handleResetearPassword = async () => {
     const passwordPorDefecto = `${userToEdit.username}UABJB`;
@@ -353,7 +353,7 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
     setLoading(true);
     setErrors({});
 
-    const esUsuarioSistema = ['admin', 'director', 'jefe_estudios'].includes(formData.rol);
+    const esUsuarioSistema = ['iiisyp', 'director', 'jefe_estudios'].includes(formData.rol);
     const ciNormalizado = (formData.ci || '').trim();
 
     if (esUsuarioSistema && !ciNormalizado) {
@@ -392,7 +392,7 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
     }
 
     // Admin, Director y Jefe de Estudios deben enviar carrera
-    if ((formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && !esSuperusuarioEditado) {
+    if ((formData.rol === 'iiisyp' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && !esSuperusuarioEditado) {
       payload.carrera = formData.carrera;
     } else if (formData.rol === 'docente') {
       payload.docente = docenteId;
@@ -483,7 +483,7 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
               <InputField label="Nombre completo" name="nombre_completo" value={formData.nombre_completo || ''} onChange={handleChange} required error={errors.nombre_completo || errors.first_name || errors.last_name} />
 
               <div>
-                {(formData.rol === 'docente' || formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') ? (
+                {(formData.rol === 'docente' || formData.rol === 'iiisyp' || formData.rol === 'director' || formData.rol === 'jefe_estudios') ? (
                   <SelectConDropdown
                     label="Carrera"
                     name="carrera"
@@ -491,14 +491,14 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
                     onChange={handleChange}
                     options={carreras.map((c) => ({ value: c.id, label: c.nombre }))}
                     error={errors.carrera}
-                    disabled={currentUser?.perfil?.rol === 'admin' && !currentUser?.is_superuser}
+                    disabled={currentUser?.perfil?.rol === 'iiisyp' && !currentUser?.is_superuser}
                     required={formData.rol !== 'docente'}
                     placeholder="Seleccione una carrera..."
                   />
                 ) : (
                   <div />
                 )}
-                {(formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && currentUser?.perfil?.rol === 'admin' && !currentUser?.is_superuser && (
+                {(formData.rol === 'iiisyp' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && currentUser?.perfil?.rol === 'iiisyp' && !currentUser?.is_superuser && (
                   <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                     Carrera asignada automaticamente (no puedes cambiarla)
                   </p>
@@ -513,7 +513,7 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
                       name="rol"
                       value={formData.rol}
                       onChange={handleRolChange}
-                      options={(roles || []).filter((rol) => currentUser?.is_superuser || rol.value !== 'admin').map((rol) => ({ value: rol.value, label: rol.label }))}
+                      options={(roles || []).filter((rol) => currentUser?.is_superuser || rol.value !== 'iiisyp').map((rol) => ({ value: rol.value, label: rol.label }))}
                       error={errors.rol}
                       disabled={esSuperusuarioEditado}
                       required
@@ -628,7 +628,7 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
                             name={`asignacion-rol-${index}`}
                             value={asignacion.rol || 'docente'}
                             onChange={(e) => handleAsignacionChange(index, 'rol', e.target.value)}
-                            options={(roles || []).filter((rol) => currentUser?.is_superuser || rol.value !== 'admin').map((rol) => ({ value: rol.value, label: rol.label }))}
+                            options={(roles || []).filter((rol) => currentUser?.is_superuser || rol.value !== 'iiisyp').map((rol) => ({ value: rol.value, label: rol.label }))}
                             error={errors[`asignaciones.${index}.rol`]}
                             required
                           />

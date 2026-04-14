@@ -102,7 +102,7 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
         },
     ];
 
-    const mostrarHerramientasGlobales = user?.perfil?.rol === 'admin' || user?.is_superuser;
+    const mostrarHerramientasGlobales = user?.perfil?.rol === 'iiisyp' || user?.is_superuser;
     const herramientasGlobales = [
         {
             name: 'Usuarios del Sistema',

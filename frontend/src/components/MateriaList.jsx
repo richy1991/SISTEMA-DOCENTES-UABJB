@@ -241,7 +241,7 @@ const MateriaList = ({ isDark }) => {
         }
     };
 
-    const canEdit = user?.is_superuser || user?.perfil?.rol === 'admin' || user?.perfil?.rol === 'director';
+    const canEdit = user?.is_superuser || user?.perfil?.rol === 'iiisyp' || user?.perfil?.rol === 'director';
 
     const getMateriaCarreraId = (materia) => {
         if (!materia) return '';

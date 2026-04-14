@@ -84,7 +84,7 @@ def _es_admin_principal(user):
         return False
     if user.is_superuser:
         return True
-    return getattr(getattr(user, 'perfil', None), 'rol', None) == 'admin'
+    return getattr(getattr(user, 'perfil', None), 'rol', None) == 'iiisyp'
 
 
 def _requerir_gestor_accesos(request):

@@ -190,7 +190,7 @@ function DetalleFondo({ isDark }) {
   });
   const [enviandoInforme, setEnviandoInforme] = useState(false);
 
-  const esAdmin = usuarioActual?.perfil?.rol === 'admin';
+  const esAdmin = usuarioActual?.perfil?.rol === 'iiisyp';
   const esJefeEstudios = usuarioActual?.perfil?.rol === 'jefe_estudios';
   const puedeGestionarCarga = esJefeEstudios;
   const soloLecturaPorRol = !esJefeEstudios;
