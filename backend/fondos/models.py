@@ -264,6 +264,36 @@ class FacultadCatalogo(models.Model):
     def __str__(self):
         return self.nombre
 
+    @staticmethod
+    def _normalizar(texto):
+        """Normaliza texto: minúsculas, sin tildes, sin espacios extra."""
+        import unicodedata
+        texto = texto.strip().lower()
+        texto = unicodedata.normalize('NFKD', texto).encode('ascii', 'ignore').decode('ascii')
+        return ' '.join(texto.split())
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        super().clean()
+        if not self.nombre or not self.nombre.strip():
+            raise ValidationError({'nombre': 'El nombre de la facultad es obligatorio.'})
+
+        nombre_normalizado = self._normalizar(self.nombre)
+
+        # Comparar con todos los registros existentes ignorando mayúsculas y acentos
+        qs = FacultadCatalogo.objects.all()
+        if self.pk:
+            qs = qs.exclude(pk=self.pk)
+        for fac in qs:
+            if self._normalizar(fac.nombre) == nombre_normalizado:
+                raise ValidationError({
+                    'nombre': f'Ya existe una facultad con nombre equivalente: "{fac.nombre}".'
+                })
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
 
 class Carrera(models.Model):
     """Carreras de la universidad"""
