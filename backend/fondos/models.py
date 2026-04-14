@@ -1477,3 +1477,31 @@ def actualizar_fondos_al_cambiar_vinculo(sender, instance, **kwargs):
     )
     for fondo in fondos:
         fondo.save()
+
+
+@receiver(post_save, sender=AsignacionCarrera)
+@receiver(post_delete, sender=AsignacionCarrera)
+def auto_poblar_responsable_carrera(sender, instance, **kwargs):
+    """
+    Cuando se asigna un director a una carrera, auto-pobla el campo
+    'responsable' de la Carrera con el nombre completo del docente
+    vinculado al director. Si no hay docente vinculado, usa el nombre
+    del usuario.
+    """
+    if instance.rol != 'director' or not instance.activo:
+        return
+
+    carrera = getattr(instance, 'carrera', None)
+    if not carrera:
+        return
+
+    # Determinar el nombre del responsable
+    responsable_nombre = ''
+    if instance.docente:
+        responsable_nombre = instance.docente.nombre_completo
+    elif instance.user:
+        responsable_nombre = f"{instance.user.first_name} {instance.user.last_name}".strip() or instance.user.username
+
+    if responsable_nombre and carrera.responsable != responsable_nombre:
+        Carrera.objects.filter(pk=carrera.pk).update(responsable=responsable_nombre)
+
