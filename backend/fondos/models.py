@@ -185,6 +185,11 @@ class DocenteCarrera(models.Model):
                 )
             })
 
+    def save(self, *args, **kwargs):
+        """Garantiza que full_clean() (y por tanto clean()) se ejecute antes de guardar."""
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
 
 class SaldoVacacionesGestion(models.Model):
     """
@@ -1442,23 +1447,3 @@ def actualizar_fondos_al_cambiar_vinculo(sender, instance, **kwargs):
     )
     for fondo in fondos:
         fondo.save()
-
-@receiver(post_save, sender=DocenteCarrera)
-@receiver(post_delete, sender=DocenteCarrera)
-def actualizar_docente_al_cambiar_vinculo(sender, instance, **kwargs):
-    """
-    Propaga cambios de DocenteCarrera a las referencias de Docente
-    para mantener compatibilidad con código que aún usa docente.carrera/categoria/dedicacion.
-    """
-    # Mantener referencia al primer vínculo activo como "principal"
-    primer_vinculo = DocenteCarrera.objects.filter(
-        docente=instance.docente, activo=True
-    ).first()
-    if primer_vinculo:
-        # Actualizar Fondos de esa carrera
-        fondos = FondoTiempo.objects.filter(
-            docente=instance.docente,
-            carrera=primer_vinculo.carrera
-        )
-        for fondo in fondos:
-            fondo.save()
