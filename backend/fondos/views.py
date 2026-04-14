@@ -461,8 +461,16 @@ class CarreraViewSet(viewsets.ModelViewSet):
         try:
             FacultadCatalogo.objects.create(nombre=nombre)
         except ValidationError as e:
+            # Extraer primer mensaje legible del ValidationError
+            if hasattr(e, 'message_dict'):
+                mensajes = [m for msgs in e.message_dict.values() for m in msgs]
+                detalle = mensajes[0] if mensajes else 'Dato inválido.'
+            elif hasattr(e, 'message'):
+                detalle = e.message
+            else:
+                detalle = str(e)
             return Response(
-                {'detail': str(e)},
+                {'detail': detalle},
                 status=status.HTTP_409_CONFLICT,
             )
 
