@@ -190,7 +190,8 @@ function DetalleFondo({ isDark }) {
   });
   const [enviandoInforme, setEnviandoInforme] = useState(false);
 
-  const esAdmin = usuarioActual?.perfil?.rol === 'iiisyp';
+  // iiisyp es solo lectura: no puede aprobar ni gestionar fondos
+  const esAdmin = false;
   const esJefeEstudios = usuarioActual?.perfil?.rol === 'jefe_estudios';
   const puedeGestionarCarga = esJefeEstudios;
   const soloLecturaPorRol = !esJefeEstudios;

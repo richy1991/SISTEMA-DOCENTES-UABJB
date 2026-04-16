@@ -1130,7 +1130,8 @@ function ListaDocentes({ sidebarCollapsed = false }) {
     }
   };
 
-  const esAdmin = () => user?.is_superuser || user?.perfil?.rol === 'iiisyp';
+  // iiisyp es solo lectura: solo superuser y director pueden crear/editar/eliminar
+  const esAdmin = () => user?.is_superuser || (user?.perfil?.rol === 'director');
   const docenteVinculadoAUsuario = Boolean(docenteSeleccionado?.usuario_id);
   const docentesFiltrados = (() => {
     let result = docentes;

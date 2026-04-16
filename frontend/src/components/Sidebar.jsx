@@ -84,7 +84,7 @@ function Sidebar({ user, onLogout, collapsed, setCollapsed, theme, setTheme, onP
       return user?.is_staff ? 'Administrador' : 'Usuario';
     }
     const roles = {
-      admin: 'Administrador',
+      iiisyp: 'Administrador',
       director: 'Director de Carrera',
       jefe_estudios: 'Jefe de Estudios',
       docente: 'Docente',
@@ -93,6 +93,7 @@ function Sidebar({ user, onLogout, collapsed, setCollapsed, theme, setTheme, onP
   };
 
   // Define los roles que pueden ver cada item.
+  // iiisyp es solo lectura: no ve items de administracion
   const menuItems = {
     principal: [
       { path: '/fondo-tiempo', icon: DashboardIcon, label: 'Dashboard', roles: ['iiisyp', 'director', 'jefe_estudios', 'docente'] },
@@ -100,10 +101,10 @@ function Sidebar({ user, onLogout, collapsed, setCollapsed, theme, setTheme, onP
       { path: '/fondo-tiempo/archivados', icon: ArchiveIcon, label: 'Fondos Archivados', roles: ['iiisyp', 'director', 'jefe_estudios', 'docente'] },
     ],
     administracion: [
-      { path: '/fondo-tiempo/docentes', icon: AcademicCapIcon, label: 'Docentes', roles: ['iiisyp', 'director', 'jefe_estudios'] },
-      { path: '/fondo-tiempo/cargas-horarias', icon: ClockIcon, label: 'Carga Horaria', roles: ['iiisyp', 'jefe_estudios'] },
-      { path: '/fondo-tiempo/calendarios', icon: CalendarioIcon, label: 'Calendario Académico', roles: ['iiisyp'] },
-      { path: '/fondo-tiempo/materias', icon: BookOpenIcon, label: 'Materias', roles: ['iiisyp', 'director', 'jefe_estudios'] },
+      { path: '/fondo-tiempo/docentes', icon: AcademicCapIcon, label: 'Docentes', roles: ['director', 'jefe_estudios'] },
+      { path: '/fondo-tiempo/cargas-horarias', icon: ClockIcon, label: 'Carga Horaria', roles: ['jefe_estudios'] },
+      { path: '/fondo-tiempo/calendarios', icon: CalendarioIcon, label: 'Calendario Académico', roles: [] }, // iiisyp ya no ve esto
+      { path: '/fondo-tiempo/materias', icon: BookOpenIcon, label: 'Materias', roles: ['director', 'jefe_estudios'] },
     ]
   };
 

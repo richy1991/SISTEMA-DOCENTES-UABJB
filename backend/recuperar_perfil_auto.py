@@ -11,9 +11,9 @@ Ejemplos:
     python backend/recuperar_perfil_auto.py victor 1234567 docente
     python backend/recuperar_perfil_auto.py victor 1234567 director IS
     python backend/recuperar_perfil_auto.py victor 1234567 jefe_estudios MAT
-    python backend/recuperar_perfil_auto.py victor 1234567 admin IS
+    python backend/recuperar_perfil_auto.py victor 1234567 iiisyp IS
 
-Roles válidos: docente, director, jefe_estudios, admin
+Roles válidos: docente, director, jefe_estudios, iiisyp
 """
 import os
 import sys
@@ -178,8 +178,8 @@ if __name__ == '__main__':
         print("\nEjemplos:")
         print("  python backend/recuperar_perfil_auto.py victor 1234567 docente")
         print("  python backend/recuperar_perfil_auto.py victor 1234567 director IS")
-        print("  python backend/recuperar_perfil_auto.py victor 1234567 admin IS")
-        print("\nRoles válidos: docente, director, jefe_estudios, admin")
+        print("  python backend/recuperar_perfil_auto.py victor 1234567 iiisyp IS")
+        print("\nRoles válidos: docente, director, jefe_estudios, iiisyp")
         sys.exit(1)
     
     # Obtener argumentos

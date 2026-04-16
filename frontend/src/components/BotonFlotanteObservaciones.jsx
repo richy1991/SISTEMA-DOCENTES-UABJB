@@ -167,11 +167,10 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
     new Date(a.fecha_creacion) - new Date(b.fecha_creacion)
   );
   
-  const esAdmin = usuarioActual?.is_staff;
-  // El admin siempre puede responder, el docente solo si el fondo está en "observado"
-  // Se considera autoridad a admin, director y jefe de estudios.
-  const esAutoridad = usuarioActual?.perfil?.rol === 'iiisyp' || 
-                      usuarioActual?.perfil?.rol === 'director' || 
+  // iiisyp es solo lectura: no puede responder observaciones
+  const esAdmin = usuarioActual?.is_superuser;
+  // Solo director y jefe de estudios son autoridad para responder (iiisyp excluido)
+  const esAutoridad = usuarioActual?.perfil?.rol === 'director' ||
                       usuarioActual?.perfil?.rol === 'jefe_estudios';
   const hayConversacionActiva = observaciones.some(obs => !obs.resuelta);
 

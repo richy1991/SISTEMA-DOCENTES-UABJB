@@ -15,8 +15,91 @@ import hashlib
 import os
 
 
+class DatosLaborales(models.Model):
+    """
+    'ADN Laboral' universal para cualquier persona que trabaja en la U.A.B.J.B.
+
+    Este modelo centraliza los datos de empleo que antes estaban en Docente:
+    - CI (Cédula de Identidad)
+    - Fecha de ingreso (base para cálculo de antigüedad)
+    - Días de vacación (según antigüedad, Art. 11 y 24)
+    - Horas de feriados de la gestión
+
+    Sirve para TODOS los roles: Docente, Director, Jefe de Estudios, IIISYP.
+    Una sola persona = un solo registro de DatosLaborales, sin importar
+    cuántos roles tenga.
+    """
+
+    ci = models.CharField(
+        max_length=20,
+        unique=True,
+        verbose_name="Cédula de Identidad"
+    )
+    fecha_ingreso = models.DateField(
+        default=timezone.now,
+        help_text="Fecha de ingreso a la institución para cálculo de antigüedad"
+    )
+    dias_vacacion = models.IntegerField(
+        default=15,
+        help_text="Días de vacación correspondientes según antigüedad"
+    )
+    horas_feriados_gestion = models.IntegerField(
+        default=128,
+        help_text="Total de horas de feriados en la gestión académica"
+    )
+
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+    fecha_modificacion = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Datos Laborales"
+        verbose_name_plural = "Datos Laborales"
+        ordering = ['-fecha_creacion']
+
+    def __str__(self):
+        return f"{self.ci} - Ingreso: {self.fecha_ingreso}"
+
+    def calcular_antiguedad(self, gestion=None):
+        """Calcula la antigüedad en años para una gestión dada."""
+        if not gestion:
+            gestion = timezone.now().year
+        if not self.fecha_ingreso:
+            return 0
+        return max(0, gestion - self.fecha_ingreso.year)
+
+    def calcular_dias_vacacion(self, gestion=None):
+        """Calcula días de vacación según antigüedad (Art. 11 y 24)."""
+        antiguedad = self.calcular_antiguedad(gestion)
+        if antiguedad >= 10:
+            return 30
+        elif antiguedad >= 5:
+            return 20
+        return 15  # De 1 a 5 años (y por defecto)
+
+    def clean(self):
+        """Validaciones personalizadas."""
+        super().clean()
+
+        if self.fecha_ingreso:
+            fecha_fundacion = timezone.now().date().replace(year=1967, month=11, day=18)
+            hoy = timezone.now().date()
+            if self.fecha_ingreso > hoy:
+                raise ValidationError({
+                    'fecha_ingreso': 'La fecha de ingreso no puede ser una fecha futura.'
+                })
+            if self.fecha_ingreso < fecha_fundacion:
+                raise ValidationError({
+                    'fecha_ingreso': 'La fecha de ingreso no puede ser anterior a la fundación de la UABJB (18 de noviembre de 1967).'
+                })
+
+
 class Docente(models.Model):
-    """Modelo para almacenar información personal de docentes (sin carrera)."""
+    """Modelo para almacenar información personal de docentes (sin carrera).
+
+    Los datos de empleo (vacaciones, feriados, fecha_ingreso, CI) ahora
+    viven en DatosLaborales. Este modelo se enfoca en la identidad
+    académica del docente.
+    """
 
     CATEGORIA_CHOICES = [
         ('catedratico', 'Catedrático'),
@@ -37,25 +120,19 @@ class Docente(models.Model):
     nombres = models.CharField(max_length=100)
     apellido_paterno = models.CharField(max_length=100)
     apellido_materno = models.CharField(max_length=100, blank=True)
-    ci = models.CharField(max_length=20, unique=True, verbose_name="Cédula de Identidad")
+
+    # === Datos laborales compartidos ===
+    datos_laborales = models.OneToOneField(
+        DatosLaborales,
+        on_delete=models.CASCADE,
+        related_name='docente',
+        help_text="Datos de empleo compartidos (CI, vacaciones, feriados, antigüedad)"
+    )
 
     # === Contacto ===
     email = models.EmailField(blank=True, null=True)
     telefono = models.CharField(max_length=20, blank=True, null=True)
 
-    # === Institucionales (aplican a todas las carreras) ===
-    fecha_ingreso = models.DateField(
-        default=timezone.now,
-        help_text="Fecha de ingreso a la institución para cálculo de antigüedad"
-    )
-    dias_vacacion = models.IntegerField(
-        default=15,
-        help_text="Días de vacación correspondientes según antigüedad"
-    )
-    horas_feriados_gestion = models.IntegerField(
-        default=128,
-        help_text="Total de horas de feriados en la gestión académica"
-    )
     activo = models.BooleanField(
         default=True,
         help_text="Indica si el docente está activo en la institución"
@@ -76,39 +153,51 @@ class Docente(models.Model):
     def nombre_completo(self):
         return f"{self.nombres} {self.apellido_paterno} {self.apellido_materno}".strip()
 
+    @property
+    def ci(self):
+        """Propiedad de compatibilidad: accede al CI desde DatosLaborales."""
+        return self.datos_laborales.ci if self.datos_laborales else None
+
+    @property
+    def fecha_ingreso(self):
+        """Propiedad de compatibilidad: accede a fecha_ingreso desde DatosLaborales."""
+        return self.datos_laborales.fecha_ingreso if self.datos_laborales else None
+
+    @property
+    def dias_vacacion(self):
+        """Propiedad de compatibilidad: accede a dias_vacacion desde DatosLaborales."""
+        return self.datos_laborales.dias_vacacion if self.datos_laborales else 0
+
+    @dias_vacacion.setter
+    def dias_vacacion(self, value):
+        """Setter de compatibilidad para tests y código legacy."""
+        if self.datos_laborales:
+            self.datos_laborales.dias_vacacion = value
+            self.datos_laborales.save()
+
+    @property
+    def horas_feriados_gestion(self):
+        """Propiedad de compatibilidad: accede a horas_feriados_gestion desde DatosLaborales."""
+        return self.datos_laborales.horas_feriados_gestion if self.datos_laborales else 0
+
+    @horas_feriados_gestion.setter
+    def horas_feriados_gestion(self, value):
+        """Setter de compatibilidad para tests y código legacy."""
+        if self.datos_laborales:
+            self.datos_laborales.horas_feriados_gestion = value
+            self.datos_laborales.save()
+
     def calcular_antiguedad(self, gestion=None):
         """Calcula la antigüedad en años para una gestión dada."""
-        if not gestion:
-            gestion = timezone.now().year
-        if not self.fecha_ingreso:
-            return 0
-        return max(0, gestion - self.fecha_ingreso.year)
+        if self.datos_laborales:
+            return self.datos_laborales.calcular_antiguedad(gestion)
+        return 0
 
     def calcular_dias_vacacion(self, gestion=None):
         """Calcula días de vacación según antigüedad (Art. 11 y 24)."""
-        antiguedad = self.calcular_antiguedad(gestion)
-        if antiguedad >= 10:
-            return 30
-        elif antiguedad >= 5:
-            return 20
-        return 15  # De 1 a 5 años (y por defecto)
-
-    def clean(self):
-        """Validaciones personalizadas para el modelo Docente."""
-        super().clean()
-
-        # Validación de fecha_ingreso: no futura y no anterior a la fundación de la UABJB (18/11/1967).
-        if self.fecha_ingreso:
-            fecha_fundacion = timezone.now().date().replace(year=1967, month=11, day=18)
-            hoy = timezone.now().date()
-            if self.fecha_ingreso > hoy:
-                raise ValidationError({
-                    'fecha_ingreso': 'La fecha de ingreso no puede ser una fecha futura.'
-                })
-            if self.fecha_ingreso < fecha_fundacion:
-                raise ValidationError({
-                    'fecha_ingreso': 'La fecha de ingreso no puede ser anterior a la fundación de la UABJB (18 de noviembre de 1967).'
-                })
+        if self.datos_laborales:
+            return self.datos_laborales.calcular_dias_vacacion(gestion)
+        return 15
 
 
 class DocenteCarrera(models.Model):
@@ -1299,7 +1388,12 @@ class AsignacionCarrera(models.Model):
 
 
 class PerfilUsuario(models.Model):
-    """Perfil extendido para usuarios del sistema"""
+    """Perfil extendido para usuarios del sistema.
+
+    Ahora incluye acceso a DatosLaborales para que los roles administrativos
+    puros (Director, Jefe de Estudios, IIISYP) tengan sus propios derechos
+    de vacaciones y feriados, aunque no tengan ficha de Docente.
+    """
 
     ROLES = [
         ('iiisyp', 'Instituto I.I.S. y P.'),
@@ -1310,6 +1404,20 @@ class PerfilUsuario(models.Model):
 
     user = models.OneToOneField(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='perfil')
     docente = models.ForeignKey(Docente, on_delete=models.SET_NULL, null=True, blank=True, related_name='perfiles_usuario')
+
+    # === Datos laborales: si el usuario es administrativo puro,
+    #     tiene sus propios DatosLaborales. Si también es Docente,
+    #     puede compartir los del docente (ver propiedad). ===
+    datos_laborales = models.ForeignKey(
+        DatosLaborales,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='perfiles',
+        help_text="Datos de empleo para usuarios administrativos. "
+                  "Si es null y tiene docente, se usan los del docente."
+    )
+
     ci = models.CharField(max_length=20, blank=True, null=True, unique=True, verbose_name='Cedula de Identidad')
     rol = models.CharField(max_length=20, choices=ROLES, default='docente')
     carrera = models.ForeignKey(Carrera, on_delete=models.SET_NULL, null=True, blank=True)
@@ -1320,7 +1428,7 @@ class PerfilUsuario(models.Model):
     debe_cambiar_password = models.BooleanField(default=True, help_text="Indica si el usuario debe cambiar su contraseña en el próximo inicio de sesión")
     activo = models.BooleanField(default=True)
     fecha_creacion = models.DateTimeField(auto_now_add=True)
-    
+
     class Meta:
         verbose_name = "Perfil de Usuario"
         verbose_name_plural = "Perfiles de Usuarios"
@@ -1345,6 +1453,64 @@ class PerfilUsuario(models.Model):
     def __str__(self):
         username = self.user.username if self.user else 'Sin usuario'
         return f"{username} - {self.get_rol_display()}"
+
+    # ================================================================
+    # Acceso unificado a DatosLaborales (Docente y Administrativo)
+    # ================================================================
+
+    def obtener_datos_laborales(self):
+        """
+        Retorna los DatosLaborales de este usuario.
+
+        Prioridad:
+        1. Si tiene datos_laborales propios → los retorna
+        2. Si tiene docente vinculado → retorna docente.datos_laborales
+        3. Si no tiene ninguno → retorna None
+
+        Esto garantiza que una persona con doble rol (ej: Director + Docente)
+        tenga un solo saldo de vacaciones.
+        """
+        if self.datos_laborales:
+            return self.datos_laborales
+        if self.docente and self.docente.datos_laborales:
+            return self.docente.datos_laborales
+        return None
+
+    @property
+    def fecha_ingreso(self):
+        """Accede a fecha_ingreso desde DatosLaborales (propio o del docente)."""
+        datos = self.obtener_datos_laborales()
+        return datos.fecha_ingreso if datos else None
+
+    @property
+    def dias_vacacion(self):
+        """Accede a dias_vacacion desde DatosLaborales (propio o del docente)."""
+        datos = self.obtener_datos_laborales()
+        return datos.dias_vacacion if datos else 0
+
+    @property
+    def horas_feriados_gestion(self):
+        """Accede a horas_feriados_gestion desde DatosLaborales."""
+        datos = self.obtener_datos_laborales()
+        return datos.horas_feriados_gestion if datos else 0
+
+    def calcular_antiguedad(self, gestion=None):
+        """Calcula la antigüedad en años."""
+        datos = self.obtener_datos_laborales()
+        if datos:
+            return datos.calcular_antiguedad(gestion)
+        return 0
+
+    def calcular_dias_vacacion(self, gestion=None):
+        """Calcula días de vacación según antigüedad (Art. 11 y 24)."""
+        datos = self.obtener_datos_laborales()
+        if datos:
+            return datos.calcular_dias_vacacion(gestion)
+        return 15
+
+    # ================================================================
+    # Métodos existentes
+    # ================================================================
 
     def get_asignaciones_activas(self):
         if not self.user_id:
@@ -1446,6 +1612,25 @@ def guardar_perfil_usuario(sender, instance, **kwargs):
         setattr(perfil, field, value)
 
     perfil.save(update_fields=list(updates.keys()))
+
+@receiver(post_save, sender=Docente)
+def crear_datos_laborales_si_no_existen(sender, instance, created, **kwargs):
+    """
+    Si un Docente se crea sin datos_laborales (migración legacy),
+    crear un registro de DatosLaborales con sus datos actuales.
+    """
+    if not instance.datos_laborales_id:
+        # Esto no debería pasar en código nuevo, pero es seguro para legacy
+        datos, created_dl = DatosLaborales.objects.get_or_create(
+            ci=instance.ci if hasattr(instance, 'ci') and instance.ci else f"TEMP_{instance.pk}",
+            defaults={
+                'fecha_ingreso': instance.fecha_ingreso if hasattr(instance, 'fecha_ingreso') else timezone.now().date(),
+                'dias_vacacion': instance.dias_vacacion if hasattr(instance, 'dias_vacacion') else 15,
+                'horas_feriados_gestion': instance.horas_feriados_gestion if hasattr(instance, 'horas_feriados_gestion') else 128,
+            }
+        )
+        if created_dl:
+            Docente.objects.filter(pk=instance.pk).update(datos_laborales=datos)
 
 @receiver(post_save, sender=Actividad)
 @receiver(post_delete, sender=Actividad)

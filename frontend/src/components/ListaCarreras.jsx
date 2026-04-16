@@ -1588,11 +1588,12 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
 
   const esSuperusuario = () => user?.is_superuser === true;
   const rolActual = user?.perfil?.rol;
-  const esAdminCarrera = () => rolActual === 'iiisyp';
-  const puedeEditarLogo = () => esSuperusuario() || ['iiisyp', 'director', 'jefe_estudios'].includes(rolActual);
+  // iiisyp es solo lectura: no puede gestionar carreras ni facultades
+  const esAdminCarrera = () => false; // iiisyp ya no tiene permisos de escritura
+  const puedeEditarLogo = () => esSuperusuario() || ['director', 'jefe_estudios'].includes(rolActual);
   const puedeEditarEstructura = () => esSuperusuario();
-  const soloEditarLogo = () => !esSuperusuario() && ['iiisyp', 'director', 'jefe_estudios'].includes(rolActual);
-  const puedeGestionarFacultades = () => esSuperusuario() || esAdminCarrera();
+  const soloEditarLogo = () => !esSuperusuario() && ['director', 'jefe_estudios'].includes(rolActual);
+  const puedeGestionarFacultades = () => esSuperusuario();
 
   const escapeHtml = (value = '') => String(value)
     .replace(/&/g, '&amp;')

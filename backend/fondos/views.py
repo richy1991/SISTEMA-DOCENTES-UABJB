@@ -18,7 +18,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from .models import (
     Docente, Carrera, Materia, FondoTiempo, CategoriaFuncion, Actividad, PerfilUsuario, CargaHoraria,
     CalendarioAcademico, Proyecto, InformeFondo, ObservacionFondo, MensajeObservacion, HistorialFondo,
-    SaldoVacacionesGestion, FacultadCatalogo
+    SaldoVacacionesGestion, FacultadCatalogo, DatosLaborales
 )
 from .serializers import (
     DocenteSerializer, CarreraSerializer, MateriaSerializer, FondoTiempoSerializer,
@@ -31,7 +31,7 @@ from .serializers import (
     HistorialFondoSerializer, DocenteDetalleSerializer,
     FondoTiempoDetalleSerializer, PresentarFondoSerializer,
     AprobarFondoSerializer, ObservarFondoSerializer,
-    SaldoVacacionesGestionSerializer,
+    SaldoVacacionesGestionSerializer, DatosLaboralesSerializer,
     CustomTokenObtainPairSerializer
 )
 
@@ -345,6 +345,26 @@ class SaldoVacacionesGestionViewSet(viewsets.ModelViewSet):
                 })
         
         return Response(resultado, status=status.HTTP_201_CREATED if resultado['errores'] == [] else status.HTTP_207_MULTI_STATUS)
+
+
+class DatosLaboralesViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet para gestionar DatosLaborales de cualquier usuario.
+
+    Permite que el admin (IIISYP) gestione los datos de empleo (vacaciones,
+    feriados, antigüedad) de usuarios administrativos puros (Director,
+    Jefe de Estudios, IIISYP) que no tienen ficha de Docente.
+    """
+    queryset = DatosLaborales.objects.all().select_related('docente', 'perfiles')
+    serializer_class = DatosLaboralesSerializer
+    permission_classes = [IsFullAdmin]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['ci', 'docente__nombres', 'docente__apellido_paterno']
+    ordering_fields = ['fecha_ingreso', 'ci']
+    ordering = ['-fecha_creacion']
+
+    def get_queryset(self):
+        return DatosLaborales.objects.all().select_related('docente', 'perfiles')
 
 
 class CarreraViewSet(viewsets.ModelViewSet):

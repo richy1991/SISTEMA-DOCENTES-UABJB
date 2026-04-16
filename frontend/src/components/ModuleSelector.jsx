@@ -102,7 +102,8 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
         },
     ];
 
-    const mostrarHerramientasGlobales = user?.perfil?.rol === 'iiisyp' || user?.is_superuser;
+    // iiisyp es solo lectura: no puede acceder a herramientas globales de administracion
+    const mostrarHerramientasGlobales = user?.is_superuser;
     const herramientasGlobales = [
         {
             name: 'Usuarios del Sistema',

@@ -16,7 +16,7 @@ const getRoleName = (user) => {
     return user?.is_staff ? 'Administrador' : 'Usuario';
   }
   const roles = {
-    admin: 'Administrador',
+    iiisyp: 'Administrador',
     director: 'Director de Carrera',
     jefe_estudios: 'Jefe de Estudios',
     docente: 'Docente',

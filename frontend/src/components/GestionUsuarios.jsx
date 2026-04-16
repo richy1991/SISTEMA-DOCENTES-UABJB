@@ -864,7 +864,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
       setUsuarios(usuariosRes.data.results || usuariosRes.data);
       setDocentes(docentesRes.data.results || docentesRes.data);
       setCarreras(carrerasRes.data.results || carrerasRes.data);
-      
+
       // Filtrar roles: solo superuser puede ver y asignar rol 'iiisyp'
       const todosRoles = rolesRes.data || [];
       const esSuperuser = user?.is_superuser === true;
@@ -1374,6 +1374,9 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
     );
   }
 
+  // iiisyp es solo lectura: no puede crear/editar/eliminar usuarios
+  const puedeGestionarUsuarios = () => user?.is_superuser === true;
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -1400,13 +1403,15 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
                   clearOnToggle
                 />
               </div>
-              <button
-                onClick={handleToggleCreateForm}
-                className="px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center gap-2"
-              >
-                <span>{isCreating ? '➖' : '➕'}</span>
-                {isCreating ? 'Cancelar Creación' : 'Crear Usuario'}
-              </button>
+              {puedeGestionarUsuarios() && (
+                <button
+                  onClick={handleToggleCreateForm}
+                  className="px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center gap-2"
+                >
+                  <span>{isCreating ? '➖' : '➕'}</span>
+                  {isCreating ? 'Cancelar Creación' : 'Crear Usuario'}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1871,33 +1876,35 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
                       </div>
                     </td>
                     <td className={`px-6 py-4 whitespace-nowrap text-center ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
-                      <div className="flex justify-center gap-3">
-                        <button
-                          onClick={() => abrirModalEditar(usuario)}
-                          className={`transition-all duration-200 hover:scale-110 ${
-                            filaInactiva
-                              ? 'bg-red-600 hover:bg-red-700 text-white border border-red-700 shadow-sm px-2 py-2 rounded-lg'
-                              : 'text-blue-500 hover:text-blue-400 dark:text-blue-400 dark:hover:text-blue-300'
-                          }`}
-                          title="Editar"
-                        >
-                          <FaEdit size={18} />
-                        </button>
-                        <button
-                          onClick={() => handleEliminar(usuario)}
-                          disabled={usuario.is_superuser}
-                          className={`transition-all duration-200 hover:scale-110 ${
-                            usuario.is_superuser
-                              ? 'text-slate-400 dark:text-slate-600 cursor-not-allowed'
-                              : filaInactiva
-                              ? 'bg-red-600 hover:bg-red-700 text-white border border-red-700 shadow-sm px-2 py-2 rounded-lg'
-                              : 'text-red-500 hover:text-red-400 dark:text-red-400 dark:hover:text-red-300'
-                          }`}
-                          title="Eliminar"
-                        >
-                          <FaTrash size={18} />
-                        </button>
-                      </div>
+                      {puedeGestionarUsuarios() && (
+                        <div className="flex justify-center gap-3">
+                          <button
+                            onClick={() => abrirModalEditar(usuario)}
+                            className={`transition-all duration-200 hover:scale-110 ${
+                              filaInactiva
+                                ? 'bg-red-600 hover:bg-red-700 text-white border border-red-700 shadow-sm px-2 py-2 rounded-lg'
+                                : 'text-blue-500 hover:text-blue-400 dark:text-blue-400 dark:hover:text-blue-300'
+                            }`}
+                            title="Editar"
+                          >
+                            <FaEdit size={18} />
+                          </button>
+                          <button
+                            onClick={() => handleEliminar(usuario)}
+                            disabled={usuario.is_superuser}
+                            className={`transition-all duration-200 hover:scale-110 ${
+                              usuario.is_superuser
+                                ? 'text-slate-400 dark:text-slate-600 cursor-not-allowed'
+                                : filaInactiva
+                                ? 'bg-red-600 hover:bg-red-700 text-white border border-red-700 shadow-sm px-2 py-2 rounded-lg'
+                                : 'text-red-500 hover:text-red-400 dark:text-red-400 dark:hover:text-red-300'
+                            }`}
+                            title="Eliminar"
+                          >
+                            <FaTrash size={18} />
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                     );
