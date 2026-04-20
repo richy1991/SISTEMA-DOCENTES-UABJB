@@ -5,6 +5,7 @@ import { getItemsCatalogo, deleteCatalogoItem, importarCatalogoItemsExcel, desca
 import NuevoCatalogoItemModal from '../components/NuevoCatalogoItemModal';
 import IconButton from '../components/IconButton';
 import toast from 'react-hot-toast';
+import { Modal } from '../components/base';
 
 const CatalogoItems = () => {
 	const outletContext = useOutletContext() || {};
@@ -28,8 +29,9 @@ const CatalogoItems = () => {
 	const [downloadProgress, setDownloadProgress] = useState(0);
 	const [downloadIndeterminate, setDownloadIndeterminate] = useState(false);
 	const [importResumen, setImportResumen] = useState(null);
-	const [importErrores, setImportErrores] = useState([]);
+	const [importOmitidos, setImportOmitidos] = useState([]);
 	const [importArchivoNombre, setImportArchivoNombre] = useState('');
+	const [showImportResultModal, setShowImportResultModal] = useState(false);
 	const [searchQuery, setSearchQuery] = useState('');
 	const [appliedSearch, setAppliedSearch] = useState('');
 	const [stickyTop, setStickyTop] = useState(72);
@@ -129,6 +131,13 @@ const CatalogoItems = () => {
 		setSearchQuery('');
 		setAppliedSearch('');
 		setPage(1);
+	};
+
+	const handleSelectItem = (item) => {
+		setSelectedItem((prev) => {
+			if (prev && String(prev.id) === String(item.id)) return null;
+			return item;
+		});
 	};
 
 	const openEditarItem = (it) => {
@@ -239,20 +248,22 @@ const CatalogoItems = () => {
 		}
 	};
 
-	const descargarErroresCSV = () => {
-		if (!Array.isArray(importErrores) || importErrores.length === 0) return;
-		const headers = ['fila', 'error'];
+	const descargarOmitidosCSV = () => {
+		if (!Array.isArray(importOmitidos) || importOmitidos.length === 0) return;
+		const headers = ['fila', 'detalle', 'partida', 'motivo'];
 		const lines = [headers.join(',')];
-		for (const err of importErrores) {
-			const fila = String(err?.fila ?? '').replace(/"/g, '""');
-			const errorText = String(err?.error ?? '').replace(/"/g, '""');
-			lines.push(`"${fila}","${errorText}"`);
+		for (const row of importOmitidos) {
+			const fila = String(row?.fila ?? '').replace(/"/g, '""');
+			const detalle = String(row?.detalle ?? '').replace(/"/g, '""');
+			const partida = String(row?.partida ?? '').replace(/"/g, '""');
+			const motivo = String(row?.motivo ?? '').replace(/"/g, '""');
+			lines.push(`"${fila}","${detalle}","${partida}","${motivo}"`);
 		}
 		const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement('a');
 		a.href = url;
-		a.download = 'errores_importacion_items.csv';
+		a.download = 'omitidos_importacion_items.csv';
 		document.body.appendChild(a);
 		a.click();
 		document.body.removeChild(a);
@@ -290,37 +301,25 @@ const CatalogoItems = () => {
 		const formData = new FormData();
 		formData.append('archivo', file);
 		formData.append('dry_run', 'false');
+		setImportResumen(null);
+		setImportOmitidos([]);
+		setShowImportResultModal(false);
 
 		setImporting(true);
 		setImportArchivoNombre(file.name || '');
 		try {
-			let res;
-			try {
-				res = await importarCatalogoItemsExcel(formData);
-			} catch (err) {
-				if (err?.response?.status === 409 && err?.response?.data?.requires_confirmation) {
-					const okReplace = window.confirm('Se detectaron DETALLE duplicados. ¿Deseas reemplazar los existentes?');
-					if (!okReplace) {
-						toast('Importación cancelada por el usuario.');
-						return;
-					}
-					formData.append('replace_duplicates', 'true');
-					res = await importarCatalogoItemsExcel(formData);
-				} else {
-					throw err;
-				}
-			}
+			const res = await importarCatalogoItemsExcel(formData);
 
 			const resumen = res?.data?.resumen || null;
-			const errores = Array.isArray(res?.data?.errores) ? res.data.errores : [];
+			const omitidos = Array.isArray(res?.data?.omitidos) ? res.data.omitidos : [];
 			setImportResumen(resumen);
-			setImportErrores(errores);
+			setImportOmitidos(omitidos);
+			setShowImportResultModal(true);
 
 			toast.success(
-				`Importación completada. Items creados: ${resumen?.items_creados || 0}, ` +
-				`Actualizados: ${resumen?.items_actualizados || 0}, ` +
-				`Partidas únicas: ${resumen?.partidas_unicas_detectadas || 0}, ` +
-				`Errores: ${resumen?.errores || 0}`
+				`Importación completada. Creados: ${resumen?.items_creados || 0}, ` +
+				`Omitidos: ${resumen?.omitidos_total || 0}, ` +
+				`Partidas únicas: ${resumen?.partidas_unicas_detectadas || 0}`
 			);
 			setSelectedItem(null);
 			await cargarItems({ targetPage: 1, search: appliedSearch });
@@ -332,6 +331,13 @@ const CatalogoItems = () => {
 			setImporting(false);
 			event.target.value = '';
 		}
+	};
+
+	const closeImportResultModal = () => {
+		setShowImportResultModal(false);
+		setImportResumen(null);
+		setImportOmitidos([]);
+		setImportArchivoNombre('');
 	};
 
 	return (
@@ -358,7 +364,11 @@ const CatalogoItems = () => {
 							placeholder="Ejemplo: AZULEJO / 43200 / UNIDAD"
 							className="px-3 py-2 rounded w-full md:w-[420px] border border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
 						/>
-						<button type="button" onClick={handleBuscarItems} className="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">
+						<button
+							type="button"
+							onClick={handleBuscarItems}
+							className="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 dark:bg-slate-700 dark:text-sky-100 dark:hover:bg-slate-600 dark:border dark:border-sky-500/40"
+						>
 							Buscar
 						</button>
 						<button type="button" onClick={handleLimpiarBusqueda} className="px-3 py-2 rounded bg-slate-200 text-slate-800 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600">
@@ -407,7 +417,7 @@ const CatalogoItems = () => {
 						type="button"
 						onClick={handleDescargarCatalogoExcel}
 						disabled={downloading}
-						className="px-4 py-2 rounded bg-emerald-600 text-white font-semibold hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed"
+						className="px-4 py-2 rounded bg-emerald-600 text-white font-semibold hover:bg-emerald-700 dark:bg-slate-700 dark:text-emerald-200 dark:hover:bg-slate-600 dark:border dark:border-emerald-500/40 disabled:opacity-60 disabled:cursor-not-allowed"
 					>
 						{downloading ? 'Descargando...' : 'Descargar catálogo'}
 					</button>
@@ -489,47 +499,100 @@ const CatalogoItems = () => {
 				</div>
 			)}
 
-			{importResumen && (
-				<div className="mb-4 border border-blue-200 rounded-lg p-4 bg-blue-50">
-					<div className="flex items-center justify-between gap-3 mb-2">
-						<div className="font-semibold text-blue-900">Resultado de {importResumen?.dry_run ? 'vista previa' : 'importación'}</div>
-						{importArchivoNombre && <div className="text-xs text-blue-700">Archivo: {importArchivoNombre}</div>}
-					</div>
-					<div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm text-blue-900">
-						<div>Procesadas: <b>{importResumen.filas_procesadas || 0}</b></div>
-						<div>Errores: <b>{importResumen.errores || 0}</b></div>
-						<div>Items creados: <b>{importResumen.items_creados || 0}</b></div>
-						<div>Partidas únicas: <b>{importResumen.partidas_unicas_detectadas || 0}</b></div>
-					</div>
-					{importErrores.length > 0 && (
-						<div className="mt-3">
-							<div className="flex items-center justify-between mb-2">
-								<div className="text-sm font-medium text-red-700">Errores detectados: {importErrores.length}</div>
-								<button type="button" onClick={descargarErroresCSV} className="text-xs px-3 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200">
-									Descargar CSV de errores
+			{showImportResultModal && importResumen && (
+				<Modal onClose={closeImportResultModal}>
+					<div className="modal-panel w-full max-w-5xl rounded-xl">
+						<div className="modal-header flex items-start justify-between gap-3 px-5 py-4">
+							<div>
+								<div className="text-lg font-semibold">Resultado de importación</div>
+								<div className="text-sm opacity-90">
+									{importArchivoNombre ? `Archivo: ${importArchivoNombre}` : 'Archivo procesado'}
+								</div>
+							</div>
+							<button
+								type="button"
+								onClick={closeImportResultModal}
+								className="rounded bg-slate-900/25 px-3 py-1 text-sm text-white hover:bg-slate-900/35"
+							>
+								Cerrar
+							</button>
+						</div>
+
+						<div className="modal-body p-5">
+							<div className="mb-4 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-emerald-900 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200">
+								<div className="text-sm font-medium">Cargados en base de datos</div>
+								<div className="text-2xl font-extrabold leading-tight">{importResumen.items_creados || 0}</div>
+								<div className="text-xs opacity-80">Registros nuevos insertados correctamente.</div>
+							</div>
+
+							<div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm text-blue-900">
+								<div>Procesadas: <b>{importResumen.filas_procesadas || 0}</b></div>
+								<div>Filas vacías: <b>{importResumen.filas_vacias || 0}</b></div>
+								<div>Filas inválidas: <b>{importResumen.filas_invalidas || 0}</b></div>
+								<div>Nuevos detectados: <b>{importResumen.items_nuevos_detectados || 0}</b></div>
+								<div>Items creados: <b>{importResumen.items_creados || 0}</b></div>
+								<div>Omitidos total: <b>{importResumen.omitidos_total || 0}</b></div>
+								<div>Partidas únicas: <b>{importResumen.partidas_unicas_detectadas || 0}</b></div>
+								<div>Omitidos sin detalle: <b>{importResumen.omitidos_sin_detalle || 0}</b></div>
+								<div>Omitidos sin partida: <b>{importResumen.omitidos_sin_partida || 0}</b></div>
+								<div>Dup. en Excel: <b>{importResumen.omitidos_duplicado_en_excel || 0}</b></div>
+								<div>Dup. en BD: <b>{importResumen.omitidos_duplicado_en_bd || 0}</b></div>
+							</div>
+
+							{importOmitidos.length > 0 && (
+								<div className="mt-4">
+									<div className="mb-2 flex items-center justify-between gap-2">
+										<div className="text-sm font-medium text-amber-700">
+											Registros omitidos: {importOmitidos.length}
+										</div>
+										<button
+											type="button"
+											onClick={descargarOmitidosCSV}
+											className="text-xs px-3 py-1 rounded bg-amber-100 text-amber-700 hover:bg-amber-200"
+										>
+											Descargar CSV de omitidos
+										</button>
+									</div>
+									<div className="mb-2 text-xs text-amber-800">
+										Estos registros no se cargaron automáticamente. Si son necesarios, ingrésalos manualmente.
+									</div>
+									<div className="max-h-64 overflow-auto border border-amber-200 rounded bg-white text-xs">
+										<table className="min-w-full">
+											<thead className="bg-amber-50">
+												<tr>
+													<th className="text-left px-2 py-1">Fila</th>
+													<th className="text-left px-2 py-1">Detalle</th>
+													<th className="text-left px-2 py-1">Partida</th>
+													<th className="text-left px-2 py-1">Motivo</th>
+												</tr>
+											</thead>
+											<tbody>
+												{importOmitidos.slice(0, 100).map((row, i) => (
+													<tr key={`imp-skip-${i}`} className="border-t">
+														<td className="px-2 py-1">{row?.fila ?? '-'}</td>
+														<td className="px-2 py-1">{row?.detalle || '-'}</td>
+														<td className="px-2 py-1">{row?.partida || '-'}</td>
+														<td className="px-2 py-1">{row?.motivo || 'Sin detalle'}</td>
+													</tr>
+												))}
+											</tbody>
+										</table>
+									</div>
+								</div>
+							)}
+
+							<div className="mt-4 flex justify-end">
+								<button
+									type="button"
+									onClick={closeImportResultModal}
+									className="btn-success rounded px-4 py-2 text-sm"
+								>
+									Aceptar
 								</button>
 							</div>
-							<div className="max-h-40 overflow-auto border border-red-200 rounded bg-white text-xs">
-								<table className="min-w-full">
-									<thead className="bg-red-50">
-										<tr>
-											<th className="text-left px-2 py-1">Fila</th>
-											<th className="text-left px-2 py-1">Error</th>
-										</tr>
-									</thead>
-									<tbody>
-										{importErrores.slice(0, 100).map((e, i) => (
-											<tr key={`imp-err-${i}`} className="border-t">
-												<td className="px-2 py-1">{e?.fila ?? '-'}</td>
-												<td className="px-2 py-1">{e?.error ?? 'Error desconocido'}</td>
-											</tr>
-										))}
-									</tbody>
-								</table>
-							</div>
 						</div>
-					)}
-				</div>
+					</div>
+				</Modal>
 			)}
 
 			{loading && <div className="text-blue-600 dark:text-blue-400">Cargando items...</div>}
@@ -562,7 +625,7 @@ const CatalogoItems = () => {
 									return (
 										<tr
 											key={`item-${it?.id ?? idx}`}
-											onClick={() => setSelectedItem(it)}
+											onClick={() => handleSelectItem(it)}
 											className={`cursor-pointer border-t transition-colors ${isSelected ? 'ring-1 ring-inset ring-amber-500 dark:ring-cyan-400' : ''}`}
 										>
 											<td className={`${rowBase} ${cellStateClass}`}>{it?.partida || '-'}</td>
@@ -581,7 +644,7 @@ const CatalogoItems = () => {
 								type="button"
 								onClick={() => setPage((p) => Math.max(1, p - 1))}
 								disabled={!hasPrevPage}
-								className="px-3 py-1 rounded border disabled:opacity-50"
+								className="px-3 py-1 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700 disabled:opacity-50"
 							>
 								Anterior
 							</button>
@@ -589,7 +652,7 @@ const CatalogoItems = () => {
 								type="button"
 								onClick={() => setPage((p) => p + 1)}
 								disabled={!hasNextPage}
-								className="px-3 py-1 rounded border disabled:opacity-50"
+								className="px-3 py-1 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700 disabled:opacity-50"
 							>
 								Siguiente
 							</button>

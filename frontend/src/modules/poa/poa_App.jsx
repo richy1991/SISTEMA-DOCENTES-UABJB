@@ -10,7 +10,6 @@ import ThemeToggle from '../../components/ThemeToggle';
 import GestionSelectorModal from './components/GestionSelectorModal';
 import NuevoIndicadorModal from './components/NuevoIndicadorModal';
 import POAHomePage from './pages/POAHomePage';
-import DireccionesPage from './pages/DireccionesPage';
 import AccesosPOAPage from './pages/AccesosPOAPage';
 import DocumentosPOAPage from './pages/DocumentosPOAPage';
 import ActividadesPage from './pages/ActividadesPage';
@@ -142,7 +141,7 @@ function POAApp({ user }) {
     return () => window.removeEventListener('header-actions', onHeaderActions);
   }, []);
 
-  // Escuchar selecciÃ³n de direcciÃ³n desde DireccionesPage
+  // Escuchar selecciÃ³n de direcciÃ³n desde la página de indicadores
   useEffect(() => {
     const h = (e) => {
       const dir = e?.detail ?? null;
@@ -152,7 +151,7 @@ function POAApp({ user }) {
     return () => window.removeEventListener('direccion-selected', h);
   }, []);
 
-  // Escuchar selecciÃ³n de operaciÃ³n desde DireccionesPage
+  // Escuchar selecciÃ³n de operaciÃ³n desde la página de indicadores
   useEffect(() => {
     const h = (e) => {
       const op = e?.detail ?? null;

@@ -63,7 +63,8 @@ const Header = ({
     const p = location?.pathname || '';
     if (p === '/poa/documentos' || p === '/poa') return 'Documentos POA';
     if (p === '/poa/documentos-revision') return 'Revisión de Documentos POA';
-    if (p === '/poa/direcciones' || p === '/poa/catalogos/indicadores' || p === '/poa/catalogos/direcciones') return 'Catálogo de indicadores';
+    if (p === '/poa/catalogos/items') return 'Catálogo de items';
+    if (p === '/poa/catalogos/indicadores') return 'Catálogo de indicadores';
     if (p.startsWith('/poa/objetivos')) return 'Objetivos Específicos';
     if (p.startsWith('/poa/actividades')) return 'Actividades';
     if (p.startsWith('/poa/catalogos')) return 'Catálogos';
@@ -133,7 +134,7 @@ const Header = ({
       );
     }
     
-    if (p === '/poa/direcciones' || p === '/poa/catalogos/indicadores' || p === '/poa/indicadores') {
+    if (p === '/poa/catalogos/indicadores') {
       if (!canEdit) return null;
       if (headerSelectedDireccion) {
         return (

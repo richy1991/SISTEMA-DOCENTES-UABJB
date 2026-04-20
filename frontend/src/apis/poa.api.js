@@ -283,13 +283,13 @@ export const descargarCatalogoItemsExcel = (options = {}) =>
 export const getCatalogoPartidas = () => api.get('/api/catalogos/partidas/');
 
 // Operaciones (indicadores)
-export const getCatalogoOperaciones = () => api.get('/api/catalogos/operaciones/');
+export const getCatalogoOperaciones = (params) => api.get('/api/catalogos/operaciones/', { params });
 export const getCatalogoOperacionPorId = (id) => api.get(`/api/catalogos/operaciones/${id}/`);
 export const createCatalogoOperacion = (payload) => api.post('/api/catalogos/operaciones/', payload);
 export const updateCatalogoOperacion = (id, payload) => api.patch(`/api/catalogos/operaciones/${id}/`, payload);
 export const deleteCatalogoOperacion = (id) => api.delete(`/api/catalogos/operaciones/${id}/`);
 // Buscar operaciones/catalogo con parámetro 'search' (útil para autocompletes)
-export const searchCatalogoOperaciones = (q) => api.get('/api/catalogos/operaciones/', { params: { search: q } });
+export const searchCatalogoOperaciones = (q, extraParams = {}) => api.get('/api/catalogos/operaciones/', { params: { search: q, ...extraParams } });
 export const searchOperacionesCatalogo = (q) => api.get('/api/catalogos/operaciones-catalogo/', { params: { search: q } });
 
 // Obtener operaciones filtradas por dirección (si el backend soporta ?direccion_id=)

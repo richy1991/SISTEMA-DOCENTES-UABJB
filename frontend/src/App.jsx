@@ -8,7 +8,7 @@ import api from './apis/api';
 // Importaciones POA - Usar el layout principal que incluye sidebar/header
 import POAApp from './modules/poa/poa_App';
 import POAHomePage from './modules/poa/pages/POAHomePage';
-import DireccionesPage from './modules/poa/pages/DireccionesPage';
+import IndicadoresPage from './modules/poa/pages/IndicadoresPage';
 import AccesosPOAPage from './modules/poa/pages/AccesosPOAPage';
 import DocumentosPOAPage from './modules/poa/pages/DocumentosPOAPage';
 import DocumentosRevisionPOAPage from './modules/poa/pages/DocumentosRevisionPOAPage';
@@ -289,7 +289,7 @@ function App() {
             {/* Módulo: POA - Usando el layout con sidebar y header propios */}
             <Route path="/poa" element={<POAApp user={user} />}>
               <Route index element={<AnimatedRoute><POAHomePage /></AnimatedRoute>} />
-              <Route path="direcciones" element={<AnimatedRoute><DireccionesPage /></AnimatedRoute>} />
+              <Route path="direcciones" element={<Navigate to="/poa/catalogos/indicadores" replace />} />
               <Route path="accesos" element={<AnimatedRoute><AccesosPOAPage /></AnimatedRoute>} />
               <Route path="documentos" element={<AnimatedRoute><DocumentosPOAPage /></AnimatedRoute>} />
               <Route path="documentos-revision" element={<AnimatedRoute><DocumentosRevisionPOAPage /></AnimatedRoute>} />
@@ -300,10 +300,10 @@ function App() {
               <Route path="objetivos-especificos/:documentId" element={<AnimatedRoute><ObjetivosEspecificosPage /></AnimatedRoute>} />
               <Route path="catalogos" element={<AnimatedRoute><CatalogosMenu /></AnimatedRoute>} />
               <Route path="catalogos/items" element={<AnimatedRoute><CatalogoItems /></AnimatedRoute>} />
-              <Route path="catalogos/indicadores" element={<AnimatedRoute><DireccionesPage /></AnimatedRoute>} />
+              <Route path="catalogos/indicadores" element={<AnimatedRoute><IndicadoresPage /></AnimatedRoute>} />
               <Route path="catalogos-menu" element={<AnimatedRoute><CatalogosMenu /></AnimatedRoute>} />
               <Route path="catalogo-items" element={<AnimatedRoute><CatalogoItems /></AnimatedRoute>} />
-              <Route path="indicadores" element={<AnimatedRoute><DireccionesPage /></AnimatedRoute>} />
+              <Route path="indicadores" element={<Navigate to="/poa/catalogos/indicadores" replace />} />
               <Route path="reportes" element={<AnimatedRoute><Reportes /></AnimatedRoute>} />
               <Route path="presupuestos" element={<AnimatedRoute><PresupuestosPage /></AnimatedRoute>} />
             </Route>
