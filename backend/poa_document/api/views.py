@@ -32,6 +32,53 @@ from poa_document.utils.pdf_generator import DocumentoPOAPDFGenerator
 REVISORES_POA = ('revisor_1', 'revisor_2', 'revisor_3', 'revisor_4')
 
 
+def _carrera_usuario_poa(user):
+    if not user or not user.is_authenticated or user.is_superuser:
+        return None
+    perfil = getattr(user, 'perfil', None)
+    if not perfil:
+        return None
+    if perfil.carrera_id:
+        return perfil.carrera
+    carreras = perfil.get_carreras_activas() if hasattr(perfil, 'get_carreras_activas') else None
+    if carreras and carreras.exists():
+        return carreras.first()
+    return None
+
+
+def _filtrar_documentos_por_usuario(qs, user):
+    if not user or not user.is_authenticated:
+        return qs.none()
+    if user.is_superuser:
+        return qs
+    carrera = _carrera_usuario_poa(user)
+    if not carrera:
+        return qs.none()
+    return qs.filter(unidad_solicitante__iexact=(carrera.nombre or '').strip())
+
+
+def _documento_accesible_para_usuario(user, documento):
+    if not documento:
+        return False
+    if user and user.is_superuser:
+        return True
+    carrera = _carrera_usuario_poa(user)
+    if not carrera:
+        return False
+    return (documento.unidad_solicitante or '').strip().lower() == (carrera.nombre or '').strip().lower()
+
+
+def _obtener_documento_accesible(user, documento_id):
+    if documento_id in [None, '']:
+        return None
+    try:
+        documento_id = int(documento_id)
+    except (TypeError, ValueError):
+        return None
+    qs = _filtrar_documentos_por_usuario(_documentos_queryset().filter(pk=documento_id), user)
+    return qs.first()
+
+
 def _poa_roles_activos(user):
     if not user or not user.is_authenticated:
         return set()
@@ -269,6 +316,9 @@ class DocumentoPOAViewSet(viewsets.ModelViewSet):
     serializer_class = DocumentoPOASerializer
 
     permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return _filtrar_documentos_por_usuario(_documentos_queryset(), self.request.user)
 
     def create(self, request, *args, **kwargs):
         _requerir_elaborador(request)
@@ -599,7 +649,7 @@ class DocumentoPOAViewSet(viewsets.ModelViewSet):
         except (ValueError, TypeError):
             return Response({'detail': "El parámetro 'gestion' debe ser un entero válido."}, status=status.HTTP_400_BAD_REQUEST)
 
-        queryset = _documentos_queryset().filter(gestion=year)
+        queryset = self.get_queryset().filter(gestion=year)
         page = self.paginate_queryset(queryset)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
@@ -646,10 +696,8 @@ class DocumentoPOAReadOnlyViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         """
-        Permite filtrar por query param `gestion` o `year`:
-        - /documentos_poa_encabezados/ -> devuelve documentos del año actual
-        - /documentos_poa_encabezados/?gestion=2024 -> devuelve documentos de 2024
-        Si `gestion` no es un entero válido, devuelve queryset vacío.
+        Devuelve documentos de la gestión solicitada, restringidos a la carrera del usuario.
+        Si no se envía gestion/year, usa el año actual.
         """
         req_year = self.request.query_params.get('gestion') or self.request.query_params.get('year')
         if req_year:
@@ -657,10 +705,11 @@ class DocumentoPOAReadOnlyViewSet(viewsets.ReadOnlyModelViewSet):
                 year = int(req_year)
             except (ValueError, TypeError):
                 return DocumentoPOA.objects.none()
-            return _documentos_queryset().filter(gestion=year)
+        else:
+            year = timezone.now().year
 
-        current_year = timezone.now().year
-        return _documentos_queryset().filter(gestion=current_year)
+        qs = _filtrar_documentos_por_usuario(_documentos_queryset(), self.request.user)
+        return qs.filter(gestion=year)
 
 
 # --- ViewSets para Objetivos y Actividades ---
@@ -669,14 +718,21 @@ class ObjetivoEspecificoViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = ObjetivoEspecifico.objects.all()
+        qs = ObjetivoEspecifico.objects.select_related('documento').all()
         documento_id = self.request.query_params.get('documento_id')
         if documento_id:
-            try:
-                return qs.filter(documento_id=int(documento_id))
-            except (ValueError, TypeError):
+            documento = _obtener_documento_accesible(self.request.user, documento_id)
+            if not documento:
                 return qs.none()
+            return qs.filter(documento=documento)
         return qs
+
+    def get_object(self):
+        obj = super().get_object()
+        if not _documento_accesible_para_usuario(self.request.user, obj.documento):
+            from rest_framework.exceptions import NotFound
+            raise NotFound('El objetivo no pertenece a una carrera accesible para este usuario.')
+        return obj
 
     @action(detail=False, methods=['get'])
     def por_documento(self, request):
@@ -695,12 +751,11 @@ class ObjetivoEspecificoViewSet(viewsets.ModelViewSet):
         documento_id = request.query_params.get('documento_id')
         if not documento_id:
             return Response({'detail': "El parámetro 'documento_id' es obligatorio para listar objetivos."}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            doc_id = int(documento_id)
-        except (ValueError, TypeError):
-            return Response({'detail': "El parámetro 'documento_id' debe ser un entero válido."}, status=status.HTTP_400_BAD_REQUEST)
+        documento = _obtener_documento_accesible(request.user, documento_id)
+        if not documento:
+            return Response({'detail': 'Documento no encontrado o sin permisos para verlo.'}, status=status.HTTP_404_NOT_FOUND)
 
-        qs = self.get_queryset().filter(documento_id=doc_id)
+        qs = self.get_queryset().filter(documento=documento)
         page = self.paginate_queryset(qs)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
@@ -713,6 +768,9 @@ class ObjetivoEspecificoViewSet(viewsets.ModelViewSet):
         # Exigir documento_id en el payload para crear un objetivo
         if 'documento_id' not in request.data:
             return Response({'detail': "El campo 'documento_id' es obligatorio para crear un objetivo."}, status=status.HTTP_400_BAD_REQUEST)
+        documento = _obtener_documento_accesible(request.user, request.data.get('documento_id'))
+        if not documento:
+            return Response({'detail': 'Documento no encontrado o sin permisos para modificarlo.'}, status=status.HTTP_404_NOT_FOUND)
         return super().create(request, *args, **kwargs)
 
     def update(self, request, *args, **kwargs):
@@ -738,10 +796,20 @@ class ActividadViewSet(viewsets.ModelViewSet):
         objetivo_id = self.request.query_params.get('objetivo_id')
         if objetivo_id:
             try:
-                return qs.filter(objetivo_id=int(objetivo_id))
-            except (ValueError, TypeError):
+                objetivo = ObjetivoEspecifico.objects.select_related('documento').get(pk=int(objetivo_id))
+            except (ValueError, TypeError, ObjetivoEspecifico.DoesNotExist):
                 return qs.none()
+            if not _documento_accesible_para_usuario(self.request.user, objetivo.documento):
+                return qs.none()
+            return qs.filter(objetivo=objetivo)
         return qs
+
+    def get_object(self):
+        obj = super().get_object()
+        if not _documento_accesible_para_usuario(self.request.user, obj.objetivo.documento):
+            from rest_framework.exceptions import NotFound
+            raise NotFound('La actividad no pertenece a una carrera accesible para este usuario.')
+        return obj
 
     @action(detail=True, methods=['patch'])
     def asignar_catalogo(self, request, pk=None):
@@ -797,6 +865,8 @@ class ActividadViewSet(viewsets.ModelViewSet):
                 return Response({'detail': 'Objetivo no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
             if objetivo.documento_id != doc_id:
                 return Response({'detail': 'El objetivo no pertenece al documento solicitado.'}, status=status.HTTP_400_BAD_REQUEST)
+            if not _documento_accesible_para_usuario(request.user, objetivo.documento):
+                return Response({'detail': 'Documento no encontrado o sin permisos para verlo.'}, status=status.HTTP_404_NOT_FOUND)
 
         qs = self.get_queryset().filter(objetivo_id=obj_id)
         page = self.paginate_queryset(qs)
@@ -821,6 +891,9 @@ class ActividadViewSet(viewsets.ModelViewSet):
             objetivo = ObjetivoEspecifico.objects.select_related('documento').get(pk=objetivo_pk)
         except ObjetivoEspecifico.DoesNotExist:
             return Response({'detail': 'Objetivo no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not _documento_accesible_para_usuario(request.user, objetivo.documento):
+            return Response({'detail': 'Documento no encontrado o sin permisos para modificarlo.'}, status=status.HTTP_404_NOT_FOUND)
 
         documento_param = request.query_params.get('documento_id')
         if documento_param:
@@ -893,10 +966,20 @@ class DetallePresupuestoViewSet(viewsets.ModelViewSet):
         actividad_id = self.request.query_params.get('actividad_id')
         if actividad_id:
             try:
-                return qs.filter(actividad_id=int(actividad_id))
-            except (ValueError, TypeError):
+                actividad = Actividad.objects.select_related('objetivo__documento').get(pk=int(actividad_id))
+            except (ValueError, TypeError, Actividad.DoesNotExist):
                 return qs.none()
+            if not _documento_accesible_para_usuario(self.request.user, actividad.objetivo.documento):
+                return qs.none()
+            return qs.filter(actividad=actividad)
         return qs
+
+    def get_object(self):
+        obj = super().get_object()
+        if not _documento_accesible_para_usuario(self.request.user, obj.actividad.objetivo.documento):
+            from rest_framework.exceptions import NotFound
+            raise NotFound('El detalle de presupuesto no pertenece a una carrera accesible para este usuario.')
+        return obj
 
     def list(self, request, *args, **kwargs):
         # Forzar filtro por actividad para evitar listados globales
@@ -920,6 +1003,8 @@ class DetallePresupuestoViewSet(viewsets.ModelViewSet):
                 return Response({'detail': 'Actividad no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
             if actividad.objetivo.documento_id != doc_id:
                 return Response({'detail': 'La actividad no pertenece al documento solicitado.'}, status=status.HTTP_400_BAD_REQUEST)
+            if not _documento_accesible_para_usuario(request.user, actividad.objetivo.documento):
+                return Response({'detail': 'Documento no encontrado o sin permisos para verlo.'}, status=status.HTTP_404_NOT_FOUND)
         return super().list(request, *args, **kwargs)
 
     def create(self, request, *args, **kwargs):
@@ -937,6 +1022,9 @@ class DetallePresupuestoViewSet(viewsets.ModelViewSet):
             actividad = Actividad.objects.select_related('objetivo__documento').get(pk=actividad_pk)
         except Actividad.DoesNotExist:
             return Response({'detail': 'Actividad no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not _documento_accesible_para_usuario(request.user, actividad.objetivo.documento):
+            return Response({'detail': 'Documento no encontrado o sin permisos para modificarlo.'}, status=status.HTTP_404_NOT_FOUND)
 
         documento_param = request.query_params.get('documento_id')
         if documento_param:
@@ -972,20 +1060,18 @@ class ComentarioPOAViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def _purgar_gestiones_vencidas(self):
-        """Elimina conversaciones de gestiones anteriores para evitar redundancia."""
-        gestion_actual = timezone.now().year
-        ComentarioPOA.objects.filter(gestion__lt=gestion_actual).delete()
+        """Purgado fuera del request para evitar escrituras en lecturas masivas."""
+        return None
 
     def get_queryset(self):
-        self._purgar_gestiones_vencidas()
         qs = ComentarioPOA.objects.select_related('documento').prefetch_related('mensajes__autor')
         doc_id = self.request.query_params.get('documento')
         gestion = self.request.query_params.get('gestion')
         if doc_id:
-            try:
-                qs = qs.filter(documento_id=int(doc_id))
-            except (ValueError, TypeError):
+            documento = _obtener_documento_accesible(self.request.user, doc_id)
+            if not documento:
                 return qs.none()
+            qs = qs.filter(documento=documento)
         if gestion:
             try:
                 qs = qs.filter(gestion=int(gestion))
@@ -993,14 +1079,19 @@ class ComentarioPOAViewSet(viewsets.ModelViewSet):
                 return qs.none()
         return qs
 
+    def get_object(self):
+        obj = super().get_object()
+        if not _documento_accesible_para_usuario(self.request.user, obj.documento):
+            from rest_framework.exceptions import NotFound
+            raise NotFound('La conversación no pertenece a una carrera accesible para este usuario.')
+        return obj
+
     def create(self, request, *args, **kwargs):
-        self._purgar_gestiones_vencidas()
         doc_id = request.data.get('documento')
         if not doc_id:
             return Response({'detail': "El campo 'documento' es obligatorio."}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            doc = DocumentoPOA.objects.get(pk=int(doc_id))
-        except (DocumentoPOA.DoesNotExist, ValueError, TypeError):
+        doc = _obtener_documento_accesible(request.user, doc_id)
+        if not doc:
             return Response({'detail': 'Documento no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
         if doc.estado not in ('revision', 'observado'):
             return Response({'detail': 'Solo se pueden abrir conversaciones en documentos en revision u observados.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -1025,14 +1116,22 @@ class MensajeComentarioPOAViewSet(
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = MensajeComentarioPOA.objects.select_related('autor', 'comentario')
+        qs = MensajeComentarioPOA.objects.select_related('autor', 'comentario__documento')
         comentario_id = self.request.query_params.get('comentario')
         if comentario_id:
-            try:
-                qs = qs.filter(comentario_id=int(comentario_id))
-            except (ValueError, TypeError):
+            comentario = ComentarioPOA.objects.select_related('documento').filter(pk=comentario_id).first()
+            if not comentario or not _documento_accesible_para_usuario(self.request.user, comentario.documento):
                 return qs.none()
+            qs = qs.filter(comentario=comentario)
+            return qs
         return qs
+
+    def get_object(self):
+        obj = super().get_object()
+        if not _documento_accesible_para_usuario(self.request.user, obj.comentario.documento):
+            from rest_framework.exceptions import NotFound
+            raise NotFound('El mensaje no pertenece a una conversación accesible para este usuario.')
+        return obj
 
     def create(self, request, *args, **kwargs):
         comentario_id = request.data.get('comentario')
@@ -1044,9 +1143,11 @@ class MensajeComentarioPOAViewSet(
         if len(texto) < 5:
             return Response({'detail': 'El mensaje debe tener al menos 5 caracteres.'}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            comentario = ComentarioPOA.objects.get(pk=int(comentario_id))
+            comentario = ComentarioPOA.objects.select_related('documento').get(pk=int(comentario_id))
         except (ComentarioPOA.DoesNotExist, ValueError, TypeError):
             return Response({'detail': 'Conversacion no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+        if not _documento_accesible_para_usuario(request.user, comentario.documento):
+            return Response({'detail': 'No tiene permisos para intervenir esta conversación.'}, status=status.HTTP_404_NOT_FOUND)
         if not comentario.abierto:
             return Response({'detail': 'Esta conversacion esta cerrada.'}, status=status.HTTP_400_BAD_REQUEST)
         roles = _poa_roles_activos(request.user)

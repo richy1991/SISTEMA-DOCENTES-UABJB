@@ -92,6 +92,9 @@ class DocumentoPOA(models.Model):
     class Meta:
         # Evitar duplicados exactos: misma gestión + misma unidad + mismo programa
         unique_together = ('gestion', 'unidad_solicitante', 'programa')
+        indexes = [
+            models.Index(fields=['gestion', 'unidad_solicitante'], name='poa_doc_gestion_unidad_idx'),
+        ]
 
     def __str__(self):
         return f"{self.programa} ({self.gestion})"
