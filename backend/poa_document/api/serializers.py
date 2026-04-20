@@ -135,12 +135,22 @@ class DocumentoPOASerializer(serializers.ModelSerializer):
         ]
 
     def validate(self, attrs):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
         elaborado_por = attrs.get('elaborado_por', getattr(self.instance, 'elaborado_por', None))
         jefe_unidad = attrs.get('jefe_unidad', getattr(self.instance, 'jefe_unidad', None))
         estado = attrs.get('estado', getattr(self.instance, 'estado', 'elaboracion'))
         observaciones = attrs.get('observaciones', getattr(self.instance, 'observaciones', ''))
 
         errors = {}
+
+        if user and user.is_authenticated and not user.is_superuser:
+            perfil = getattr(user, 'perfil', None)
+            carrera = getattr(perfil, 'carrera', None)
+            if not carrera:
+                errors['unidad_solicitante'] = 'El usuario no tiene una carrera asignada para crear o editar documentos POA.'
+            else:
+                attrs['unidad_solicitante'] = carrera.nombre
 
         if elaborado_por is not None:
             if not elaborado_por.activo:

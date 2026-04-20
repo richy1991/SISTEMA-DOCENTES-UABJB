@@ -73,8 +73,8 @@ function POAApp({ user }) {
     return () => { mounted = false; };
   }, [user?.id]);
 
-  // iiisyp es solo lectura: no puede gestionar accesos POA
-  const isAdminPrincipal = user?.is_superuser;
+  // Admin principal POA: superusuario global o administrador de carrera (iiisyp)
+  const isAdminPrincipal = Boolean(user?.is_superuser || user?.perfil?.rol === 'iiisyp');
 
   const poaPermissions = {
     canEdit: poaRoles.includes('elaborador'),
