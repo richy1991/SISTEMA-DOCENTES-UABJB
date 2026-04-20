@@ -11,15 +11,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AlterField(
-            model_name='documentopoa',
-            name='elaborado_por',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='documentos_elaborados', to='poa_document.usuariopoa'),
-        ),
-        migrations.AlterField(
-            model_name='documentopoa',
-            name='jefe_unidad',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='documentos_jefe', to='poa_document.usuariopoa'),
-        ),
-        # No-op: `Persona` ya no existe en el estado base actual de la app.
+        # No-op: 0001_initial already handles this.
     ]

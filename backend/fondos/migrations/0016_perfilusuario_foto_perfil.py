@@ -10,9 +10,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AddField(
-            model_name='perfilusuario',
-            name='foto_perfil',
-            field=models.ImageField(blank=True, null=True, upload_to='perfiles/'),
-        ),
+        # No-op: 0001_initial already handles this.
     ]

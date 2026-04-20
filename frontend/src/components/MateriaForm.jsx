@@ -148,7 +148,8 @@ const MateriaForm = () => {
         const carreraFromFilter = searchParams.get('carrera');
 
         const userData = JSON.parse(localStorage.getItem('user') || '{}');
-        const esAdmin = userData?.is_superuser || userData?.perfil?.rol === 'admin' || userData?.perfil?.rol === 'director';
+        // iiisyp es solo lectura: no puede acceder al form de gestion de materias
+        const esAdmin = userData?.is_superuser || userData?.perfil?.rol === 'director';
 
         if (!esAdmin) {
             toast.error("No tienes permisos para gestionar materias");

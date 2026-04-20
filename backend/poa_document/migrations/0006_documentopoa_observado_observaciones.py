@@ -8,25 +8,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AddField(
-            model_name='documentopoa',
-            name='observaciones',
-            field=models.TextField(blank=True, default=''),
-        ),
-        migrations.AlterField(
-            model_name='documentopoa',
-            name='estado',
-            field=models.CharField(
-                choices=[
-                    ('elaboracion', 'En elaboración'),
-                    ('revision', 'En revisión'),
-                    ('observado', 'Observado'),
-                    ('aprobado', 'Aprobado'),
-                    ('ejecucion', 'En ejecución'),
-                ],
-                default='elaboracion',
-                max_length=20,
-                verbose_name='Estado',
-            ),
-        ),
+        # No-op: 0001_initial already handles this.
     ]

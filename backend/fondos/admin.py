@@ -2,11 +2,43 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from .models import (
-    Docente, Carrera, CalendarioAcademico, FondoTiempo,
+    Docente, DocenteCarrera, Carrera, CalendarioAcademico, FondoTiempo,
     CategoriaFuncion, Actividad, Proyecto, InformeFondo,
     ObservacionFondo, HistorialFondo, PerfilUsuario,
-    MensajeObservacion, HistorialFondo
+    MensajeObservacion, HistorialFondo, DatosLaborales, SaldoVacacionesGestion
 )
+
+
+# =====================================================
+# DATOS LABORALES ADMIN
+# =====================================================
+
+@admin.register(DatosLaborales)
+class DatosLaboralesAdmin(admin.ModelAdmin):
+    list_display = ['id', 'ci', 'fecha_ingreso', 'dias_vacacion', 'horas_feriados_gestion', 'tiene_docente', 'tiene_perfil']
+    list_filter = []
+    search_fields = ['ci']
+    ordering = ['-fecha_creacion']
+
+    fieldsets = (
+        ('Identidad Laboral', {
+            'fields': ('ci', 'fecha_ingreso')
+        }),
+        ('Beneficios', {
+            'fields': ('dias_vacacion', 'horas_feriados_gestion')
+        }),
+    )
+    readonly_fields = ('fecha_creacion', 'fecha_modificacion')
+
+    def tiene_docente(self, obj):
+        return hasattr(obj, 'docente') and obj.docente is not None
+    tiene_docente.boolean = True
+    tiene_docente.short_description = 'Tiene Docente'
+
+    def tiene_perfil(self, obj):
+        return obj.perfiles.exists()
+    tiene_perfil.boolean = True
+    tiene_perfil.short_description = 'Tiene Perfil'
 
 
 # =====================================================
@@ -16,39 +48,64 @@ from .models import (
 @admin.register(Docente)
 class DocenteAdmin(admin.ModelAdmin):
     list_display = [
-        'id','nombre_completo', 'ci', 'carrera', 'categoria', 'dedicacion',
-        'horas_semanales_badge', 'email', 'activo'
+        'id','nombre_completo', 'ci_display',
+        'email', 'activo'
     ]
-    list_filter = ['carrera', 'categoria', 'dedicacion', 'activo']
-    search_fields = ['nombres', 'apellido_paterno', 'apellido_materno', 'ci', 'email', 'carrera__nombre']
-    ordering = ['carrera__facultad', 'carrera__nombre', 'apellido_paterno', 'apellido_materno', 'nombres']
-    
+    list_filter = ['activo']
+    search_fields = ['nombres', 'apellido_paterno', 'apellido_materno', 'datos_laborales__ci', 'email']
+    ordering = ['apellido_paterno', 'apellido_materno', 'nombres']
+
     fieldsets = (
         ('Información Personal', {
-            'fields': ('nombres', 'apellido_paterno', 'apellido_materno', 'ci', 'carrera')
+            'fields': ('nombres', 'apellido_paterno', 'apellido_materno')
         }),
-        ('Información Laboral', {
-            'fields': ('categoria', 'dedicacion'),
-            'description': 'Tipo de dedicación según Reglamento UAB Art. 11'
+        ('Datos Laborales', {
+            'fields': ('datos_laborales_link',),
+            'description': 'Los campos de CI, vacaciones y feriados se gestionan desde Datos Laborales.'
         }),
         ('Contacto', {
-            'fields': ('email', 'telefono', 'horas_contrato_semanales')
+            'fields': ('email', 'telefono')
         }),
         ('Estado', {
             'fields': ('activo',)
         }),
     )
-    
-    def horas_semanales_badge(self, obj):
-        horas = obj.horas_semanales_maximas
-        if horas:
-            color = '#10b981' if horas == 40 else '#f59e0b'
+    readonly_fields = ('fecha_creacion', 'fecha_modificacion', 'datos_laborales_link')
+
+    def ci_display(self, obj):
+        return obj.ci if obj.ci else 'N/A'
+    ci_display.short_description = 'CI'
+
+    def datos_laborales_link(self, obj):
+        if obj.datos_laborales:
             return format_html(
-                '<span style="color: white; background: {}; padding: 3px 10px; border-radius: 3px; font-weight: bold;">{} hrs/sem</span>',
-                color, horas
+                '<a href="/admin/fondos/datoslaborales/{}/change/">{}</a>',
+                obj.datos_laborales.id,
+                obj.datos_laborales
             )
-        return mark_safe('<span style="color: gray;">Sin límite</span>')
-    horas_semanales_badge.short_description = 'Límite Semanal'
+        return 'Sin datos laborales'
+    datos_laborales_link.short_description = 'Datos Laborales'
+
+
+class DocenteCarreraInline(admin.TabularInline):
+    model = DocenteCarrera
+    extra = 1
+    fields = ('carrera', 'categoria', 'dedicacion', 'activo')
+
+
+@admin.register(DocenteCarrera)
+class DocenteCarreraAdmin(admin.ModelAdmin):
+    list_display = ['docente', 'carrera', 'categoria', 'dedicacion', 'horas_semanales', 'activo']
+    list_filter = ['dedicacion', 'categoria', 'activo']
+    search_fields = ['docente__nombres', 'docente__apellido_paterno', 'carrera__nombre']
+    ordering = ['carrera__nombre', 'docente__apellido_paterno']
+
+    def horas_semanales(self, obj):
+        return obj.horas_semanales_maximas
+    horas_semanales.short_description = 'Hrs/Sem'
+
+# Register inline on DocenteAdmin
+DocenteAdmin.inlines = [DocenteCarreraInline]
 
 
 # =====================================================
@@ -429,28 +486,61 @@ class HistorialFondoAdmin(admin.ModelAdmin):
 
 @admin.register(PerfilUsuario)
 class PerfilUsuarioAdmin(admin.ModelAdmin):
-    list_display = ['user', 'rol_display', 'carrera', 'docente', 'activo']
+    list_display = ['user', 'rol_display', 'carrera', 'docente', 'datos_laborales_link', 'activo']
     list_filter = ['rol', 'activo', 'carrera']
     search_fields = [
         'user__username', 'user__first_name', 'user__last_name',
-        'docente__nombres', 'docente__apellido_paterno'
+        'docente__nombres', 'docente__apellido_paterno',
+        'datos_laborales__ci'
     ]
-    
+
     fieldsets = (
         ('Usuario', {
             'fields': ('user', 'rol', 'activo')
         }),
         ('Relaciones', {
-            'fields': ('docente', 'carrera')
+            'fields': ('docente', 'carrera', 'datos_laborales')
+        }),
+        ('Datos Laborales (solo lectura)', {
+            'fields': ('dl_fecha_ingreso', 'dl_dias_vacacion', 'dl_horas_feriados', 'dl_antiguedad'),
+            'classes': ('collapse',),
+            'description': 'Estos campos se muestran desde DatosLaborales asociados. Para editarlos, vaya al registro de Datos Laborales.'
         }),
         ('Contacto', {
             'fields': ('telefono',)
         }),
     )
-    
+    readonly_fields = ('dl_fecha_ingreso', 'dl_dias_vacacion', 'dl_horas_feriados', 'dl_antiguedad')
+
     def rol_display(self, obj):
         return obj.get_rol_display()
     rol_display.short_description = 'Rol'
+
+    def datos_laborales_link(self, obj):
+        dl = obj.obtener_datos_laborales()
+        if dl:
+            return format_html(
+                '<a href="/admin/fondos/datoslaborales/{}/change/">{}</a>',
+                dl.id, str(dl)
+            )
+        return 'Sin datos'
+    datos_laborales_link.short_description = 'Datos Lab.'
+
+    def dl_fecha_ingreso(self, obj):
+        return obj.fecha_ingreso or 'N/A'
+    dl_fecha_ingreso.short_description = 'Fecha Ingreso'
+
+    def dl_dias_vacacion(self, obj):
+        return obj.dias_vacacion
+    dl_dias_vacacion.short_description = 'Días Vacación'
+
+    def dl_horas_feriados(self, obj):
+        return obj.horas_feriados_gestion
+    dl_horas_feriados.short_description = 'Horas Feriados'
+
+    def dl_antiguedad(self, obj):
+        return f"{obj.calcular_antiguedad()} años"
+    dl_antiguedad.short_description = 'Antigüedad'
 
 
 # Personalización del sitio admin

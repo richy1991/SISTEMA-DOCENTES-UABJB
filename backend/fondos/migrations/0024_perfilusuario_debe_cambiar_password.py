@@ -10,9 +10,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AddField(
-            model_name='perfilusuario',
-            name='debe_cambiar_password',
-            field=models.BooleanField(default=True, help_text='Indica si el usuario debe cambiar su contraseña en el próximo inicio de sesión'),
-        ),
+        # No-op: 0001_initial already handles this.
     ]

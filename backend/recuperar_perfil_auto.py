@@ -11,9 +11,9 @@ Ejemplos:
     python backend/recuperar_perfil_auto.py victor 1234567 docente
     python backend/recuperar_perfil_auto.py victor 1234567 director IS
     python backend/recuperar_perfil_auto.py victor 1234567 jefe_estudios MAT
-    python backend/recuperar_perfil_auto.py victor 1234567 admin IS
+    python backend/recuperar_perfil_auto.py victor 1234567 iiisyp IS
 
-Roles válidos: docente, director, jefe_estudios, admin
+Roles válidos: docente, director, jefe_estudios, iiisyp
 """
 import os
 import sys
@@ -32,7 +32,7 @@ def recuperar_perfil_auto(username, ci, rol, codigo_carrera=None):
     print("=" * 70)
     
     # Validar rol
-    roles_validos = ['docente', 'director', 'jefe_estudios', 'admin']
+    roles_validos = ['docente', 'director', 'jefe_estudios', 'iiisyp']
     if rol not in roles_validos:
         print(f"\n❌ ERROR: Rol '{rol}' no es válido")
         print(f"Roles válidos: {', '.join(roles_validos)}")
@@ -88,7 +88,7 @@ def recuperar_perfil_auto(username, ci, rol, codigo_carrera=None):
                 apellido_materno=apellido_materno or '',
                 ci=ci,
                 categoria='asistente',
-                dedicacion='horario',
+                dedicacion='horario_40',
                 email=user.email or '',
                 telefono=''
             )
@@ -96,7 +96,7 @@ def recuperar_perfil_auto(username, ci, rol, codigo_carrera=None):
     
     # 4. Obtener Carrera (si el rol lo requiere)
     carrera = None
-    if rol in ['director', 'jefe_estudios', 'admin'] and codigo_carrera:
+    if rol in ['director', 'jefe_estudios', 'iiisyp'] and codigo_carrera:
         print(f"\n🔍 Buscando carrera con código: {codigo_carrera}")
         carrera = Carrera.objects.filter(codigo=codigo_carrera).first()
         
@@ -178,8 +178,8 @@ if __name__ == '__main__':
         print("\nEjemplos:")
         print("  python backend/recuperar_perfil_auto.py victor 1234567 docente")
         print("  python backend/recuperar_perfil_auto.py victor 1234567 director IS")
-        print("  python backend/recuperar_perfil_auto.py victor 1234567 admin IS")
-        print("\nRoles válidos: docente, director, jefe_estudios, admin")
+        print("  python backend/recuperar_perfil_auto.py victor 1234567 iiisyp IS")
+        print("\nRoles válidos: docente, director, jefe_estudios, iiisyp")
         sys.exit(1)
     
     # Obtener argumentos

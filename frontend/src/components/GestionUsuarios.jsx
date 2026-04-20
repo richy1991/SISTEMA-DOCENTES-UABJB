@@ -864,12 +864,12 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
       setUsuarios(usuariosRes.data.results || usuariosRes.data);
       setDocentes(docentesRes.data.results || docentesRes.data);
       setCarreras(carrerasRes.data.results || carrerasRes.data);
-      
-      // Filtrar roles: solo superuser puede ver y asignar rol 'admin'
+
+      // Filtrar roles: solo superuser puede ver y asignar rol 'iiisyp'
       const todosRoles = rolesRes.data || [];
       const esSuperuser = user?.is_superuser === true;
       const rolesFiltrados = todosRoles.filter(rol => 
-        esSuperuser ? true : rol.value !== 'admin'
+        esSuperuser ? true : rol.value !== 'iiisyp'
       );
       setRoles(rolesFiltrados);
       
@@ -915,7 +915,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
 
     // Orden jerárquico: Admin → Director → Jefe Estudios → Docente
     const ordenJerarquico = {
-      'admin': 0,
+      'iiisyp': 0,
       'director': 1,
       'jefe_estudios': 2,
       'docente': 3
@@ -951,7 +951,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
       }
       
       // Admin de carrera: bloquear con su propia carrera
-      const esAdminCarrera = user?.perfil?.rol === 'admin' && !user?.is_superuser;
+      const esAdminCarrera = user?.perfil?.rol === 'iiisyp' && !user?.is_superuser;
       const carreraDefault = esAdminCarrera ? user?.perfil?.carrera : '';
       
       const initialData = {
@@ -1114,7 +1114,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
     if (vinculacionRapidaDocente) return;
 
     const newRol = e.target.value;
-    const esAdminCarrera = user?.perfil?.rol === 'admin' && !user?.is_superuser;
+    const esAdminCarrera = user?.perfil?.rol === 'iiisyp' && !user?.is_superuser;
 
     setErrors((prev) => ({ ...prev, rol: null }));
     
@@ -1122,7 +1122,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
       ...prev,
       rol: newRol,
       // Admin de carrera siempre mantiene su carrera, otros roles la pierden al cambiar
-      carrera: (newRol === 'director' || newRol === 'jefe_estudios' || newRol === 'admin') 
+      carrera: (newRol === 'director' || newRol === 'jefe_estudios' || newRol === 'iiisyp') 
         ? (esAdminCarrera ? user?.perfil?.carrera : prev.carrera) 
         : (newRol === 'docente' ? prev.carrera : ''),
       docente: newRol !== 'docente' ? '' : prev.docente,
@@ -1195,7 +1195,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
     setIsSubmitting(true);
     setErrors({});
 
-    const esUsuarioSistema = ['admin', 'director', 'jefe_estudios'].includes(formData.rol);
+    const esUsuarioSistema = ['iiisyp', 'director', 'jefe_estudios'].includes(formData.rol);
     const ciNormalizado = (formData.ci || '').trim();
 
     if (esUsuarioSistema && !ciNormalizado) {
@@ -1281,7 +1281,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
     }
 
     // Admin, Director y Jefe de Estudios deben enviar carrera
-    if (formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') {
+    if (formData.rol === 'iiisyp' || formData.rol === 'director' || formData.rol === 'jefe_estudios') {
       payload.carrera = formData.carrera;
       payload.ci = ciNormalizado;
     }
@@ -1374,6 +1374,9 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
     );
   }
 
+  // iiisyp es solo lectura: no puede crear/editar/eliminar usuarios
+  const puedeGestionarUsuarios = () => user?.is_superuser === true;
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -1400,13 +1403,15 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
                   clearOnToggle
                 />
               </div>
-              <button
-                onClick={handleToggleCreateForm}
-                className="px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center gap-2"
-              >
-                <span>{isCreating ? '➖' : '➕'}</span>
-                {isCreating ? 'Cancelar Creación' : 'Crear Usuario'}
-              </button>
+              {puedeGestionarUsuarios() && (
+                <button
+                  onClick={handleToggleCreateForm}
+                  className="px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center gap-2"
+                >
+                  <span>{isCreating ? '➖' : '➕'}</span>
+                  {isCreating ? 'Cancelar Creación' : 'Crear Usuario'}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1442,7 +1447,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
 
                     {/* Fila 2: Carrera - Vincular docente */}
                     <div>
-                      {(formData.rol === 'docente' || formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') ? (
+                      {(formData.rol === 'docente' || formData.rol === 'iiisyp' || formData.rol === 'director' || formData.rol === 'jefe_estudios') ? (
                         <FilterCarreras
                           label="Carrera"
                           name="carrera"
@@ -1450,7 +1455,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
                           onChange={handleChange}
                           carreras={carreras}
                           error={errors.carrera}
-                          disabled={formData.rol !== 'docente' && user?.perfil?.rol === 'admin' && !user?.is_superuser}
+                          disabled={formData.rol !== 'docente' && user?.perfil?.rol === 'iiisyp' && !user?.is_superuser}
                           required={formData.rol !== 'docente'}
                           placeholder="Buscar carrera..."
                         />
@@ -1497,17 +1502,44 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
 
                     <div>
                       {formData.rol === 'docente' ? (
-                        <FilterDocentes
-                          label="Vincular a Docente Existente"
-                          name="docente"
-                          value={formData.docente}
-                          onChange={handleChange}
-                          docentes={docentesActivosDisponibles}
-                          error={docenteError}
-                          disabled={vinculacionRapidaDocente}
-                          placeholder="Buscar docente..."
-                        />
-                      ) : (formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') ? (
+                        <div>
+                          <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
+                            Vincular a Docente Existente
+                          </label>
+                          <div className="flex items-start gap-2">
+                            <div className="flex-1">
+                              <FilterDocentes
+                                name="docente"
+                                value={formData.docente}
+                                onChange={handleChange}
+                                docentes={docentesActivosDisponibles}
+                                error={docenteError}
+                                disabled={vinculacionRapidaDocente}
+                                placeholder="Buscar docente..."
+                              />
+                            </div>
+                            {!vinculacionRapidaDocente && (
+                              <button
+                                type="button"
+                                disabled={bloquearCrearNuevoDocente || formData.rol !== 'docente'}
+                                onClick={() => {
+                                  if (bloquearCrearNuevoDocente || formData.rol !== 'docente') return;
+                                  handleCrearNuevoDocente();
+                                }}
+                                title="Crear nuevo registro de docente"
+                                className="h-[52px] w-[52px] bg-[#2C4AAE] hover:bg-[#1a3a8a] disabled:bg-slate-400 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center justify-center flex-shrink-0"
+                              >
+                                <span className="text-xl leading-none">+</span>
+                              </button>
+                            )}
+                          </div>
+                          {formData.rol !== 'docente' && (
+                            <p className="text-xs text-amber-500 dark:text-amber-300 mt-1">
+                              No disponible para este rol
+                            </p>
+                          )}
+                        </div>
+                      ) : (formData.rol === 'iiisyp' || formData.rol === 'director' || formData.rol === 'jefe_estudios') ? (
                         <div>
                           <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">C.I.</label>
                           <input
@@ -1526,40 +1558,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
                       )}
                     </div>
 
-                    <div>
-                      {!vinculacionRapidaDocente ? (
-                        <div>
-                          <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
-                            Crear nuevo registro de docente
-                          </label>
-                          <div className="flex items-center justify-center rounded-xl border-2 border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-700/50 w-full h-[52px]">
-                            <ToggleSwitch
-                              isActive={crearNuevoDocente}
-                              disabled={bloquearCrearNuevoDocente || formData.rol !== 'docente'}
-                              onChange={() => {
-                                if (bloquearCrearNuevoDocente || formData.rol !== 'docente') return;
-                                if (!crearNuevoDocente) {
-                                  handleCrearNuevoDocente();
-                                } else {
-                                  setCrearNuevoDocente(false);
-                                  setFormData((prev) => ({ ...prev, docente_data: null }));
-                                  sessionStorage.removeItem('docenteTemporalDesdeUsuarios');
-                                }
-                              }}
-                            />
-                          </div>
-                          {formData.rol !== 'docente' && (
-                            <p className="text-xs text-amber-500 dark:text-amber-300 mt-1">
-                              No disponible para este rol
-                            </p>
-                          )}
-                        </div>
-                      ) : (
-                        <div />
-                      )}
-                    </div>
-
-                    {(formData.rol === 'docente' || formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && !crearNuevoDocente && (
+                    {(formData.rol === 'docente' || formData.rol === 'iiisyp' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && !crearNuevoDocente ? (
                       <InputField
                         label="Email"
                         name="email"
@@ -1568,6 +1567,8 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
                         onChange={handleChange}
                         error={errors.email}
                       />
+                    ) : (
+                      <div />
                     )}
 
                     {/* Fila 4 (Docente): Contraseña inicial - Asignaciones adicionales */}
@@ -1580,7 +1581,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
                       </div>
                     )}
 
-                    {(formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && !crearNuevoDocente && (
+                    {(formData.rol === 'iiisyp' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && !crearNuevoDocente && (
                       <div>
                         <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Contraseña inicial</label>
                         <div className="w-full px-4 py-3 rounded-xl border-2 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 font-mono font-semibold">
@@ -1590,7 +1591,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
                     )}
 
                     {/* C.I. para admin/director/jefe_estudios - abajo de Rol */}
-                    {false && (formData.rol === 'admin' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && (
+                    {false && (formData.rol === 'iiisyp' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && (
                       <div className="md:col-span-2">
                         <div className="grid grid-cols-2 gap-4">
                           <div>
@@ -1841,13 +1842,13 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
                       <span className={`px-3 py-1.5 inline-flex text-xs font-bold rounded-lg border-2 shadow-sm ${
                         usuario.is_superuser ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 border-amber-400 dark:border-amber-600' :
                         docenteInactivo ? 'bg-red-200 dark:bg-red-900/30 text-red-900 dark:text-red-200 border-red-600 dark:border-red-700' :
-                        usuario.perfil?.rol === 'admin' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-700' :
+                        usuario.perfil?.rol === 'iiisyp' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-700' :
                         usuario.perfil?.rol === 'director' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700' :
                         usuario.perfil?.rol === 'jefe_estudios' ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 border-cyan-300 dark:border-cyan-700' :
                         'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700'
                       }`}>
                         {usuario.is_superuser ? '👑 Super Admin' :
-                         usuario.perfil?.rol === 'admin' ? '🛡️ Admin' :
+                         usuario.perfil?.rol === 'iiisyp' ? '🛡️ Admin' :
                          usuario.perfil?.rol === 'director' ? '🏛️ Director de Carrera' :
                          usuario.perfil?.rol === 'jefe_estudios' ? '📚 Jefe de Estudios' :
                          docenteInactivo ? '👨‍🏫 Docente (inactivo)' : '👨‍🏫 Docente'}
@@ -1875,33 +1876,35 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
                       </div>
                     </td>
                     <td className={`px-6 py-4 whitespace-nowrap text-center ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
-                      <div className="flex justify-center gap-3">
-                        <button
-                          onClick={() => abrirModalEditar(usuario)}
-                          className={`transition-all duration-200 hover:scale-110 ${
-                            filaInactiva
-                              ? 'bg-red-600 hover:bg-red-700 text-white border border-red-700 shadow-sm px-2 py-2 rounded-lg'
-                              : 'text-blue-500 hover:text-blue-400 dark:text-blue-400 dark:hover:text-blue-300'
-                          }`}
-                          title="Editar"
-                        >
-                          <FaEdit size={18} />
-                        </button>
-                        <button
-                          onClick={() => handleEliminar(usuario)}
-                          disabled={usuario.is_superuser}
-                          className={`transition-all duration-200 hover:scale-110 ${
-                            usuario.is_superuser
-                              ? 'text-slate-400 dark:text-slate-600 cursor-not-allowed'
-                              : filaInactiva
-                              ? 'bg-red-600 hover:bg-red-700 text-white border border-red-700 shadow-sm px-2 py-2 rounded-lg'
-                              : 'text-red-500 hover:text-red-400 dark:text-red-400 dark:hover:text-red-300'
-                          }`}
-                          title="Eliminar"
-                        >
-                          <FaTrash size={18} />
-                        </button>
-                      </div>
+                      {puedeGestionarUsuarios() && (
+                        <div className="flex justify-center gap-3">
+                          <button
+                            onClick={() => abrirModalEditar(usuario)}
+                            className={`transition-all duration-200 hover:scale-110 ${
+                              filaInactiva
+                                ? 'bg-red-600 hover:bg-red-700 text-white border border-red-700 shadow-sm px-2 py-2 rounded-lg'
+                                : 'text-blue-500 hover:text-blue-400 dark:text-blue-400 dark:hover:text-blue-300'
+                            }`}
+                            title="Editar"
+                          >
+                            <FaEdit size={18} />
+                          </button>
+                          <button
+                            onClick={() => handleEliminar(usuario)}
+                            disabled={usuario.is_superuser}
+                            className={`transition-all duration-200 hover:scale-110 ${
+                              usuario.is_superuser
+                                ? 'text-slate-400 dark:text-slate-600 cursor-not-allowed'
+                                : filaInactiva
+                                ? 'bg-red-600 hover:bg-red-700 text-white border border-red-700 shadow-sm px-2 py-2 rounded-lg'
+                                : 'text-red-500 hover:text-red-400 dark:text-red-400 dark:hover:text-red-300'
+                            }`}
+                            title="Eliminar"
+                          >
+                            <FaTrash size={18} />
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                     );

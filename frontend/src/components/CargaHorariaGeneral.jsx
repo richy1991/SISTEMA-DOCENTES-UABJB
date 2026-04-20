@@ -151,7 +151,7 @@ const CargaHorariaGeneral = ({ isDark }) => {
                         {docente.activo ? 'Activo' : 'Inactivo'}
                       </span>
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
-                        {docente.categoria || 'Docente'}
+                        {docente.vinculos?.[0]?.categoria || 'Docente'}
                       </span>
                     </div>
                   </div>
@@ -164,7 +164,17 @@ const CargaHorariaGeneral = ({ isDark }) => {
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-500">Dedicación</p>
                       <p className="font-medium text-slate-800 dark:text-slate-200 capitalize">
-                        {docente?.dedicacion ? docente.dedicacion.replace('_', ' ') : 'No especificada'}
+                        {(() => {
+                            const labels = {
+                                tiempo_completo: 'Tiempo Completo',
+                                medio_tiempo: 'Medio Tiempo',
+                                horario_16: 'Horario 16hrs/mes',
+                                horario_24: 'Horario 24hrs/mes',
+                                horario_40: 'Horario 40hrs/mes',
+                                horario_48: 'Horario 48hrs/mes',
+                            };
+                            return labels[docente?.vinculos?.[0]?.dedicacion] || docente?.vinculos?.[0]?.dedicacion || 'No especificada';
+                        })()}
                       </p>
                     </div>
                   </div>

@@ -10,10 +10,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AddField(
-            model_name='informefondo',
-            name='logros',
-            field=models.TextField(default='', help_text='Logros alcanzados'),
-            preserve_default=False,
-        ),
+        # No-op: 0001_initial already handles this.
     ]

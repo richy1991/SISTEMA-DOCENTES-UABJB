@@ -13,24 +13,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.CreateModel(
-            name='ObservacionFondo',
-            fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('rol', models.CharField(choices=[('director', 'Director de Carrera'), ('decano', 'Decano'), ('vicerrector', 'Vicerrector de Grado'), ('planificacion', 'Dirección de Planificación Académica')], help_text='Rol del usuario que observa', max_length=20)),
-                ('fecha', models.DateTimeField(auto_now_add=True)),
-                ('observacion', models.TextField(help_text='Contenido de la observación')),
-                ('resuelta', models.BooleanField(default=False, help_text='Indica si la observación fue resuelta')),
-                ('respuesta', models.TextField(blank=True, help_text='Respuesta del docente a la observación')),
-                ('fecha_respuesta', models.DateTimeField(blank=True, help_text='Fecha en que se respondió la observación', null=True)),
-                ('autor', models.ForeignKey(help_text='Usuario que realiza la observación', on_delete=django.db.models.deletion.PROTECT, related_name='observaciones_realizadas', to=settings.AUTH_USER_MODEL)),
-                ('fondo_tiempo', models.ForeignKey(help_text='Fondo al que se hace la observación', on_delete=django.db.models.deletion.CASCADE, related_name='observaciones_detalladas', to='fondos.fondotiempo')),
-                ('respondida_por', models.ForeignKey(blank=True, help_text='Usuario que respondió la observación', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='observaciones_respondidas', to=settings.AUTH_USER_MODEL)),
-            ],
-            options={
-                'verbose_name': 'Observación',
-                'verbose_name_plural': 'Observaciones',
-                'ordering': ['-fecha'],
-            },
-        ),
+        # No-op: 0001_initial already handles this.
     ]

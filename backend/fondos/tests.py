@@ -15,7 +15,7 @@ class FondoTiempoEvaluationTests(APITestCase):
         
         # Crear Usuarios y Perfiles
         self.admin_user = User.objects.create_user(username="admin", password="password123", is_staff=True)
-        self.admin_user.perfil.rol = 'admin'
+        self.admin_user.perfil.rol = 'iiisyp'
         self.admin_user.perfil.save()
 
         self.director_sistemas_user = User.objects.create_user(username="director_sis", password="password123", is_staff=True)
@@ -107,7 +107,7 @@ class UsuarioCargoUnicoTests(APITestCase):
             password="password123",
             is_staff=True,
         )
-        self.admin_user.perfil.rol = 'admin'
+        self.admin_user.perfil.rol = 'iiisyp'
         self.admin_user.perfil.save()
 
         self.director_actual = User.objects.create_user(

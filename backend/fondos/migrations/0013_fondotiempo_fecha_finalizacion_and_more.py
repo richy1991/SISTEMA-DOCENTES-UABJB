@@ -10,19 +10,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AddField(
-            model_name='fondotiempo',
-            name='fecha_finalizacion',
-            field=models.DateTimeField(blank=True, null=True),
-        ),
-        migrations.AddField(
-            model_name='fondotiempo',
-            name='fecha_informe',
-            field=models.DateTimeField(blank=True, null=True),
-        ),
-        migrations.AddField(
-            model_name='fondotiempo',
-            name='fecha_inicio_ejecucion',
-            field=models.DateTimeField(blank=True, null=True),
-        ),
+        # No-op: 0001_initial already handles this.
     ]

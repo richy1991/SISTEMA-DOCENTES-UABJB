@@ -11,16 +11,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.CreateModel(
-            name='Materia',
-            fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('nombre', models.CharField(max_length=200)),
-                ('sigla', models.CharField(max_length=20)),
-                ('semestre', models.IntegerField()),
-                ('horas_teoricas', models.IntegerField(default=0)),
-                ('horas_practicas', models.IntegerField(default=0)),
-                ('carrera', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='materias', to='fondos.carrera')),
-            ],
-        ),
+        # No-op: 0001_initial already handles this.
     ]

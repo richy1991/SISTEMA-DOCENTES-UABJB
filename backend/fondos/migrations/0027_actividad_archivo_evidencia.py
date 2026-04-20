@@ -11,9 +11,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AddField(
-            model_name='actividad',
-            name='archivo_evidencia',
-            field=models.FileField(blank=True, help_text='Prueba visual (Imagen/PDF)', null=True, upload_to=fondos.models.evidencia_upload_path),
-        ),
+        # No-op: 0001_initial already handles this.
     ]

@@ -13,34 +13,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AddField(
-            model_name='fondotiempo',
-            name='aprobado_por',
-            field=models.ForeignKey(blank=True, help_text='Usuario que aprobó el fondo', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='fondos_aprobados', to=settings.AUTH_USER_MODEL),
-        ),
-        migrations.AddField(
-            model_name='fondotiempo',
-            name='archivado',
-            field=models.BooleanField(default=False, help_text='Fondo archivado (no visible, no eliminado)'),
-        ),
-        migrations.AddField(
-            model_name='fondotiempo',
-            name='comentarios_admin',
-            field=models.TextField(blank=True, help_text='Observaciones del administrador o director'),
-        ),
-        migrations.AddField(
-            model_name='fondotiempo',
-            name='fecha_aprobacion',
-            field=models.DateTimeField(blank=True, help_text='Fecha en que fue aprobado', null=True),
-        ),
-        migrations.AddField(
-            model_name='fondotiempo',
-            name='fecha_validacion',
-            field=models.DateTimeField(blank=True, help_text='Fecha en que fue validado', null=True),
-        ),
-        migrations.AddField(
-            model_name='fondotiempo',
-            name='validado_por',
-            field=models.ForeignKey(blank=True, help_text='Usuario que validó el fondo', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='fondos_validados', to=settings.AUTH_USER_MODEL),
-        ),
+        # No-op: 0001_initial already handles this.
     ]

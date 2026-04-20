@@ -13,35 +13,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.CreateModel(
-            name='ComentarioPOA',
-            fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('gestion', models.IntegerField(db_index=True, verbose_name='Año de Gestión')),
-                ('abierto', models.BooleanField(default=True, verbose_name='Hilo activo')),
-                ('creado_en', models.DateTimeField(auto_now_add=True)),
-                ('documento', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='comentarios', to='poa_document.documentopoa', verbose_name='Documento POA')),
-            ],
-            options={
-                'verbose_name': 'Conversación POA',
-                'verbose_name_plural': 'Conversaciones POA',
-                'ordering': ['-creado_en'],
-            },
-        ),
-        migrations.CreateModel(
-            name='MensajeComentarioPOA',
-            fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('texto', models.TextField(verbose_name='Mensaje')),
-                ('es_revisor', models.BooleanField(default=False)),
-                ('fecha', models.DateTimeField(auto_now_add=True)),
-                ('autor', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='mensajes_poa', to=settings.AUTH_USER_MODEL, verbose_name='Autor')),
-                ('comentario', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='mensajes', to='poa_document.comentariopoa', verbose_name='Hilo de conversación')),
-            ],
-            options={
-                'verbose_name': 'Mensaje POA',
-                'verbose_name_plural': 'Mensajes POA',
-                'ordering': ['fecha'],
-            },
-        ),
+        # No-op: 0001_initial already handles this.
     ]

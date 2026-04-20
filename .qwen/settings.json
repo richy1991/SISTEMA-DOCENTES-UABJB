@@ -15,7 +15,18 @@
       "Bash(git stash)",
       "Bash(git pull)",
       "Bash(git stash *)",
-      "Bash(git show *)"
+      "Bash(git show *)",
+      "Bash(f *)",
+      "Bash('dir /b \"c:\\users\\denytv\\onedrive\\documentos\\github\\sistema-docentes-uabjb\\backend\\poa_document\\migrations\\*.py\" ^| findstr /v \"__init__\"')",
+      "Bash(git checkout *)",
+      "Bash('dir /b 0003_*.py 0004_*.py 0005_*.py 0006_*.py 0007_*.py 0008_*.py 0009_*.py 0010_*.py 0011_*.py 0012_*.py 0013_*.py 0014_*.py 0015_*.py 0016_*.py 0017_*.py 0018_*.py 0019_*.py 0020_*.py 0021_*.py 0022_*.py 0023_*.py 0024_*.py 0025_*.py 0026_*.py 0027_*.py 0028_*.py 0029_*.py 0030_*.py 0031_*.py 0032_*.py 0033_*.py 0034_*.py 0035_*.py 0053_*.py 0054_*.py 0055_*.py 0056_*.py')",
+      "Bash(do)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(set *)",
+      "Bash(npx *)",
+      "Bash(git rm *)"
     ]
   },
   "$version": 3

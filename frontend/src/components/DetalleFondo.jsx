@@ -8,20 +8,23 @@ import DistribuirHoras from './DistribuirHoras';
 import FormularioActividad from './FormularioActividad';
 import FormularioObservar from './FormularioObservar';
 import BotonFlotanteObservaciones from './BotonFlotanteObservaciones';
+
+// Helpers para extraer datos del vínculo DocenteCarrera desde docente.vinculos
+const getVinculoCarrera = (docente, carreraId) => {
+  if (!docente?.vinculos) return null;
+  return docente.vinculos.find(v => String(v.carrera) === String(carreraId)) || docente.vinculos[0] || null;
+};
 import FormularioPresentarInforme from './FormularioPresentarInforme';
 import FormularioEvaluarInforme from './FormularioEvaluarInforme';
 import ThemeToggle from './ThemeToggle';
 import CargaHorariaManager from './CargaHorariaManager';
-import toast from 'react-hot-toast';
-import EstadoTimeline from './fondos/EstadoTimeline';
-import TimelineObservaciones from './fondos/TimelineObservaciones';
-import PDFPreviewModal from './PDFPreviewModal';
+import { FileText as ArchivoIcon, Check as CheckIcon, Trash2 as TrashIcon, AlertTriangle as AlertTriangleIcon, Info as InfoIcon, Send as SendIcon, EyeOff as EyeOffIcon, X as XIcon, Plus as PlusIcon, ChevronDown as ChevronDownIcon, ChevronUp as ChevronUpIcon, Pencil as PencilIcon, Calendar as CalendarIcon, User as UserIcon } from 'lucide-react';
 import { Eye, CheckCircle2, FileDown, ChevronLeft, ChevronRight } from 'lucide-react';
 
-const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4'];
-const CATEGORIAS_BLOQUEADAS = [];
+// Alias for template consistency
+const EyeIcon = Eye;
 
-// --- ICONOS ---
+// --- Iconos SVG personalizados ---
 const PaperAirplaneIcon = (props) => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
@@ -43,12 +46,6 @@ const CheckBadgeIcon = (props) => (
 const ArrowPathIcon = (props) => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0011.664 0l3.181-3.183m-3.181-3.182l-3.182 3.182m0 0a8.25 8.25 0 01-11.664 0l-3.182-3.182" />
-  </svg>
-);
-
-const PlusIcon = (props) => (
-  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
   </svg>
 );
 
@@ -74,18 +71,6 @@ const DocumentTextIcon = (props) => (
 const DocumentMagnifyingGlassIcon = (props) => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m.75 12l3 3m0 0l3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-  </svg>
-);
-
-const PencilIcon = (props) => (
-  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
-  </svg>
-);
-
-const TrashIcon = (props) => (
-  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
   </svg>
 );
 
@@ -136,6 +121,13 @@ const ExternalLinkIcon = (props) => (
     <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
   </svg>
 );
+import toast from 'react-hot-toast';
+import EstadoTimeline from './fondos/EstadoTimeline';
+import TimelineObservaciones from './fondos/TimelineObservaciones';
+import PDFPreviewModal from './PDFPreviewModal';
+
+const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4'];
+const CATEGORIAS_BLOQUEADAS = [];
 
 const CATEGORY_ICONS = {
   'docente': DocenteIcon,
@@ -157,6 +149,11 @@ function DetalleFondo({ isDark }) {
   const [mostrarFormActividad, setMostrarFormActividad] = useState(false);
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState(null);
   const [mostrarFormObservar, setMostrarFormObservar] = useState(false);
+
+  // Extraer datos del vínculo DocenteCarrera para el docente de este fondo
+  const vinculo = getVinculoCarrera(fondo?.docente, fondo?.carrera);
+  const dedicacionDocente = vinculo?.dedicacion || null;
+  const categoriaDocente = vinculo?.categoria || null;
   const [mostrarModalAprobar, setMostrarModalAprobar] = useState(false);
   const observacionesRef = useRef();
   const [observacionesPendientes, setObservacionesPendientes] = useState(0);
@@ -193,7 +190,8 @@ function DetalleFondo({ isDark }) {
   });
   const [enviandoInforme, setEnviandoInforme] = useState(false);
 
-  const esAdmin = usuarioActual?.perfil?.rol === 'admin';
+  // iiisyp es solo lectura: no puede aprobar ni gestionar fondos
+  const esAdmin = false;
   const esJefeEstudios = usuarioActual?.perfil?.rol === 'jefe_estudios';
   const puedeGestionarCarga = esJefeEstudios;
   const soloLecturaPorRol = !esJefeEstudios;
@@ -991,7 +989,7 @@ function DetalleFondo({ isDark }) {
 
               {/* Widgets de Información Secundaria apilados verticalmente (Categoría arriba de Balance) */}
               <div className="flex flex-col gap-2.5 justify-center w-full lg:w-48 shrink-0">
-                {fondo.docente?.categoria && (
+                {categoriaDocente && (
                   <div className="bg-slate-50/70 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700/80 px-4 py-2 flex items-center justify-start gap-3 w-full shadow-sm hover:shadow transition-shadow">
                     <div className="text-slate-500 dark:text-slate-400 flex items-center justify-center shrink-0">
                       <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>
@@ -999,13 +997,13 @@ function DetalleFondo({ isDark }) {
                     <div className="flex flex-col text-left">
                       <span className="text-[10px] font-bold tracking-widest text-slate-800 dark:text-slate-200 uppercase leading-none pb-0.5">Categoría</span>
                       <span className="font-bold text-slate-800 dark:text-slate-200 text-sm capitalize leading-tight">
-                        {fondo.docente?.categoria}
+                        {categoriaDocente}
                       </span>
                     </div>
                   </div>
                 )}
 
-                {fondo.docente?.dedicacion && (
+                {dedicacionDocente && (
                   <div className="bg-slate-50/70 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700/80 px-4 py-2 flex items-center justify-start gap-3 w-full shadow-sm hover:shadow transition-shadow">
                     <div className="text-slate-500 dark:text-slate-400 flex items-center justify-center shrink-0">
                       <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" /></svg>
@@ -1013,7 +1011,15 @@ function DetalleFondo({ isDark }) {
                     <div className="flex flex-col text-left">
                       <span className="text-[10px] font-bold tracking-widest text-slate-800 dark:text-slate-200 uppercase leading-none pb-0.5">Balance Legal</span>
                       <div className="flex items-center gap-1.5 leading-tight">
-                        <span className="font-bold text-slate-800 dark:text-slate-200 text-sm">{fondo.docente?.dedicacion === 'tiempo_completo' ? 'TC' : fondo.docente?.dedicacion === 'medio_tiempo' ? 'MT' : 'TH'}</span>
+                        <span className="font-bold text-slate-800 dark:text-slate-200 text-sm">
+                            {dedicacionDocente === 'tiempo_completo' ? 'TC'
+                             : dedicacionDocente === 'medio_tiempo' ? 'MT'
+                             : dedicacionDocente === 'horario_16' ? 'TH-16'
+                             : dedicacionDocente === 'horario_24' ? 'TH-24'
+                             : dedicacionDocente === 'horario_40' ? 'TH-40'
+                             : dedicacionDocente === 'horario_48' ? 'TH-48'
+                             : 'TH'}
+                        </span>
                         <span className="text-green-500 font-bold">•</span>
                         <span className="font-bold text-slate-800 dark:text-slate-200 text-xs">{fondo.antiguedad} años</span>
                       </div>

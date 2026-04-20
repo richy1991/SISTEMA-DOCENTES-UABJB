@@ -10,37 +10,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AlterUniqueTogether(
-            name='fondotiempo',
-            unique_together=set(),
-        ),
-        migrations.AddField(
-            model_name='fondotiempo',
-            name='fecha_presentacion',
-            field=models.DateTimeField(blank=True, help_text='Fecha de presentación a Director de Carrera', null=True),
-        ),
-        migrations.AddField(
-            model_name='fondotiempo',
-            name='periodo',
-            field=models.CharField(choices=[('1', 'Primer Semestre'), ('2', 'Segundo Semestre'), ('anual', 'Anual')], default='1', help_text='Periodo académico según calendario', max_length=10),
-        ),
-        migrations.AddField(
-            model_name='fondotiempo',
-            name='programa_analitico_url',
-            field=models.URLField(blank=True, help_text='URL del programa analítico (Google Drive, etc.)'),
-        ),
-        migrations.AddField(
-            model_name='fondotiempo',
-            name='tiene_programa_analitico',
-            field=models.BooleanField(default=False, help_text='Indica si se adjuntó el programa analítico (obligatorio Art. 15)'),
-        ),
-        migrations.AlterField(
-            model_name='fondotiempo',
-            name='estado',
-            field=models.CharField(choices=[('borrador', 'Borrador'), ('presentado_director', 'Presentado a Director de Carrera'), ('revision_director', 'En Revisión por Director'), ('aprobado_director', 'Aprobado por Director de Carrera'), ('en_ejecucion', 'En Ejecución'), ('informe_presentado', 'Informe Presentado'), ('evaluado_director', 'Evaluado por Director'), ('informado_decanatura', 'Informado a Decanatura'), ('informado_vicerrectorado', 'Informado a Vicerrectorado'), ('finalizado', 'Finalizado'), ('observado', 'Con Observaciones'), ('rechazado', 'Rechazado'), ('archivado', 'Archivado')], default='borrador', max_length=30),
-        ),
-        migrations.AlterUniqueTogether(
-            name='fondotiempo',
-            unique_together={('docente', 'gestion', 'periodo', 'asignatura')},
-        ),
+        # No-op: 0001_initial already handles this.
     ]

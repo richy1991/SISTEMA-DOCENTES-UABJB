@@ -8,16 +8,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AlterField(
-            model_name='fondotiempo',
-            name='calendario_academico',
-            field=models.ForeignKey(
-                blank=True,
-                help_text='Calendario académico al que pertenece este fondo (si aplica)',
-                null=True,
-                on_delete=models.PROTECT,
-                related_name='fondos',
-                to='fondos.calendarioacademico',
-            ),
-        ),
+        # No-op: 0001_initial already handles this.
     ]

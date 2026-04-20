@@ -18,7 +18,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from .models import (
     Docente, Carrera, Materia, FondoTiempo, CategoriaFuncion, Actividad, PerfilUsuario, CargaHoraria,
     CalendarioAcademico, Proyecto, InformeFondo, ObservacionFondo, MensajeObservacion, HistorialFondo,
-    SaldoVacacionesGestion, FacultadCatalogo
+    SaldoVacacionesGestion, FacultadCatalogo, DatosLaborales
 )
 from .serializers import (
     DocenteSerializer, CarreraSerializer, MateriaSerializer, FondoTiempoSerializer,
@@ -31,7 +31,7 @@ from .serializers import (
     HistorialFondoSerializer, DocenteDetalleSerializer,
     FondoTiempoDetalleSerializer, PresentarFondoSerializer,
     AprobarFondoSerializer, ObservarFondoSerializer,
-    SaldoVacacionesGestionSerializer,
+    SaldoVacacionesGestionSerializer, DatosLaboralesSerializer,
     CustomTokenObtainPairSerializer
 )
 
@@ -79,7 +79,7 @@ def _docentes_por_carreras(carreras):
 
 class IsFullAdmin(BasePermission):
     """
-    Permite acceso solo a usuarios autenticados con perfil y rol 'admin'.
+    Permite acceso solo a usuarios autenticados con perfil y rol 'iiisyp'.
     Bloquea a cualquier otro rol aunque tenga is_staff=True.
     """
     def has_permission(self, request, view):
@@ -87,14 +87,14 @@ class IsFullAdmin(BasePermission):
             request.user
             and request.user.is_authenticated
             and hasattr(request.user, 'perfil')
-            and request.user.perfil.rol == 'admin'
+            and request.user.perfil.rol == 'iiisyp'
         )
 
 class IsAdminOrDirector(BasePermission):
     def has_permission(self, request, view):
         return bool(request.user and request.user.is_authenticated and (
             request.user.is_superuser or 
-            (hasattr(request.user, 'perfil') and request.user.perfil.rol in ['admin', 'director'])
+            (hasattr(request.user, 'perfil') and request.user.perfil.rol in ['iiisyp', 'director'])
         ))
 
 class DocenteViewSet(viewsets.ModelViewSet):
@@ -129,7 +129,7 @@ class DocenteViewSet(viewsets.ModelViewSet):
             return Docente.objects.all()
         
         # Admin y Director de carrera ven docentes de sus carreras activas
-        if hasattr(user, 'perfil') and user.perfil.rol in ['admin', 'director']:
+        if hasattr(user, 'perfil') and user.perfil.rol in ['iiisyp', 'director']:
             carreras_activas = _obtener_carreras_activas_usuario(user)
             if carreras_activas.exists():
                 return _docentes_por_carreras(carreras_activas)
@@ -347,6 +347,26 @@ class SaldoVacacionesGestionViewSet(viewsets.ModelViewSet):
         return Response(resultado, status=status.HTTP_201_CREATED if resultado['errores'] == [] else status.HTTP_207_MULTI_STATUS)
 
 
+class DatosLaboralesViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet para gestionar DatosLaborales de cualquier usuario.
+
+    Permite que el admin (IIISYP) gestione los datos de empleo (vacaciones,
+    feriados, antigüedad) de usuarios administrativos puros (Director,
+    Jefe de Estudios, IIISYP) que no tienen ficha de Docente.
+    """
+    queryset = DatosLaborales.objects.all().select_related('docente', 'perfiles')
+    serializer_class = DatosLaboralesSerializer
+    permission_classes = [IsFullAdmin]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['ci', 'docente__nombres', 'docente__apellido_paterno']
+    ordering_fields = ['fecha_ingreso', 'ci']
+    ordering = ['-fecha_creacion']
+
+    def get_queryset(self):
+        return DatosLaborales.objects.all().select_related('docente', 'perfiles')
+
+
 class CarreraViewSet(viewsets.ModelViewSet):
     queryset = Carrera.objects.all()
     serializer_class = CarreraSerializer
@@ -386,7 +406,7 @@ class CarreraViewSet(viewsets.ModelViewSet):
         return user.perfil.rol
 
     def _can_edit_logo_only(self, user):
-        return self._rol_usuario(user) in ['admin', 'director', 'jefe_estudios']
+        return self._rol_usuario(user) in ['iiisyp', 'director', 'jefe_estudios']
 
     def _enforce_create_destroy_permission(self, request):
         if not self._is_superuser(request.user):
@@ -394,8 +414,8 @@ class CarreraViewSet(viewsets.ModelViewSet):
 
     def _enforce_manage_facultad_permission(self, request):
         rol = self._rol_usuario(request.user)
-        if not (self._is_superuser(request.user) or rol == 'admin'):
-            raise PermissionDenied('Solo el superusuario o el rol admin pueden gestionar facultades.')
+        if not (self._is_superuser(request.user) or rol == 'iiisyp'):
+            raise PermissionDenied('Solo el superusuario o el rol iiisyp pueden gestionar facultades.')
 
     def _serialize_facultades(self):
         # Solo devolver facultades que están en el catálogo editable
@@ -457,13 +477,23 @@ class CarreraViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if FacultadCatalogo.objects.filter(nombre__iexact=nombre).exists():
+        from django.core.exceptions import ValidationError
+        try:
+            FacultadCatalogo.objects.create(nombre=nombre)
+        except ValidationError as e:
+            # Extraer primer mensaje legible del ValidationError
+            if hasattr(e, 'message_dict'):
+                mensajes = [m for msgs in e.message_dict.values() for m in msgs]
+                detalle = mensajes[0] if mensajes else 'Dato inválido.'
+            elif hasattr(e, 'message'):
+                detalle = e.message
+            else:
+                detalle = str(e)
             return Response(
-                {'detail': 'La facultad ya existe en el catálogo.'},
+                {'detail': detalle},
                 status=status.HTTP_409_CONFLICT,
             )
 
-        FacultadCatalogo.objects.create(nombre=nombre)
         return Response(self._serialize_facultades(), status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated], url_path='facultades/eliminar')
@@ -477,7 +507,14 @@ class CarreraViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        facultad = FacultadCatalogo.objects.filter(nombre__iexact=nombre).first()
+        # Buscar usando comparación normalizada (acentos + case insensitive)
+        nombre_norm = FacultadCatalogo._normalizar(nombre)
+        facultad = None
+        for fac in FacultadCatalogo.objects.all():
+            if FacultadCatalogo._normalizar(fac.nombre) == nombre_norm:
+                facultad = fac
+                break
+
         if not facultad:
             return Response(
                 {'detail': 'La facultad no existe en el catálogo.'},
@@ -538,6 +575,25 @@ class CarreraViewSet(viewsets.ModelViewSet):
 
         # Superusuario: edición total de carrera.
         if self._is_superuser(user):
+            # 1) Bloquear cambio de codigo si ya tiene datos asociados
+            codigo = request.data.get('codigo', None)
+            if codigo is not None and codigo != instance.codigo:
+                counts_codigo = self._build_dependency_counts(instance)
+                if (
+                    counts_codigo['materias'] > 0
+                    or counts_codigo['fondos'] > 0
+                    or counts_codigo['docentes'] > 0
+                ):
+                    raise drf_serializers.ValidationError({
+                        'codigo': (
+                            f'No se puede cambiar el codigo de la carrera "{instance.nombre}" '
+                            f'porque ya tiene datos asociados '
+                            f'({counts_codigo["materias"]} materias, {counts_codigo["fondos"]} fondos, '
+                            f'{counts_codigo["docentes"]} docentes vinculados).'
+                        )
+                    })
+
+            # 2) Desactivar carrera: advertir con conteo pero permitir
             raw_activo = request.data.get('activo', None)
             if raw_activo is not None:
                 normalized = str(raw_activo).strip().lower()
@@ -548,21 +604,28 @@ class CarreraViewSet(viewsets.ModelViewSet):
                     if (
                         counts['materias'] > 0
                         or counts['informes'] > 0
+                        or counts['fondos'] > 0
                         or counts['usuarios'] > 0
                         or counts['docentes'] > 0
                     ):
-                        raise drf_serializers.ValidationError({
-                            'activo': (
-                                'No se puede desactivar esta carrera porque tiene '
-                                f"{counts['materias']} materias, {counts['informes']} informes, "
-                                f"{counts['usuarios']} usuarios y {counts['docentes']} docentes vinculados."
-                            )
-                        })
+                        # Se permite desactivar pero con advertencia en la respuesta
+                        request._desactivar_warning = (
+                            f'Advertencia: se está desactivando la carrera "{instance.nombre}" '
+                            f'que tiene datos activos: '
+                            f'{counts["materias"]} materias, {counts["fondos"]} fondos, '
+                            f'{counts["informes"]} informes, {counts["usuarios"]} usuarios, '
+                            f'{counts["docentes"]} docentes.'
+                        )
 
             serializer = self.get_serializer(instance, data=request.data, partial=partial)
             serializer.is_valid(raise_exception=True)
             self.perform_update(serializer)
-            return Response(serializer.data, status=status.HTTP_200_OK)
+
+            response_data = serializer.data.copy()
+            if hasattr(request, '_desactivar_warning'):
+                response_data['_warning'] = request._desactivar_warning
+
+            return Response(response_data, status=status.HTTP_200_OK)
 
         # Autoridades (admin/director/jefe): solo edición de logo desde modal Ver.
         if self._can_edit_logo_only(user):
@@ -621,8 +684,8 @@ class MateriaViewSet(viewsets.ModelViewSet):
         if self._usuario_carrera_inactiva():
             return queryset.none()
         
-        # Admin de carrera solo ve materias de sus carreras activas
-        if hasattr(user, 'perfil') and user.perfil.rol == 'admin':
+        # IIISYP de carrera solo ve materias de sus carreras activas
+        if hasattr(user, 'perfil') and user.perfil.rol == 'iiisyp':
             carreras_activas = _obtener_carreras_activas_usuario(user)
             if carreras_activas.exists():
                 return queryset.filter(carrera__in=carreras_activas)
@@ -699,7 +762,7 @@ class CargaHorariaViewSet(viewsets.ModelViewSet):
             raise PermissionDenied('Acceso bloqueado: tu carrera está inactiva.')
 
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            if not hasattr(self.request.user, 'perfil') or self.request.user.perfil.rol not in ['admin', 'jefe_estudios']:
+            if not hasattr(self.request.user, 'perfil') or self.request.user.perfil.rol not in ['iiisyp', 'jefe_estudios']:
                 raise PermissionDenied("Solo Jefes de Estudio o Administradores pueden modificar cargas horarias.")
         
         return super().get_permissions()
@@ -718,7 +781,7 @@ class CargaHorariaViewSet(viewsets.ModelViewSet):
         if self._usuario_carrera_inactiva():
             return queryset.none()
 
-        if not perfil or perfil.rol == 'admin' or user.is_staff:
+        if not perfil or perfil.rol == 'iiisyp' or user.is_staff:
             return queryset
 
         if perfil.rol in ['director', 'jefe_estudios']:
@@ -890,8 +953,8 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         if not perfil:
             return queryset.none()
 
-        # Admin ve todo
-        if perfil.rol == 'admin':
+        # IIISYP ve todo
+        if perfil.rol == 'iiisyp':
             return queryset
 
         # Director y Jefe de Estudios ven los de sus carreras activas
@@ -943,7 +1006,7 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
 
             if not perfil:
                 queryset = queryset.none()
-            elif perfil.rol == 'admin':
+            elif perfil.rol == 'iiisyp':
                 pass
             elif perfil.rol in ['director', 'jefe_estudios']:
                 carreras_activas = _obtener_carreras_activas_usuario(user)
@@ -1027,7 +1090,7 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
             perfil = None
 
         # 1. Permitir Admin/Superuser
-        if user.is_superuser or (perfil and perfil.rol == 'admin'):
+        if user.is_superuser or (perfil and perfil.rol == 'iiisyp'):
             pass
         # 2. Bloquear a Docentes
         elif perfil and perfil.rol == 'docente':
@@ -1858,11 +1921,19 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         return ''
 
     def _build_checklist_salud_pdf(self, fondo):
+        from .models import DocenteCarrera
+
         errores = []
         advertencias = []
 
         carrera = fondo.carrera
         docente = fondo.docente
+
+        # Obtener el vínculo DocenteCarrera para esta carrera
+        vinculo = DocenteCarrera.objects.filter(
+            docente=docente, carrera=carrera, activo=True
+        ).first()
+        horas_semanales = vinculo.horas_semanales_maximas if vinculo else 0
 
         # 1) Datos legales de la carrera
         if not carrera:
@@ -1900,7 +1971,7 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
             total_horas_anuales += float(carga.horas or 0)
             total_horas_semanales_horario += self._duracion_horas_bloque(carga.hora_inicio, carga.hora_fin)
 
-        dedicacion_esperada = float(docente.horas_semanales_maximas or 0) if docente else 0.0
+        dedicacion_esperada = float(horas_semanales) if horas_semanales else 0.0
         diferencia = abs(total_horas_semanales_horario - dedicacion_esperada)
         if diferencia > 0.01:
             errores.append(
@@ -2171,7 +2242,7 @@ class ObservacionFondoViewSet(viewsets.ModelViewSet):
             observacion=observacion,
             autor=request.user,
             texto=texto,
-            es_admin=request.user.perfil.rol in ['admin', 'director', 'jefe_estudios']
+            es_admin=request.user.perfil.rol in ['iiisyp', 'director', 'jefe_estudios']
        )
     
         # NUEVO: Si estaba resuelta y el admin envía mensaje, reabrir Y cambiar fondo a observado
@@ -2308,7 +2379,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         que puedan causar que la lista en el frontend esté incompleta.
         """
         roles = [
-            ('admin', 'Administrador'),
+            ('iiisyp', 'Instituto I.I.S. y P.'),
             ('director', 'Director de Carrera'),
             ('jefe_estudios', 'Jefe de Estudios'),
             ('docente', 'Docente'),
@@ -2339,8 +2410,8 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         if user.is_superuser:
             return queryset
 
-        # Admin de carrera solo ve usuarios de su misma carrera
-        if hasattr(user, 'perfil') and user.perfil.rol == 'admin':
+        # IIISYP de carrera solo ve usuarios de su misma carrera
+        if hasattr(user, 'perfil') and user.perfil.rol == 'iiisyp':
             carreras_activas = _obtener_carreras_activas_usuario(user)
             if carreras_activas.exists():
                 return queryset.filter(

@@ -12,29 +12,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.CreateModel(
-            name='CalendarioAcademico',
-            fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('gestion', models.IntegerField(help_text='Año académico', validators=[django.core.validators.MinValueValidator(2020), django.core.validators.MaxValueValidator(2100)])),
-                ('periodo', models.CharField(choices=[('1', 'Primer Semestre'), ('2', 'Segundo Semestre'), ('anual', 'Anual')], max_length=10)),
-                ('fecha_inicio', models.DateField(help_text='Inicio del periodo académico')),
-                ('fecha_fin', models.DateField(help_text='Fin del periodo académico')),
-                ('fecha_inicio_presentacion_proyectos', models.DateField(help_text='Inicio de presentación de proyectos y programas analíticos')),
-                ('fecha_limite_presentacion_proyectos', models.DateField(help_text='Fecha límite para presentar proyectos')),
-                ('semanas_efectivas', models.IntegerField(default=16, help_text='Número de semanas efectivas del periodo')),
-                ('activo', models.BooleanField(default=False, help_text='Solo puede haber un calendario activo por periodo')),
-            ],
-            options={
-                'verbose_name': 'Calendario Académico',
-                'verbose_name_plural': 'Calendarios Académicos',
-                'ordering': ['-gestion', '-periodo'],
-                'unique_together': {('gestion', 'periodo')},
-            },
-        ),
-        migrations.AddField(
-            model_name='fondotiempo',
-            name='calendario_academico',
-            field=models.ForeignKey(blank=True, help_text='Calendario académico al que pertenece este fondo', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='fondos', to='fondos.calendarioacademico'),
-        ),
+        # No-op: 0001_initial already handles this.
     ]

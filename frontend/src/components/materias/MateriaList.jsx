@@ -190,7 +190,8 @@ const MateriaList = ({ isDark, sidebarCollapsed = false }) => {
         }
     };
 
-    const canEdit = user?.is_superuser || user?.perfil?.rol === 'admin' || user?.perfil?.rol === 'director';
+    // iiisyp es solo lectura: solo superuser y director pueden editar/eliminar materias
+    const canEdit = user?.is_superuser || user?.perfil?.rol === 'director';
 
     // Obtener carreras desde la API
     const carrerasDisponibles = carreras.map(c => c.nombre || c.nombre_corto || c.codigo).filter(Boolean).sort();

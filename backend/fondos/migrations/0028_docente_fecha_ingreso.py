@@ -11,9 +11,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AddField(
-            model_name='docente',
-            name='fecha_ingreso',
-            field=models.DateField(default=django.utils.timezone.now, help_text='Fecha de ingreso a la institución para cálculo de antigüedad'),
-        ),
+        # No-op: 0001_initial already handles this.
     ]

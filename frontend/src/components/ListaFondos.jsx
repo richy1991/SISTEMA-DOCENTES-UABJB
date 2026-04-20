@@ -75,8 +75,9 @@ function ListaFondos({ isDark }) {
     return fondo.estado === 'borrador';
   };
 
+  // iiisyp es solo lectura: solo superuser puede archivar fondos
   const esAdmin = () => {
-    return user?.is_staff === true;
+    return user?.is_superuser === true;
   };
 
   if (loading) {
