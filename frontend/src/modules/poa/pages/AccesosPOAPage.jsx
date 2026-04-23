@@ -6,21 +6,11 @@ import AsignarAccesoPOAModal from '../components/AsignarAccesoPOAModal';
 import { useOutletContext } from 'react-router-dom';
 
 const ROL_COLOR = {
-  elaborador:       'bg-blue-100 text-blue-800 border-blue-200',
-  director_carrera: 'bg-indigo-100 text-indigo-800 border-indigo-200',
-  revisor_1:        'bg-violet-100 text-violet-800 border-violet-200',
-  revisor_2:        'bg-purple-100 text-purple-800 border-purple-200',
-  revisor_3:        'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-200',
-  revisor_4:        'bg-pink-100 text-pink-800 border-pink-200',
+  elaborador: 'bg-blue-100 text-blue-800 border-blue-200',
 };
 
 const ROL_DARK = {
-  elaborador:       'dark:bg-blue-900/40 dark:text-blue-200 dark:border-blue-700',
-  director_carrera: 'dark:bg-indigo-900/40 dark:text-indigo-200 dark:border-indigo-700',
-  revisor_1:        'dark:bg-violet-900/40 dark:text-violet-200 dark:border-violet-700',
-  revisor_2:        'dark:bg-purple-900/40 dark:text-purple-200 dark:border-purple-700',
-  revisor_3:        'dark:bg-fuchsia-900/40 dark:text-fuchsia-200 dark:border-fuchsia-700',
-  revisor_4:        'dark:bg-pink-900/40 dark:text-pink-200 dark:border-pink-700',
+  elaborador: 'dark:bg-blue-900/40 dark:text-blue-200 dark:border-blue-700',
 };
 
 const getRolLabel = (rol) => ROL_POA_CHOICES.find(r => r.value === rol)?.label || rol;

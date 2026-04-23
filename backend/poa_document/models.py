@@ -3,6 +3,7 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from catalogos.models import Direccion
+from fondos.models import Carrera
 
 
 class UsuarioPOA(models.Model):
@@ -13,11 +14,7 @@ class UsuarioPOA(models.Model):
     """
     ROL_CHOICES = [
         ('elaborador',      'Elaborador del POA'),
-        ('director_carrera','Director de Carrera'),
-        ('revisor_1',       'Entidad Revisora 1'),
-        ('revisor_2',       'Entidad Revisora 2'),
-        ('revisor_3',       'Entidad Revisora 3'),
-        ('revisor_4',       'Entidad Revisora 4'),
+        ('revisor',         'Revisor del POA'),
     ]
 
     user = models.ForeignKey(
@@ -75,11 +72,11 @@ class DocumentoPOA(models.Model):
     ]
 
     gestion = models.IntegerField(verbose_name="Año de Gestión")
-    unidad_solicitante = models.CharField(max_length=200)
+    unidad_solicitante = models.ForeignKey(Carrera, on_delete=models.PROTECT, verbose_name="Carrera")
     programa = models.CharField(max_length=200)
     objetivo_gestion_institucional = models.TextField()
-    elaborado_por = models.ForeignKey('UsuarioPOA', on_delete=models.SET_NULL, null=True, blank=True, related_name="documentos_elaborados")
-    jefe_unidad = models.ForeignKey('UsuarioPOA', on_delete=models.SET_NULL, null=True, blank=True, related_name="documentos_jefe")
+    elaborado_por = models.CharField(max_length=255, blank=True, default='', verbose_name="Nombre del elaborador")
+    jefe_unidad = models.CharField(max_length=255, blank=True, default='', verbose_name="Nombre del jefe de unidad")
     fecha_elaboracion = models.DateField()
     estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='elaboracion', verbose_name='Estado')
     # Comentarios/ajustes que registra la entidad revisora durante la revisión del documento.
@@ -90,10 +87,10 @@ class DocumentoPOA(models.Model):
     actualizado_en = models.DateTimeField(auto_now=True)
 
     class Meta:
-        # Evitar duplicados exactos: misma gestión + misma unidad + mismo programa
+        # Evitar duplicados exactos: misma gestión + misma carrera + mismo programa
         unique_together = ('gestion', 'unidad_solicitante', 'programa')
         indexes = [
-            models.Index(fields=['gestion', 'unidad_solicitante'], name='poa_doc_gestion_unidad_idx'),
+            models.Index(fields=['gestion', 'unidad_solicitante'], name='poa_doc_gestion_carrera_idx'),
         ]
 
     def __str__(self):
@@ -108,7 +105,6 @@ class RevisionDocumentoPOA(models.Model):
     ]
 
     TIPO_REVISOR_CHOICES = [
-        ('entidad', 'Entidad Revisora'),
         ('director', 'Director de Carrera'),
     ]
 

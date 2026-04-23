@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import ThemeToggle from './ThemeToggle';
 import api from '../apis/api';
 import toast from 'react-hot-toast';
+import { getPendingDirectorReviews } from '../apis/poa.api.js';
 
 // --- ICONOS ---
 // Se mantienen los mismos iconos, pero ahora se pueden personalizar más fácilmente.
@@ -57,6 +58,7 @@ const BuildingIcon = (props) => (
 // --- COMPONENTE PRINCIPAL ---
 const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
     const navigate = useNavigate();
+    const [poaPending, setPoaPending] = useState(0);
 
     // Lógica para obtener el nombre a mostrar (corregida)
     const fullName = `${user?.first_name || ''} ${user?.last_name || ''}`.trim();
@@ -66,6 +68,22 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
         onLogout();
         navigate('/login');
     };
+
+    useEffect(() => {
+      if (!user?.perfil?.rol || user.perfil.rol !== 'director') {
+        setPoaPending(0);
+        return;
+      }
+      const currentYear = new Date().getFullYear();
+      getPendingDirectorReviews(currentYear)
+        .then((res) => {
+          setPoaPending(res.data.count || 0);
+        })
+        .catch((err) => {
+          console.warn('Error fetching POA pending:', err);
+          setPoaPending(0);
+        });
+    }, [user]);
 
     const modules = [
         {
@@ -94,11 +112,12 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
         },
         {
             name: 'POA',
-            description: 'Plan Operativo Anual.',
+            description: `Plan Operativo Anual.${poaPending > 0 ? ` (${poaPending} pendiente${poaPending > 1 ? 's' : ''})` : ''}`,
             path: '/poa',
             icon: POAIcon,
             color: 'green',
             enabled: true,
+            pendingCount: poaPending,
         },
     ];
 
@@ -237,7 +256,7 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
 
                 {/* Grid de Módulos */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl">
-                    {modules.filter(m => m.enabled).map((module, index) => {
+                {modules.filter(m => m.enabled).map((module, index) => {
                         const vector = moduleEntryVectors[index] || moduleEntryVectors[moduleEntryVectors.length - 1];
                         return (
                             <div
@@ -249,7 +268,7 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
                                     animationDelay: `${160 + index * 120}ms`,
                                 }}
                             >
-                                <ModuleCard {...module} onClick={module.action} />
+                                <ModuleCard {...module} pendingCount={module.pendingCount || 0} />
                             </div>
                         );
                     })}
@@ -300,7 +319,7 @@ const FloatingToolButton = ({ name, description, path, icon: Icon, color }) => {
 };
 
 // --- TARJETA DE MÓDULO REDISEÑADA ---
-const ModuleCard = ({ name, description, path, icon: Icon, color, enabled, onClick }) => {
+const ModuleCard = ({ name, description, path, icon: Icon, color, enabled, onClick, pendingCount = 0 }) => {
     
     const colorClasses = {
         blue: {
@@ -367,8 +386,13 @@ const ModuleCard = ({ name, description, path, icon: Icon, color, enabled, onCli
             {/* Anillo brillante en hover */}
             {enabled && <div className={`absolute inset-0 rounded-2xl ring-4 ring-transparent ${currentColors.hoverGlow} transition-all duration-300`}></div>}
             
-            <div className="mb-4 transition-transform duration-300 group-hover:scale-110">
+            <div className="mb-4 transition-transform duration-300 group-hover:scale-110 relative">
                 <Icon className={`h-14 w-14 ${currentColors.icon}`} />
+                {pendingCount > 0 && (
+                  <div className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-lg border-2 border-white animate-pulse">
+                    {pendingCount > 9 ? '9+' : pendingCount}
+                  </div>
+                )}
             </div>
             
             <h2 className="text-2xl font-bold text-slate-800 dark:text-white">{name}</h2>

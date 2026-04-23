@@ -103,7 +103,7 @@ class DocumentoPOAPDFGenerator:
             [Paragraph('<b>ENTIDAD</b>', styles['cell_bold']), Paragraph('UAB', styles['cell'])],
             [Paragraph('<b>GESTIÓN</b>', styles['cell_bold']), Paragraph(DocumentoPOAPDFGenerator._texto(documento.gestion), styles['cell'])],
             [Paragraph('<b>PROGRAMA</b>', styles['cell_bold']), Paragraph(DocumentoPOAPDFGenerator._texto(documento.programa), styles['cell'])],
-            [Paragraph('<b>UNIDAD SOLICITANTE</b>', styles['cell_bold']), Paragraph(DocumentoPOAPDFGenerator._texto(documento.unidad_solicitante), styles['cell'])],
+            [Paragraph('<b>UNIDAD SOLICITANTE</b>', styles['cell_bold']), Paragraph(DocumentoPOAPDFGenerator._texto(documento.unidad_solicitante.nombre if documento.unidad_solicitante else None), styles['cell'])],
             [Paragraph('<b>OBJETIVO DE GESTIÓN INSTITUCIONAL</b>', styles['cell_bold']), Paragraph(DocumentoPOAPDFGenerator._texto(documento.objetivo_gestion_institucional), styles['cell'])],
         ]
         t = Table(data, colWidths=col_widths, repeatRows=0)
@@ -117,8 +117,8 @@ class DocumentoPOAPDFGenerator:
         else:
             col_widths = [170, 430, 125]
 
-        jefe = DocumentoPOAPDFGenerator._texto(getattr(documento.jefe_unidad, 'nombre_display', None), 'No asignado')
-        elaborado = DocumentoPOAPDFGenerator._texto(getattr(documento.elaborado_por, 'nombre_display', None), 'No asignado')
+        jefe = DocumentoPOAPDFGenerator._texto(documento.jefe_unidad or '', 'No asignado')
+        elaborado = DocumentoPOAPDFGenerator._texto(documento.elaborado_por or '', 'No asignado')
         fecha = DocumentoPOAPDFGenerator._texto(documento.fecha_elaboracion)
         data = [
             [Paragraph('<b>Responsables de la información</b>', styles['cell_bold']), '', ''],

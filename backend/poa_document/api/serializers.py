@@ -116,29 +116,36 @@ class HistorialDocumentoPOASerializer(serializers.ModelSerializer):
 
 
 class DocumentoPOASerializer(serializers.ModelSerializer):
-    elaborado_por = UsuarioPOASerializer(read_only=True)
-    jefe_unidad = UsuarioPOASerializer(read_only=True)
+    unidad_solicitante_data = serializers.SerializerMethodField()
 
-    elaborado_por_id = serializers.PrimaryKeyRelatedField(queryset=UsuarioPOA.objects.all(), source='elaborado_por', write_only=True, required=False, allow_null=True)
-    jefe_unidad_id = serializers.PrimaryKeyRelatedField(queryset=UsuarioPOA.objects.all(), source='jefe_unidad', write_only=True, required=False, allow_null=True)
+    class Meta:
+        model = DocumentoPOA
+        fields = [
+            'id', 'gestion', 'unidad_solicitante', 'unidad_solicitante_data', 'programa',
+            'objetivo_gestion_institucional', 'elaborado_por', 'jefe_unidad', 'fecha_elaboracion',
+            'estado', 'observaciones', 'ciclo_revision_actual', 'creado_en', 'actualizado_en',
+            'objetivos', 'revisiones_activas', 'historial'
+        ]
 
     objetivos = serializers.SerializerMethodField()
     revisiones_activas = serializers.SerializerMethodField()
     historial = serializers.SerializerMethodField()
 
-    class Meta:
-        model = DocumentoPOA
-        fields = [
-            'id', 'gestion', 'unidad_solicitante', 'programa', 'objetivo_gestion_institucional',
-            'elaborado_por', 'jefe_unidad', 'fecha_elaboracion', 'estado', 'observaciones', 'ciclo_revision_actual',
-            'creado_en', 'actualizado_en', 'elaborado_por_id', 'jefe_unidad_id', 'objetivos', 'revisiones_activas', 'historial'
-        ]
+    def get_unidad_solicitante_data(self, obj):
+        if obj.unidad_solicitante:
+            return {
+                'id': obj.unidad_solicitante.id,
+                'nombre': obj.unidad_solicitante.nombre,
+                'codigo': getattr(obj.unidad_solicitante, 'codigo', ''),
+            }
+        return None
 
     def validate(self, attrs):
         request = self.context.get('request')
         user = getattr(request, 'user', None)
-        elaborado_por = attrs.get('elaborado_por', getattr(self.instance, 'elaborado_por', None))
-        jefe_unidad = attrs.get('jefe_unidad', getattr(self.instance, 'jefe_unidad', None))
+        unidad_solicitante = attrs.get('unidad_solicitante', getattr(self.instance, 'unidad_solicitante', None))
+        elaborado_por = attrs.get('elaborado_por', getattr(self.instance, 'elaborado_por', ''))
+        jefe_unidad = attrs.get('jefe_unidad', getattr(self.instance, 'jefe_unidad', ''))
         estado = attrs.get('estado', getattr(self.instance, 'estado', 'elaboracion'))
         observaciones = attrs.get('observaciones', getattr(self.instance, 'observaciones', ''))
 
@@ -150,22 +157,11 @@ class DocumentoPOASerializer(serializers.ModelSerializer):
             if not carrera:
                 errors['unidad_solicitante'] = 'El usuario no tiene una carrera asignada para crear o editar documentos POA.'
             else:
-                attrs['unidad_solicitante'] = carrera.nombre
+                # Asignar la FK de carrera en lugar del nombre
+                attrs['unidad_solicitante'] = carrera
 
-        if elaborado_por is not None:
-            if not elaborado_por.activo:
-                errors['elaborado_por_id'] = 'El usuario seleccionado para "Elaborado por" debe estar activo en Accesos POA.'
-            elif elaborado_por.rol != 'elaborador':
-                errors['elaborado_por_id'] = 'El usuario seleccionado para "Elaborado por" debe tener el rol Elaborador del POA.'
-
-        if jefe_unidad is not None:
-            if not jefe_unidad.activo:
-                errors['jefe_unidad_id'] = 'El usuario seleccionado para "Jefe de unidad" debe estar activo en Accesos POA.'
-            elif jefe_unidad.rol != 'director_carrera':
-                errors['jefe_unidad_id'] = 'El usuario seleccionado para "Jefe de unidad" debe tener el rol Director de Carrera.'
-
-        if elaborado_por is not None and jefe_unidad is not None and elaborado_por.pk == jefe_unidad.pk:
-            errors['non_field_errors'] = '"Elaborado por" y "Jefe de unidad" deben ser personas diferentes.'
+        if not unidad_solicitante:
+            errors['unidad_solicitante'] = 'La unidad solicitante (carrera) es obligatoria.'
 
         if estado == 'observado' and not str(observaciones or '').strip():
             errors['observaciones'] = 'Debe registrar observaciones cuando el estado es Observado.'

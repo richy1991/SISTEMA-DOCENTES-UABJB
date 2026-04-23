@@ -18,7 +18,7 @@ import CatalogoItems from './pages/CatalogoItems';
 import CatalogosMenu from './pages/CatalogosMenu';
 import Reportes from './pages/Reportes';
 import PresupuestosPage from './pages/PresupuestosPage';
-import { getUsuariosPOA } from '../../apis/poa.api';
+import { getUsuariosPOA, getPendingDirectorReviews } from '../../apis/poa.api';
 
 const getInitialTheme = () => {
   if (typeof window === 'undefined') return 'dark';
@@ -39,6 +39,7 @@ function POAApp({ user }) {
   const [forceShowHeader, setForceShowHeader] = useState(false);
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const [poaRoles, setPoaRoles] = useState([]);
+  const [pendingReviews, setPendingReviews] = useState(0);
   const lastScrollY = useRef(0);
   const scrollTimeout = useRef(null);
 
@@ -63,7 +64,8 @@ function POAApp({ user }) {
           const byDocente = docenteId > 0 && (Number(a?.docente) === docenteId || Number(a?.docente_detalle?.id) === docenteId);
           return byUser || byDocente;
         });
-        const roles = [...new Set(propios.map((a) => a?.rol).filter(Boolean))];
+        let roles = [...new Set(propios.map((a) => a?.rol).filter(Boolean))];
+
         setPoaRoles(roles);
       })
       .catch(() => {
@@ -73,13 +75,26 @@ function POAApp({ user }) {
     return () => { mounted = false; };
   }, [user?.id]);
 
+  // Fetch pending reviews for director
+  useEffect(() => {
+    if (!user?.perfil?.rol || user.perfil.rol !== 'director') {
+      setPendingReviews(0);
+      return;
+    }
+    const currentYear = new Date().getFullYear();
+    getPendingDirectorReviews(currentYear)
+      .then((res) => setPendingReviews(res.data.count || 0))
+      .catch(() => setPendingReviews(0));
+  }, [user]);
+
   // Admin principal POA: superusuario global o administrador de carrera (iiisyp)
   const isAdminPrincipal = Boolean(user?.is_superuser || user?.perfil?.rol === 'iiisyp');
 
   const poaPermissions = {
     canEdit: poaRoles.includes('elaborador'),
     canManageAccess: poaRoles.includes('elaborador') || isAdminPrincipal,
-    canReview: poaRoles.some((r) => ['revisor_1', 'revisor_2', 'revisor_3', 'revisor_4', 'director_carrera'].includes(r)),
+    // Director puede revisar: del sistema principal
+    canReview: user?.perfil?.rol === 'director',
   };
 
   // Control del header por scroll
@@ -210,6 +225,7 @@ function POAApp({ user }) {
         user={user}
         poaPermissions={poaPermissions}
         poaRoles={poaRoles}
+        pendingReviews={pendingReviews}
       />
 
       {/* Modal de gestiÃ³n */}

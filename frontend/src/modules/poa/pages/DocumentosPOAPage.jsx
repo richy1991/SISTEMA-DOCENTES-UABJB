@@ -31,6 +31,7 @@ import {
   aprobarDocumentoPOA,
   observarDocumentoPOA,
   getUsuariosPOA,
+  getDirectoresSistema,
   descargarReporteGeneralPOA,
   API_BASE,
 } from '../../../apis/poa.api';
@@ -49,7 +50,7 @@ const REVISION_STATE_STYLES = {
   observado: 'bg-orange-500/10 text-orange-500 border border-orange-400/20',
 };
 
-const ENTITY_ROLES = ['revisor_1', 'revisor_2', 'revisor_3', 'revisor_4'];
+const ENTITY_ROLES = [];
 
 const formatDateTime = (value) => {
   if (!value) return 'Sin fecha';
@@ -72,10 +73,10 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
   const [showModal, setShowModal] = useState(false);
   const [showNuevoModal, setShowNuevoModal] = useState(false);
   const [showConversacionModal, setShowConversacionModal] = useState(false);
-  const [showRevisionModal, setShowRevisionModal] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showPdfPreviewModal, setShowPdfPreviewModal] = useState(false);
   const [conversacionDoc, setConversacionDoc] = useState(null);
-  const [revisionDoc, setRevisionDoc] = useState(null);
+  const [confirmDoc, setConfirmDoc] = useState(null);
   const [pdfPreviewDoc, setPdfPreviewDoc] = useState(null);
   const [editingDoc, setEditingDoc] = useState(null);
   const [showBitacoraModal, setShowBitacoraModal] = useState(false);
@@ -99,9 +100,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
   const [error, setError] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [updatingEstadoId, setUpdatingEstadoId] = useState(null);
-  const [reviewerOptions, setReviewerOptions] = useState([]);
-  const [reviewSelectionsByDoc, setReviewSelectionsByDoc] = useState({});
-  const [reviewNotesByDoc, setReviewNotesByDoc] = useState({});
+
 
   const resolveGestionCandidate = (value) => {
     if (value === undefined || value === null || value === '') return null;
@@ -128,6 +127,11 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
   const hasGestionSelected = Boolean(gestionState || location?.state?.gestion);
 
   const openNuevo = () => {
+    const pendingGestion = sessionStorage.getItem('poa_pending_gestion');
+    if (pendingGestion) {
+      setGestionState(pendingGestion);
+      sessionStorage.removeItem('poa_pending_gestion');
+    }
     setEditingDoc(null);
     setShowNuevoModal(true);
   };
@@ -145,35 +149,9 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
     return () => window.removeEventListener('open-new', handler);
   }, [canEdit]);
 
-  useEffect(() => {
-    let mounted = true;
-    getUsuariosPOA({ activo: true })
-      .then((res) => {
-        if (!mounted) return;
-        const list = Array.isArray(res.data) ? res.data : (res.data?.results || []);
-        setReviewerOptions(list.filter((item) => ENTITY_ROLES.includes(item?.rol)));
-      })
-      .catch(() => {
-        if (mounted) setReviewerOptions([]);
-      });
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
-  useEffect(() => {
-    setReviewSelectionsByDoc((prev) => {
-      const next = { ...prev };
-      for (const doc of docs || []) {
-        if (next[doc.id]?.length) continue;
-        const activeEntityReviews = (doc.revisiones_activas || []).filter((revision) => revision.tipo_revisor === 'entidad');
-        if (activeEntityReviews.length > 0) {
-          next[doc.id] = activeEntityReviews.map((revision) => Number(revision.revisor));
-        }
-      }
-      return next;
-    });
-  }, [docs]);
+
+
 
   const handleUpdated = (updated) => {
     setDocs((prev) => (prev || []).map((doc) => (Number(doc.id) === Number(updated.id) ? updated : doc)));
@@ -293,24 +271,9 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
     setShowPdfPreviewModal(true);
   };
 
-  const handleToggleReviewerSelection = (docId, reviewerId) => {
-    setReviewSelectionsByDoc((prev) => {
-      const current = prev[docId] || [];
-      const exists = current.includes(reviewerId);
-      if (exists) {
-        return { ...prev, [docId]: current.filter((id) => id !== reviewerId) };
-      }
-      if (current.length >= 2) {
-        toast.error('Solo puede seleccionar 2 entidades revisoras por documento.');
-        return prev;
-      }
-      return { ...prev, [docId]: [...current, reviewerId] };
-    });
-  };
 
-  const handleNoteChange = (docId, value) => {
-    setReviewNotesByDoc((prev) => ({ ...prev, [docId]: value }));
-  };
+
+
 
   const handleCambioEstado = async (doc, nuevoEstado) => {
     const gestion = getGestionNumberForDoc(doc);
@@ -399,7 +362,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
   return (
     <section className="flex flex-col items-start justify-start flex-1 pb-4 px-1 w-full">
       <div className="w-full">
-        {showModal && <GestionSelectorModal onClose={() => setShowModal(false)} onSuccess={handleSuccess} />}
+        {showModal && <GestionSelectorModal onClose={() => setShowModal(false)} onSuccess={handleSuccess} currentUser={currentUser} />}
         {showNuevoModal && (
           <NuevoDocumentoModal
             onClose={closeNuevo}
@@ -420,6 +383,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
               }
             }}
             onUpdated={handleUpdated}
+            currentUser={currentUser}
           />
         )}
         {showConversacionModal && conversacionDoc && (
@@ -445,82 +409,60 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
             }}
           />
         )}
-        {showRevisionModal && revisionDoc && (
-          <div className="fixed inset-0 z-[75]" onClick={() => setShowRevisionModal(false)}>
-            <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" />
-            <div className="absolute inset-0 flex items-center justify-center p-4">
-              <div
-                onClick={(e) => e.stopPropagation()}
-                className="w-full max-w-lg rounded-2xl border border-sky-300/40 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl p-5"
+{showConfirmModal && confirmDoc && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center p-4" onClick={() => setShowConfirmModal(false)}>
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xl p-6 max-h-[90vh] overflow-y-auto"
+            >
+              <button
+                type="button"
+                onClick={() => setShowConfirmModal(false)}
+                className="absolute top-4 right-4 w-8 h-8 rounded-full border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-white flex items-center justify-center transition"
               >
-                <div className="flex items-center justify-between gap-3 mb-4">
-                  <div>
-                    <p className="text-[10px] uppercase tracking-wider font-bold text-sky-700 dark:text-sky-300">Enviar a revisión</p>
-                    <h4 className="text-base font-bold text-slate-900 dark:text-slate-100 truncate" title={revisionDoc.programa || ''}>
-                      {revisionDoc.programa || `Documento #${revisionDoc.id}`}
-                    </h4>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowRevisionModal(false)}
-                    className="w-9 h-9 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-white"
-                  >
-                    x
-                  </button>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+              <div className="text-center mb-6">
+                <div className="w-16 h-16 mx-auto mb-4 bg-amber-100 dark:bg-amber-900/50 rounded-full flex items-center justify-center">
+                  <SendHorizontal className="w-8 h-8 text-amber-600 dark:text-amber-400" />
                 </div>
-
-                <div className="rounded-md border border-indigo-200 dark:border-slate-700 bg-indigo-50/70 dark:bg-slate-800/60 px-3 py-2 mb-3">
-                  <p className="text-[10px] uppercase tracking-wider font-bold text-indigo-700 dark:text-indigo-300">Director automático</p>
-                  <p className="text-xs text-slate-700 dark:text-slate-200 mt-1">{revisionDoc?.jefe_unidad_nombre || revisionDoc?.jefe_unidad_detalle?.nombre_display || 'Debe asignar Director de Carrera en el documento'}</p>
-                </div>
-
-                <p className="text-xs text-slate-600 dark:text-slate-400 mb-2">Seleccione exactamente 2 entidades revisoras:</p>
-                <div className="space-y-2 mb-4 max-h-64 overflow-auto pr-1">
-                  {reviewerOptions.map((reviewer) => {
-                    const selected = reviewSelectionsByDoc[revisionDoc.id] || [];
-                    const isSelected = selected.includes(Number(reviewer.id));
-                    const disabled = !isSelected && selected.length >= 2;
-                    return (
-                      <button
-                        key={reviewer.id}
-                        type="button"
-                        disabled={disabled}
-                        onClick={() => handleToggleReviewerSelection(revisionDoc.id, Number(reviewer.id))}
-                        className={`w-full rounded-lg border px-3 py-2 text-left transition text-xs ${isSelected ? 'border-sky-500 bg-sky-500/10 text-sky-700 dark:text-sky-300' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300'} ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:border-sky-400'}`}
-                      >
-                        <div className="font-semibold">{getReviewerOptionLabel(reviewer)}</div>
-                        <div className="text-[10px] mt-1 opacity-80">{reviewer.rol_display}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {(() => {
-                  const selected = reviewSelectionsByDoc[revisionDoc.id] || [];
-                  const hasDirector = !!(revisionDoc?.jefe_unidad_nombre || revisionDoc?.jefe_unidad_detalle?.nombre_display);
-                  const canSubmit = selected.length === 2 && hasDirector;
-                  return (
-                    <>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          await handleCambioEstado(revisionDoc, 'revision');
-                          setShowRevisionModal(false);
-                          setRevisionDoc(null);
-                        }}
-                        disabled={updatingEstadoId === revisionDoc.id || !canSubmit}
-                        className="flex items-center justify-center gap-2 bg-sky-600 hover:bg-sky-500 text-white text-sm font-bold py-2 px-4 rounded-xl shadow transition-all w-full disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <SendHorizontal size={14} /> {updatingEstadoId === revisionDoc.id ? 'Enviando...' : (revisionDoc.estado === 'observado' ? 'Reenviar a revisión' : 'Enviar a revisión')}
-                      </button>
-                      {!canSubmit && (
-                        <p className="mt-2 text-[10px] text-slate-500 dark:text-slate-400">
-                          Para enviar, selecciona 2 entidades revisoras y verifica director asignado.
-                        </p>
-                      )}
-                    </>
-                  );
-                })()}
+                <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-3">¿Enviar a Revisión?</h3>
+                <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed max-w-prose mx-auto">
+                  el documento se enviara a revicion al director de carrera una ves aprovado se pondra en ejecucion , o una ves enviado no podra modificarse i eliminarse, esta seguro de enviar???
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 font-medium">
+                  Documento: <span className="font-bold text-slate-900 dark:text-slate-100">{confirmDoc.programa || `Documento #${confirmDoc.id}`}</span>
+                </p>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmModal(false)}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-medium py-3 px-4 rounded-xl border border-slate-200 dark:border-slate-700 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await handleCambioEstado(confirmDoc, 'revision');
+                    } catch (err) {
+                      toast.error('Error al enviar: ' + (err.message || 'Intente nuevamente'));
+                      return;
+                    }
+                    setShowConfirmModal(false);
+                    setConfirmDoc(null);
+                  }}
+                  disabled={updatingEstadoId === confirmDoc?.id}
+                  className="flex-1 bg-gradient-to-r from-sky-500 to-sky-600 hover:from-sky-600 hover:to-sky-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  <SendHorizontal size={16} />
+                  {updatingEstadoId === confirmDoc?.id ? 'Enviando...' : 'Sí, Enviar a Revisión'}
+                </button>
               </div>
             </div>
           </div>
@@ -614,12 +556,12 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                   const cfg = ESTADO_CONFIG[estado] || ESTADO_CONFIG.elaboracion;
                   const gestion = typeof doc.gestion === 'object' ? (doc.gestion.nombre || '') : (doc.gestion || gestionState);
                   const programa = typeof doc.programa === 'object' ? (doc.programa.nombre || '') : (doc.programa || '');
-                  const unidad = typeof doc.unidad_solicitante === 'object' ? (doc.unidad_solicitante.nombre || '') : (doc.unidad_solicitante || '');
+                  const unidad = doc.unidad_solicitante_data?.nombre || '';
                   const entidad = typeof doc.entidad === 'object' ? (doc.entidad.nombre || DEFAULT_ENTIDAD) : (doc.entidad || DEFAULT_ENTIDAD);
                   const objetivo = typeof doc.objetivo_gestion_institucional === 'object' ? (doc.objetivo_gestion_institucional.nombre || '') : (doc.objetivo_gestion_institucional || '');
                   const observaciones = (doc.observaciones || '').trim();
-                  const elaboradoPor = doc.elaborado_por?.nombre_display || doc.elaborado_por?.docente?.nombre_completo || null;
-                  const jefeUnidad = doc.jefe_unidad?.nombre_display || doc.jefe_unidad?.docente?.nombre_completo || null;
+                  const elaboradoPor = doc.elaborado_por;
+                  const jefeUnidad = doc.jefe_unidad;
                   const revisiones = doc.revisiones_activas || [];
                   const entityReviews = revisiones.filter((revision) => revision.tipo_revisor === 'entidad');
                   const directorReview = revisiones.find((revision) => revision.tipo_revisor === 'director');
@@ -772,8 +714,8 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setRevisionDoc(doc);
-                                  setShowRevisionModal(true);
+                                  setConfirmDoc(doc);
+                                  setShowConfirmModal(true);
                                 }}
                                 className="flex items-center justify-center gap-2 bg-sky-600 hover:bg-sky-500 text-white text-sm font-bold py-2 px-4 rounded-xl shadow transition-all w-full"
                               >
@@ -781,53 +723,61 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                               </button>
                             )}
 
-                            {currentUserReview && (
-                              <div className="rounded-lg border border-emerald-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/35 p-3" onClick={(e) => e.stopPropagation()}>
-                                <p className="text-[10px] uppercase tracking-wider font-bold text-emerald-700 dark:text-emerald-300 mb-1">Mi revisión</p>
-                                <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">{currentUserReview.revisor_entidad || currentUserReview.revisor_nombre}</p>
-                                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Estado: {currentUserReview.estado_display}</p>
-                                {currentUserReview.fecha_respuesta && (
-                                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Respondido: {formatDateTime(currentUserReview.fecha_respuesta)}</p>
-                                )}
-                                {canRespondThisDoc && (
-                                  <>
-                                    <textarea
-                                      value={note}
-                                      onChange={(e) => handleNoteChange(doc.id, e.target.value)}
-                                      placeholder="Escriba observaciones o comentario de aprobación..."
-                                      className="mt-3 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-700 dark:text-slate-100 min-h-[92px] resize-y"
-                                    />
-                                    <div className="mt-3 grid grid-cols-1 gap-2">
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleCambioEstado(doc, 'aprobado');
-                                        }}
-                                        disabled={updatingEstadoId === doc.id}
-                                        className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold py-2 px-4 rounded-xl shadow transition-all w-full disabled:opacity-50 disabled:cursor-not-allowed"
-                                      >
-                                        <CheckCircle2 size={14} /> {updatingEstadoId === doc.id ? 'Guardando...' : 'Aprobar revisión'}
-                                      </button>
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleCambioEstado(doc, 'observado');
-                                        }}
-                                        disabled={updatingEstadoId === doc.id}
-                                        className="flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-500 text-white text-sm font-bold py-2 px-4 rounded-xl shadow transition-all w-full disabled:opacity-50 disabled:cursor-not-allowed"
-                                      >
-                                        <AlertCircle size={14} /> {updatingEstadoId === doc.id ? 'Guardando...' : 'Observar revisión'}
-                                      </button>
+                              {currentUserReview && (
+                                <div className="rounded-lg border border-emerald-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/35 p-3" onClick={(e) => e.stopPropagation()}>
+                                  <p className="text-[10px] uppercase tracking-wider font-bold text-emerald-700 dark:text-emerald-300 mb-1">Mi revisión</p>
+                                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">{currentUserReview.revisor_entidad || currentUserReview.revisor_nombre}</p>
+                                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Estado: {currentUserReview.estado_display}</p>
+                                  {currentUserReview.fecha_respuesta && (
+                                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Respondido: {formatDateTime(currentUserReview.fecha_respuesta)}</p>
+                                  )}
+                                  {canRespondThisDoc && (
+                                    <>
+                                      <div className="mb-3 p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg border border-indigo-200 dark:border-indigo-700">
+                                        <p className="text-xs font-bold text-indigo-800 dark:text-indigo-200 mb-1 uppercase tracking-wide">📋 Instrucciones para Director de Carrera</p>
+                                        <p className="text-[11px] text-indigo-700 dark:text-indigo-300 leading-relaxed">
+                                          Revise el documento completo (programa, objetivos, actividades, presupuestos).{' '}
+                                          <strong>Aprobar</strong> si cumple todos los requisitos institucionales.{' '}
+                                          <strong>Observar</strong> con comentarios específicos sobre correcciones necesarias.
+                                        </p>
+                                      </div>
+                                      <textarea
+                                        value={note}
+                                        onChange={(e) => handleNoteChange(doc.id, e.target.value)}
+                                        placeholder="Escriba observaciones o comentario de aprobación (opcional para aprobar)..."
+                                        className="mt-3 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-700 dark:text-slate-100 min-h-[92px] resize-y"
+                                      />
+                                      <div className="mt-3 grid grid-cols-1 gap-2">
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleCambioEstado(doc, 'aprobado');
+                                          }}
+                                          disabled={updatingEstadoId === doc.id}
+                                          className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold py-2 px-4 rounded-xl shadow transition-all w-full disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                          <CheckCircle2 size={14} /> {updatingEstadoId === doc.id ? 'Guardando...' : 'Aprobar revisión'}
+                                        </button>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleCambioEstado(doc, 'observado');
+                                          }}
+                                          disabled={updatingEstadoId === doc.id}
+                                          className="flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-500 text-white text-sm font-bold py-2 px-4 rounded-xl shadow transition-all w-full disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                          <AlertCircle size={14} /> {updatingEstadoId === doc.id ? 'Guardando...' : 'Observar revisión'}
+                                        </button>
+                                      </div>
+                                    </>
+                                  )}
+                                  {waitingOthers && (
+                                    <div className="mt-3 rounded-lg border border-emerald-300/50 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
+                                      Ya aprobó su revisión. El documento quedará aprobado cuando todos los revisores asignados hagan lo mismo.
                                     </div>
-                                  </>
-                                )}
-                                {waitingOthers && (
-                                  <div className="mt-3 rounded-lg border border-emerald-300/50 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
-                                    Ya aprobó su revisión. El documento quedará aprobado cuando todos los revisores asignados hagan lo mismo.
-                                  </div>
-                                )}
-                              </div>
-                            )}
+                                  )}
+                                </div>
+                              )}
 
                             {canEdit && (
                               <button

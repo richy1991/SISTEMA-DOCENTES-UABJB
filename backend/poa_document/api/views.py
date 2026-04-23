@@ -26,10 +26,11 @@ from catalogos.models import OperacionCatalogo
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from poa_document.utils.pdf_generator import DocumentoPOAPDFGenerator
 
 
-REVISORES_POA = ('revisor_1', 'revisor_2', 'revisor_3', 'revisor_4')
+# El único rol es 'elaborador'. Los revisores son directores del sistema principal.
 
 
 def _carrera_usuario_poa(user):
@@ -54,7 +55,8 @@ def _filtrar_documentos_por_usuario(qs, user):
     carrera = _carrera_usuario_poa(user)
     if not carrera:
         return qs.none()
-    return qs.filter(unidad_solicitante__iexact=(carrera.nombre or '').strip())
+    # Filtrar por FK a carrera en lugar de por nombre
+    return qs.filter(unidad_solicitante=carrera)
 
 
 def _documento_accesible_para_usuario(user, documento):
@@ -65,7 +67,8 @@ def _documento_accesible_para_usuario(user, documento):
     carrera = _carrera_usuario_poa(user)
     if not carrera:
         return False
-    return (documento.unidad_solicitante or '').strip().lower() == (carrera.nombre or '').strip().lower()
+    # Comparar FK de carrera directamente
+    return documento.unidad_solicitante_id == carrera.id
 
 
 def _obtener_documento_accesible(user, documento_id):
@@ -106,15 +109,13 @@ def _es_elaborador(user):
 def _es_revisor(user):
     if not user or not user.is_authenticated:
         return False
-    roles = _poa_roles_activos(user)
-    if any(r in REVISORES_POA for r in roles) or 'director_carrera' in roles:
+
+    # Verificar si tiene rol director en el sistema principal
+    perfil = getattr(user, 'perfil', None)
+    if perfil and perfil.rol == 'director':
         return True
-    docente_id = getattr(getattr(user, 'perfil', None), 'docente_id', None)
-    return UsuarioPOA.objects.filter(
-        Q(user_id=user.id) | Q(docente_id=docente_id),
-        activo=True,
-        rol__in=[*REVISORES_POA, 'director_carrera'],
-    ).exists()
+
+    return False
 
 
 def _requerir_elaborador(request):
@@ -141,7 +142,7 @@ def _requerir_gestor_accesos(request):
 
 def _requerir_revisor(request):
     if not _es_revisor(request.user):
-        raise PermissionDenied('Solo una Entidad Revisora o Director de Carrera puede realizar esta acción.')
+        raise PermissionDenied('Solo el Director de Carrera puede realizar esta acción.')
 
 
 def _accesos_poa_usuario(user):
@@ -194,7 +195,7 @@ def _obtener_revision_del_usuario(documento, user):
 
 
 def _documentos_queryset():
-    return DocumentoPOA.objects.select_related('elaborado_por__user', 'jefe_unidad__user').prefetch_related(
+    return DocumentoPOA.objects.select_related('unidad_solicitante').prefetch_related(
         'objetivos',
         'revisiones__revisor__user',
         'historial__usuario',
@@ -231,6 +232,35 @@ class UsuarioPOAViewSet(viewsets.ModelViewSet):
         elif activo in ('false', '0'):
             qs = qs.filter(activo=False)
         return qs
+
+    @action(detail=False, methods=['get'], url_path='directores-sistema')
+    def listar_directores_sistema(self, request):
+        """
+        Lista los usuarios con rol 'director' en el sistema principal (perfil.rol = 'director').
+        Para seleccionar el Director de Carrera al crear/editar documentos POA.
+        """
+        from fondos.models import PerfilUsuario
+        # Buscar perfiles con rol director
+        perfiles_director = PerfilUsuario.objects.filter(
+            rol='director',
+            user__is_active=True,
+        ).select_related('user', 'docente').order_by('user__last_name', 'user__first_name')
+
+        resultados = []
+        for perfil in perfiles_director:
+            docente = getattr(perfil, 'docente', None)
+            resultados.append({
+                'id': perfil.id,
+                'user_id': perfil.user_id,
+                'username': perfil.user.username,
+                'nombre_completo': perfil.user.get_full_name() or perfil.user.username,
+                'docente_id': perfil.docente_id,
+                'docente_nombre': docente.nombre_completo if docente else None,
+                'rol': 'director',  # Rol del sistema principal
+                'nombre_display': perfil.user.get_full_name() or perfil.user.username,
+            })
+
+        return Response(resultados)
 
 
 class DocenteBusquedaView(APIView):
@@ -428,6 +458,35 @@ class DocumentoPOAViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return HttpResponse(f"Error crítico al generar PDF: {str(e)}", status=500)
 
+    @action(detail=False, methods=['get'], url_path='pending_director_reviews')
+    def pending_director_reviews(self, request):
+        """
+        Cuenta revisiones pendientes para director (estado='pendiente', tipo_revisor='director').
+        Filtra por carrera del usuario y gestion (default: año actual).
+        Returns: {{'count': N, 'gestion': year}}
+        """
+        if not _es_revisor(request.user):
+            return Response({'count': 0, 'gestion': timezone.now().year})
+        carrera = _carrera_usuario_poa(request.user)
+        if not carrera:
+            return Response({'count': 0, 'gestion': timezone.now().year})
+        gestion_str = request.query_params.get('gestion')
+        if gestion_str:
+            try:
+                gestion = int(gestion_str)
+            except (ValueError, TypeError):
+                return Response({'detail': 'gestion inválido'}, status=400)
+        else:
+            gestion = timezone.now().year
+        count = RevisionDocumentoPOA.objects.filter(
+            tipo_revisor='director',
+            estado='pendiente',
+            activo=True,
+            documento__unidad_solicitante=carrera,
+            documento__gestion=gestion,
+        ).count()
+        return Response({'count': count, 'gestion': gestion})
+
     @action(detail=True, methods=['post'], url_path='enviar-revision')
     def enviar_revision(self, request, pk=None):
         _requerir_elaborador(request)
@@ -435,45 +494,40 @@ class DocumentoPOAViewSet(viewsets.ModelViewSet):
         if doc.estado not in ('elaboracion', 'observado'):
             return Response({'detail': f'No se puede enviar a revisión desde el estado {doc.get_estado_display()}.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        revisores_ids = request.data.get('revisores_ids') or request.data.get('entidades_ids') or []
-        if not isinstance(revisores_ids, list):
-            return Response({'revisores_ids': ['Debe enviar una lista de entidades revisoras.']}, status=status.HTTP_400_BAD_REQUEST)
+        # Director automático de la carrera (sistema principal)
+        if not doc.unidad_solicitante:
+            return Response({'unidad_solicitante': ['El documento debe tener una carrera asignada.']}, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            revisores_ids = [int(revisor_id) for revisor_id in revisores_ids]
-        except (TypeError, ValueError):
-            return Response({'revisores_ids': ['Los IDs de entidades revisoras deben ser enteros válidos.']}, status=status.HTTP_400_BAD_REQUEST)
+        from fondos.models import PerfilUsuario
+        director_perfil = PerfilUsuario.objects.filter(
+            carrera=doc.unidad_solicitante,
+            rol='director',
+            activo=True
+        ).select_related('docente').first()
 
-        revisores_ids = list(dict.fromkeys(revisores_ids))
-        if len(revisores_ids) != 2:
-            return Response({'revisores_ids': ['Debe seleccionar exactamente 2 entidades revisoras.']}, status=status.HTTP_400_BAD_REQUEST)
+        if not director_perfil:
+            return Response({'jefe_unidad': ['No hay un Director de Carrera activo asignado a esta carrera.']}, status=status.HTTP_400_BAD_REQUEST)
 
-        revisores_entidad = list(
-            UsuarioPOA.objects.filter(id__in=revisores_ids, activo=True, rol__in=REVISORES_POA).select_related('user')
+        # Buscar o crear UsuarioPOA para el director con rol 'revisor'
+        director_usuario_poa, created = UsuarioPOA.objects.get_or_create(
+            user=director_perfil.user if director_perfil.user else None,
+            docente=director_perfil.docente if director_perfil.docente else None,
+            defaults={'rol': 'revisor', 'nombre_entidad': director_perfil.carrera.nombre if director_perfil.carrera else '', 'activo': True}
         )
-        if len(revisores_entidad) != 2:
-            return Response({'revisores_ids': ['Las entidades seleccionadas deben estar activas y configuradas como Entidad Revisora.']}, status=status.HTTP_400_BAD_REQUEST)
 
-        director = doc.jefe_unidad
-        if director is None or not director.activo or director.rol != 'director_carrera':
-            return Response({'jefe_unidad': ['El documento debe tener un Director de Carrera activo antes de enviarse a revisión.']}, status=status.HTTP_400_BAD_REQUEST)
+        if not director_usuario_poa.activo:
+            director_usuario_poa.activo = True
+            director_usuario_poa.save(update_fields=['activo'])
 
         estado_anterior = doc.estado
         doc.revisiones.filter(activo=True).update(activo=False)
         nuevo_ciclo = doc.ciclo_revision_actual + 1
 
-        for revisor in revisores_entidad:
-            RevisionDocumentoPOA.objects.create(
-                documento=doc,
-                ciclo_revision=nuevo_ciclo,
-                revisor=revisor,
-                tipo_revisor='entidad',
-            )
-
+        # Crear revisión para el Director de Carrera
         RevisionDocumentoPOA.objects.create(
             documento=doc,
             ciclo_revision=nuevo_ciclo,
-            revisor=director,
+            revisor=director_usuario_poa,
             tipo_revisor='director',
         )
 
@@ -482,26 +536,19 @@ class DocumentoPOAViewSet(viewsets.ModelViewSet):
         doc.observaciones = ''
         doc.save(update_fields=['estado', 'ciclo_revision_actual', 'observaciones', 'actualizado_en'])
 
+        director_nombre = doc.jefe_unidad or director_perfil.user.get_full_name() or 'Director'
         _crear_historial_documento(
             documento=doc,
             usuario=request.user,
             tipo_evento='envio_revision',
-            descripcion='Documento enviado a revisión a 2 entidades y al Director de Carrera.',
+            descripcion='Documento enviado a revisión al Director de Carrera.',
             estado_anterior=estado_anterior,
             estado_nuevo=doc.estado,
             datos_evento={
                 'ciclo_revision': nuevo_ciclo,
-                'revisores_entidad': [
-                    {
-                        'id': revisor.id,
-                        'nombre': revisor.nombre_entidad or revisor.nombre_display,
-                        'rol': revisor.rol,
-                    }
-                    for revisor in revisores_entidad
-                ],
                 'director': {
-                    'id': director.id,
-                    'nombre': director.nombre_display,
+                    'id': director_usuario_poa.id,
+                    'nombre': director_nombre,
                 },
             },
         )
@@ -1150,9 +1197,8 @@ class MensajeComentarioPOAViewSet(
             return Response({'detail': 'No tiene permisos para intervenir esta conversación.'}, status=status.HTTP_404_NOT_FOUND)
         if not comentario.abierto:
             return Response({'detail': 'Esta conversacion esta cerrada.'}, status=status.HTTP_400_BAD_REQUEST)
-        roles = _poa_roles_activos(request.user)
-        revisores = {'revisor_1', 'revisor_2', 'revisor_3', 'revisor_4', 'director_carrera'}
-        es_revisor = bool(roles & revisores)
+        # Verificar si es revisor (director del sistema principal)
+        es_revisor = _es_revisor(request.user)
         mensaje = MensajeComentarioPOA.objects.create(
             comentario=comentario, autor=request.user, texto=texto, es_revisor=es_revisor
         )
@@ -1163,3 +1209,69 @@ class MensajeComentarioPOAViewSet(
         if mensaje.autor != request.user and not _es_elaborador(request.user):
             raise PermissionDenied('Solo puedes eliminar tus propios mensajes (o ser Elaborador POA).')
         return super().destroy(request, *args, **kwargs)
+
+
+# Vista para obtener el director de una carrera específica
+class DirectorPorCarreraView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, carrera_id):
+        """
+        Obtiene el usuario del sistema principal con rol 'director' que corresponde a una carrera específica.
+        """
+        try:
+            carrera_id = int(carrera_id)
+        except (ValueError, TypeError):
+            return Response({'error': 'ID de carrera inválido'}, status=status.HTTP_400_BAD_REQUEST)
+
+        from fondos.models import Carrera, PerfilUsuario
+        try:
+            carrera = Carrera.objects.get(pk=carrera_id)
+        except Carrera.DoesNotExist:
+            return Response({'error': 'Carrera no encontrada'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Buscar director de carrera del sistema principal (PerfilUsuario con rol='director')
+        director_perfil = PerfilUsuario.objects.filter(
+            carrera=carrera,
+            rol='director',
+            activo=True
+        ).select_related('user').first()
+
+        if director_perfil and director_perfil.user:
+            return Response({
+                'id': director_perfil.user.id,
+                'username': director_perfil.user.username,
+                'nombre': director_perfil.user.get_full_name() or director_perfil.user.username,
+                'email': director_perfil.user.email,
+                'rol': 'director',
+                'carrera_id': carrera_id,
+            })
+
+        return Response({'error': 'No hay director de carrera asignado para esta carrera'}, status=status.HTTP_404_NOT_FOUND)
+
+
+# Vista para obtener datos básicos de una carrera
+class CarreraPorIdView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, carrera_id):
+        """
+        Obtiene los datos básicos de una carrera por ID.
+        """
+        try:
+            carrera_id = int(carrera_id)
+        except (ValueError, TypeError):
+            return Response({'error': 'ID de carrera inválido'}, status=status.HTTP_400_BAD_REQUEST)
+
+        from fondos.models import Carrera
+        try:
+            carrera = Carrera.objects.get(pk=carrera_id, activo=True)
+        except Carrera.DoesNotExist:
+            return Response({'error': 'Carrera no encontrada'}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response({
+            'id': carrera.id,
+            'nombre': carrera.nombre,
+            'codigo': carrera.codigo,
+            'facultad': carrera.facultad,
+        })

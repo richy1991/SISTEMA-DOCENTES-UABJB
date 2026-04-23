@@ -27,11 +27,6 @@ const getRoleName = (user) => {
 
 const POA_ROLE_LABELS = {
   elaborador: 'Elaborador POA',
-  director_carrera: 'Director de Carrera (POA)',
-  revisor_1: 'Entidad Revisora 1',
-  revisor_2: 'Entidad Revisora 2',
-  revisor_3: 'Entidad Revisora 3',
-  revisor_4: 'Entidad Revisora 4',
 };
 
 const getPoaRoleLabel = (poaRoles = []) => {
@@ -111,7 +106,7 @@ const getIsDesktopViewport = () => {
   return window.innerWidth >= DESKTOP_BREAKPOINT;
 };
 
-const Sidebar = ({ theme, showGestionModal, setShowGestionModal, sidebarExpanded, setSidebarExpanded, user, poaPermissions = {}, poaRoles = [] }) => {
+const Sidebar = ({ theme, showGestionModal, setShowGestionModal, sidebarExpanded, setSidebarExpanded, user, poaPermissions = {}, poaRoles = [], pendingReviews = 0 }) => {
   const navigate = useNavigate();
   const [isDesktop, setIsDesktop] = useState(getIsDesktopViewport);
   const [sidebarOpen, setSidebarOpen] = useState(getIsDesktopViewport);
@@ -244,7 +239,8 @@ const Sidebar = ({ theme, showGestionModal, setShowGestionModal, sidebarExpanded
 
         {/* Navegación */}
         <nav className={`w-full mb-6 flex flex-col gap-1 rounded-2xl ${themeConfig.navCardBg} ${themeConfig.navCardShadow} ${expanded ? '' : 'items-center'}`}>
-          {menuItems.filter((item) => (item.path === '/poa/accesos' ? canManageAccess : true)).map(item => {
+{menuItems.filter((item) => (item.path === '/poa/accesos' ? canManageAccess : true)).map(item => {
+            const showPendingDot = pendingReviews > 0 && (item.path === '/poa/documentos' || item.path === '/poa/documentos-revision');
             if (item.name === 'Catálogos') {
               return (
                 <div key={item.name} className="w-full">
@@ -278,9 +274,28 @@ const Sidebar = ({ theme, showGestionModal, setShowGestionModal, sidebarExpanded
                   onClick={() => { setShowGestionModal(true); }}
                   title={item.name}
                 >
-                  <span className={`text-xl ${navIconClass}`}>{item.icon}</span>
+                  <span className={`text-xl ${navIconClass} relative`}>{item.icon}</span>
+                  {showPendingDot && <span className="absolute -top-1 -right-1 ml-1 w-2 h-2 bg-red-400 rounded-full shadow-sm ring-1 ring-white/50 animate-pulse" />}
                   {expanded && <span>{item.name}</span>}
                 </button>
+              );
+            }
+
+            if (item.path === '/poa/documentos-revision') {
+              return (
+                <NavLink
+                  key={item.name}
+                  to={item.path}
+                  className={({ isActive }) =>
+                    `${navItemBase} ${isActive ? `${themeConfig.navActiveBg} ${themeConfig.navActiveBorder} ${themeConfig.navActiveText} ${navActiveShadow}` : `${navTextClass} ${themeConfig.navItemHover}`}`
+                  }
+                  onClick={handleMenuClick}
+                  title={item.name}
+                >
+                  <span className={`text-xl ${navIconClass} relative`}>{item.icon}</span>
+                  {showPendingDot && <span className="absolute -top-1 -right-1 ml-1 w-2 h-2 bg-red-400 rounded-full shadow-sm ring-1 ring-white/50 animate-pulse" />}
+                  {expanded && <span>{item.name}</span>}
+                </NavLink>
               );
             }
 

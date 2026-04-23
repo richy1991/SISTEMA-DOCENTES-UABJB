@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { getDocumentosPOAPorGestion } from '../../../apis/poa.api';
-import NuevoDocumentoModal from './NuevoDocumentoModal';
 import IconButton from './IconButton';
 import { FaPlus, FaMinus, FaTimes } from 'react-icons/fa';
 import { Input, Modal } from './base';
@@ -54,11 +53,13 @@ const GestionSelectorModal = ({ onClose, onSuccess }) => {
   };
 
   const handleAgregar = () => {
-    const year = noDocsForYear || manualYear;
-    setShowNuevoModal(true);
+    // Guardar la gestión en sessionStorage para que DocumentosPOAPage la use
+    sessionStorage.setItem('poa_pending_gestion', noDocsForYear || manualYear);
+    // Disparar el mismo evento que usa el header de DocumentosPOAPage
+    window.dispatchEvent(new CustomEvent('open-new', { detail: { page: 'documentos' } }));
+    if (onClose) onClose();
+    toast.success('Abriendo formulario de nuevo documento...');
   };
-
-  const [showNuevoModal, setShowNuevoModal] = useState(false);
 
   const handleCancelarNoDocs = () => {
     setNoDocsForYear(false);
@@ -101,8 +102,8 @@ const GestionSelectorModal = ({ onClose, onSuccess }) => {
                 />
 
                 <div className="flex flex-col border-l border-gray-200 dark:border-slate-600">
-                  <IconButton icon={<FaPlus />} onClick={increaseYear} className={`px-3 py-1 bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 text-base font-semibold ${noDocsForYear ? 'opacity-60 cursor-not-allowed' : ''}`} disabled={!!noDocsForYear} title="Aumentar año"></IconButton>
-                  <IconButton icon={<FaMinus />} onClick={decreaseYear} className={`px-3 py-1 bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 text-base font-semibold ${noDocsForYear ? 'opacity-60 cursor-not-allowed' : ''}`} disabled={!!noDocsForYear} title="Disminuir año"></IconButton>
+                  <IconButton icon={<FaPlus />} onClick={increaseYear} className={`px-3 py-1 bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 text-base font-semibold`} disabled={!!noDocsForYear} title="Aumentar año"></IconButton>
+                  <IconButton icon={<FaMinus />} onClick={decreaseYear} className={`px-3 py-1 bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 text-base font-semibold`} disabled={!!noDocsForYear} title="Disminuir año"></IconButton>
                 </div>
               </div>
             </div>
@@ -132,22 +133,6 @@ const GestionSelectorModal = ({ onClose, onSuccess }) => {
                   <IconButton onClick={handleAgregar} className="btn-success px-3 py-2 rounded-md" title="Nuevo">Nuevo</IconButton>
                 </div>
               </div>
-            )}
-            {showNuevoModal && createPortal(
-              (
-                <div className="fixed inset-0 z-[70]">
-                  <NuevoDocumentoModal
-                    initialGestion={noDocsForYear || manualYear}
-                    onClose={() => setShowNuevoModal(false)}
-                    onCreated={(created) => {
-                      const year = noDocsForYear || manualYear;
-                      if (onSuccess) onSuccess({ gestion: year });
-                      if (onClose) onClose();
-                    }}
-                  />
-                </div>
-              ),
-              document.body
             )}
         </div>
       </div>

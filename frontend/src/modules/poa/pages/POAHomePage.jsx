@@ -164,7 +164,7 @@ const POAHomePage = () => {
                 documentos.map((doc, idx) => {
                   const gestion = typeof doc.gestion === 'object' ? (doc.gestion.nombre || '') : (doc.gestion || 'N/A');
                   const programa = typeof doc.programa === 'object' ? (doc.programa.nombre || '') : (doc.programa || 'Sin programa');
-                  const unidad = typeof doc.unidad_solicitante === 'object' ? (doc.unidad_solicitante.nombre || '') : (doc.unidad_solicitante || 'No especificada');
+                  const unidad = doc.unidad_solicitante_data?.nombre || 'No especificada';
                   const entidad = typeof doc.entidad === 'object' ? (doc.entidad.nombre || 'UABJB') : (doc.entidad || 'UABJB');
                   const objetivo = typeof doc.objetivo_gestion_institucional === 'object'
                     ? (doc.objetivo_gestion_institucional.nombre || '')

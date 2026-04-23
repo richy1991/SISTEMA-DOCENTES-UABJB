@@ -127,14 +127,11 @@ export const getHistorialDocumentoPOA = (id, gestion) => {
 	return api.get(`/api/poa/documentos_poa/${id}/historial/`, { params: { gestion: Number(gestion) } });
 };
 
-export const enviarRevisionDocumentoPOA = (id, gestion, revisoresIds = []) => {
+export const enviarRevisionDocumentoPOA = (id, gestion) => {
 	if (gestion === undefined || gestion === null || Number.isNaN(Number(gestion)) ) {
 		return badRequest({ gestion: ['El parámetro "gestion" es obligatorio y debe ser un entero.'] });
 	}
-	if (!Array.isArray(revisoresIds) || revisoresIds.length !== 2) {
-		return badRequest({ revisores_ids: ['Debe seleccionar exactamente 2 entidades revisoras.'] });
-	}
-	return api.post(`/api/poa/documentos_poa/${id}/enviar-revision/`, { revisores_ids: revisoresIds.map((value) => Number(value)) }, { params: { gestion: Number(gestion) } });
+	return api.post(`/api/poa/documentos_poa/${id}/enviar-revision/`, {}, { params: { gestion: Number(gestion) } });
 };
 
 export const aprobarDocumentoPOA = (id, gestion, observacion = '') => {
@@ -309,6 +306,9 @@ export const createUsuarioPOA = (payload) => api.post('/api/poa/usuarios-poa/', 
 export const updateUsuarioPOA = (id, payload) => api.patch(`/api/poa/usuarios-poa/${id}/`, payload);
 export const deleteUsuarioPOA = (id) => api.delete(`/api/poa/usuarios-poa/${id}/`);
 
+// Obtener directores del sistema principal para seleccionar en documentos POA
+export const getDirectoresSistema = () => api.get('/api/poa/usuarios-poa/directores-sistema/');
+
 // Buscar usuarios del sistema principal (User) por nombre, username o email
 export const buscarUsuariosSistema = (q) => {
 	if (!q || String(q).trim().length < 2) return Promise.resolve({ data: [] });
@@ -321,13 +321,28 @@ export const buscarDocentesPOA = (q) => {
 	return api.get('/api/poa/docentes/buscar/', { params: { q: String(q).trim() } });
 };
 
+// Obtener carrera por ID
+export const getCarreraById = (carreraId) => {
+	if (!carreraId) return Promise.reject({ response: { status: 400, data: { error: 'Carrera ID requerido' } } });
+	return api.get(`/api/poa/carrera/${carreraId}/`);
+};
+
+// Obtener director de carrera específica
+export const getDirectorPorCarrera = (carreraId) => {
+	if (!carreraId) return Promise.reject({ response: { status: 400, data: { error: 'Carrera ID requerido' } } });
+	return api.get(`/api/poa/director-por-carrera/${carreraId}/`);
+};
+
+// Contar revisiones pendientes para director (por gestión/carrera del usuario)
+export const getPendingDirectorReviews = (gestion) => {
+	if (gestion === undefined || gestion === null || Number.isNaN(Number(gestion))) {
+		return badRequest({ gestion: ['El parámetro "gestion" es obligatorio y debe ser un entero.'] });
+	}
+	return api.get('/api/poa/documentos_poa/pending_director_reviews/', { params: { gestion: Number(gestion) } });
+};
+
 export const ROL_POA_CHOICES = [
 	{ value: 'elaborador',       label: 'Elaborador del POA',    color: 'blue' },
-	{ value: 'director_carrera', label: 'Director de Carrera',   color: 'indigo' },
-	{ value: 'revisor_1',        label: 'Entidad Revisora 1',    color: 'violet' },
-	{ value: 'revisor_2',        label: 'Entidad Revisora 2',    color: 'purple' },
-	{ value: 'revisor_3',        label: 'Entidad Revisora 3',    color: 'fuchsia' },
-	{ value: 'revisor_4',        label: 'Entidad Revisora 4',    color: 'pink' },
 ];
 
 // ─── Conversaciones POA ───────────────────────────────────────────────────────
