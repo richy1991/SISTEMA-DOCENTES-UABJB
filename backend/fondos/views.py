@@ -101,7 +101,7 @@ class DocenteViewSet(viewsets.ModelViewSet):
     queryset = Docente.objects.all()
     serializer_class = DocenteSerializer
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['nombres', 'apellido_paterno', 'apellido_materno', 'ci']
+    search_fields = ['nombres', 'apellido_paterno', 'apellido_materno', 'datos_laborales__ci']
     ordering_fields = ['apellido_paterno', 'nombres']
     ordering = ['apellido_paterno']
 
@@ -2367,7 +2367,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
     queryset = User.objects.select_related('perfil', 'perfil__carrera', 'perfil__docente').all()
     permission_classes = [IsAuthenticated]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['username', 'email', 'first_name', 'last_name', 'perfil__docente__ci']
+    search_fields = ['username', 'email', 'first_name', 'last_name', 'perfil__docente__datos_laborales__ci']
     ordering_fields = ['username', 'date_joined', 'last_name']
     ordering = ['-date_joined']
 
@@ -2628,16 +2628,25 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         user.is_active = not user.is_active
         user.save()
 
-        # Regla de independencia: si el usuario se desactiva,
-        # su docente vinculado tambien queda inactivo.
+        # Regla de sincronización: activar/desactivar usuario también afecta su docente y asignaciones
+        perfil = PerfilUsuario.objects.filter(user=user).select_related('docente').first()
+        
         if user.is_active is False:
-            perfil = PerfilUsuario.objects.filter(user=user).select_related('docente').first()
+            # Desactivar usuario: también desactivar docente y asignaciones
             if perfil and perfil.docente and perfil.docente.activo:
                 perfil.docente.activo = False
                 perfil.docente.save(update_fields=['activo'])
 
             # Revocar asignaciones operativas de rol docente para este usuario.
             user.asignaciones_carrera.filter(rol='docente', activo=True).update(activo=False)
+        else:
+            # Activar usuario: también activar docente y asignaciones
+            if perfil and perfil.docente and not perfil.docente.activo:
+                perfil.docente.activo = True
+                perfil.docente.save(update_fields=['activo'])
+
+            # Reactivar asignaciones de carrera para este usuario
+            user.asignaciones_carrera.filter(rol='docente', activo=False).update(activo=True)
         
         output_serializer = UsuarioSerializer(user)
         output_serializer = UsuarioSerializer(user, context={'request': request})

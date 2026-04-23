@@ -1655,6 +1655,9 @@ class ActualizarUsuarioSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         current_user = request.user if request else None
         asignaciones = data.get('asignaciones') or []
+        
+        # Obtener perfil actual al inicio para evitar UnboundLocalError
+        perfil_actual = self._get_perfil_actual()
 
         if asignaciones and not isinstance(asignaciones, list):
             raise serializers.ValidationError({'asignaciones': 'Debe enviar una lista de asignaciones.'})
@@ -1686,7 +1689,6 @@ class ActualizarUsuarioSerializer(serializers.ModelSerializer):
                 'rol': 'Solo el Superusuario tiene la potestad de cambiar el rol de cualquier usuario en el sistema.'
             })
         
-        perfil_actual = self._get_perfil_actual()
         rol_actual = perfil_actual.rol if perfil_actual else ('iiisyp' if self.instance.is_superuser else 'docente')
         carrera_actual = perfil_actual.carrera if perfil_actual else None
         docente_actual = perfil_actual.docente if perfil_actual else None
