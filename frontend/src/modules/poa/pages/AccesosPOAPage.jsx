@@ -7,20 +7,10 @@ import { useOutletContext } from 'react-router-dom';
 
 const ROL_COLOR = {
   elaborador:       'bg-blue-100 text-blue-800 border-blue-200',
-  director_carrera: 'bg-indigo-100 text-indigo-800 border-indigo-200',
-  revisor_1:        'bg-violet-100 text-violet-800 border-violet-200',
-  revisor_2:        'bg-purple-100 text-purple-800 border-purple-200',
-  revisor_3:        'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-200',
-  revisor_4:        'bg-pink-100 text-pink-800 border-pink-200',
 };
 
 const ROL_DARK = {
   elaborador:       'dark:bg-blue-900/40 dark:text-blue-200 dark:border-blue-700',
-  director_carrera: 'dark:bg-indigo-900/40 dark:text-indigo-200 dark:border-indigo-700',
-  revisor_1:        'dark:bg-violet-900/40 dark:text-violet-200 dark:border-violet-700',
-  revisor_2:        'dark:bg-purple-900/40 dark:text-purple-200 dark:border-purple-700',
-  revisor_3:        'dark:bg-fuchsia-900/40 dark:text-fuchsia-200 dark:border-fuchsia-700',
-  revisor_4:        'dark:bg-pink-900/40 dark:text-pink-200 dark:border-pink-700',
 };
 
 const getRolLabel = (rol) => ROL_POA_CHOICES.find(r => r.value === rol)?.label || rol;
@@ -128,7 +118,7 @@ export default function AccesosPOAPage() {
             Accesos al Módulo POA
           </h1>
           <p className="text-sm text-gray-500 mt-0.5 dark:text-slate-300">
-            Gestiona qué usuarios tienen permisos y qué pueden hacer en el módulo POA.
+            Gestiona usuarios con rol elaborador para el módulo POA.
           </p>
         </div>
         <button
@@ -140,7 +130,7 @@ export default function AccesosPOAPage() {
       </div>
 
       {/* Resumen por rol */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mb-6">
         {counts.map(r => (
           <button
             key={r.value}
@@ -162,7 +152,7 @@ export default function AccesosPOAPage() {
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Buscar por nombre, usuario o entidad..."
+            placeholder="Buscar por nombre o usuario..."
             className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white text-slate-900 dark:border-slate-700 dark:bg-slate-900/75 dark:text-slate-100"
           />
         </div>
@@ -198,7 +188,6 @@ export default function AccesosPOAPage() {
               <tr className="accesos-table-head text-xs uppercase tracking-wider">
                 <th className="px-4 py-3 text-left">Usuario</th>
                 <th className="px-4 py-3 text-left">Rol POA</th>
-                <th className="px-4 py-3 text-left">Entidad</th>
                 <th className="px-4 py-3 text-center">Estado</th>
                 <th className="px-4 py-3 text-center">Acciones</th>
               </tr>
@@ -216,9 +205,6 @@ export default function AccesosPOAPage() {
                     <span className={`inline-block text-xs font-semibold px-2.5 py-1 rounded-full border ${ROL_COLOR[a.rol] || 'bg-gray-100 text-gray-700 border-gray-200'}`}>
                       {a.rol_display || getRolLabel(a.rol)}
                     </span>
-                  </td>
-                  <td className="px-4 py-3 text-gray-600 dark:text-slate-300">
-                    {a.nombre_entidad || <span className="text-gray-300 dark:text-slate-500">—</span>}
                   </td>
                   <td className="px-4 py-3 text-center">
                     <button onClick={() => handleToggleActivo(a)} title={a.activo ? 'Desactivar' : 'Activar'}>
@@ -272,7 +258,7 @@ export default function AccesosPOAPage() {
           <div className="relative z-10 bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 dark:border dark:border-slate-700 dark:bg-slate-900">
             <h3 className="font-bold text-lg mb-2 text-gray-800 dark:text-slate-100">¿Eliminar acceso?</h3>
             <p className="text-sm text-gray-600 dark:text-slate-300 mb-5">
-              Se eliminará el acceso de <strong>{confirmDelete.docente_detalle?.nombre_completo}</strong> como{' '}
+              Se eliminará el acceso de <strong>{confirmDelete.nombre_display || confirmDelete.user_detalle?.nombre_completo || confirmDelete.docente_detalle?.nombre_completo}</strong> como{' '}
               <strong>{confirmDelete.rol_display}</strong>. Esta acción no se puede deshacer.
             </p>
             <div className="flex justify-end gap-3">

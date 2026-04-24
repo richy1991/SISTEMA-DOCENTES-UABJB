@@ -3,21 +3,17 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from catalogos.models import Direccion
+from fondos.models import Carrera
 
 
 class UsuarioPOA(models.Model):
     """
     Vincula a un usuario del sistema con un rol dentro del módulo POA.
-    Controla quién puede elaborar, dirigir o revisar documentos POA.
+    Actualmente solo se asigna el rol de elaborador.
     El campo docente es opcional para permitir usuarios que no son docentes.
     """
     ROL_CHOICES = [
         ('elaborador',      'Elaborador del POA'),
-        ('director_carrera','Director de Carrera'),
-        ('revisor_1',       'Entidad Revisora 1'),
-        ('revisor_2',       'Entidad Revisora 2'),
-        ('revisor_3',       'Entidad Revisora 3'),
-        ('revisor_4',       'Entidad Revisora 4'),
     ]
 
     user = models.ForeignKey(
@@ -39,7 +35,7 @@ class UsuarioPOA(models.Model):
     rol = models.CharField(max_length=30, choices=ROL_CHOICES, verbose_name='Rol POA')
     nombre_entidad = models.CharField(
         max_length=150, blank=True,
-        help_text='Para roles de revisor: nombre de la entidad revisora (ej. DAF, VRA)',
+        help_text='No se utiliza en la configuración actual del módulo POA.',
     )
     activo = models.BooleanField(default=True)
     fecha_asignacion = models.DateTimeField(auto_now_add=True)
@@ -75,11 +71,16 @@ class DocumentoPOA(models.Model):
     ]
 
     gestion = models.IntegerField(verbose_name="Año de Gestión")
-    unidad_solicitante = models.CharField(max_length=200)
+    unidad_solicitante = models.ForeignKey(
+        Carrera,
+        on_delete=models.PROTECT,
+        related_name='documentos_poa',
+        verbose_name='Carrera solicitante',
+    )
     programa = models.CharField(max_length=200)
     objetivo_gestion_institucional = models.TextField()
-    elaborado_por = models.ForeignKey('UsuarioPOA', on_delete=models.SET_NULL, null=True, blank=True, related_name="documentos_elaborados")
-    jefe_unidad = models.ForeignKey('UsuarioPOA', on_delete=models.SET_NULL, null=True, blank=True, related_name="documentos_jefe")
+    elaborado_por = models.CharField(max_length=255, blank=True, default='')
+    jefe_unidad = models.CharField(max_length=255, blank=True, default='')
     fecha_elaboracion = models.DateField()
     estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='elaboracion', verbose_name='Estado')
     # Comentarios/ajustes que registra la entidad revisora durante la revisión del documento.

@@ -79,7 +79,7 @@ function POAApp({ user }) {
   const poaPermissions = {
     canEdit: poaRoles.includes('elaborador'),
     canManageAccess: poaRoles.includes('elaborador') || isAdminPrincipal,
-    canReview: poaRoles.some((r) => ['revisor_1', 'revisor_2', 'revisor_3', 'revisor_4', 'director_carrera'].includes(r)),
+    canReview: Boolean(user?.is_superuser || user?.perfil?.rol === 'director'),
   };
 
   // Control del header por scroll
@@ -215,6 +215,7 @@ function POAApp({ user }) {
       {/* Modal de gestiÃ³n */}
       {showGestionModal && (
         <GestionSelectorModal
+          currentUser={user}
           onClose={() => setShowGestionModal(false)}
           onSuccess={({ gestion, documentos }) => {
             setShowGestionModal(false);

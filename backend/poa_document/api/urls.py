@@ -7,6 +7,7 @@ from .views import (
     UsuarioPOAViewSet,
     DocenteBusquedaView,
     UsuarioBusquedaView,
+    DirectorCarreraActualView,
     ComentarioPOAViewSet,
     MensajeComentarioPOAViewSet,
 )
@@ -32,5 +33,6 @@ router.register(r'mensajes-poa', MensajeComentarioPOAViewSet, basename='mensaje_
 urlpatterns = router.urls + [
     path('docentes/buscar/', DocenteBusquedaView.as_view(), name='docente-buscar-poa'),
     path('usuarios/buscar/', UsuarioBusquedaView.as_view(), name='usuario-buscar-poa'),
+    path('director-carrera-actual/', DirectorCarreraActualView.as_view(), name='director-carrera-actual-poa'),
 ]
 

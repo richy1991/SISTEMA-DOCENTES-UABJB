@@ -27,11 +27,6 @@ const getRoleName = (user) => {
 
 const POA_ROLE_LABELS = {
   elaborador: 'Elaborador POA',
-  director_carrera: 'Director de Carrera (POA)',
-  revisor_1: 'Entidad Revisora 1',
-  revisor_2: 'Entidad Revisora 2',
-  revisor_3: 'Entidad Revisora 3',
-  revisor_4: 'Entidad Revisora 4',
 };
 
 const getPoaRoleLabel = (poaRoles = []) => {
@@ -272,15 +267,19 @@ const Sidebar = ({ theme, showGestionModal, setShowGestionModal, sidebarExpanded
 
             if (item.path === '/poa/documentos') {
               return (
-                <button
+                <NavLink
                   key={item.name}
-                  className={`${navItemBase} ${navTextClass} ${themeConfig.navItemHover}`}
-                  onClick={() => { setShowGestionModal(true); }}
+                  to={item.path}
+                  className={({ isActive }) => `${navItemBase} ${isActive ? `${themeConfig.navActiveBg} ${themeConfig.navActiveBorder} ${themeConfig.navActiveText} ${navActiveShadow}` : `${navTextClass} ${themeConfig.navItemHover}`}`}
+                  onClick={() => {
+                    setShowGestionModal(true);
+                    handleMenuClick();
+                  }}
                   title={item.name}
                 >
                   <span className={`text-xl ${navIconClass}`}>{item.icon}</span>
                   {expanded && <span>{item.name}</span>}
-                </button>
+                </NavLink>
               );
             }
 

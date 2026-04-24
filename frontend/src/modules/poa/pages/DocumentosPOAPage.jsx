@@ -30,7 +30,6 @@ import {
   enviarRevisionDocumentoPOA,
   aprobarDocumentoPOA,
   observarDocumentoPOA,
-  getUsuariosPOA,
   descargarReporteGeneralPOA,
   API_BASE,
 } from '../../../apis/poa.api';
@@ -42,14 +41,6 @@ const ESTADO_CONFIG = {
   aprobado: { label: 'Aprobado', dot: 'bg-emerald-400', badge: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' },
   ejecucion: { label: 'En ejecución', dot: 'bg-violet-400', badge: 'bg-violet-500/10 text-violet-400 border border-violet-500/20' },
 };
-
-const REVISION_STATE_STYLES = {
-  pendiente: 'bg-slate-500/10 text-slate-500 border border-slate-400/20',
-  aprobado: 'bg-emerald-500/10 text-emerald-500 border border-emerald-400/20',
-  observado: 'bg-orange-500/10 text-orange-500 border border-orange-400/20',
-};
-
-const ENTITY_ROLES = ['revisor_1', 'revisor_2', 'revisor_3', 'revisor_4'];
 
 const formatDateTime = (value) => {
   if (!value) return 'Sin fecha';
@@ -64,8 +55,40 @@ const formatDateTime = (value) => {
   });
 };
 
-const getReviewerOptionLabel = (reviewer) => {
-  return reviewer?.nombre_entidad || reviewer?.nombre_display || reviewer?.user_detalle?.nombre_completo || reviewer?.user_detalle?.username || `Revisor #${reviewer?.id}`;
+const normalizeApiError = (err, fallbackMessage) => {
+  const detail = err?.response?.data?.detail ?? err?.response?.data;
+  if (typeof detail === 'string') {
+    const normalized = detail.trim();
+    if (normalized.startsWith('<!DOCTYPE html') || normalized.startsWith('<html') || normalized.includes('OperationalError')) {
+      return fallbackMessage;
+    }
+    return normalized;
+  }
+  if (detail && typeof detail === 'object') {
+    try {
+      return JSON.stringify(detail);
+    } catch {
+      return fallbackMessage;
+    }
+  }
+  return err?.message || fallbackMessage;
+};
+
+const getUnidadSolicitanteLabel = (doc) => {
+  const carrera = doc?.unidad_solicitante_detalle;
+  if (carrera && typeof carrera === 'object') {
+    return carrera.nombre || carrera.codigo || `Carrera #${carrera.id}`;
+  }
+  if (typeof doc?.unidad_solicitante === 'object') {
+    return doc.unidad_solicitante.nombre || doc.unidad_solicitante.codigo || '';
+  }
+  return String(doc?.unidad_solicitante || '').trim();
+};
+
+const getPersonaLabel = (value, fallback = '') => {
+  if (!value) return fallback;
+  if (typeof value === 'string') return value;
+  return value.nombre_display || value.nombre || value.user_detalle?.nombre_completo || value.docente?.nombre_completo || fallback;
 };
 
 const DocumentosPOAPage = ({ viewMode = 'all' }) => {
@@ -99,8 +122,6 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
   const [error, setError] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [updatingEstadoId, setUpdatingEstadoId] = useState(null);
-  const [reviewerOptions, setReviewerOptions] = useState([]);
-  const [reviewSelectionsByDoc, setReviewSelectionsByDoc] = useState({});
   const [reviewNotesByDoc, setReviewNotesByDoc] = useState({});
 
   const resolveGestionCandidate = (value) => {
@@ -145,36 +166,6 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
     return () => window.removeEventListener('open-new', handler);
   }, [canEdit]);
 
-  useEffect(() => {
-    let mounted = true;
-    getUsuariosPOA({ activo: true })
-      .then((res) => {
-        if (!mounted) return;
-        const list = Array.isArray(res.data) ? res.data : (res.data?.results || []);
-        setReviewerOptions(list.filter((item) => ENTITY_ROLES.includes(item?.rol)));
-      })
-      .catch(() => {
-        if (mounted) setReviewerOptions([]);
-      });
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    setReviewSelectionsByDoc((prev) => {
-      const next = { ...prev };
-      for (const doc of docs || []) {
-        if (next[doc.id]?.length) continue;
-        const activeEntityReviews = (doc.revisiones_activas || []).filter((revision) => revision.tipo_revisor === 'entidad');
-        if (activeEntityReviews.length > 0) {
-          next[doc.id] = activeEntityReviews.map((revision) => Number(revision.revisor));
-        }
-      }
-      return next;
-    });
-  }, [docs]);
-
   const handleUpdated = (updated) => {
     setDocs((prev) => (prev || []).map((doc) => (Number(doc.id) === Number(updated.id) ? updated : doc)));
     closeNuevo();
@@ -204,7 +195,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
       })
       .catch((err) => {
         if (!mounted) return;
-        setError(err?.response?.data?.detail || err?.message || 'Error al cargar documentos');
+        setError(normalizeApiError(err, 'Error al cargar documentos POA.'));
       })
       .finally(() => {
         if (mounted) setLoading(false);
@@ -293,21 +284,6 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
     setShowPdfPreviewModal(true);
   };
 
-  const handleToggleReviewerSelection = (docId, reviewerId) => {
-    setReviewSelectionsByDoc((prev) => {
-      const current = prev[docId] || [];
-      const exists = current.includes(reviewerId);
-      if (exists) {
-        return { ...prev, [docId]: current.filter((id) => id !== reviewerId) };
-      }
-      if (current.length >= 2) {
-        toast.error('Solo puede seleccionar 2 entidades revisoras por documento.');
-        return prev;
-      }
-      return { ...prev, [docId]: [...current, reviewerId] };
-    });
-  };
-
   const handleNoteChange = (docId, value) => {
     setReviewNotesByDoc((prev) => ({ ...prev, [docId]: value }));
   };
@@ -325,11 +301,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
       let res;
       if (nuevoEstado === 'revision') {
         if (!canEdit) throw new Error('No tiene permisos para enviar a revisión.');
-        const selectedReviewers = reviewSelectionsByDoc[doc.id] || [];
-        if (selectedReviewers.length !== 2) {
-          throw new Error('Debe seleccionar exactamente 2 entidades revisoras antes de enviar el documento.');
-        }
-        res = await enviarRevisionDocumentoPOA(doc.id, Number(gestion), selectedReviewers);
+        res = await enviarRevisionDocumentoPOA(doc.id, Number(gestion));
       } else if (nuevoEstado === 'aprobado') {
         if (!canReview) throw new Error('No tiene permisos para aprobar documentos.');
         res = await aprobarDocumentoPOA(doc.id, Number(gestion), reviewNote);
@@ -346,11 +318,11 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
       setReviewNotesByDoc((prev) => ({ ...prev, [doc.id]: '' }));
 
       if (nuevoEstado === 'revision') toast.success('Documento enviado a revisión.');
-      if (nuevoEstado === 'aprobado') toast.success('Revisión registrada. El documento se aprobará cuando todos aprueben.');
+      if (nuevoEstado === 'aprobado') toast.success('Documento aprobado correctamente.');
       if (nuevoEstado === 'observado') toast.success('Observación registrada correctamente.');
     } catch (err) {
       const responseData = err?.response?.data;
-      const detail = responseData?.detail || responseData?.revisores_ids?.[0] || responseData?.jefe_unidad?.[0] || responseData?.observaciones?.[0] || err?.message || 'Error al actualizar el documento';
+      const detail = responseData?.detail || responseData?.jefe_unidad?.[0] || responseData?.observaciones?.[0] || err?.message || 'Error al actualizar el documento';
       toast.error(String(detail));
     } finally {
       setUpdatingEstadoId(null);
@@ -402,6 +374,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
         {showModal && <GestionSelectorModal onClose={() => setShowModal(false)} onSuccess={handleSuccess} />}
         {showNuevoModal && (
           <NuevoDocumentoModal
+            currentUser={currentUser}
             onClose={closeNuevo}
             initialGestion={gestionState || location?.state?.gestion || new Date().getFullYear()}
             document={editingDoc}
@@ -471,34 +444,12 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
 
                 <div className="rounded-md border border-indigo-200 dark:border-slate-700 bg-indigo-50/70 dark:bg-slate-800/60 px-3 py-2 mb-3">
                   <p className="text-[10px] uppercase tracking-wider font-bold text-indigo-700 dark:text-indigo-300">Director automático</p>
-                  <p className="text-xs text-slate-700 dark:text-slate-200 mt-1">{revisionDoc?.jefe_unidad_nombre || revisionDoc?.jefe_unidad_detalle?.nombre_display || 'Debe asignar Director de Carrera en el documento'}</p>
-                </div>
-
-                <p className="text-xs text-slate-600 dark:text-slate-400 mb-2">Seleccione exactamente 2 entidades revisoras:</p>
-                <div className="space-y-2 mb-4 max-h-64 overflow-auto pr-1">
-                  {reviewerOptions.map((reviewer) => {
-                    const selected = reviewSelectionsByDoc[revisionDoc.id] || [];
-                    const isSelected = selected.includes(Number(reviewer.id));
-                    const disabled = !isSelected && selected.length >= 2;
-                    return (
-                      <button
-                        key={reviewer.id}
-                        type="button"
-                        disabled={disabled}
-                        onClick={() => handleToggleReviewerSelection(revisionDoc.id, Number(reviewer.id))}
-                        className={`w-full rounded-lg border px-3 py-2 text-left transition text-xs ${isSelected ? 'border-sky-500 bg-sky-500/10 text-sky-700 dark:text-sky-300' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300'} ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:border-sky-400'}`}
-                      >
-                        <div className="font-semibold">{getReviewerOptionLabel(reviewer)}</div>
-                        <div className="text-[10px] mt-1 opacity-80">{reviewer.rol_display}</div>
-                      </button>
-                    );
-                  })}
+                  <p className="text-xs text-slate-700 dark:text-slate-200 mt-1">{getPersonaLabel(revisionDoc?.jefe_unidad || revisionDoc?.jefe_unidad_nombre || revisionDoc?.jefe_unidad_detalle, 'Debe asignar Director de Carrera en el documento')}</p>
                 </div>
 
                 {(() => {
-                  const selected = reviewSelectionsByDoc[revisionDoc.id] || [];
-                  const hasDirector = !!(revisionDoc?.jefe_unidad_nombre || revisionDoc?.jefe_unidad_detalle?.nombre_display);
-                  const canSubmit = selected.length === 2 && hasDirector;
+                  const hasDirector = Boolean(getPersonaLabel(revisionDoc?.jefe_unidad || revisionDoc?.jefe_unidad_nombre || revisionDoc?.jefe_unidad_detalle));
+                  const canSubmit = hasDirector;
                   return (
                     <>
                       <button
@@ -515,7 +466,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                       </button>
                       {!canSubmit && (
                         <p className="mt-2 text-[10px] text-slate-500 dark:text-slate-400">
-                          Para enviar, selecciona 2 entidades revisoras y verifica director asignado.
+                          Para enviar, verifica que el documento tenga Director de Carrera asignado.
                         </p>
                       )}
                     </>
@@ -614,20 +565,14 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                   const cfg = ESTADO_CONFIG[estado] || ESTADO_CONFIG.elaboracion;
                   const gestion = typeof doc.gestion === 'object' ? (doc.gestion.nombre || '') : (doc.gestion || gestionState);
                   const programa = typeof doc.programa === 'object' ? (doc.programa.nombre || '') : (doc.programa || '');
-                  const unidad = typeof doc.unidad_solicitante === 'object' ? (doc.unidad_solicitante.nombre || '') : (doc.unidad_solicitante || '');
+                  const unidad = getUnidadSolicitanteLabel(doc) || 'No especificada';
                   const entidad = typeof doc.entidad === 'object' ? (doc.entidad.nombre || DEFAULT_ENTIDAD) : (doc.entidad || DEFAULT_ENTIDAD);
                   const objetivo = typeof doc.objetivo_gestion_institucional === 'object' ? (doc.objetivo_gestion_institucional.nombre || '') : (doc.objetivo_gestion_institucional || '');
                   const observaciones = (doc.observaciones || '').trim();
-                  const elaboradoPor = doc.elaborado_por?.nombre_display || doc.elaborado_por?.docente?.nombre_completo || null;
-                  const jefeUnidad = doc.jefe_unidad?.nombre_display || doc.jefe_unidad?.docente?.nombre_completo || null;
-                  const revisiones = doc.revisiones_activas || [];
-                  const entityReviews = revisiones.filter((revision) => revision.tipo_revisor === 'entidad');
-                  const directorReview = revisiones.find((revision) => revision.tipo_revisor === 'director');
-                  const currentUserReview = revisiones.find((revision) => revision.es_revisor_actual);
-                  const selectedReviewers = reviewSelectionsByDoc[doc.id] || [];
+                  const elaboradoPor = getPersonaLabel(doc.elaborado_por, null);
+                  const jefeUnidad = getPersonaLabel(doc.jefe_unidad, null);
                   const note = reviewNotesByDoc[doc.id] || '';
-                  const canRespondThisDoc = canReview && estado === 'revision' && currentUserReview && currentUserReview.estado === 'pendiente';
-                  const waitingOthers = currentUserReview && currentUserReview.estado === 'aprobado' && estado === 'revision';
+                  const canRespondThisDoc = canReview && estado === 'revision';
                   const canSendToRevision = canEdit && (estado === 'elaboracion' || estado === 'observado');
 
                   return (
@@ -722,42 +667,6 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                               </div>
                             )}
 
-                            {(entityReviews.length > 0 || directorReview) && (
-                              <div className="mt-3 rounded-lg border border-cyan-200 dark:border-slate-800 bg-cyan-50/70 dark:bg-slate-950/40 p-3">
-                                <p className="text-[10px] uppercase tracking-wider font-bold text-cyan-700 dark:text-cyan-300 mb-2">Revisiones activas del ciclo</p>
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-                                  {entityReviews.map((revision) => (
-                                    <div key={revision.id} className="rounded-lg border border-cyan-200/80 dark:border-slate-800 bg-white/80 dark:bg-slate-900/60 px-3 py-2">
-                                      <div className="flex items-center justify-between gap-2">
-                                        <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{revision.revisor_entidad || revision.revisor_nombre}</p>
-                                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${REVISION_STATE_STYLES[revision.estado] || REVISION_STATE_STYLES.pendiente}`}>
-                                          {revision.estado_display}
-                                        </span>
-                                      </div>
-                                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">{revision.revisor_rol_display}</p>
-                                      {revision.observaciones && (
-                                        <p className="text-xs text-slate-600 dark:text-slate-300 mt-2 line-clamp-2">{revision.observaciones}</p>
-                                      )}
-                                    </div>
-                                  ))}
-                                  {directorReview && (
-                                    <div className="rounded-lg border border-indigo-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/60 px-3 py-2">
-                                      <div className="flex items-center justify-between gap-2">
-                                        <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{directorReview.revisor_nombre}</p>
-                                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${REVISION_STATE_STYLES[directorReview.estado] || REVISION_STATE_STYLES.pendiente}`}>
-                                          {directorReview.estado_display}
-                                        </span>
-                                      </div>
-                                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Director de Carrera</p>
-                                      {directorReview.observaciones && (
-                                        <p className="text-xs text-slate-600 dark:text-slate-300 mt-2 line-clamp-2">{directorReview.observaciones}</p>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-
                             {observaciones && (
                               <div className="mt-3 bg-orange-100/75 dark:bg-orange-950/35 border border-orange-300 dark:border-orange-800 rounded-lg p-3">
                                 <p className="text-[10px] text-orange-700 dark:text-orange-300 font-bold uppercase tracking-wider mb-1">Observaciones vigentes</p>
@@ -781,51 +690,38 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                               </button>
                             )}
 
-                            {currentUserReview && (
+                            {canRespondThisDoc && (
                               <div className="rounded-lg border border-emerald-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/35 p-3" onClick={(e) => e.stopPropagation()}>
-                                <p className="text-[10px] uppercase tracking-wider font-bold text-emerald-700 dark:text-emerald-300 mb-1">Mi revisión</p>
-                                <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">{currentUserReview.revisor_entidad || currentUserReview.revisor_nombre}</p>
-                                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Estado: {currentUserReview.estado_display}</p>
-                                {currentUserReview.fecha_respuesta && (
-                                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Respondido: {formatDateTime(currentUserReview.fecha_respuesta)}</p>
-                                )}
-                                {canRespondThisDoc && (
-                                  <>
-                                    <textarea
-                                      value={note}
-                                      onChange={(e) => handleNoteChange(doc.id, e.target.value)}
-                                      placeholder="Escriba observaciones o comentario de aprobación..."
-                                      className="mt-3 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-700 dark:text-slate-100 min-h-[92px] resize-y"
-                                    />
-                                    <div className="mt-3 grid grid-cols-1 gap-2">
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleCambioEstado(doc, 'aprobado');
-                                        }}
-                                        disabled={updatingEstadoId === doc.id}
-                                        className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold py-2 px-4 rounded-xl shadow transition-all w-full disabled:opacity-50 disabled:cursor-not-allowed"
-                                      >
-                                        <CheckCircle2 size={14} /> {updatingEstadoId === doc.id ? 'Guardando...' : 'Aprobar revisión'}
-                                      </button>
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleCambioEstado(doc, 'observado');
-                                        }}
-                                        disabled={updatingEstadoId === doc.id}
-                                        className="flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-500 text-white text-sm font-bold py-2 px-4 rounded-xl shadow transition-all w-full disabled:opacity-50 disabled:cursor-not-allowed"
-                                      >
-                                        <AlertCircle size={14} /> {updatingEstadoId === doc.id ? 'Guardando...' : 'Observar revisión'}
-                                      </button>
-                                    </div>
-                                  </>
-                                )}
-                                {waitingOthers && (
-                                  <div className="mt-3 rounded-lg border border-emerald-300/50 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
-                                    Ya aprobó su revisión. El documento quedará aprobado cuando todos los revisores asignados hagan lo mismo.
-                                  </div>
-                                )}
+                                <p className="text-[10px] uppercase tracking-wider font-bold text-emerald-700 dark:text-emerald-300 mb-1">Revisión de Dirección</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">Como director del sistema principal puede aprobar u observar este documento.</p>
+                                <textarea
+                                  value={note}
+                                  onChange={(e) => handleNoteChange(doc.id, e.target.value)}
+                                  placeholder="Escriba observaciones o comentario de aprobación..."
+                                  className="mt-3 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-700 dark:text-slate-100 min-h-[92px] resize-y"
+                                />
+                                <div className="mt-3 grid grid-cols-1 gap-2">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleCambioEstado(doc, 'aprobado');
+                                    }}
+                                    disabled={updatingEstadoId === doc.id}
+                                    className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold py-2 px-4 rounded-xl shadow transition-all w-full disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    <CheckCircle2 size={14} /> {updatingEstadoId === doc.id ? 'Guardando...' : 'Aprobar revisión'}
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleCambioEstado(doc, 'observado');
+                                    }}
+                                    disabled={updatingEstadoId === doc.id}
+                                    className="flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-500 text-white text-sm font-bold py-2 px-4 rounded-xl shadow transition-all w-full disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    <AlertCircle size={14} /> {updatingEstadoId === doc.id ? 'Guardando...' : 'Observar revisión'}
+                                  </button>
+                                </div>
                               </div>
                             )}
 
@@ -889,7 +785,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                               </button>
                             )}
 
-                            {!canEdit && !canRespondThisDoc && !waitingOthers && (
+                            {!canEdit && !canRespondThisDoc && (
                               <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/35 px-3 py-3 text-xs text-slate-500 dark:text-slate-400 flex items-start gap-2">
                                 <Clock3 size={14} className="mt-0.5 flex-shrink-0" />
                                 <span>Vista de solo lectura para este documento.</span>

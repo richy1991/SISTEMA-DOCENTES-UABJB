@@ -7,7 +7,7 @@ import {
 import toast from 'react-hot-toast';
 
 /**
- * Panel de conversación entre el elaborador y la entidad revisora para un DocumentoPOA.
+ * Panel de conversación entre el elaborador y dirección para un DocumentoPOA.
  * Se abre como panel lateral deslizante desde el lado derecho.
  *
  * Props:
@@ -33,10 +33,8 @@ export default function ConversacionPOAModal({
 	const [animando, setAnimando] = useState(false);
 	const scrollRef = useRef(null);
 
-	// Roles revisores para determinar qué lado del chat corresponde al usuario
-	const ROLES_REVISOR = ['revisor_1', 'revisor_2', 'revisor_3', 'revisor_4', 'director_carrera'];
-	const esRevisor =
-		Array.isArray(usuarioActual?.roles) && usuarioActual.roles.some((r) => ROLES_REVISOR.includes(r));
+	// Revisor efectivo: director del sistema principal (o superusuario)
+	const esRevisor = Boolean(usuarioActual?.is_superuser || usuarioActual?.perfil?.rol === 'director');
 
 	// ─── animación entrada / salida ───────────────────────────────────────────
 	useEffect(() => {

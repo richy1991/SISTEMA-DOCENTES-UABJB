@@ -9,7 +9,7 @@ export const DEFAULT_ERROR_LABELS = {
   documento_id: 'Documento',
   objetivo_id: 'Objetivo',
   nombre: 'Nombre',
-  nombre_entidad: 'Entidad revisora',
+  nombre_entidad: 'Entidad',
   operacion: 'Operación',
   proceso: 'Proceso',
   producto_intermedio: 'Producto intermedio',

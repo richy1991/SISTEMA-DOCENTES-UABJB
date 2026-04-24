@@ -127,14 +127,11 @@ export const getHistorialDocumentoPOA = (id, gestion) => {
 	return api.get(`/api/poa/documentos_poa/${id}/historial/`, { params: { gestion: Number(gestion) } });
 };
 
-export const enviarRevisionDocumentoPOA = (id, gestion, revisoresIds = []) => {
+export const enviarRevisionDocumentoPOA = (id, gestion) => {
 	if (gestion === undefined || gestion === null || Number.isNaN(Number(gestion)) ) {
 		return badRequest({ gestion: ['El parámetro "gestion" es obligatorio y debe ser un entero.'] });
 	}
-	if (!Array.isArray(revisoresIds) || revisoresIds.length !== 2) {
-		return badRequest({ revisores_ids: ['Debe seleccionar exactamente 2 entidades revisoras.'] });
-	}
-	return api.post(`/api/poa/documentos_poa/${id}/enviar-revision/`, { revisores_ids: revisoresIds.map((value) => Number(value)) }, { params: { gestion: Number(gestion) } });
+	return api.post(`/api/poa/documentos_poa/${id}/enviar-revision/`, {}, { params: { gestion: Number(gestion) } });
 };
 
 export const aprobarDocumentoPOA = (id, gestion, observacion = '') => {
@@ -315,6 +312,9 @@ export const buscarUsuariosSistema = (q) => {
 	return api.get('/api/poa/usuarios/buscar/', { params: { q: String(q).trim() } });
 };
 
+// Director de carrera de la carrera activa del usuario autenticado
+export const getDirectorCarreraActual = () => api.get('/api/poa/director-carrera-actual/');
+
 // Buscar docentes del sistema principal para asignar
 export const buscarDocentesPOA = (q) => {
 	if (!q || String(q).trim().length < 2) return Promise.resolve({ data: [] });
@@ -323,11 +323,6 @@ export const buscarDocentesPOA = (q) => {
 
 export const ROL_POA_CHOICES = [
 	{ value: 'elaborador',       label: 'Elaborador del POA',    color: 'blue' },
-	{ value: 'director_carrera', label: 'Director de Carrera',   color: 'indigo' },
-	{ value: 'revisor_1',        label: 'Entidad Revisora 1',    color: 'violet' },
-	{ value: 'revisor_2',        label: 'Entidad Revisora 2',    color: 'purple' },
-	{ value: 'revisor_3',        label: 'Entidad Revisora 3',    color: 'fuchsia' },
-	{ value: 'revisor_4',        label: 'Entidad Revisora 4',    color: 'pink' },
 ];
 
 // ─── Conversaciones POA ───────────────────────────────────────────────────────

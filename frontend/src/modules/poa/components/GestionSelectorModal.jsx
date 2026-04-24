@@ -8,7 +8,7 @@ import { FaPlus, FaMinus, FaTimes } from 'react-icons/fa';
 import { Input, Modal } from './base';
 import { ModalErrorAlert, formatApiErrors } from './formErrorUtils';
 
-const GestionSelectorModal = ({ onClose, onSuccess }) => {
+const GestionSelectorModal = ({ onClose, onSuccess, currentUser = null }) => {
   const [loading, setLoading] = useState(true);
   const [errorMessages, setErrorMessages] = useState([]);
   const [manualYear, setManualYear] = useState('');
@@ -137,6 +137,7 @@ const GestionSelectorModal = ({ onClose, onSuccess }) => {
               (
                 <div className="fixed inset-0 z-[70]">
                   <NuevoDocumentoModal
+                    currentUser={currentUser}
                     initialGestion={noDocsForYear || manualYear}
                     onClose={() => setShowNuevoModal(false)}
                     onCreated={(created) => {

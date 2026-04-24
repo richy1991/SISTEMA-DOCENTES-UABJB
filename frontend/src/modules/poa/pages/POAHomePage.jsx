@@ -35,6 +35,36 @@ const POAHomePage = () => {
     return (!Number.isNaN(numeric) && Number.isFinite(numeric)) ? numeric : null;
   };
 
+  const normalizeApiError = (err, fallbackMessage) => {
+    const detail = err?.response?.data?.detail ?? err?.response?.data;
+    if (typeof detail === 'string') {
+      const normalized = detail.trim();
+      if (normalized.startsWith('<!DOCTYPE html') || normalized.startsWith('<html') || normalized.includes('OperationError')) {
+        return fallbackMessage;
+      }
+      return normalized;
+    }
+    if (detail && typeof detail === 'object') {
+      try {
+        return JSON.stringify(detail);
+      } catch {
+        return fallbackMessage;
+      }
+    }
+    return err?.message || fallbackMessage;
+  };
+
+  const getUnidadSolicitanteLabel = (doc) => {
+    const carrera = doc?.unidad_solicitante_detalle;
+    if (carrera && typeof carrera === 'object') {
+      return carrera.nombre || carrera.codigo || `Carrera #${carrera.id}`;
+    }
+    if (typeof doc?.unidad_solicitante === 'object') {
+      return doc.unidad_solicitante.nombre || doc.unidad_solicitante.codigo || '';
+    }
+    return String(doc?.unidad_solicitante || '').trim();
+  };
+
   useEffect(() => {
     setLoading(true);
     const currentYear = new Date().getFullYear();
@@ -58,7 +88,7 @@ const POAHomePage = () => {
         setLoading(false);
       })
       .catch((err) => {
-        setError(err?.response?.data?.detail || err?.response?.data || err.message);
+        setError(normalizeApiError(err, 'Error al cargar los documentos POA.'));
         setLoading(false);
       });
   }, []);
@@ -67,7 +97,7 @@ const POAHomePage = () => {
     const list = Array.isArray(documentos) ? documentos : [];
     const total = list.length;
     const programas = new Set(list.map((d) => String(d?.programa || '').trim()).filter(Boolean)).size;
-    const unidades = new Set(list.map((d) => String(d?.unidad_solicitante || '').trim()).filter(Boolean)).size;
+    const unidades = new Set(list.map((d) => String(getUnidadSolicitanteLabel(d) || '').trim()).filter(Boolean)).size;
     const observados = list.filter((d) => String(d?.estado || '').toLowerCase() === 'observado').length;
     const enRevision = list.filter((d) => String(d?.estado || '').toLowerCase() === 'revision').length;
     return { total, programas, unidades, observados, enRevision };
@@ -164,7 +194,7 @@ const POAHomePage = () => {
                 documentos.map((doc, idx) => {
                   const gestion = typeof doc.gestion === 'object' ? (doc.gestion.nombre || '') : (doc.gestion || 'N/A');
                   const programa = typeof doc.programa === 'object' ? (doc.programa.nombre || '') : (doc.programa || 'Sin programa');
-                  const unidad = typeof doc.unidad_solicitante === 'object' ? (doc.unidad_solicitante.nombre || '') : (doc.unidad_solicitante || 'No especificada');
+                  const unidad = getUnidadSolicitanteLabel(doc) || 'No especificada';
                   const entidad = typeof doc.entidad === 'object' ? (doc.entidad.nombre || 'UABJB') : (doc.entidad || 'UABJB');
                   const objetivo = typeof doc.objetivo_gestion_institucional === 'object'
                     ? (doc.objetivo_gestion_institucional.nombre || '')

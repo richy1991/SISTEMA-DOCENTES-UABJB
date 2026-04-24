@@ -29,9 +29,6 @@ from django.shortcuts import get_object_or_404
 from poa_document.utils.pdf_generator import DocumentoPOAPDFGenerator
 
 
-REVISORES_POA = ('revisor_1', 'revisor_2', 'revisor_3', 'revisor_4')
-
-
 def _carrera_usuario_poa(user):
     if not user or not user.is_authenticated or user.is_superuser:
         return None
@@ -54,7 +51,7 @@ def _filtrar_documentos_por_usuario(qs, user):
     carrera = _carrera_usuario_poa(user)
     if not carrera:
         return qs.none()
-    return qs.filter(unidad_solicitante__iexact=(carrera.nombre or '').strip())
+    return qs.filter(unidad_solicitante_id=carrera.id)
 
 
 def _documento_accesible_para_usuario(user, documento):
@@ -65,7 +62,7 @@ def _documento_accesible_para_usuario(user, documento):
     carrera = _carrera_usuario_poa(user)
     if not carrera:
         return False
-    return (documento.unidad_solicitante or '').strip().lower() == (carrera.nombre or '').strip().lower()
+    return documento.unidad_solicitante_id == carrera.id
 
 
 def _obtener_documento_accesible(user, documento_id):
@@ -106,15 +103,9 @@ def _es_elaborador(user):
 def _es_revisor(user):
     if not user or not user.is_authenticated:
         return False
-    roles = _poa_roles_activos(user)
-    if any(r in REVISORES_POA for r in roles) or 'director_carrera' in roles:
+    if user.is_superuser:
         return True
-    docente_id = getattr(getattr(user, 'perfil', None), 'docente_id', None)
-    return UsuarioPOA.objects.filter(
-        Q(user_id=user.id) | Q(docente_id=docente_id),
-        activo=True,
-        rol__in=[*REVISORES_POA, 'director_carrera'],
-    ).exists()
+    return getattr(getattr(user, 'perfil', None), 'rol', None) == 'director'
 
 
 def _requerir_elaborador(request):
@@ -141,7 +132,7 @@ def _requerir_gestor_accesos(request):
 
 def _requerir_revisor(request):
     if not _es_revisor(request.user):
-        raise PermissionDenied('Solo una Entidad Revisora o Director de Carrera puede realizar esta acción.')
+        raise PermissionDenied('Solo el Director del sistema principal puede realizar esta acción.')
 
 
 def _accesos_poa_usuario(user):
@@ -194,7 +185,7 @@ def _obtener_revision_del_usuario(documento, user):
 
 
 def _documentos_queryset():
-    return DocumentoPOA.objects.select_related('elaborado_por__user', 'jefe_unidad__user').prefetch_related(
+    return DocumentoPOA.objects.prefetch_related(
         'objetivos',
         'revisiones__revisor__user',
         'historial__usuario',
@@ -283,6 +274,37 @@ class UsuarioBusquedaView(APIView):
                 } if perfil else None,
             })
         return Response(results)
+
+
+class DirectorCarreraActualView(APIView):
+    """Retorna el Director de Carrera de la carrera activa del usuario autenticado."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        carrera = _carrera_usuario_poa(request.user)
+        if not carrera:
+            return Response({'detail': 'El usuario no tiene carrera activa.'}, status=status.HTTP_404_NOT_FOUND)
+
+        director = User.objects.select_related('perfil').filter(
+            is_active=True,
+            perfil__rol='director',
+        ).filter(
+            Q(perfil__carrera_id=carrera.id) |
+            Q(asignaciones_carrera__carrera_id=carrera.id, asignaciones_carrera__activo=True)
+        ).distinct().first()
+
+        if not director:
+            return Response({'detail': 'No existe Director de Carrera para la carrera activa.'}, status=status.HTTP_404_NOT_FOUND)
+
+        nombre = director.get_full_name() or director.username
+        return Response({
+            'id': director.id,
+            'username': director.username,
+            'nombre': nombre,
+            'rol': 'director',
+            'carrera_id': carrera.id,
+            'carrera_nombre': getattr(carrera, 'nombre', ''),
+        })
 
 
 class DireccionViewSet(viewsets.ModelViewSet):
@@ -435,47 +457,13 @@ class DocumentoPOAViewSet(viewsets.ModelViewSet):
         if doc.estado not in ('elaboracion', 'observado'):
             return Response({'detail': f'No se puede enviar a revisión desde el estado {doc.get_estado_display()}.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        revisores_ids = request.data.get('revisores_ids') or request.data.get('entidades_ids') or []
-        if not isinstance(revisores_ids, list):
-            return Response({'revisores_ids': ['Debe enviar una lista de entidades revisoras.']}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            revisores_ids = [int(revisor_id) for revisor_id in revisores_ids]
-        except (TypeError, ValueError):
-            return Response({'revisores_ids': ['Los IDs de entidades revisoras deben ser enteros válidos.']}, status=status.HTTP_400_BAD_REQUEST)
-
-        revisores_ids = list(dict.fromkeys(revisores_ids))
-        if len(revisores_ids) != 2:
-            return Response({'revisores_ids': ['Debe seleccionar exactamente 2 entidades revisoras.']}, status=status.HTTP_400_BAD_REQUEST)
-
-        revisores_entidad = list(
-            UsuarioPOA.objects.filter(id__in=revisores_ids, activo=True, rol__in=REVISORES_POA).select_related('user')
-        )
-        if len(revisores_entidad) != 2:
-            return Response({'revisores_ids': ['Las entidades seleccionadas deben estar activas y configuradas como Entidad Revisora.']}, status=status.HTTP_400_BAD_REQUEST)
-
-        director = doc.jefe_unidad
-        if director is None or not director.activo or director.rol != 'director_carrera':
-            return Response({'jefe_unidad': ['El documento debe tener un Director de Carrera activo antes de enviarse a revisión.']}, status=status.HTTP_400_BAD_REQUEST)
+        director = (doc.jefe_unidad or '').strip()
+        if not director:
+            return Response({'jefe_unidad': ['El documento debe tener un Director de Carrera asignado antes de enviarse a revisión.']}, status=status.HTTP_400_BAD_REQUEST)
 
         estado_anterior = doc.estado
         doc.revisiones.filter(activo=True).update(activo=False)
         nuevo_ciclo = doc.ciclo_revision_actual + 1
-
-        for revisor in revisores_entidad:
-            RevisionDocumentoPOA.objects.create(
-                documento=doc,
-                ciclo_revision=nuevo_ciclo,
-                revisor=revisor,
-                tipo_revisor='entidad',
-            )
-
-        RevisionDocumentoPOA.objects.create(
-            documento=doc,
-            ciclo_revision=nuevo_ciclo,
-            revisor=director,
-            tipo_revisor='director',
-        )
 
         doc.estado = 'revision'
         doc.ciclo_revision_actual = nuevo_ciclo
@@ -486,23 +474,12 @@ class DocumentoPOAViewSet(viewsets.ModelViewSet):
             documento=doc,
             usuario=request.user,
             tipo_evento='envio_revision',
-            descripcion='Documento enviado a revisión a 2 entidades y al Director de Carrera.',
+            descripcion='Documento enviado a revisión del Director del sistema principal.',
             estado_anterior=estado_anterior,
             estado_nuevo=doc.estado,
             datos_evento={
                 'ciclo_revision': nuevo_ciclo,
-                'revisores_entidad': [
-                    {
-                        'id': revisor.id,
-                        'nombre': revisor.nombre_entidad or revisor.nombre_display,
-                        'rol': revisor.rol,
-                    }
-                    for revisor in revisores_entidad
-                ],
-                'director': {
-                    'id': director.id,
-                    'nombre': director.nombre_display,
-                },
+                'director': director,
             },
         )
         return Response(self.get_serializer(doc).data)
@@ -514,49 +491,23 @@ class DocumentoPOAViewSet(viewsets.ModelViewSet):
         if doc.estado != 'revision':
             return Response({'detail': f'Solo se puede aprobar en estado En revisión. Estado actual: {doc.get_estado_display()}.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        revision = _obtener_revision_del_usuario(doc, request.user)
-        if revision is None:
-            raise PermissionDenied('No tiene una revisión asignada para este documento.')
-        if revision.estado == 'aprobado':
-            return Response({'detail': 'Su revisión ya fue aprobada en este ciclo.'}, status=status.HTTP_400_BAD_REQUEST)
-
         observacion = (request.data.get('observacion') or request.data.get('observaciones') or '').strip()
-        revision.estado = 'aprobado'
-        revision.observaciones = observacion
-        revision.fecha_respuesta = timezone.now()
-        revision.respondido_por = request.user
-        revision.save(update_fields=['estado', 'observaciones', 'fecha_respuesta', 'respondido_por'])
+        estado_anterior = doc.estado
+        doc.estado = 'aprobado'
+        doc.observaciones = ''
+        doc.save(update_fields=['estado', 'observaciones', 'actualizado_en'])
 
         _crear_historial_documento(
             documento=doc,
             usuario=request.user,
             tipo_evento='aprobacion_revision',
-            descripcion=f'Revisión aprobada por {revision.revisor.nombre_entidad or revision.revisor.nombre_display}.',
-            estado_anterior=doc.estado,
+            descripcion='Documento aprobado por Director del sistema principal.',
+            estado_anterior=estado_anterior,
             estado_nuevo=doc.estado,
             datos_evento={
-                'revision_id': revision.id,
-                'revisor_id': revision.revisor_id,
-                'tipo_revisor': revision.tipo_revisor,
                 'observacion': observacion,
             },
         )
-
-        revisiones_activas = doc.revisiones.filter(activo=True, ciclo_revision=doc.ciclo_revision_actual)
-        if revisiones_activas.exists() and not revisiones_activas.exclude(estado='aprobado').exists():
-            estado_anterior = doc.estado
-            doc.estado = 'aprobado'
-            doc.observaciones = ''
-            doc.save(update_fields=['estado', 'observaciones', 'actualizado_en'])
-            _crear_historial_documento(
-                documento=doc,
-                usuario=request.user,
-                tipo_evento='aprobacion_final',
-                descripcion='Documento aprobado definitivamente; todos los revisores asignados aprobaron.',
-                estado_anterior=estado_anterior,
-                estado_nuevo=doc.estado,
-                datos_evento={'ciclo_revision': doc.ciclo_revision_actual},
-            )
         return Response(self.get_serializer(doc).data)
 
     @action(detail=True, methods=['post'], url_path='observar')
@@ -566,36 +517,23 @@ class DocumentoPOAViewSet(viewsets.ModelViewSet):
         if doc.estado != 'revision':
             return Response({'detail': f'Solo se puede observar en estado En revisión. Estado actual: {doc.get_estado_display()}.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        revision = _obtener_revision_del_usuario(doc, request.user)
-        if revision is None:
-            raise PermissionDenied('No tiene una revisión asignada para este documento.')
-
         observaciones = (request.data.get('observaciones') or request.data.get('observacion') or '').strip()
         if not observaciones:
             return Response({'observaciones': ['Debe registrar observaciones para marcar el documento como observado.']}, status=status.HTTP_400_BAD_REQUEST)
 
-        revision.estado = 'observado'
-        revision.observaciones = observaciones
-        revision.fecha_respuesta = timezone.now()
-        revision.respondido_por = request.user
-        revision.save(update_fields=['estado', 'observaciones', 'fecha_respuesta', 'respondido_por'])
-
         estado_anterior = doc.estado
         doc.estado = 'observado'
-        doc.observaciones = _resumen_observaciones_revision(doc)
+        doc.observaciones = observaciones
         doc.save(update_fields=['estado', 'observaciones', 'actualizado_en'])
 
         _crear_historial_documento(
             documento=doc,
             usuario=request.user,
             tipo_evento='observacion_revision',
-            descripcion=f'Documento observado por {revision.revisor.nombre_entidad or revision.revisor.nombre_display}.',
+            descripcion='Documento observado por Director del sistema principal.',
             estado_anterior=estado_anterior,
             estado_nuevo=doc.estado,
             datos_evento={
-                'revision_id': revision.id,
-                'revisor_id': revision.revisor_id,
-                'tipo_revisor': revision.tipo_revisor,
                 'observaciones': observaciones,
             },
         )
@@ -1150,9 +1088,7 @@ class MensajeComentarioPOAViewSet(
             return Response({'detail': 'No tiene permisos para intervenir esta conversación.'}, status=status.HTTP_404_NOT_FOUND)
         if not comentario.abierto:
             return Response({'detail': 'Esta conversacion esta cerrada.'}, status=status.HTTP_400_BAD_REQUEST)
-        roles = _poa_roles_activos(request.user)
-        revisores = {'revisor_1', 'revisor_2', 'revisor_3', 'revisor_4', 'director_carrera'}
-        es_revisor = bool(roles & revisores)
+        es_revisor = _es_revisor(request.user)
         mensaje = MensajeComentarioPOA.objects.create(
             comentario=comentario, autor=request.user, texto=texto, es_revisor=es_revisor
         )
