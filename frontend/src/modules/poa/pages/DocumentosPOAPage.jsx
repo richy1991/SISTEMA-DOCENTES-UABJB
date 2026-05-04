@@ -3,8 +3,8 @@ import toast from 'react-hot-toast';
 import { DEFAULT_ENTIDAD } from '../config/defaults';
 import GestionSelectorModal from '../components/GestionSelectorModal';
 import NuevoDocumentoModal from '../components/NuevoDocumentoModal';
-import ConversacionPOAModal from '../components/ConversacionPOAModal';
 import BitacoraModal from '../components/BitacoraModal';
+import Dialog from '../components/base/Dialog';
 import PDFPreviewPOAModal from '../components/PDFPreviewPOAModal';
 import {
   AlertCircle,
@@ -21,7 +21,6 @@ import {
   Trash2,
   User,
   Briefcase,
-  MessageCircle,
 } from 'lucide-react';
 import { useLocation, useNavigate, useOutletContext } from 'react-router-dom';
 import {
@@ -91,13 +90,20 @@ const getPersonaLabel = (value, fallback = '') => {
   return value.nombre_display || value.nombre || value.user_detalle?.nombre_completo || value.docente?.nombre_completo || fallback;
 };
 
+const parseChecklistItems = (observaciones) => {
+  if (!observaciones) return [];
+  return String(observaciones)
+    .split(/\n|;|\u2022|\-/g)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((item) => item.replace(/^\d+[\.)]\s*/, ''));
+};
+
 const DocumentosPOAPage = ({ viewMode = 'all' }) => {
   const [showModal, setShowModal] = useState(false);
   const [showNuevoModal, setShowNuevoModal] = useState(false);
-  const [showConversacionModal, setShowConversacionModal] = useState(false);
   const [showRevisionModal, setShowRevisionModal] = useState(false);
   const [showPdfPreviewModal, setShowPdfPreviewModal] = useState(false);
-  const [conversacionDoc, setConversacionDoc] = useState(null);
   const [revisionDoc, setRevisionDoc] = useState(null);
   const [pdfPreviewDoc, setPdfPreviewDoc] = useState(null);
   const [editingDoc, setEditingDoc] = useState(null);
@@ -108,10 +114,6 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
   const outletContext = useOutletContext() || {};
   const poaPermissions = outletContext.poaPermissions || {};
   const poaRoles = Array.isArray(outletContext.poaRoles) ? outletContext.poaRoles : [];
-  const currentUser = {
-    ...(outletContext.user || {}),
-    roles: poaRoles,
-  };
   const canEdit = !!poaPermissions.canEdit;
   const canReview = !!poaPermissions.canReview;
   const isRevisionBoard = viewMode === 'revision-observado';
@@ -123,6 +125,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
   const [deletingId, setDeletingId] = useState(null);
   const [updatingEstadoId, setUpdatingEstadoId] = useState(null);
   const [reviewNotesByDoc, setReviewNotesByDoc] = useState({});
+  const [deleteDialogDoc, setDeleteDialogDoc] = useState(null);
 
   const resolveGestionCandidate = (value) => {
     if (value === undefined || value === null || value === '') return null;
@@ -247,7 +250,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
     });
   };
 
-  const handleDelete = async (doc) => {
+  const handleDelete = (doc) => {
     if (!canEdit) {
       toast.error('No tiene permisos para eliminar documentos POA.');
       return;
@@ -258,18 +261,25 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
       toast.error('No se pudo eliminar: falta la gestión del documento.');
       return;
     }
-    if (!window.confirm('¿Confirma que desea eliminar este documento? Esta acción no se puede deshacer.')) return;
+
+    setDeleteDialogDoc({ doc, gestion });
+  };
+
+  const confirmarEliminarDocumento = async () => {
+    const target = deleteDialogDoc;
+    if (!target?.doc) return;
 
     try {
-      setDeletingId(doc.id);
-      await deleteDocumentoPOA(doc.id, Number(gestion));
-      setDocs((prev) => (prev || []).filter((item) => Number(item.id) !== Number(doc.id)));
+      setDeletingId(target.doc.id);
+      await deleteDocumentoPOA(target.doc.id, Number(target.gestion));
+      setDocs((prev) => (prev || []).filter((item) => Number(item.id) !== Number(target.doc.id)));
       toast.success('Documento eliminado');
     } catch (err) {
       const message = err?.response?.data?.detail || JSON.stringify(err?.response?.data) || err?.message || 'Error al eliminar documento';
       toast.error(String(message));
     } finally {
       setDeletingId(null);
+      setDeleteDialogDoc(null);
     }
   };
 
@@ -395,19 +405,6 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
             onUpdated={handleUpdated}
           />
         )}
-        {showConversacionModal && conversacionDoc && (
-          <ConversacionPOAModal
-            open={showConversacionModal}
-            onClose={() => {
-              setShowConversacionModal(false);
-              setConversacionDoc(null);
-            }}
-            documentoId={conversacionDoc.id}
-            estadoDoc={conversacionDoc.estado}
-            tituloDoc={conversacionDoc.programa || `Documento #${conversacionDoc.id}`}
-            usuarioActual={currentUser}
-          />
-        )}
         {showBitacoraModal && bitacoraDoc && (
           <BitacoraModal
             doc={bitacoraDoc}
@@ -418,6 +415,17 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
             }}
           />
         )}
+        <Dialog
+          open={Boolean(deleteDialogDoc)}
+          type="danger"
+          title="Eliminar documento POA"
+          message={deleteDialogDoc?.doc ? `¿Confirma que desea eliminar este documento?\n${deleteDialogDoc.doc.programa || `Documento #${deleteDialogDoc.doc.id}`}` : ''}
+          confirmText={deletingId === deleteDialogDoc?.doc?.id ? 'Eliminando...' : 'Eliminar'}
+          cancelText="Cancelar"
+          confirmDisabled={deletingId === deleteDialogDoc?.doc?.id}
+          onConfirm={confirmarEliminarDocumento}
+          onCancel={() => setDeleteDialogDoc(null)}
+        />
         {showRevisionModal && revisionDoc && (
           <div className="fixed inset-0 z-[75]" onClick={() => setShowRevisionModal(false)}>
             <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" />
@@ -569,12 +577,12 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                   const entidad = typeof doc.entidad === 'object' ? (doc.entidad.nombre || DEFAULT_ENTIDAD) : (doc.entidad || DEFAULT_ENTIDAD);
                   const objetivo = typeof doc.objetivo_gestion_institucional === 'object' ? (doc.objetivo_gestion_institucional.nombre || '') : (doc.objetivo_gestion_institucional || '');
                   const observaciones = (doc.observaciones || '').trim();
+                  const observacionesChecklist = parseChecklistItems(observaciones);
                   const elaboradoPor = getPersonaLabel(doc.elaborado_por, null);
                   const jefeUnidad = getPersonaLabel(doc.jefe_unidad, null);
                   const note = reviewNotesByDoc[doc.id] || '';
-                  const canRespondThisDoc = canReview && estado === 'revision';
+                  const canRespondThisDoc = canReview && ['revision', 'observado'].includes(estado);
                   const canSendToRevision = canEdit && (estado === 'elaboracion' || estado === 'observado');
-
                   return (
                     <div key={doc.id || idx} className="w-full">
                       <div
@@ -670,7 +678,21 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                             {observaciones && (
                               <div className="mt-3 bg-orange-100/75 dark:bg-orange-950/35 border border-orange-300 dark:border-orange-800 rounded-lg p-3">
                                 <p className="text-[10px] text-orange-700 dark:text-orange-300 font-bold uppercase tracking-wider mb-1">Observaciones vigentes</p>
-                                <p className="text-orange-900 dark:text-orange-200 text-xs leading-relaxed whitespace-pre-line">{observaciones}</p>
+                                {observacionesChecklist.length > 1 ? (
+                                  <ul className="space-y-1.5">
+                                    {observacionesChecklist.map((item, itemIndex) => (
+                                      <li key={`${doc.id}-obs-${itemIndex}`} className="flex items-start gap-2 text-orange-900 dark:text-orange-200 text-xs leading-relaxed">
+                                        <span className="mt-1 w-1.5 h-1.5 rounded-full bg-orange-500 dark:bg-orange-300 flex-shrink-0" />
+                                        <span>{item}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <p className="text-orange-900 dark:text-orange-200 text-xs leading-relaxed whitespace-pre-line">{observaciones}</p>
+                                )}
+                                <p className="mt-2 text-[10px] text-orange-700/90 dark:text-orange-300/90">
+                                  Use este checklist como guía de corrección para el elaborador.
+                                </p>
                               </div>
                             )}
 
@@ -735,19 +757,6 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                                 className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold py-2 px-4 rounded-xl shadow transition-all w-full"
                               >
                                 <Edit size={14} /> Editar
-                              </button>
-                            )}
-
-                            {(canEdit || canReview) && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setConversacionDoc(doc);
-                                  setShowConversacionModal(true);
-                                }}
-                                className="flex items-center justify-center gap-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold py-2 px-4 rounded-xl shadow transition-all w-full"
-                              >
-                                <MessageCircle size={14} /> Conversaciones
                               </button>
                             )}
 

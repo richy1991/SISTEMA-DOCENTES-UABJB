@@ -287,6 +287,7 @@ const Sidebar = ({ theme, showGestionModal, setShowGestionModal, sidebarExpanded
               <NavLink
                 key={item.name}
                 to={item.path}
+                end={item.path === '/poa'}
                 className={({ isActive }) =>
                   `${navItemBase} ${isActive ? `${themeConfig.navActiveBg} ${themeConfig.navActiveBorder} ${themeConfig.navActiveText} ${navActiveShadow}` : `${navTextClass} ${themeConfig.navItemHover}`}`
                 }

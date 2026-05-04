@@ -31,6 +31,7 @@ api.interceptors.response.use(
 			try {
 				const refreshToken = localStorage.getItem('refresh_token');
 				if (!refreshToken) {
+					sessionStorage.setItem('post_login_redirect', window.location.pathname + window.location.search + window.location.hash);
 					localStorage.clear();
 					window.location.href = '/login';
 					return Promise.reject(error);
@@ -45,6 +46,7 @@ api.interceptors.response.use(
 				originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
 				return api(originalRequest);
 			} catch (refreshError) {
+				sessionStorage.setItem('post_login_redirect', window.location.pathname + window.location.search + window.location.hash);
 				localStorage.clear();
 				window.location.href = '/login';
 				return Promise.reject(refreshError);
@@ -325,25 +327,69 @@ export const ROL_POA_CHOICES = [
 	{ value: 'elaborador',       label: 'Elaborador del POA',    color: 'blue' },
 ];
 
-// ─── Conversaciones POA ───────────────────────────────────────────────────────
+// ─── Chat directo independiente (por usuario) ───────────────────────────────
 
-// Obtener hilos de conversación de un documento
-export const getComentariosPOA = (documentoId) =>
-	api.get('/api/poa/comentarios-poa/', { params: { documento: documentoId } });
+export const getChatContactosPOA = () =>
+	api.get('/api/poa/chat-contactos/');
 
-// Abrir un nuevo hilo de conversación (solo si no hay uno activo)
-export const crearComentarioPOA = (documentoId) =>
-	api.post('/api/poa/comentarios-poa/', { documento: documentoId });
+export const buscarUsuariosChatPOA = (q) => {
+	if (!q || String(q).trim().length < 2) return Promise.resolve({ data: [] });
+	return api.get('/api/poa/usuarios-chat/buscar/', { params: { q: String(q).trim() } });
+};
 
-// Cerrar/reabrir un hilo
-export const cerrarComentarioPOA = (comentarioId) =>
-	api.patch(`/api/poa/comentarios-poa/${comentarioId}/`, { abierto: false });
+export const getMensajesChatPOA = (peerUserId) =>
+	api.get('/api/poa/mensajes-chat/', { params: { peer_user_id: peerUserId } });
 
-// Enviar un mensaje a un hilo
-export const enviarMensajePOA = (comentarioId, texto) =>
-	api.post('/api/poa/mensajes-poa/', { comentario: comentarioId, texto });
+export const getCurrentUserPOA = () => api.get('/api/poa/me/');
 
-// Eliminar un mensaje (solo el autor o superusuario)
-export const eliminarMensajePOA = (mensajeId) =>
-	api.delete(`/api/poa/mensajes-poa/${mensajeId}/`);
+export const enviarMensajeChatPOA = (destinatarioId, texto) =>
+	api.post('/api/poa/mensajes-chat/', {
+		receptor: destinatarioId,
+		texto,
+	});
+
+export const vaciarChatPOA = (peerUserId) =>
+	api.delete('/api/poa/mensajes-chat/vaciar/', { data: { peer_user_id: peerUserId } });
+
+export const getEstadoBloqueoChatPOA = (peerUserId) =>
+	api.get('/api/poa/mensajes-chat/bloqueo-estado/', { params: { peer_user_id: peerUserId } });
+
+export const bloquearUsuarioChatPOA = (peerUserId) =>
+	api.post('/api/poa/mensajes-chat/bloquear/', { peer_user_id: peerUserId });
+
+export const desbloquearUsuarioChatPOA = (peerUserId) =>
+	api.post('/api/poa/mensajes-chat/desbloquear/', { peer_user_id: peerUserId });
+
+// Evidencias de actividades
+export const getEvidenciasPorActividad = (actividad_id) => {
+	if (actividad_id === undefined || actividad_id === null || Number.isNaN(Number(actividad_id))) {
+		return badRequest({ actividad_id: ['El parámetro "actividad_id" es obligatorio y debe ser un entero.'] });
+	}
+	return api.get('/api/poa/evidencias/', { params: { actividad_id: Number(actividad_id) } });
+};
+
+export const crearEvidencia = (payload) => {
+	// payload puede ser FormData o un JSON simple; preferimos FormData cuando haya archivos
+	if (payload instanceof FormData) {
+		return api.post('/api/poa/evidencias/', payload, { headers: { 'Content-Type': 'multipart/form-data' } });
+	}
+	return api.post('/api/poa/evidencias/', payload);
+};
+
+export const updateEvidencia = (id, payload) => {
+	if (id === undefined || id === null || Number.isNaN(Number(id))) {
+		return badRequest({ id: ['El parámetro "id" es obligatorio y debe ser un entero.'] });
+	}
+	if (payload instanceof FormData) {
+		return api.patch(`/api/poa/evidencias/${id}/`, payload, { headers: { 'Content-Type': 'multipart/form-data' } });
+	}
+	return api.patch(`/api/poa/evidencias/${id}/`, payload);
+};
+
+export const deleteEvidencia = (id) => {
+	if (id === undefined || id === null || Number.isNaN(Number(id))) {
+		return badRequest({ id: ['El parámetro "id" es obligatorio y debe ser un entero.'] });
+	}
+	return api.delete(`/api/poa/evidencias/${id}/`);
+};
 

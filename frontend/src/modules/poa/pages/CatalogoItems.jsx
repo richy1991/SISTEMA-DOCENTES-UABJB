@@ -6,6 +6,7 @@ import NuevoCatalogoItemModal from '../components/NuevoCatalogoItemModal';
 import IconButton from '../components/IconButton';
 import toast from 'react-hot-toast';
 import { Modal } from '../components/base';
+import Dialog from '../components/base/Dialog';
 
 const CatalogoItems = () => {
 	const outletContext = useOutletContext() || {};
@@ -32,6 +33,7 @@ const CatalogoItems = () => {
 	const [importOmitidos, setImportOmitidos] = useState([]);
 	const [importArchivoNombre, setImportArchivoNombre] = useState('');
 	const [showImportResultModal, setShowImportResultModal] = useState(false);
+	const [deleteDialogItem, setDeleteDialogItem] = useState(null);
 	const [searchQuery, setSearchQuery] = useState('');
 	const [appliedSearch, setAppliedSearch] = useState('');
 	const [stickyTop, setStickyTop] = useState(72);
@@ -186,16 +188,22 @@ const CatalogoItems = () => {
 			toast.error('Selecciona un item para eliminar.');
 			return;
 		}
-		const ok = window.confirm(`Eliminar item ${selectedItem.id || selectedItem.detalle || ''}?`);
-		if (!ok) return;
+		setDeleteDialogItem(selectedItem);
+	};
+
+	const confirmarEliminarItem = async () => {
+		const item = deleteDialogItem;
+		if (!item) return;
 		try {
-			await deleteCatalogoItem(selectedItem.id);
-			setItems(prev => prev.filter(x => String(x.id) !== String(selectedItem.id)));
+			await deleteCatalogoItem(item.id);
+			setItems(prev => prev.filter(x => String(x.id) !== String(item.id)));
 			setSelectedItem(null);
 			toast.success('Item eliminado');
 		} catch (err) {
 			console.error('Error eliminando item', err);
 			toast.error('No se pudo eliminar el item');
+		} finally {
+			setDeleteDialogItem(null);
 		}
 	};
 
@@ -342,6 +350,16 @@ const CatalogoItems = () => {
 
 	return (
 		<div className="relative w-full max-w-6xl mx-auto">
+			<Dialog
+				open={Boolean(deleteDialogItem)}
+				type="danger"
+				title="Eliminar item"
+				message={deleteDialogItem ? `Eliminar item ${deleteDialogItem.id || deleteDialogItem.detalle || ''}?` : ''}
+				confirmText="Eliminar"
+				cancelText="Cancelar"
+				onConfirm={confirmarEliminarItem}
+				onCancel={() => setDeleteDialogItem(null)}
+			/>
 			<div className="catalogo-card w-full p-6 rounded shadow border border-slate-200 bg-white/90 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
 			{!canEdit && (
 				<div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">

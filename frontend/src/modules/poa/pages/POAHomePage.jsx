@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react';
-import { getDocumentosPOAPorGestion } from '../../../apis/poa.api';
+import { getDocumentosPOAPorGestion, getChatContactosPOA } from '../../../apis/poa.api';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -12,12 +12,15 @@ import {
   FaCheckCircle,
   FaClock,
   FaLayerGroup,
+  FaExclamationTriangle,
+  FaArrowRight,
 } from 'react-icons/fa';
 
 const POAHomePage = () => {
   const [documentos, setDocumentos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [alertaElaborador, setAlertaElaborador] = useState(null);
   const navigate = useNavigate();
 
   const resolveGestionCandidate = (value) => {
@@ -68,9 +71,12 @@ const POAHomePage = () => {
   useEffect(() => {
     setLoading(true);
     const currentYear = new Date().getFullYear();
-    getDocumentosPOAPorGestion(currentYear)
-      .then((res) => {
-        const data = res.data;
+    Promise.all([
+      getDocumentosPOAPorGestion(currentYear),
+      getChatContactosPOA(),
+    ])
+      .then(([docsRes, contactosRes]) => {
+        const data = docsRes.data;
         let docs = [];
         if (Array.isArray(data)) docs = data;
         else if (Array.isArray(data.results)) docs = data.results;
@@ -85,6 +91,7 @@ const POAHomePage = () => {
           }
         }
         setDocumentos(docs);
+        setAlertaElaborador(contactosRes?.data?.alerta_asignacion || null);
         setLoading(false);
       })
       .catch((err) => {
@@ -157,6 +164,33 @@ const POAHomePage = () => {
 
         {!loading && !error && (
           <>
+            {alertaElaborador && (
+              <motion.div
+                variants={itemVariants}
+                initial="hidden"
+                animate="show"
+                className="mt-4 rounded-2xl border border-amber-400/50 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-100 dark:from-amber-950/55 dark:via-orange-950/45 dark:to-amber-900/40 p-4 shadow-sm"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 rounded-xl bg-amber-500/15 p-3 text-amber-700 dark:text-amber-300">
+                    <FaExclamationTriangle />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm md:text-base font-extrabold text-amber-900 dark:text-amber-100">{alertaElaborador.titulo}</p>
+                    <p className="mt-1 text-sm text-amber-900/90 dark:text-amber-100/85 leading-relaxed">{alertaElaborador.mensaje}</p>
+                    <button
+                      type="button"
+                      onClick={() => navigate(alertaElaborador.link || '/poa/accesos')}
+                      className="mt-3 inline-flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-amber-400 transition-colors"
+                    >
+                      {alertaElaborador.texto_link || 'Asignar'}
+                      <FaArrowRight />
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
             <motion.div
               variants={containerVariants}
               initial="hidden"

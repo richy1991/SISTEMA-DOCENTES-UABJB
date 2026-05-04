@@ -6,9 +6,11 @@ from rest_framework import generics
 from rest_framework.views import APIView
 from django.http import FileResponse, HttpResponse
 from django.utils import timezone
+from django.db import transaction
 from django.db.models import Q
+from django.core.exceptions import ObjectDoesNotExist
 from rest_framework.exceptions import PermissionDenied
-from poa_document.models import Direccion, DocumentoPOA, ObjetivoEspecifico, Actividad, DetallePresupuesto, UsuarioPOA, RevisionDocumentoPOA, HistorialDocumentoPOA, ComentarioPOA, MensajeComentarioPOA
+from poa_document.models import Direccion, DocumentoPOA, ObjetivoEspecifico, Actividad, DetallePresupuesto, UsuarioPOA, RevisionDocumentoPOA, HistorialDocumentoPOA, MensajeChat, BloqueoChat, Evidencia, EvidenciaArchivo
 from fondos.models import Docente
 from django.contrib.auth.models import User
 from .serializers import (
@@ -19,20 +21,32 @@ from .serializers import (
     DetallePresupuestoSerializer,
     UsuarioPOASerializer,
     DocenteSimpleSerializer,
-    ComentarioPOASerializer,
-    MensajeComentarioPOASerializer,
+    MensajeChatSerializer,
+    EvidenciaSerializer,
+    EvidenciaArchivoSerializer,
 )
 from catalogos.models import OperacionCatalogo
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from django.conf import settings
 from django.shortcuts import get_object_or_404
 from poa_document.utils.pdf_generator import DocumentoPOAPDFGenerator
+
+
+def _get_user_profile(user):
+    """Obtiene perfil de usuario de forma segura (incluye casos sin perfil en superuser)."""
+    if not user or not getattr(user, 'is_authenticated', False):
+        return None
+    try:
+        return user.perfil
+    except ObjectDoesNotExist:
+        return None
 
 
 def _carrera_usuario_poa(user):
     if not user or not user.is_authenticated or user.is_superuser:
         return None
-    perfil = getattr(user, 'perfil', None)
+    perfil = _get_user_profile(user)
     if not perfil:
         return None
     if perfil.carrera_id:
@@ -80,7 +94,8 @@ def _poa_roles_activos(user):
     if not user or not user.is_authenticated:
         return set()
     filtros = Q(user=user)
-    docente_id = getattr(getattr(user, 'perfil', None), 'docente_id', None)
+    perfil = _get_user_profile(user)
+    docente_id = getattr(perfil, 'docente_id', None)
     if docente_id:
         filtros |= Q(docente_id=docente_id)
     return set(UsuarioPOA.objects.filter(filtros, activo=True).values_list('rol', flat=True))
@@ -92,7 +107,8 @@ def _es_elaborador(user):
     roles = _poa_roles_activos(user)
     if 'elaborador' in roles:
         return True
-    docente_id = getattr(getattr(user, 'perfil', None), 'docente_id', None)
+    perfil = _get_user_profile(user)
+    docente_id = getattr(perfil, 'docente_id', None)
     return UsuarioPOA.objects.filter(
         Q(user_id=user.id) | Q(docente_id=docente_id),
         activo=True,
@@ -105,7 +121,8 @@ def _es_revisor(user):
         return False
     if user.is_superuser:
         return True
-    return getattr(getattr(user, 'perfil', None), 'rol', None) == 'director'
+    perfil = _get_user_profile(user)
+    return getattr(perfil, 'rol', None) == 'director'
 
 
 def _requerir_elaborador(request):
@@ -122,7 +139,8 @@ def _es_admin_principal(user):
         return False
     if user.is_superuser:
         return True
-    return getattr(getattr(user, 'perfil', None), 'rol', None) == 'iiisyp'
+    perfil = _get_user_profile(user)
+    return getattr(perfil, 'rol', None) == 'iiisyp'
 
 
 def _requerir_gestor_accesos(request):
@@ -139,10 +157,11 @@ def _accesos_poa_usuario(user):
     if not user or not user.is_authenticated:
         return UsuarioPOA.objects.none()
     filtros = Q(user=user)
-    docente_id = getattr(getattr(user, 'perfil', None), 'docente_id', None)
+    perfil = _get_user_profile(user)
+    docente_id = getattr(perfil, 'docente_id', None)
     if docente_id:
         filtros |= Q(docente_id=docente_id)
-    return UsuarioPOA.objects.filter(filtros, activo=True)
+    return UsuarioPOA.objects.filter(filtros)
 
 
 def _crear_historial_documento(documento, usuario, tipo_evento, descripcion, estado_anterior='', estado_nuevo='', datos_evento=None):
@@ -262,7 +281,40 @@ class UsuarioBusquedaView(APIView):
         ).order_by('last_name', 'first_name')[:20]
         results = []
         for u in qs:
-            perfil = getattr(u, 'perfil', None)
+            perfil = _get_user_profile(u)
+            results.append({
+                'id': u.id,
+                'username': u.username,
+                'email': u.email,
+                'nombre_completo': u.get_full_name() or u.username,
+                'perfil': {
+                    'rol': perfil.rol if perfil else None,
+                    'docente': perfil.docente_id if perfil else None,
+                } if perfil else None,
+            })
+        return Response(results)
+
+
+class UsuarioBusquedaChatView(APIView):
+    """Busca usuarios activos del sistema para chat directo."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        q = request.query_params.get('q', '').strip()
+        if len(q) < 2:
+            return Response([])
+
+        qs = User.objects.select_related('perfil').filter(
+            Q(username__icontains=q) |
+            Q(first_name__icontains=q) |
+            Q(last_name__icontains=q) |
+            Q(email__icontains=q),
+            is_active=True,
+        ).exclude(pk=request.user.id).order_by('last_name', 'first_name', 'username')[:20]
+
+        results = []
+        for u in qs:
+            perfil = _get_user_profile(u)
             results.append({
                 'id': u.id,
                 'username': u.username,
@@ -304,6 +356,161 @@ class DirectorCarreraActualView(APIView):
             'rol': 'director',
             'carrera_id': carrera.id,
             'carrera_nombre': getattr(carrera, 'nombre', ''),
+        })
+
+
+class ChatContactosPOAView(APIView):
+    """Retorna los contactos válidos para chat según el rol del usuario actual."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        perfil = _get_user_profile(request.user)
+        perfil_rol = getattr(perfil, 'rol', None)
+        roles_poa = _poa_roles_activos(request.user)
+
+        # Obtener carrera activa del usuario (puede ser None)
+        carrera = _carrera_usuario_poa(request.user)
+
+        # Default: sugerencias dentro de POA deben enlazar director <-> elaborador
+        # exclusivamente dentro de la misma carrera.
+        contactos_qs = User.objects.select_related('perfil').none()
+        rol_contactos = None
+        requiere_asignar_elaborador = False
+        alerta_asignacion = None
+
+        if request.user.is_superuser:
+            # El administrador puede chatear con cualquier usuario activo.
+            contactos_qs = User.objects.select_related('perfil').filter(is_active=True).exclude(pk=request.user.id).distinct().order_by('last_name', 'first_name', 'username')
+            rol_contactos = 'usuarios'
+        elif carrera:
+            # Si el usuario es elaborador POA, sugerimos el Director de la misma carrera
+            if 'elaborador' in roles_poa:
+                contactos_qs = User.objects.select_related('perfil').filter(
+                    is_active=True,
+                    perfil__rol='director',
+                ).filter(
+                    Q(perfil__carrera_id=carrera.id) | Q(asignaciones_carrera__carrera_id=carrera.id, asignaciones_carrera__activo=True)
+                ).exclude(pk=request.user.id).distinct().order_by('last_name', 'first_name', 'username')
+                rol_contactos = 'director'
+            # Si el usuario es director, sugerimos elaboradores POA vinculados a la misma carrera
+            elif request.user.is_superuser or perfil_rol == 'director' or 'director' in roles_poa:
+                accesos_elaborador_qs = UsuarioPOA.objects.select_related('user', 'docente').filter(
+                    rol='elaborador',
+                    activo=True,
+                ).filter(
+                    Q(user__is_active=True, user__perfil__carrera_id=carrera.id)
+                    | Q(docente__activo=True, docente__asignaciones_carrera__carrera_id=carrera.id, docente__asignaciones_carrera__activo=True)
+                )
+
+                if accesos_elaborador_qs.exists():
+                    contactos_qs = User.objects.select_related('perfil').filter(
+                        is_active=True,
+                        accesos_poa__activo=True,
+                        accesos_poa__rol='elaborador',
+                    ).filter(
+                        Q(accesos_poa__docente__asignaciones_carrera__carrera_id=carrera.id, accesos_poa__docente__asignaciones_carrera__activo=True)
+                        | Q(perfil__carrera_id=carrera.id)
+                    ).exclude(pk=request.user.id).distinct().order_by('last_name', 'first_name', 'username')
+                else:
+                    contactos_qs = User.objects.select_related('perfil').none()
+                rol_contactos = 'elaborador'
+                asignado_inactivo_qs = UsuarioPOA.objects.select_related('user', 'docente').filter(
+                    rol='elaborador',
+                    activo=False,
+                ).filter(
+                    Q(user__perfil__carrera_id=carrera.id)
+                    | Q(docente__asignaciones_carrera__carrera_id=carrera.id)
+                )
+                if not accesos_elaborador_qs.exists() and asignado_inactivo_qs.exists():
+                    requiere_asignar_elaborador = True
+                    alerta_asignacion = {
+                        'titulo': 'El elaborador del POA está inactivo',
+                        'mensaje': 'Existe un elaborador POA asignado, pero su acceso está inactivo. Debe activarlo o asignar uno nuevo.',
+                        'link': '/poa/accesos',
+                        'texto_link': 'Asignar',
+                    }
+                elif not accesos_elaborador_qs.exists():
+                    requiere_asignar_elaborador = True
+                    alerta_asignacion = {
+                        'titulo': 'Usted debe asignar un elaborador del POA',
+                        'mensaje': 'No existe un elaborador POA asignado para su carrera. Debe asignarlo antes de usar el chat sugerido.',
+                        'link': '/poa/accesos',
+                        'texto_link': 'Asignar',
+                    }
+        else:
+            # Sin carrera, no sugerimos contactos por defecto dentro de POA; el usuario
+            # podrá usar recent/search para hablar con cualquier usuario del sistema.
+            contactos_qs = User.objects.select_related('perfil').filter(is_active=True).exclude(pk=request.user.id).distinct().order_by('last_name', 'first_name', 'username')
+            rol_contactos = 'usuarios'
+
+        contactos = []
+        for usuario in contactos_qs:
+            perfil = _get_user_profile(usuario)
+            contactos.append({
+                'id': usuario.id,
+                'username': usuario.username,
+                'nombre_completo': usuario.get_full_name() or usuario.username,
+                'rol': rol_contactos or getattr(perfil, 'rol', None),
+            })
+
+        recientes_map = {}
+        recientes_qs = MensajeChat.objects.select_related('emisor', 'receptor').filter(
+            Q(emisor=request.user) | Q(receptor=request.user)
+        ).order_by('-fecha')[:200]
+        for mensaje in recientes_qs:
+            peer = mensaje.receptor if mensaje.emisor_id == request.user.id else mensaje.emisor
+            peer_id = peer.id
+            if peer_id in recientes_map:
+                continue
+            perfil = _get_user_profile(peer)
+            recientes_map[peer_id] = {
+                'id': peer.id,
+                'username': peer.username,
+                'nombre_completo': peer.get_full_name() or peer.username,
+                'rol': getattr(perfil, 'rol', None),
+                'fecha_ultimo_mensaje': mensaje.fecha,
+                'ultimo_mensaje': mensaje.texto,
+            }
+
+        recientes = list(recientes_map.values())
+
+        # El predeterminado en POA prioriza la sugerencia por rol/carrera (contactos),
+        # y si no existe se toma el más reciente.
+        if contactos and not requiere_asignar_elaborador:
+            contacto_default = contactos[0]
+        elif recientes:
+            contacto_default = recientes[0]
+        else:
+            contacto_default = None
+
+        contactos_sugeridos = contactos
+
+        # Determinar rol actual del usuario
+        es_director = request.user.is_superuser or perfil_rol == 'director' or 'director' in roles_poa
+        es_elaborador = 'elaborador' in roles_poa
+
+        return Response({
+            'rol_actual': 'admin' if request.user.is_superuser else ('director' if es_director else ('elaborador' if es_elaborador else 'usuario')),
+            'rol_contactos': rol_contactos,
+            'contactos': contactos_sugeridos,
+            'contactos_recientes': recientes,
+            'contacto_default': contacto_default,
+            'requiere_seleccion': len(contactos_sugeridos) > 1,
+            'requiere_asignar_elaborador': requiere_asignar_elaborador,
+            'alerta_asignacion': alerta_asignacion,
+        })
+
+
+class CurrentUserAPIView(APIView):
+    """Retorna información básica del usuario autenticado."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        return Response({
+            'id': user.id,
+            'username': user.username,
+            'nombre_completo': user.get_full_name() or user.username,
         })
 
 
@@ -596,27 +803,113 @@ class DocumentoPOAViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
-    def get_object(self):
-        """Obtener objeto asegurando que pertenezca a la gestión solicitada.
-        Se exige el query param 'gestion' o 'year' para las operaciones sobre detalle.
-        """
-        req_year = self.request.query_params.get('gestion') or self.request.query_params.get('year')
-        if not req_year:
-            from rest_framework.exceptions import ValidationError
-            raise ValidationError({
-                'detail': "El parámetro de consulta 'gestion' es obligatorio para operar sobre documentos. Ejemplo: ?gestion=2025"
-            })
-        try:
-            year = int(req_year)
-        except (ValueError, TypeError):
-            from rest_framework.exceptions import ValidationError
-            raise ValidationError({'detail': "El parámetro 'gestion' debe ser un entero válido."})
 
-        obj = super().get_object()
-        if obj.gestion != year:
-            from rest_framework.exceptions import NotFound
-            raise NotFound(detail='El documento no pertenece a la gestión solicitada')
-        return obj
+class EvidenciaViewSet(viewsets.ModelViewSet):
+    """CRUD para evidencias asociadas a actividades."""
+    queryset = Evidencia.objects.select_related('actividad').prefetch_related('archivos').all()
+    serializer_class = EvidenciaSerializer
+    permission_classes = [IsAuthenticated]
+
+    def _sincronizar_estado_actividad(self, actividad_id, estado):
+        if not actividad_id:
+            return
+
+        Actividad.objects.filter(pk=actividad_id).update(estado=estado)
+
+    def _guardar_adjuntos(self, evidencia, request, data, replace_links=False):
+        files = request.FILES.getlist('archivos') or []
+        for f in files:
+            EvidenciaArchivo.objects.create(evidencia=evidencia, tipo='imagen', archivo=f)
+
+        removed_raw = data.get('removed_archivos')
+        if removed_raw:
+            try:
+                import json
+                if isinstance(removed_raw, str):
+                    removed_ids = json.loads(removed_raw) if removed_raw.strip().startswith('[') else [removed_raw]
+                else:
+                    removed_ids = list(removed_raw)
+
+                removed_ids = [int(value) for value in removed_ids if str(value).strip().isdigit()]
+                if removed_ids:
+                    evidencia.archivos.filter(tipo='imagen', id__in=removed_ids).delete()
+            except Exception:
+                pass
+
+        if replace_links:
+            evidencia.archivos.filter(tipo='link').delete()
+
+        links_raw = data.get('links')
+        links = []
+        if links_raw:
+            try:
+                import json
+                if isinstance(links_raw, str):
+                    if links_raw.strip().startswith('['):
+                        links = json.loads(links_raw)
+                    else:
+                        links = [l.strip() for l in links_raw.split(',') if l.strip()]
+            except Exception:
+                links = [l.strip() for l in str(links_raw).split(',') if l.strip()]
+
+        for url in links:
+            EvidenciaArchivo.objects.create(evidencia=evidencia, tipo='link', url=url)
+
+    def get_queryset(self):
+        qs = self.queryset
+        actividad_id = self.request.query_params.get('actividad_id') or self.request.data.get('actividad_id')
+        if actividad_id:
+            try:
+                actividad_id = int(actividad_id)
+                qs = qs.filter(actividad_id=actividad_id)
+            except (TypeError, ValueError):
+                return Evidencia.objects.none()
+        return qs.order_by('-creado_en')
+
+    def create(self, request, *args, **kwargs):
+        # Esperamos FormData con archivos opcionales y campos JSON.
+        data = request.data.copy()
+        actividad = data.get('actividad_id') or data.get('actividad')
+        if not actividad:
+            return Response({'actividad_id': ['El campo actividad_id es obligatorio.']}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            # Validar y crear la evidencia
+            ser = self.get_serializer(data=data)
+            ser.is_valid(raise_exception=True)
+            evidencia = ser.save()
+
+            self._guardar_adjuntos(evidencia, request, data)
+            self._sincronizar_estado_actividad(evidencia.actividad_id, 'completado')
+
+        out = EvidenciaSerializer(evidencia, context={'request': request}).data
+        return Response(out, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        data = request.data.copy()
+
+        with transaction.atomic():
+            ser = self.get_serializer(instance, data=data, partial=partial)
+            ser.is_valid(raise_exception=True)
+            evidencia = ser.save()
+
+            self._guardar_adjuntos(evidencia, request, data, replace_links=True)
+            self._sincronizar_estado_actividad(evidencia.actividad_id, 'completado')
+
+        out = EvidenciaSerializer(evidencia, context={'request': request}).data
+        return Response(out, status=status.HTTP_200_OK)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        actividad_id = instance.actividad_id
+
+        with transaction.atomic():
+            response = super().destroy(request, *args, **kwargs)
+            self._sincronizar_estado_actividad(actividad_id, 'programado')
+
+        return response
 
 
 
@@ -730,7 +1023,7 @@ class ActividadViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         # indicador_descripcion ahora es texto; no es posible hacer select_related sobre él
-        qs = Actividad.objects.select_related('objetivo__documento').all()
+        qs = Actividad.objects.select_related('objetivo__documento').prefetch_related('evidencias').all()
         objetivo_id = self.request.query_params.get('objetivo_id')
         if objetivo_id:
             try:
@@ -991,111 +1284,212 @@ class DetallePresupuestoViewSet(viewsets.ModelViewSet):
 
 
 
-# ─── Conversaciones POA ────────────────────────────────────────────────────────
-
-class ComentarioPOAViewSet(viewsets.ModelViewSet):
-    serializer_class = ComentarioPOASerializer
-    permission_classes = [IsAuthenticated]
-
-    def _purgar_gestiones_vencidas(self):
-        """Purgado fuera del request para evitar escrituras en lecturas masivas."""
-        return None
-
-    def get_queryset(self):
-        qs = ComentarioPOA.objects.select_related('documento').prefetch_related('mensajes__autor')
-        doc_id = self.request.query_params.get('documento')
-        gestion = self.request.query_params.get('gestion')
-        if doc_id:
-            documento = _obtener_documento_accesible(self.request.user, doc_id)
-            if not documento:
-                return qs.none()
-            qs = qs.filter(documento=documento)
-        if gestion:
-            try:
-                qs = qs.filter(gestion=int(gestion))
-            except (ValueError, TypeError):
-                return qs.none()
-        return qs
-
-    def get_object(self):
-        obj = super().get_object()
-        if not _documento_accesible_para_usuario(self.request.user, obj.documento):
-            from rest_framework.exceptions import NotFound
-            raise NotFound('La conversación no pertenece a una carrera accesible para este usuario.')
-        return obj
-
-    def create(self, request, *args, **kwargs):
-        doc_id = request.data.get('documento')
-        if not doc_id:
-            return Response({'detail': "El campo 'documento' es obligatorio."}, status=status.HTTP_400_BAD_REQUEST)
-        doc = _obtener_documento_accesible(request.user, doc_id)
-        if not doc:
-            return Response({'detail': 'Documento no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
-        if doc.estado not in ('revision', 'observado'):
-            return Response({'detail': 'Solo se pueden abrir conversaciones en documentos en revision u observados.'}, status=status.HTTP_400_BAD_REQUEST)
-        if ComentarioPOA.objects.filter(documento=doc, abierto=True).exists():
-            return Response({'detail': 'Ya existe una conversacion activa para este documento.'}, status=status.HTTP_400_BAD_REQUEST)
-        comentario = ComentarioPOA.objects.create(documento=doc, gestion=doc.gestion)
-        return Response(ComentarioPOASerializer(comentario).data, status=status.HTTP_201_CREATED)
-
-    def destroy(self, request, *args, **kwargs):
-        if not _es_elaborador(request.user):
-            raise PermissionDenied('Solo el rol Elaborador del POA puede eliminar conversaciones.')
-        return super().destroy(request, *args, **kwargs)
-
-
-class MensajeComentarioPOAViewSet(
+class MensajeChatViewSet(
     mixins.CreateModelMixin,
     mixins.ListModelMixin,
     mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
-    serializer_class = MensajeComentarioPOASerializer
+    serializer_class = MensajeChatSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = MensajeComentarioPOA.objects.select_related('autor', 'comentario__documento')
-        comentario_id = self.request.query_params.get('comentario')
-        if comentario_id:
-            comentario = ComentarioPOA.objects.select_related('documento').filter(pk=comentario_id).first()
-            if not comentario or not _documento_accesible_para_usuario(self.request.user, comentario.documento):
+        qs = MensajeChat.objects.select_related('emisor', 'receptor')
+        peer_user_id = self.request.query_params.get('peer_user_id')
+
+        if peer_user_id:
+            try:
+                peer_id = int(peer_user_id)
+            except (ValueError, TypeError):
                 return qs.none()
-            qs = qs.filter(comentario=comentario)
-            return qs
-        return qs
+            return qs.filter(
+                (Q(emisor=self.request.user) & Q(receptor_id=peer_id)) |
+                (Q(emisor_id=peer_id) & Q(receptor=self.request.user))
+            ).order_by('fecha')
+
+        return qs.filter(
+            Q(emisor=self.request.user) | Q(receptor=self.request.user)
+        ).order_by('fecha')
+
+    def list(self, request, *args, **kwargs):
+        """Return the last page by default when no page param is provided."""
+        qs = self.get_queryset()
+        # if pagination is configured and no page param, set page to last
+        if getattr(self, 'paginator', None) is None and getattr(self, 'pagination_class', None):
+            self.paginator = self.pagination_class()
+
+        if self.paginator and not request.query_params.get('page'):
+            page_size = getattr(self.paginator, 'page_size', None) or (settings.REST_FRAMEWORK.get('PAGE_SIZE', 10))
+            total = qs.count()
+            from math import ceil
+            last = max(1, int(ceil(total / float(page_size)))) if total else 1
+            # mutate underlying GET to include page param
+            try:
+                # DRF Request.query_params may be immutable; mutate underlying django GET
+                request._request.GET = request._request.GET.copy()
+                request._request.GET['page'] = str(last)
+                # also reflect in QueryDict used by DRF
+                request.query_params._mutable = True
+                request.query_params['page'] = str(last)
+                request.query_params._mutable = False
+            except Exception:
+                pass
+
+        return super().list(request, *args, **kwargs)
 
     def get_object(self):
         obj = super().get_object()
-        if not _documento_accesible_para_usuario(self.request.user, obj.comentario.documento):
-            from rest_framework.exceptions import NotFound
-            raise NotFound('El mensaje no pertenece a una conversación accesible para este usuario.')
-        return obj
+        if obj.emisor_id == self.request.user.id or obj.receptor_id == self.request.user.id:
+            return obj
+        from rest_framework.exceptions import NotFound
+        raise NotFound('El mensaje no pertenece a una conversación accesible para este usuario.')
 
     def create(self, request, *args, **kwargs):
-        comentario_id = request.data.get('comentario')
+        emisor_id = request.data.get('emisor')
+        receptor_id = request.data.get('receptor') or request.data.get('peer_user_id')
         texto = (request.data.get('texto') or '').strip()
-        if not comentario_id:
-            return Response({'detail': "El campo 'comentario' es obligatorio."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if emisor_id not in (None, ''):
+            try:
+                emisor_id = int(emisor_id)
+            except (ValueError, TypeError):
+                return Response({'detail': "El campo 'emisor' debe ser un entero válido."}, status=status.HTTP_400_BAD_REQUEST)
+            if emisor_id != request.user.id:
+                return Response({'detail': 'El emisor debe coincidir con el usuario autenticado.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not receptor_id:
+            contactos_view = ChatContactosPOAView()
+            contactos_view.request = request
+            respuesta = contactos_view.get(request)
+            default_contact = respuesta.data.get('contacto_default') if hasattr(respuesta, 'data') else None
+            if default_contact and default_contact.get('id'):
+                receptor_id = default_contact['id']
+            else:
+                return Response({'detail': "El campo 'receptor' es obligatorio."}, status=status.HTTP_400_BAD_REQUEST)
         if not texto:
             return Response({'detail': 'El mensaje no puede estar vacio.'}, status=status.HTTP_400_BAD_REQUEST)
-        if len(texto) < 5:
-            return Response({'detail': 'El mensaje debe tener al menos 5 caracteres.'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(texto) < 2:
+            return Response({'detail': 'El mensaje debe tener al menos 2 caracteres.'}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
-            comentario = ComentarioPOA.objects.select_related('documento').get(pk=int(comentario_id))
-        except (ComentarioPOA.DoesNotExist, ValueError, TypeError):
-            return Response({'detail': 'Conversacion no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
-        if not _documento_accesible_para_usuario(request.user, comentario.documento):
-            return Response({'detail': 'No tiene permisos para intervenir esta conversación.'}, status=status.HTTP_404_NOT_FOUND)
-        if not comentario.abierto:
-            return Response({'detail': 'Esta conversacion esta cerrada.'}, status=status.HTTP_400_BAD_REQUEST)
-        es_revisor = _es_revisor(request.user)
-        mensaje = MensajeComentarioPOA.objects.create(
-            comentario=comentario, autor=request.user, texto=texto, es_revisor=es_revisor
+            receptor_id = int(receptor_id)
+        except (ValueError, TypeError):
+            return Response({'detail': "El campo 'receptor' debe ser un entero válido."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if receptor_id == request.user.id:
+            return Response({'detail': 'No puedes enviarte mensajes a ti mismo.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        receptor = User.objects.filter(pk=receptor_id, is_active=True).first()
+        if not receptor:
+            return Response({'detail': 'Usuario receptor no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Excepciones para superusuario: el superusuario no puede ser bloqueado
+        # y puede enviar/recibir mensajes sin restricciones.
+        if not (request.user.is_superuser or receptor.is_superuser):
+            if BloqueoChat.objects.filter(bloqueador=request.user, bloqueado=receptor).exists():
+                return Response({'detail': 'Desbloquea al usuario para poder enviarle mensajes.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            if BloqueoChat.objects.filter(bloqueador=receptor, bloqueado=request.user).exists():
+                return Response({'detail': 'Este usuario te ha bloqueado y no puede recibir tus mensajes.'}, status=status.HTTP_403_FORBIDDEN)
+
+        mensaje = MensajeChat.objects.create(
+            emisor=request.user,
+            receptor=receptor,
+            texto=texto,
         )
-        return Response(MensajeComentarioPOASerializer(mensaje).data, status=status.HTTP_201_CREATED)
+        return Response(MensajeChatSerializer(mensaje).data, status=status.HTTP_201_CREATED)
 
     def destroy(self, request, *args, **kwargs):
         mensaje = self.get_object()
-        if mensaje.autor != request.user and not _es_elaborador(request.user):
-            raise PermissionDenied('Solo puedes eliminar tus propios mensajes (o ser Elaborador POA).')
+        if mensaje.emisor_id != request.user.id:
+            raise PermissionDenied('Solo puedes eliminar tus propios mensajes.')
         return super().destroy(request, *args, **kwargs)
+
+    @action(detail=False, methods=['delete'], url_path='vaciar')
+    def vaciar_chat(self, request):
+        peer_user_id = request.query_params.get('peer_user_id') or request.data.get('peer_user_id')
+        if not peer_user_id:
+            return Response({'detail': "El campo 'peer_user_id' es obligatorio."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            peer_id = int(peer_user_id)
+        except (ValueError, TypeError):
+            return Response({'detail': "El campo 'peer_user_id' debe ser un entero válido."}, status=status.HTTP_400_BAD_REQUEST)
+        if peer_id == request.user.id:
+            return Response({'detail': 'No puedes vaciar un chat contigo mismo.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        eliminados = MensajeChat.objects.filter(
+            (Q(emisor=request.user) & Q(receptor_id=peer_id)) |
+            (Q(emisor_id=peer_id) & Q(receptor=request.user))
+        ).delete()[0]
+        return Response({'detail': 'Chat vaciado correctamente.', 'eliminados': eliminados})
+
+    @action(detail=False, methods=['get'], url_path='bloqueo-estado')
+    def bloqueo_estado(self, request):
+        peer_user_id = request.query_params.get('peer_user_id')
+        if not peer_user_id:
+            return Response({'detail': "El campo 'peer_user_id' es obligatorio."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            peer_id = int(peer_user_id)
+        except (ValueError, TypeError):
+            return Response({'detail': "El campo 'peer_user_id' debe ser un entero válido."}, status=status.HTTP_400_BAD_REQUEST)
+        if peer_id == request.user.id:
+            return Response({'detail': 'No aplica bloqueo sobre tu propio usuario.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        bloqueado_por_mi = BloqueoChat.objects.filter(bloqueador=request.user, bloqueado_id=peer_id).exists()
+        bloqueado_por_peer = BloqueoChat.objects.filter(bloqueador_id=peer_id, bloqueado=request.user).exists()
+        return Response({
+            'bloqueado_por_mi': bloqueado_por_mi,
+            'bloqueado_por_peer': bloqueado_por_peer,
+        })
+
+    @action(detail=False, methods=['post'], url_path='bloquear')
+    def bloquear_usuario(self, request):
+        peer_user_id = request.data.get('peer_user_id') or request.query_params.get('peer_user_id')
+        if not peer_user_id:
+            return Response({'detail': "El campo 'peer_user_id' es obligatorio."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            peer_id = int(peer_user_id)
+        except (ValueError, TypeError):
+            return Response({'detail': "El campo 'peer_user_id' debe ser un entero válido."}, status=status.HTTP_400_BAD_REQUEST)
+        if peer_id == request.user.id:
+            return Response({'detail': 'No puedes bloquearte a ti mismo.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        peer = User.objects.filter(pk=peer_id, is_active=True).first()
+        if not peer:
+            return Response({'detail': 'Usuario no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # No permitir bloquear al superusuario
+        if peer.is_superuser:
+            return Response({'detail': 'No es posible bloquear al superusuario.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        bloqueo, created = BloqueoChat.objects.get_or_create(bloqueador=request.user, bloqueado=peer)
+        return Response({
+            'detail': 'Usuario bloqueado correctamente.' if created else 'El usuario ya estaba bloqueado.',
+            'bloqueado_por_mi': True,
+        })
+
+    @action(detail=False, methods=['post'], url_path='desbloquear')
+    def desbloquear_usuario(self, request):
+        peer_user_id = request.data.get('peer_user_id') or request.query_params.get('peer_user_id')
+        if not peer_user_id:
+            return Response({'detail': "El campo 'peer_user_id' es obligatorio."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            peer_id = int(peer_user_id)
+        except (ValueError, TypeError):
+            return Response({'detail': "El campo 'peer_user_id' debe ser un entero válido."}, status=status.HTTP_400_BAD_REQUEST)
+        if peer_id == request.user.id:
+            return Response({'detail': 'No puedes desbloquearte a ti mismo.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        peer = User.objects.filter(pk=peer_id, is_active=True).first()
+        if not peer:
+            return Response({'detail': 'Usuario no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Si el peer es superusuario no hay bloqueo aplicable
+        if peer.is_superuser:
+            return Response({'detail': 'No aplica: el superusuario no puede ser bloqueado.', 'bloqueado_por_mi': False})
+
+        deleted = BloqueoChat.objects.filter(bloqueador=request.user, bloqueado_id=peer_id).delete()[0]
+        return Response({
+            'detail': 'Usuario desbloqueado correctamente.' if deleted else 'El usuario no estaba bloqueado.',
+            'bloqueado_por_mi': False,
+        })

@@ -7,9 +7,12 @@ from .views import (
     UsuarioPOAViewSet,
     DocenteBusquedaView,
     UsuarioBusquedaView,
+    UsuarioBusquedaChatView,
     DirectorCarreraActualView,
-    ComentarioPOAViewSet,
-    MensajeComentarioPOAViewSet,
+    ChatContactosPOAView,
+    MensajeChatViewSet,
+    EvidenciaViewSet,
+    CurrentUserAPIView,
 )
 from .views import ObjetivoEspecificoViewSet, ActividadViewSet, DetallePresupuestoViewSet
 
@@ -22,17 +25,19 @@ router.register('documentos_poa_encabezados', DocumentoPOAReadOnlyViewSet, basen
 # endpoints para objetivos, actividades y detalle de presupuesto
 router.register(r'objetivos-especificos', ObjetivoEspecificoViewSet, basename='objetivos_especificos')
 router.register(r'actividades', ActividadViewSet, basename='actividades')
+router.register(r'evidencias', EvidenciaViewSet, basename='evidencias')
 
 # detalle de presupuesto (CRUD estándar): list/create -> /detalle-presupuesto/ ; detail -> /detalle-presupuesto/{pk}/
 router.register(r'detalle-presupuesto', DetallePresupuestoViewSet, basename='detalle_presupuesto')
 
-# conversaciones POA
-router.register(r'comentarios-poa', ComentarioPOAViewSet, basename='comentario_poa')
-router.register(r'mensajes-poa', MensajeComentarioPOAViewSet, basename='mensaje_poa')
+router.register(r'mensajes-chat', MensajeChatViewSet, basename='mensaje_chat')
 
 urlpatterns = router.urls + [
     path('docentes/buscar/', DocenteBusquedaView.as_view(), name='docente-buscar-poa'),
     path('usuarios/buscar/', UsuarioBusquedaView.as_view(), name='usuario-buscar-poa'),
+    path('usuarios-chat/buscar/', UsuarioBusquedaChatView.as_view(), name='usuario-buscar-chat-poa'),
     path('director-carrera-actual/', DirectorCarreraActualView.as_view(), name='director-carrera-actual-poa'),
+    path('chat-contactos/', ChatContactosPOAView.as_view(), name='chat-contactos-poa'),
+    path('me/', CurrentUserAPIView.as_view(), name='current-user-poa'),
 ]
 

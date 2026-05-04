@@ -4,12 +4,14 @@ import { FaTimes } from 'react-icons/fa';
 import { createCatalogoItem, updateCatalogoItem } from '../../../apis/poa.api';
 import toast from 'react-hot-toast';
 import { Input, Modal } from './base';
+import Dialog from './base/Dialog';
 import { buildClientErrorMessages, formatApiErrors, mapApiErrorsToFieldErrors, ModalErrorAlert } from './formErrorUtils';
 
 const NuevoCatalogoItemModal = ({ partida, item, onClose, onCreated, onUpdated }) => {
   const [submitting, setSubmitting] = useState(false);
   const [errorMessages, setErrorMessages] = useState([]);
   const [fieldErrors, setFieldErrors] = useState({});
+  const [replaceDialog, setReplaceDialog] = useState(null);
   const [form, setForm] = useState({
     partida: '',
     detalle: '',
@@ -72,17 +74,9 @@ const NuevoCatalogoItemModal = ({ partida, item, onClose, onCreated, onUpdated }
           if (!conflict) throw createErr;
 
           const duplicateId = createErr?.response?.data?.duplicate_item_id;
-          const okReplace = window.confirm('Ya existe un item con ese DETALLE. ¿Deseas reemplazar el existente?');
-          if (!okReplace) {
-            toast('Creación cancelada por el usuario.');
-            return;
-          }
-
           if (!duplicateId) throw createErr;
-          res = await updateCatalogoItem(duplicateId, payload);
-          toast.success('Item existente reemplazado');
-          if (onUpdated) onUpdated(res.data || res);
-          if (onClose) onClose();
+
+          setReplaceDialog({ duplicateId, payload });
           return;
         }
 
@@ -110,6 +104,31 @@ const NuevoCatalogoItemModal = ({ partida, item, onClose, onCreated, onUpdated }
 
   return (
     <Modal onClose={onClose}>
+      <Dialog
+        open={Boolean(replaceDialog)}
+        type="warning"
+        title="Reemplazar item existente"
+        message="Ya existe un item con ese DETALLE. ¿Deseas reemplazar el existente?"
+        confirmText="Reemplazar"
+        cancelText="Cancelar"
+        onCancel={() => setReplaceDialog(null)}
+        onConfirm={async () => {
+          const target = replaceDialog;
+          if (!target?.duplicateId) return;
+          try {
+            const res = await updateCatalogoItem(target.duplicateId, target.payload);
+            toast.success('Item existente reemplazado');
+            if (onUpdated) onUpdated(res.data || res);
+            if (onClose) onClose();
+          } catch (err) {
+            const messages = formatApiErrors(err?.response?.data || err?.message || String(err));
+            setErrorMessages(messages);
+            toast.error(messages[0] || 'Error al reemplazar');
+          } finally {
+            setReplaceDialog(null);
+          }
+        }}
+      />
       <div className="modal-panel rounded-xl w-full max-w-md">
         <div className="modal-header flex items-center justify-between px-6 py-4">
           <h3 className="font-semibold">{item?.id ? 'Editar ítem de catálogo' : 'Nuevo ítem de catálogo'}</h3>

@@ -2,7 +2,8 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 
 # Modelos del paquete
-from poa_document.models import DocumentoPOA, ObjetivoEspecifico, Actividad, DetallePresupuesto, UsuarioPOA, RevisionDocumentoPOA, HistorialDocumentoPOA, ComentarioPOA, MensajeComentarioPOA
+from poa_document.models import DocumentoPOA, ObjetivoEspecifico, Actividad, DetallePresupuesto, UsuarioPOA, RevisionDocumentoPOA, HistorialDocumentoPOA, MensajeChat
+from poa_document.models import Evidencia, EvidenciaArchivo
 from fondos.models import Docente, Carrera
 from catalogos.api.serializers import DireccionSerializer
 from catalogos.models import Direccion
@@ -245,6 +246,8 @@ class ActividadSerializer(serializers.ModelSerializer):
     # indicador_descripcion ahora es un TextField: se puede escribir directamente como texto
     indicador_descripcion_texto = serializers.CharField(source='indicador_descripcion', read_only=True)
     indicadores_disponibles = serializers.SerializerMethodField()
+    evidencia_registrada = serializers.SerializerMethodField()
+    evidencia_cumplimiento = serializers.SerializerMethodField()
 
     # campo write-only para relacionar el objetivo (misma convención)
     objetivo_id = serializers.PrimaryKeyRelatedField(queryset=ObjetivoEspecifico.objects.all(), source='objetivo', write_only=True, required=False)
@@ -256,7 +259,8 @@ class ActividadSerializer(serializers.ModelSerializer):
             'mes_inicio', 'mes_fin', 'indicador_descripcion', 'indicador_descripcion_texto',
             'indicadores_disponibles',
             'indicador_unidad', 'indicador_linea_base', 'indicador_meta',
-            'monto_funcion', 'monto_inversion', 'estado'
+            'monto_funcion', 'monto_inversion', 'estado',
+            'evidencia_registrada', 'evidencia_cumplimiento'
         ]
         read_only_fields = ['id']
 
@@ -293,6 +297,18 @@ class ActividadSerializer(serializers.ModelSerializer):
         # La carrera solicitante ya está resuelta en el documento; no aplica filtro adicional aquí.
         return []
 
+    def get_evidencia_registrada(self, obj):
+        return bool(getattr(obj, 'evidencias', None) and obj.evidencias.exists())
+
+    def get_evidencia_cumplimiento(self, obj):
+        try:
+            evidencia = obj.evidencias.first()
+            if not evidencia:
+                return 0
+            return float(evidencia.grado_cumplimiento or 0)
+        except Exception:
+            return 0
+
 
 # Serializer para DetallePresupuesto (integrado en poa_document)
 class DetallePresupuestoSerializer(serializers.ModelSerializer):
@@ -321,44 +337,54 @@ class DetallePresupuestoSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'costo_total']
 
 
-# ─── Conversaciones POA ───────────────────────────────────────────────────────
-
-class MensajeComentarioPOASerializer(serializers.ModelSerializer):
-    autor_nombre = serializers.SerializerMethodField()
-    autor_username = serializers.CharField(source='autor.username', read_only=True)
-
-    class Meta:
-        model = MensajeComentarioPOA
-        fields = ['id', 'comentario', 'autor', 'autor_nombre', 'autor_username',
-                  'texto', 'es_revisor', 'fecha']
-        read_only_fields = ['id', 'autor', 'autor_nombre', 'autor_username',
-                            'es_revisor', 'fecha']
-
-    def get_autor_nombre(self, obj):
-        return obj.autor.get_full_name() or obj.autor.username
-
-
-class ComentarioPOASerializer(serializers.ModelSerializer):
-    mensajes = MensajeComentarioPOASerializer(many=True, read_only=True)
-    cantidad_mensajes = serializers.SerializerMethodField()
-    ultimo_mensaje = serializers.SerializerMethodField()
+class MensajeChatSerializer(serializers.ModelSerializer):
+    emisor_nombre = serializers.SerializerMethodField()
+    emisor_username = serializers.CharField(source='emisor.username', read_only=True)
+    receptor_nombre = serializers.SerializerMethodField()
+    receptor_username = serializers.CharField(source='receptor.username', read_only=True)
 
     class Meta:
-        model = ComentarioPOA
-        fields = ['id', 'documento', 'gestion', 'abierto', 'creado_en',
-                  'mensajes', 'cantidad_mensajes', 'ultimo_mensaje']
-        read_only_fields = ['id', 'gestion', 'abierto', 'creado_en']
+        model = MensajeChat
+        fields = [
+            'id', 'emisor', 'emisor_nombre', 'emisor_username',
+            'receptor', 'receptor_nombre', 'receptor_username',
+            'texto', 'fecha', 'leido_en',
+        ]
+        read_only_fields = fields
 
-    def get_cantidad_mensajes(self, obj):
-        return obj.mensajes.count()
+    def get_emisor_nombre(self, obj):
+        return obj.emisor.get_full_name() or obj.emisor.username
 
-    def get_ultimo_mensaje(self, obj):
-        ultimo = obj.mensajes.last()
-        if ultimo:
-            return {
-                'texto': ultimo.texto,
-                'autor': ultimo.autor.get_full_name() or ultimo.autor.username,
-                'fecha': ultimo.fecha,
-                'es_revisor': ultimo.es_revisor,
-            }
+    def get_receptor_nombre(self, obj):
+        return obj.receptor.get_full_name() or obj.receptor.username
+
+
+class EvidenciaArchivoSerializer(serializers.ModelSerializer):
+    archivo_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = EvidenciaArchivo
+        fields = ['id', 'tipo', 'archivo', 'archivo_url', 'url', 'creado_en']
+        read_only_fields = ['id', 'archivo_url', 'creado_en']
+
+    def get_archivo_url(self, obj):
+        request = self.context.get('request')
+        if obj.archivo and request:
+            return request.build_absolute_uri(obj.archivo.url)
         return None
+
+
+class EvidenciaSerializer(serializers.ModelSerializer):
+    archivos = EvidenciaArchivoSerializer(many=True, read_only=True)
+    actividad_id = serializers.PrimaryKeyRelatedField(queryset=Actividad.objects.all(), source='actividad', write_only=True)
+    resultados_logrados = serializers.CharField(required=True, allow_blank=False)
+
+    class Meta:
+        model = Evidencia
+        fields = ['id', 'actividad', 'actividad_id', 'resultados_logrados', 'programado', 'ejecutado', 'grado_cumplimiento', 'creado_en', 'actualizado_en', 'archivos']
+        read_only_fields = ['id', 'actividad', 'creado_en', 'actualizado_en', 'archivos']
+
+    def create(self, validated_data):
+        # actividad llega como objeto por actividad_id
+        return Evidencia.objects.create(**validated_data)
+

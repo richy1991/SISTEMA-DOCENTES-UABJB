@@ -1,7 +1,8 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { FaHome, FaArrowLeft, FaPlus, FaEdit, FaTrash, FaFilePdf, FaMoneyBillAlt, FaBullseye } from 'react-icons/fa';
+import { FaArrowLeft, FaPlus, FaEdit, FaTrash, FaFilePdf, FaMoneyBillAlt, FaBullseye, FaImage } from 'react-icons/fa';
 import IconButton from './IconButton';
+import Dialog from './base/Dialog';
 
 const themeStyles = {
   dark: {
@@ -49,6 +50,7 @@ const Header = ({
   const themeConfig = themeStyles[theme];
   const canEdit = !!poaPermissions?.canEdit;
   const canManageAccess = !!poaPermissions?.canManageAccess;
+  const [deleteOperacionDialog, setDeleteOperacionDialog] = React.useState(null);
 
   const gradientButtonClasses = (size = 'md') => {
     const sizeMap = {
@@ -61,6 +63,8 @@ const Header = ({
 
   const getPageTitle = () => {
     const p = location?.pathname || '';
+    // Mostrar título específico para la vista de evidencias
+    if (p.includes('/evidencias')) return 'Registro de Evidencias';
     if (p === '/poa/documentos' || p === '/poa') return 'Documentos POA';
     if (p === '/poa/documentos-revision') return 'Revisión de Documentos POA';
     if (p === '/poa/catalogos/items') return 'Catálogo de items';
@@ -154,9 +158,7 @@ const Header = ({
                   showIcon 
                   icon={<FaTrash />} 
                   onClick={() => {
-                    const ok = window.confirm(`Eliminar operación ${headerSelectedOperacion.nombre || headerSelectedOperacion.operacion || headerSelectedOperacion.id}?`);
-                    if (!ok) return;
-                    window.dispatchEvent(new CustomEvent('delete-operacion', { detail: headerSelectedOperacion }));
+                    setDeleteOperacionDialog(headerSelectedOperacion);
                   }} 
                   className={gradientButtonClasses()} 
                   title="Eliminar"
@@ -217,6 +219,15 @@ const Header = ({
               >
                 Presupuesto
               </IconButton>
+                  <IconButton
+                    showIcon
+                    icon={<FaImage />}
+                    onClick={() => navigate(`/poa/actividades/${headerSelectedActividad.id}/evidencias`)}
+                    title="Evidencias"
+                    className={gradientButtonClasses()}
+                  >
+                    Evidencias
+                  </IconButton>
               {canEdit && (
                 <IconButton 
                   showIcon 
@@ -232,7 +243,7 @@ const Header = ({
               )}
             </>
           )}
-          {canEdit && (
+          {canEdit && !p.includes('/evidencias') && (
             <IconButton 
               showIcon 
               icon={<FaPlus />} 
@@ -243,6 +254,7 @@ const Header = ({
               Nuevo
             </IconButton>
           )}
+          
         </>
       );
     }
@@ -313,12 +325,25 @@ const Header = ({
   const headerWidthClass = sidebarExpanded ? 'md:w-[calc(100%-18rem)]' : 'md:w-[calc(100%-4rem)]';
 
   return (
-    <header className={`${themeConfig.headerBg} ${themeConfig.headerText} flex flex-wrap items-center gap-y-3 px-4 pl-16 md:px-6 py-3 md:py-4 fixed top-0 right-0 left-0 z-30 w-full ${headerWidthClass} transform transition-all duration-300 ease-in-out ${sidebarOffset} ${showHeader ? `translate-y-0 opacity-100 ${themeConfig.headerShadow} ${themeConfig.headerBorder}` : '-translate-y-full opacity-0 pointer-events-none'}`}>
-      {/* Left: home icon + page controls */}
+    <>
+      <Dialog
+        open={Boolean(deleteOperacionDialog)}
+        type="danger"
+        title="Eliminar operación"
+        message={deleteOperacionDialog ? `Eliminar operación ${deleteOperacionDialog.nombre || deleteOperacionDialog.operacion || deleteOperacionDialog.id}?` : ''}
+        confirmText="Eliminar"
+        cancelText="Cancelar"
+        onCancel={() => setDeleteOperacionDialog(null)}
+        onConfirm={() => {
+          if (deleteOperacionDialog) {
+            window.dispatchEvent(new CustomEvent('delete-operacion', { detail: deleteOperacionDialog }));
+          }
+          setDeleteOperacionDialog(null);
+        }}
+      />
+      <header className={`${themeConfig.headerBg} ${themeConfig.headerText} flex flex-wrap items-center gap-y-3 px-4 pl-16 md:px-6 py-3 md:py-4 fixed top-0 right-0 left-0 z-30 w-full ${headerWidthClass} transform transition-all duration-300 ease-in-out ${sidebarOffset} ${showHeader ? `translate-y-0 opacity-100 ${themeConfig.headerShadow} ${themeConfig.headerBorder}` : '-translate-y-full opacity-0 pointer-events-none'}`}>
+      {/* Left: page controls */}
       <div className="flex shrink-0 items-center gap-2 md:mr-4">
-        <button onClick={() => navigate('/poa')} className={gradientButtonClasses()} title="Ir al inicio">
-          <FaHome className="text-white" size={22} />
-        </button>
         {(() => {
           const p = location?.pathname || '';
           if (p.startsWith('/poa/objetivos-especificos') || p.startsWith('/poa/actividades') || p.startsWith('/poa/presupuestos')) {
@@ -347,7 +372,8 @@ const Header = ({
       <div className="ml-auto flex shrink-0 items-center gap-2 md:gap-4">
         {renderRightActions()}
       </div>
-    </header>
+      </header>
+    </>
   );
 };
 

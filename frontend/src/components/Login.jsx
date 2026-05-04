@@ -31,11 +31,16 @@ function Login({ onLogin }) {
 
     localStorage.setItem('user', JSON.stringify(userResponse.data));
     onLogin(userResponse.data);
+
+    const redirectTo = sessionStorage.getItem('post_login_redirect');
+    if (redirectTo) {
+      sessionStorage.removeItem('post_login_redirect');
+    }
     
     if (userResponse.data.perfil?.debe_cambiar_password) {
       navigate('/cambiar-password');
     } else {
-      navigate('/');
+      navigate(redirectTo || '/');
     }
 
   } catch (err) {

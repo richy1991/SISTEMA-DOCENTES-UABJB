@@ -2,6 +2,7 @@
 from django.db import models
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 from catalogos.models import Direccion
 from fondos.models import Carrera
 
@@ -182,6 +183,10 @@ class ObjetivoEspecifico(models.Model):
 class Actividad(models.Model):
     ESTADOS = [
         ('programado', 'Programado'),
+        ('en_ejecucion', 'En ejecución'),
+        ('completado', 'Completado'),
+        ('cancelado', 'Cancelado'),
+        # Compatibilidad con datos existentes
         ('en_proceso', 'En Proceso'),
         ('ejecutado', 'Ejecutado'),
         ('suspendido', 'Suspendido'),
@@ -251,64 +256,120 @@ class DetallePresupuesto(models.Model):
         return f"{self.actividad} - {self.item} ({self.cantidad})"
 
 
-# ─── Sistema de conversaciones POA ────────────────────────────────────────────
+class MensajeChat(models.Model):
+    """Mensaje directo independiente entre dos usuarios del sistema."""
 
-class ComentarioPOA(models.Model):
-    """
-    Hilo de conversación vinculado a un DocumentoPOA.
-    Permite la comunicación entre el elaborador y la entidad revisora.
-    Los hilos se eliminan automáticamente cuando la gestión finaliza
-    (se sugiere una tarea periódica o señal en base al campo gestion).
-    """
-    documento = models.ForeignKey(
-        DocumentoPOA,
-        on_delete=models.CASCADE,
-        related_name='comentarios',
-        verbose_name='Documento POA',
-    )
-    # Copia del año de gestión para facilitar la limpieza por gestión
-    gestion = models.IntegerField(verbose_name='Año de Gestión', db_index=True)
-    abierto = models.BooleanField(default=True, verbose_name='Hilo activo')
-    creado_en = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        verbose_name = 'Conversación POA'
-        verbose_name_plural = 'Conversaciones POA'
-        ordering = ['-creado_en']
-
-    def save(self, *args, **kwargs):
-        if not self.gestion and self.documento_id:
-            self.gestion = self.documento.gestion
-        super().save(*args, **kwargs)
-
-    def __str__(self):
-        return f"Conversación #{self.pk} — Doc POA {self.documento_id} ({self.gestion})"
-
-
-class MensajeComentarioPOA(models.Model):
-    """Mensaje individual dentro de un hilo de conversación POA."""
-
-    comentario = models.ForeignKey(
-        ComentarioPOA,
-        on_delete=models.CASCADE,
-        related_name='mensajes',
-        verbose_name='Hilo de conversación',
-    )
-    autor = models.ForeignKey(
+    emisor = models.ForeignKey(
         User,
         on_delete=models.PROTECT,
-        related_name='mensajes_poa',
-        verbose_name='Autor',
+        related_name='mensajes_chat_enviados',
+        verbose_name='Emisor',
+    )
+    receptor = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name='mensajes_chat_recibidos',
+        verbose_name='Receptor',
     )
     texto = models.TextField(verbose_name='Mensaje')
-    # True si el mensaje lo envió un revisor/director (no el elaborador)
-    es_revisor = models.BooleanField(default=False)
+    fecha = models.DateTimeField(auto_now_add=True)
+    leido_en = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = 'Mensaje de chat'
+        verbose_name_plural = 'Mensajes de chat'
+        ordering = ['fecha']
+        db_table = 'mensajes_chat'
+        indexes = [
+            models.Index(fields=['emisor', 'receptor', 'fecha']),
+            models.Index(fields=['receptor', 'emisor', 'fecha']),
+        ]
+
+    def marcar_como_leido(self):
+        if not self.leido_en:
+            self.leido_en = timezone.now()
+            self.save(update_fields=['leido_en'])
+
+    def __str__(self):
+        return f"{self.emisor.username} → {self.receptor.username} ({self.fecha.strftime('%d/%m/%Y %H:%M')})"
+
+
+class BloqueoChat(models.Model):
+    """Registro de bloqueo entre usuarios para chat directo."""
+
+    bloqueador = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='bloqueos_chat_realizados',
+        verbose_name='Usuario que bloquea',
+    )
+    bloqueado = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='bloqueos_chat_recibidos',
+        verbose_name='Usuario bloqueado',
+    )
     fecha = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        verbose_name = 'Mensaje POA'
-        verbose_name_plural = 'Mensajes POA'
-        ordering = ['fecha']
+        verbose_name = 'Bloqueo de chat'
+        verbose_name_plural = 'Bloqueos de chat'
+        db_table = 'bloqueos_chat'
+        unique_together = ('bloqueador', 'bloqueado')
+        indexes = [
+            models.Index(fields=['bloqueador', 'bloqueado']),
+        ]
+
+    def clean(self):
+        if self.bloqueador_id and self.bloqueado_id and self.bloqueador_id == self.bloqueado_id:
+            raise ValidationError('No se puede bloquear al mismo usuario.')
 
     def __str__(self):
-        return f"Mensaje de {self.autor.username} — {self.fecha.strftime('%d/%m/%Y %H:%M')}"
+        return f"{self.bloqueador.username} bloqueó a {self.bloqueado.username}"
+
+
+class Evidencia(models.Model):
+    """Evidencias asociadas a una actividad POA."""
+    actividad = models.ForeignKey(
+        Actividad,
+        on_delete=models.CASCADE,
+        related_name='evidencias',
+        verbose_name='Actividad',
+    )
+    resultados_logrados = models.TextField(blank=True, default='', verbose_name='Resultados logrados')
+    programado = models.IntegerField(default=0, verbose_name='Programado')
+    ejecutado = models.IntegerField(default=0, verbose_name='Ejecutado')
+    grado_cumplimiento = models.DecimalField(max_digits=5, decimal_places=2, default=0.0, verbose_name='Grado de cumplimiento (%)')
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Evidencia de actividad'
+        verbose_name_plural = 'Evidencias de actividad'
+        ordering = ['-creado_en']
+
+    def __str__(self):
+        return f"Evidencia #{self.pk} - Actividad {self.actividad_id} - {self.creado_en.date()}"
+
+
+class EvidenciaArchivo(models.Model):
+    """Archivos / enlaces que validan una evidencia."""
+    TIPOS = [
+        ('imagen', 'Imagen'),
+        ('link', 'Link'),
+    ]
+    evidencia = models.ForeignKey(Evidencia, on_delete=models.CASCADE, related_name='archivos')
+    tipo = models.CharField(max_length=16, choices=TIPOS, default='imagen')
+    archivo = models.FileField(upload_to='evidencias/%Y/%m', null=True, blank=True)
+    url = models.URLField(null=True, blank=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Archivo de evidencia'
+        verbose_name_plural = 'Archivos de evidencia'
+        ordering = ['-creado_en']
+
+    def __str__(self):
+        if self.tipo == 'link':
+            return f"Link: {self.url}"
+        return f"Archivo: {self.archivo.name if self.archivo else 'sin archivo'}"

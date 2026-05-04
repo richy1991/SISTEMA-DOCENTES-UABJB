@@ -323,6 +323,12 @@ class DocenteSerializer(serializers.ModelSerializer):
     nombre_completo = serializers.ReadOnlyField()
     usuario_email = serializers.SerializerMethodField()
     usuario_id = serializers.SerializerMethodField()
+    carrera = serializers.PrimaryKeyRelatedField(
+        queryset=Carrera.objects.filter(activo=True),
+        write_only=True,
+        required=False,
+        allow_null=True,
+    )
     vinculos = DocenteCarreraSerializer(
         source='vinculos_carrera', many=True, read_only=True
     )
@@ -331,7 +337,7 @@ class DocenteSerializer(serializers.ModelSerializer):
         model = Docente
         fields = [
             'id', 'nombres', 'apellido_paterno', 'apellido_materno',
-            'ci', 'email', 'telefono',
+            'ci', 'email', 'telefono', 'carrera',
             'fecha_ingreso', 'dias_vacacion', 'horas_feriados_gestion',
             'nombre_completo', 'usuario_email', 'usuario_id',
             'vinculos', 'activo',
@@ -1671,6 +1677,11 @@ class ActualizarUsuarioSerializer(serializers.ModelSerializer):
 
         _validar_limite_asignaciones_usuario(bloques)
 
+        perfil_actual = self._get_perfil_actual()
+        rol_actual = perfil_actual.rol if perfil_actual else ('iiisyp' if self.instance.is_superuser else 'docente')
+        carrera_actual = perfil_actual.carrera if perfil_actual else None
+        docente_actual = perfil_actual.docente if perfil_actual else None
+
         # Lógica de Doble Rol
         roles_totales = [data.get('rol', perfil_actual.rol if perfil_actual else 'docente')] + [a.get('rol') for a in asignaciones]
         tiene_rol_docente = 'docente' in roles_totales
@@ -1685,11 +1696,6 @@ class ActualizarUsuarioSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 'rol': 'Solo el Superusuario tiene la potestad de cambiar el rol de cualquier usuario en el sistema.'
             })
-        
-        perfil_actual = self._get_perfil_actual()
-        rol_actual = perfil_actual.rol if perfil_actual else ('iiisyp' if self.instance.is_superuser else 'docente')
-        carrera_actual = perfil_actual.carrera if perfil_actual else None
-        docente_actual = perfil_actual.docente if perfil_actual else None
 
         # Determina el rol final (el nuevo si se provee, o el existente si no)
         rol = data.get('rol', rol_actual)

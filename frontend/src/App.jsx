@@ -18,6 +18,7 @@ import CatalogoItems from './modules/poa/pages/CatalogoItems';
 import CatalogosMenu from './modules/poa/pages/CatalogosMenu';
 import Reportes from './modules/poa/pages/Reportes';
 import PresupuestosPage from './modules/poa/pages/PresupuestosPage';
+import EvidenciaPage from './modules/poa/pages/EvidenciaPage';
 import Login from './components/Login';
 import ModuleSelector from './components/ModuleSelector';
 import FondoTiempoLayout from './components/FondoTiempoLayout';
@@ -80,13 +81,42 @@ function App() {
   };
 
   useEffect(() => {
-    // Requisito: Forzar el login siempre.
-    // Se limpia cualquier sesión guardada en el navegador al cargar la aplicación.
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    localStorage.removeItem('user');
-    
-    setLoading(false);
+    const bootstrapSession = async () => {
+      const accessToken = localStorage.getItem('access_token');
+      const userRaw = localStorage.getItem('user');
+
+      if (!accessToken) {
+        setUser(null);
+        setLoading(false);
+        return;
+      }
+
+      if (userRaw) {
+        try {
+          const userData = JSON.parse(userRaw);
+          const userNormalizado = normalizarCarreraActiva(userData);
+          setUser(userNormalizado);
+        } catch {
+          localStorage.removeItem('user');
+        }
+      }
+
+      try {
+        const response = await api.get('/usuario/');
+        const userNormalizado = normalizarCarreraActiva(response.data);
+        setUser(userNormalizado);
+        localStorage.setItem('user', JSON.stringify(userNormalizado));
+      } catch {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user');
+        setUser(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    bootstrapSession();
   }, []);
 
   const handleLogin = (userData) => {
@@ -296,6 +326,7 @@ function App() {
               <Route path="documentos/nuevo" element={<AnimatedRoute><DocumentosPOAPage /></AnimatedRoute>} />
               <Route path="actividades" element={<AnimatedRoute><ActividadesPage /></AnimatedRoute>} />
               <Route path="actividades/:objetivoEspecificoId" element={<AnimatedRoute><ActividadesPage /></AnimatedRoute>} />
+              <Route path="actividades/:actividadId/evidencias" element={<AnimatedRoute><EvidenciaPage /></AnimatedRoute>} />
               <Route path="objetivos" element={<AnimatedRoute><ObjetivosEspecificosPage /></AnimatedRoute>} />
               <Route path="objetivos-especificos/:documentId" element={<AnimatedRoute><ObjetivosEspecificosPage /></AnimatedRoute>} />
               <Route path="catalogos" element={<AnimatedRoute><CatalogosMenu /></AnimatedRoute>} />

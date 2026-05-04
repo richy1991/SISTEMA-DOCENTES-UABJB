@@ -40,6 +40,7 @@ api.interceptors.response.use(
         const refreshToken = localStorage.getItem('refresh_token');
         
         if (!refreshToken) {
+          sessionStorage.setItem('post_login_redirect', window.location.pathname + window.location.search + window.location.hash);
           localStorage.clear();
           window.location.href = '/login';
           return Promise.reject(error);
@@ -56,6 +57,7 @@ api.interceptors.response.use(
         return api(originalRequest);
 
       } catch (refreshError) {
+        sessionStorage.setItem('post_login_redirect', window.location.pathname + window.location.search + window.location.hash);
         localStorage.clear();
         window.location.href = '/login';
         return Promise.reject(refreshError);

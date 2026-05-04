@@ -7,6 +7,8 @@ import { useTheme } from '../../useTheme';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import ThemeToggle from '../../components/ThemeToggle';
+import ChatFlotantePOA from './components/ChatFlotantePOA';
+import Dialog from './components/base/Dialog';
 import GestionSelectorModal from './components/GestionSelectorModal';
 import NuevoIndicadorModal from './components/NuevoIndicadorModal';
 import POAHomePage from './pages/POAHomePage';
@@ -35,6 +37,7 @@ function POAApp({ user }) {
   const [headerSelectedActividad, setHeaderSelectedActividad] = useState(null);
   const [headerSelectedDireccion, setHeaderSelectedDireccion] = useState(null);
   const [headerSelectedOperacion, setHeaderSelectedOperacion] = useState(null);
+  const [showAsignarElaboradorDialog, setShowAsignarElaboradorDialog] = useState(false);
   const [showHeader, setShowHeader] = useState(true);
   const [forceShowHeader, setForceShowHeader] = useState(false);
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
@@ -181,7 +184,7 @@ function POAApp({ user }) {
       const page = e?.detail?.page ?? null;
       if (page !== 'indicadores') return;
       if (!headerSelectedDireccion) {
-        window.alert('Primero selecciona una direccion para crear un indicador.');
+        setShowAsignarElaboradorDialog(true);
         return;
       }
       setEditOperacion(null);
@@ -198,6 +201,7 @@ function POAApp({ user }) {
 
       {/* Selector de Tema - Flotante Global */}
       <ThemeToggle theme={theme} setTheme={setTheme} />
+      <ChatFlotantePOA currentUser={user} />
 
       {/* Sidebar */}
       <Sidebar
@@ -256,6 +260,17 @@ function POAApp({ user }) {
           <Outlet context={{ user, poaRoles, poaPermissions }} />
         </section>
       </main>
+
+      <Dialog
+        open={showAsignarElaboradorDialog}
+        type="info"
+        title="Selecciona una dirección primero"
+        message="Primero selecciona una dirección para crear un indicador."
+        confirmText="Aceptar"
+        hideCancel
+        onConfirm={() => setShowAsignarElaboradorDialog(false)}
+        onClose={() => setShowAsignarElaboradorDialog(false)}
+      />
     </div>
   );
 }

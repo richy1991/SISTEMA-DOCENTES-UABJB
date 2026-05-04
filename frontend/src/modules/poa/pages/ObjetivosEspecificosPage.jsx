@@ -3,6 +3,7 @@ import { getObjetivosEspecificos, deleteObjetivo, getDocumentoPOAPorId, getDocum
 import { DEFAULT_ENTIDAD } from '../config/defaults';
 import NuevoObjetivoModal from '../components/NuevoObjetivoModal';
 import IconButton from '../components/IconButton';
+import Dialog from '../components/base/Dialog';
 import { FaEdit, FaTrash } from 'react-icons/fa';
 import { FaBullseye, FaCoins, FaTasks } from 'react-icons/fa';
 import { useNavigate, useParams, useLocation, useOutletContext } from 'react-router-dom';
@@ -17,6 +18,7 @@ const ObjetivosEspecificosPage = () => {
   const [showNuevo, setShowNuevo] = useState(false);
   const [documentHeader, setDocumentHeader] = useState(null);
   const [docLoading, setDocLoading] = useState(false);
+  const [deleteDialogObjetivo, setDeleteDialogObjetivo] = useState(null);
   const navigate = useNavigate();
   const outletContext = useOutletContext() || {};
   const poaPermissions = outletContext.poaPermissions || {};
@@ -229,14 +231,22 @@ const ObjetivosEspecificosPage = () => {
       toast.error('No tiene permisos para eliminar objetivos.');
       return;
     }
-    if (!window.confirm('¿Confirma eliminar este objetivo?')) return;
+    const target = (objetivos || []).find((obj) => Number(obj.id) === Number(id)) || { id };
+    setDeleteDialogObjetivo(target);
+  };
+
+  const confirmarEliminarObjetivo = async () => {
+    const target = deleteDialogObjetivo;
+    if (!target?.id) return;
     try {
-      await deleteObjetivo(id);
-      setObjetivos(prev => (prev || []).filter(o => Number(o.id) !== Number(id)));
+      await deleteObjetivo(target.id);
+      setObjetivos(prev => (prev || []).filter(o => Number(o.id) !== Number(target.id)));
       toast.success('Objetivo eliminado');
     } catch (err) {
       const msg = err?.response?.data || err?.message || '';
       toast.error('Error eliminando objetivo: ' + (typeof msg === 'string' ? msg : JSON.stringify(msg)));
+    } finally {
+      setDeleteDialogObjetivo(null);
     }
   };
 
@@ -271,6 +281,16 @@ const ObjetivosEspecificosPage = () => {
 
   return (
     <section className="flex flex-col items-start justify-start flex-1 pt-0 pb-12 w-full px-0">
+      <Dialog
+        open={Boolean(deleteDialogObjetivo)}
+        type="danger"
+        title="Eliminar objetivo"
+        message={deleteDialogObjetivo ? `¿Confirma eliminar este objetivo?\n${deleteDialogObjetivo.codigo || deleteDialogObjetivo.id || ''}` : ''}
+        confirmText="Eliminar"
+        cancelText="Cancelar"
+        onConfirm={confirmarEliminarObjetivo}
+        onCancel={() => setDeleteDialogObjetivo(null)}
+      />
         {/* Header controls moved to global header; page-level controls removed */}
         {documentHeader && (
           <div className="w-full mb-3 mt-0">
