@@ -1,8 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
 import api from '../apis/api';
 import toast from 'react-hot-toast';
+
+const obtenerNombreCompletoDocente = (docente) => {
+  if (!docente) return '';
+  // Si ya tiene nombre_completo, usarlo
+  if (docente.nombre_completo) return docente.nombre_completo;
+  // Si no, construir desde campos separados
+  return `${docente.nombres || ''} ${docente.apellido_paterno || ''} ${docente.apellido_materno || ''}`.trim();
+};
 
 // Componente Select con Dropdown animado (igual que en ListaDocentes)
 const SelectConDropdown = ({ label, name, value, onChange, options, error, disabled = false, required = false, placeholder = 'Seleccione...' }) => {
@@ -115,10 +122,8 @@ const splitNombreCompleto = (nombreCompleto = '') => {
 };
 
 const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, carreras, roles, sidebarCollapsed = false, hasSidebar = true, currentUser }) => {
-  const navigate = useNavigate();
   const [formData, setFormData] = useState({});
   const [asignacionesExtra, setAsignacionesExtra] = useState([]);
-  const [crearNuevoDocente, setCrearNuevoDocente] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [resettingPassword, setResettingPassword] = useState(false);
@@ -126,31 +131,30 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
   const [passwordData, setPasswordData] = useState({ password: '', password_confirm: '' });
+  const [indiceAsignacionActiva, setIndiceAsignacionActiva] = useState(0);
 
   useEffect(() => {
     const asignacionesUsuario = Array.isArray(userToEdit?.asignaciones) ? userToEdit.asignaciones : [];
     const rolPrincipal = userToEdit?.perfil?.rol || 'docente';
     const carreraPrincipal = userToEdit?.perfil?.carrera || '';
-    const docentePrincipal = userToEdit?.perfil?.docente_id || '';
-    let principalConsumida = false;
+    const clavePrincipal = `${String(rolPrincipal)}::${String(carreraPrincipal)}`;
+    const clavesExtras = new Set();
     const extras = asignacionesUsuario
       .filter((item) => {
-        const coincidePrincipal = (
-          String(item?.rol || '') === String(rolPrincipal)
-          && String(item?.carrera || '') === String(carreraPrincipal)
-          && String(item?.docente || '') === String(docentePrincipal)
-        );
-        if (!principalConsumida && coincidePrincipal) {
-          principalConsumida = true;
+        if (item?.activo === false) return false;
+        const clave = `${String(item?.rol || '')}::${String(item?.carrera || '')}`;
+        if (clave === clavePrincipal || clavesExtras.has(clave)) {
           return false;
         }
+        clavesExtras.add(clave);
         return true;
       })
       .map((item) => ({
         rol: item?.rol || 'docente',
         carrera: item?.carrera || '',
         docente: item?.docente || '',
-      }));
+      }))
+      .slice(0, 1);
 
     const initialData = {
       username: userToEdit?.username || '',
@@ -166,41 +170,10 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
 
     setFormData(initialData);
     setAsignacionesExtra(extras);
-    setCrearNuevoDocente(false);
+    setIndiceAsignacionActiva(0);
     setErrors({});
     setShowResetConfirm(false);
     setShowChangePassword(false);
-    setPasswordData({ password: '', password_confirm: '' });
-  }, [userToEdit]);
-
-  useEffect(() => {
-    if (!userToEdit) return;
-
-    try {
-      const datosEditarGuardados = sessionStorage.getItem('datosEditarUsuario');
-      const docenteRetornadoRaw = sessionStorage.getItem('docenteRetornadoDesdeUsuarios');
-      
-      // Solo recuperar si el userId coincide exactamente
-      if (datosEditarGuardados) {
-        const datos = JSON.parse(datosEditarGuardados);
-        if (datos.userId === userToEdit.id && datos.formData) {
-          const docenteRetornado = docenteRetornadoRaw ? JSON.parse(docenteRetornadoRaw) : null;
-          setFormData((prev) => ({
-            ...prev,
-            ...datos.formData,
-            ci: docenteRetornado?.ci || datos.formData.ci || '',
-            docente: docenteRetornado?.id || datos.formData.docente || '',
-            carrera: docenteRetornado?.carrera || datos.formData.carrera || prev.carrera || '',
-          }));
-        }
-      }
-    } catch (e) {
-      console.error('Error al recuperar formulario de edición:', e);
-    } finally {
-      // Siempre limpiar al cambiar de usuario
-      sessionStorage.removeItem('datosEditarUsuario');
-      sessionStorage.removeItem('docenteRetornadoDesdeUsuarios');
-    }
   }, [userToEdit]);
 
   const handleChange = (e) => {
@@ -220,49 +193,14 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
 
   const handleRolChange = (e) => {
     const newRol = e.target.value;
-    const esAdminCarrera = currentUser?.perfil?.rol === 'iiisyp' && !currentUser?.is_superuser;
-    
     setFormData((prev) => ({
       ...prev,
       rol: newRol,
-      // Admin de carrera siempre mantiene su carrera, otros roles la pierden al cambiar
-      carrera: (newRol === 'iiisyp' || newRol === 'director' || newRol === 'jefe_estudios') 
-        ? (esAdminCarrera ? currentUser?.perfil?.carrera : prev.carrera) 
+      carrera: (newRol === 'director' || newRol === 'jefe_estudios')
+        ? prev.carrera
         : (newRol === 'docente' ? prev.carrera : ''),
       docente: newRol === 'docente' ? prev.docente : '',
     }));
-    if (newRol !== 'docente') {
-      setCrearNuevoDocente(false);
-    }
-  };
-
-  const handleCrearNuevoDocente = () => {
-    if (!userToEdit) return;
-
-    sessionStorage.setItem(
-      'datosEditarUsuario',
-      JSON.stringify({
-        userId: userToEdit.id,
-        formData,
-      })
-    );
-
-    const apellidos = (formData.last_name || '').trim().split(/\s+/).filter(Boolean);
-    sessionStorage.setItem(
-      'datosCrearDocente',
-      JSON.stringify({
-        nombres: formData.first_name || '',
-        apellido_paterno: apellidos[0] || '',
-        apellido_materno: apellidos.slice(1).join(' '),
-        email: formData.email || '',
-        telefono: '',
-        carrera: formData.carrera || '',
-      })
-    );
-    sessionStorage.setItem('flujoDocenteDesdeUsuarios', 'editar_usuario');
-    sessionStorage.setItem('abrirModalDesdeUsuarios', 'true');
-    onClose();
-    navigate('/fondo-tiempo/docentes');
   };
 
   const handleAsignacionChange = (index, field, value) => {
@@ -273,15 +211,34 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
 
   const MAX_ASIGNACIONES_TOTAL = 2;
   const totalAsignaciones = 1 + asignacionesExtra.length;
-  const puedeAgregarAsignacion = totalAsignaciones < MAX_ASIGNACIONES_TOTAL;
+  const primeraAsignacionCompleta = Boolean(String(formData.rol || '').trim() && String(formData.carrera || '').trim());
+  const puedeAgregarAsignacion = primeraAsignacionCompleta && totalAsignaciones < MAX_ASIGNACIONES_TOTAL;
 
   const agregarAsignacion = () => {
     if (!puedeAgregarAsignacion) return;
-    setAsignacionesExtra((prev) => ([...prev, { rol: 'docente', carrera: '', docente: '' }]));
+    setAsignacionesExtra((prev) => (prev.length >= 1 ? prev : [...prev, { rol: '', carrera: '', docente: '' }]));
+    setIndiceAsignacionActiva(1);
   };
 
   const eliminarAsignacion = (index) => {
     setAsignacionesExtra((prev) => prev.filter((_, itemIndex) => itemIndex !== index));
+    setIndiceAsignacionActiva(0);
+  };
+
+  const handleRolSeleccionActual = (e) => {
+    if (indiceAsignacionActiva === 0) {
+      handleRolChange(e);
+      return;
+    }
+    handleAsignacionChange(0, 'rol', e.target.value);
+  };
+
+  const handleCarreraSeleccionActual = (e) => {
+    if (indiceAsignacionActiva === 0) {
+      handleChange(e);
+      return;
+    }
+    handleAsignacionChange(0, 'carrera', e.target.value);
   };
 
   const tieneDocenteVinculado = Boolean(userToEdit?.perfil?.docente_id);
@@ -289,7 +246,24 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
   const esSuperusuarioEditado = Boolean(userToEdit?.is_superuser);
   const mostrarOpcionesVinculacion = formData.rol === 'docente' && !tieneDocenteVinculado;
   const mostrarInfoDocente = formData.rol === 'docente' && tieneDocenteVinculado;
-  const mostrarCiAutoridad = formData.rol === 'iiisyp' || formData.rol === 'director' || formData.rol === 'jefe_estudios';
+  const mostrarCiAutoridad = formData.rol === 'director' || formData.rol === 'jefe_estudios';
+  const obtenerRolLabel = (rolValue) => roles.find((item) => item.value === rolValue)?.label || rolValue || 'Sin rol';
+  const obtenerCarreraLabel = (carreraValue) => carreras.find((item) => String(item.id) === String(carreraValue))?.nombre || 'Sin carrera';
+  const obtenerResumenAsignacion = (item, index) => {
+    const rol = String(item?.rol || '').trim();
+    const carrera = String(item?.carrera || '').trim();
+    if (!rol && !carrera) return `#${index + 1} Selecciona rol y carrera`;
+    if (!rol) return `#${index + 1} Selecciona rol - ${obtenerCarreraLabel(carrera)}`;
+    if (!carrera) return `#${index + 1} ${obtenerRolLabel(rol)} - selecciona carrera`;
+    return `#${index + 1} ${obtenerRolLabel(rol)} - ${obtenerCarreraLabel(carrera)}`;
+  };
+  const asignacionesActivas = [
+    { rol: formData.rol || '', carrera: formData.carrera || '' },
+    ...asignacionesExtra,
+  ];
+  const asignacionesError = Array.isArray(errors?.asignaciones)
+    ? errors.asignaciones[0]
+    : (typeof errors?.asignaciones === 'string' ? errors.asignaciones : null);
 
   const handleResetearPassword = async () => {
     const passwordPorDefecto = `${userToEdit.username}UABJB`;
@@ -353,8 +327,58 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
     setLoading(true);
     setErrors({});
 
-    const esUsuarioSistema = ['iiisyp', 'director', 'jefe_estudios'].includes(formData.rol);
+    const esUsuarioSistema = ['director', 'jefe_estudios'].includes(formData.rol);
     const ciNormalizado = (formData.ci || '').trim();
+    const rolNormalizado = String(formData.rol || '').trim();
+    const carreraNormalizada = String(formData.carrera || '').trim();
+
+    if (!rolNormalizado || !carreraNormalizada) {
+      setErrors((prev) => ({
+        ...prev,
+        rol: !rolNormalizado ? ['Debe seleccionar un rol.'] : prev.rol,
+        carrera: !carreraNormalizada ? ['Debe seleccionar una carrera.'] : prev.carrera,
+      }));
+      setIndiceAsignacionActiva(0);
+      toast.error(!rolNormalizado && !carreraNormalizada
+        ? 'Debe seleccionar un rol y una carrera.'
+        : (!rolNormalizado ? 'Debe seleccionar un rol.' : 'Debe seleccionar una carrera.'));
+      setLoading(false);
+      return;
+    }
+
+    const segundaAsignacion = asignacionesExtra[0] || null;
+    if (segundaAsignacion) {
+      const segundaRol = String(segundaAsignacion.rol || '').trim();
+      const segundaCarrera = String(segundaAsignacion.carrera || '').trim();
+
+      if (!segundaRol || !segundaCarrera) {
+        setErrors((prev) => ({
+          ...prev,
+          rol: !segundaRol ? ['Debe seleccionar el segundo rol.'] : prev.rol,
+          carrera: !segundaCarrera ? ['Debe seleccionar la carrera del segundo rol.'] : prev.carrera,
+          asignaciones: ['Complete el segundo rol y su carrera antes de actualizar.'],
+        }));
+        setIndiceAsignacionActiva(1);
+        toast.error(!segundaRol && !segundaCarrera
+          ? 'Debe seleccionar el segundo rol y su carrera.'
+          : (!segundaRol ? 'Debe seleccionar el segundo rol.' : 'Debe seleccionar la carrera del segundo rol.'));
+        setLoading(false);
+        return;
+      }
+
+      const primeraClave = `${rolNormalizado}::${carreraNormalizada}`;
+      const segundaClave = `${segundaRol}::${segundaCarrera}`;
+      if (primeraClave === segundaClave) {
+        setErrors((prev) => ({
+          ...prev,
+          asignaciones: ['No se puede repetir el mismo rol en la misma carrera.'],
+        }));
+        setIndiceAsignacionActiva(1);
+        toast.error('No se puede repetir el mismo rol en la misma carrera.');
+        setLoading(false);
+        return;
+      }
+    }
 
     if (esUsuarioSistema && !ciNormalizado) {
       setErrors((prev) => ({
@@ -383,21 +407,27 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
       first_name: formData.first_name,
       last_name: formData.last_name,
       ci: ciNormalizado || null,
-      rol: formData.rol,
+      rol: rolNormalizado,
       is_active: userToEdit.is_active,
     };
 
     if (!esSuperusuarioEditado) {
-      payload.asignaciones = asignacionesExtra;
+      payload.asignaciones = asignacionesExtra
+        .filter((item) => String(item.rol || '').trim() && String(item.carrera || '').trim())
+        .map((item) => ({
+          ...item,
+          rol: String(item.rol || '').trim(),
+          carrera: String(item.carrera || '').trim(),
+        }));
     }
 
-    // Admin, Director y Jefe de Estudios deben enviar carrera
-    if ((formData.rol === 'iiisyp' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && !esSuperusuarioEditado) {
-      payload.carrera = formData.carrera;
+    // Director y Jefe de Estudios deben enviar carrera
+    if ((formData.rol === 'director' || formData.rol === 'jefe_estudios') && !esSuperusuarioEditado) {
+      payload.carrera = carreraNormalizada;
     } else if (formData.rol === 'docente') {
       payload.docente = docenteId;
-      if (formData.carrera) {
-        payload.carrera = formData.carrera;
+      if (carreraNormalizada) {
+        payload.carrera = carreraNormalizada;
       }
     }
 
@@ -471,9 +501,9 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
     >
       <div className="flex max-h-[95vh] w-full max-w-4xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-slate-800">
         <div className="bg-[#2C4AAE] px-6 py-4 rounded-t-2xl dark:bg-[#1a3a8a]">
-          <h3 className="text-xl font-bold text-white">
-            Editar Usuario
-          </h3>
+          <div className="flex items-center justify-end">
+            <span className="text-2xl font-bold text-white">✓</span>
+          </div>
         </div>
 
         <form id="user-form" onSubmit={handleSubmit} className="flex-1 overflow-visible">
@@ -482,43 +512,93 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
               <InputField label="Usuario" name="username" value={formData.username} onChange={handleChange} required disabled={!!userToEdit} error={errors.username} />
               <InputField label="Nombre completo" name="nombre_completo" value={formData.nombre_completo || ''} onChange={handleChange} required error={errors.nombre_completo || errors.first_name || errors.last_name} />
 
-              <div>
-                {(formData.rol === 'docente' || formData.rol === 'iiisyp' || formData.rol === 'director' || formData.rol === 'jefe_estudios') ? (
+              <div className="flex items-center gap-3">
+                <div className="flex-1 min-w-0">
                   <SelectConDropdown
-                    label="Carrera"
-                    name="carrera"
-                    value={formData.carrera}
-                    onChange={handleChange}
-                    options={carreras.map((c) => ({ value: c.id, label: c.nombre }))}
-                    error={errors.carrera}
-                    disabled={currentUser?.perfil?.rol === 'iiisyp' && !currentUser?.is_superuser}
-                    required={formData.rol !== 'docente'}
-                    placeholder="Seleccione una carrera..."
+                    label="Rol"
+                    name="rol"
+                    value={indiceAsignacionActiva === 0 ? (formData.rol || '') : (asignacionesExtra[0]?.rol || '')}
+                    onChange={handleRolSeleccionActual}
+                    options={(roles || []).filter((rol) => currentUser?.is_superuser || rol.value !== 'iiisyp').map((rol) => ({ value: rol.value, label: rol.label }))}
+                    error={errors.rol}
+                    disabled={esSuperusuarioEditado}
+                    required
                   />
-                ) : (
-                  <div />
-                )}
-                {(formData.rol === 'iiisyp' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && currentUser?.perfil?.rol === 'iiisyp' && !currentUser?.is_superuser && (
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    Carrera asignada automaticamente (no puedes cambiarla)
-                  </p>
+                </div>
+                {!esSuperusuarioEditado && (
+                  <div className="shrink-0 pt-[28px]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!puedeAgregarAsignacion) {
+                          toast.error(asignacionesExtra.length > 0 ? 'Ya existe un segundo rol asignado.' : 'Primero selecciona rol y carrera.');
+                          return;
+                        }
+                        agregarAsignacion();
+                      }}
+                      disabled={!puedeAgregarAsignacion}
+                      className={`h-[52px] w-16 rounded-2xl border-2 text-2xl font-black text-white shadow-sm transition-colors ${puedeAgregarAsignacion ? 'border-[#2C4AAE] bg-[#2C4AAE] hover:bg-[#1a3a8a]' : 'cursor-not-allowed border-slate-400 bg-slate-400'}`}
+                      aria-label="Agregar segunda asignacion"
+                    >
+                      +
+                    </button>
+                  </div>
                 )}
               </div>
 
-              <div>
-                <div className="flex items-start gap-2">
-                  <div className="flex-1 min-w-0">
-                    <SelectConDropdown
-                      label="Rol"
-                      name="rol"
-                      value={formData.rol}
-                      onChange={handleRolChange}
-                      options={(roles || []).filter((rol) => currentUser?.is_superuser || rol.value !== 'iiisyp').map((rol) => ({ value: rol.value, label: rol.label }))}
-                      error={errors.rol}
-                      disabled={esSuperusuarioEditado}
-                      required
-                    />
+              <SelectConDropdown
+                label="Carrera"
+                name="carrera"
+                value={indiceAsignacionActiva === 0 ? (formData.carrera || '') : (asignacionesExtra[0]?.carrera || '')}
+                onChange={handleCarreraSeleccionActual}
+                options={carreras.map((c) => ({ value: c.id, label: c.nombre }))}
+                error={errors.carrera}
+                disabled={esSuperusuarioEditado}
+                required
+                placeholder="Seleccione una carrera..."
+              />
+
+              {asignacionesExtra.length > 0 && (
+                <div className="md:col-span-2 animate-panel-asignacion overflow-hidden">
+                  <div className="rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 dark:border-slate-600 dark:bg-slate-700/30">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">Panel de asignaciones activas</p>
+                      <button
+                        type="button"
+                        onClick={() => eliminarAsignacion(0)}
+                        className="h-9 shrink-0 rounded-xl border-2 border-red-500 px-3 text-xs font-bold text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-900/20"
+                      >
+                        Quitar selección 2
+                      </button>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      {asignacionesActivas.map((item, index) => (
+                        <button
+                          key={`${item.rol || 'sin-rol'}-${item.carrera || 'sin-carrera'}-${index}`}
+                          type="button"
+                          onClick={() => setIndiceAsignacionActiva(index)}
+                          className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-left text-xs font-semibold transition-colors ${
+                            indiceAsignacionActiva === index
+                              ? 'border-[#2C4AAE] bg-[#2C4AAE] text-white'
+                              : 'border-[#2C4AAE]/30 bg-[#2C4AAE]/10 text-[#2C4AAE] dark:text-blue-300'
+                          }`}
+                        >
+                          {obtenerResumenAsignacion(item, index)}
+                        </button>
+                      ))}
+                    </div>
                   </div>
+                </div>
+              )}
+              {asignacionesError && (
+                <p className="md:col-span-2 -mt-2 text-xs font-semibold text-red-600 dark:text-red-400">
+                  {asignacionesError}
+                </p>
+              )}
+
+              <div className="hidden">
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0" />
                   {!esSuperusuarioEditado && (
                     <div className="shrink-0 pt-[28px]">
                       <button
@@ -548,25 +628,12 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
                           name="docente"
                           value={formData.docente}
                           onChange={handleChange}
-                          options={docentes.map((d) => ({ value: d.id, label: d.nombre_completo }))}
+                          options={docentes.map((d) => ({ value: d.id, label: obtenerNombreCompletoDocente(d) }))}
                           error={errors.docente}
                           disabled={tieneDocenteVinculado}
                           placeholder={tieneDocenteVinculado ? nombreDocenteVinculado : 'Seleccione un docente'}
                         />
                       </div>
-                      {!tieneDocenteVinculado && formData.rol === 'docente' && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setCrearNuevoDocente(true);
-                            handleCrearNuevoDocente();
-                          }}
-                          title="Crear nuevo registro de docente"
-                          className="h-[46px] w-[46px] bg-[#2C4AAE] hover:bg-[#1a3a8a] text-white font-bold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center justify-center flex-shrink-0"
-                        >
-                          <span className="text-lg">+</span>
-                        </button>
-                      )}
                     </div>
                     {mostrarInfoDocente && (
                       <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-300">
@@ -585,7 +652,108 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
                 </div>
               </div>
 
-              {!esSuperusuarioEditado && (
+              {false && <div className="md:col-span-2 mt-2">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-bold uppercase tracking-wide text-slate-700 dark:text-slate-300">Roles Asignados</h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Los bloques son la unica fuente de verdad para rol y carrera.</p>
+                  </div>
+                  {!esSuperusuarioEditado && (
+                    <button
+                      type="button"
+                      onClick={agregarAsignacion}
+                      disabled={!puedeAgregarAsignacion}
+                      className={`rounded-xl px-3 py-2 font-semibold text-white transition-colors ${puedeAgregarAsignacion ? 'bg-[#2C4AAE] hover:bg-[#1a3a8a]' : 'bg-slate-400 cursor-not-allowed'}`}
+                    >
+                      + Agregar Segundo Rol
+                    </button>
+                  )}
+                </div>
+                {!puedeAgregarAsignacion && (
+                  <p className="mb-3 text-xs text-amber-600 dark:text-amber-300">
+                    Limite alcanzado: maximo 2 roles asignados por usuario.
+                  </p>
+                )}
+
+                <div className="space-y-4">
+                  <div className="space-y-4 rounded-2xl border-2 border-slate-300 bg-slate-50 p-4 dark:border-slate-600 dark:bg-slate-700/40">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Asignacion principal</span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <SelectConDropdown
+                        label="Rol"
+                        name="rol"
+                        value={formData.rol}
+                        onChange={handleRolChange}
+                        options={(roles || []).filter((rol) => currentUser?.is_superuser || rol.value !== 'iiisyp').map((rol) => ({ value: rol.value, label: rol.label }))}
+                        error={errors.rol}
+                        disabled={esSuperusuarioEditado}
+                        required
+                      />
+                      <div>
+                        <SelectConDropdown
+                          label="Carrera"
+                          name="carrera"
+                          value={formData.carrera}
+                          onChange={handleChange}
+                          options={carreras.map((c) => ({ value: c.id, label: c.nombre }))}
+                          error={errors.carrera}
+                          disabled={esSuperusuarioEditado}
+                          required={formData.rol !== 'docente'}
+                          placeholder="Seleccione una carrera..."
+                        />
+                        {(formData.rol === 'director' || formData.rol === 'jefe_estudios') && currentUser?.perfil?.rol === 'iiisyp' && !currentUser?.is_superuser && (
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            Carrera asignada automaticamente (no puedes cambiarla)
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {asignacionesExtra.map((asignacion, index) => (
+                    <div key={`segundo-${index}-${asignacion.rol}-${asignacion.carrera}`} className="space-y-4 rounded-2xl border-2 border-slate-300 bg-slate-50 p-4 dark:border-slate-600 dark:bg-slate-700/40">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Segundo rol</span>
+                        {!esSuperusuarioEditado && (
+                          <button
+                            type="button"
+                            onClick={() => eliminarAsignacion(index)}
+                            className="rounded-lg bg-red-100 px-3 py-1.5 text-sm font-semibold text-red-700 transition-colors hover:bg-red-200 dark:bg-red-900/30 dark:text-red-200 dark:hover:bg-red-900/50"
+                          >
+                            Eliminar
+                          </button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <SelectConDropdown
+                          label="Rol"
+                          name={`asignacion-rol-${index}`}
+                          value={asignacion.rol || 'docente'}
+                          onChange={(e) => handleAsignacionChange(index, 'rol', e.target.value)}
+                          options={(roles || []).filter((rol) => currentUser?.is_superuser || rol.value !== 'iiisyp').map((rol) => ({ value: rol.value, label: rol.label }))}
+                          error={errors[`asignaciones.${index}.rol`]}
+                          disabled={esSuperusuarioEditado}
+                          required
+                        />
+                        <SelectConDropdown
+                          label="Carrera"
+                          name={`asignacion-carrera-${index}`}
+                          value={asignacion.carrera || ''}
+                          onChange={(e) => handleAsignacionChange(index, 'carrera', e.target.value)}
+                          options={carreras.map((c) => ({ value: c.id, label: c.nombre }))}
+                          error={errors[`asignaciones.${index}.carrera`]}
+                          disabled={esSuperusuarioEditado}
+                          required
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>}
+
+              {false && !esSuperusuarioEditado && (
               <div className="md:col-span-2 mt-2">
                 <div className="mb-3 flex items-center justify-between">
                   <div>
@@ -650,7 +818,7 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
                                 name={`asignacion-docente-${index}`}
                                 value={asignacion.docente || ''}
                                 onChange={(e) => handleAsignacionChange(index, 'docente', e.target.value)}
-                                options={docentes.map((d) => ({ value: d.id, label: d.nombre_completo }))}
+                                options={docentes.map((d) => ({ value: d.id, label: obtenerNombreCompletoDocente(d) }))}
                                 error={errors[`asignaciones.${index}.docente`]}
                                 placeholder="Seleccione un docente"
                               />
