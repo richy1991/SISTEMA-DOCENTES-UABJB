@@ -12,11 +12,14 @@ const BackIcon = (props) => (
 );
 
 const getRoleName = (user) => {
+  if (user?.is_superuser) {
+    return 'Super Admin';
+  }
   if (!user?.perfil?.rol) {
     return user?.is_staff ? 'Administrador' : 'Usuario';
   }
   const roles = {
-    iiisyp: 'Administrador',
+    iiisyp: 'Instituto de investigación',
     director: 'Director de Carrera',
     jefe_estudios: 'Jefe de Estudios',
     docente: 'Docente',
@@ -283,7 +286,6 @@ const Sidebar = ({ theme, showGestionModal, setShowGestionModal, sidebarExpanded
                 </button>
               );
             }
-
             return (
               <NavLink
                 key={item.name}

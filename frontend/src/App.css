@@ -80,6 +80,15 @@
   animation: fade-in 0.3s ease-out;
 }
 
+/* Animación para dropdowns y bloques que aparecen deslizando hacia abajo */
+@keyframes slideDown {
+  from { transform: translateY(-8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.slide-down {
+  animation: slideDown 220ms ease-out forwards;
+}
+
 /* Animación de spin para loading (si no existe ya) */
 @keyframes spin {
   from {

@@ -23,6 +23,50 @@ const InputField = ({ label, name, type = 'text', value, onChange, required, err
   </div>
 );
 
+// Animación de rebote (igual que GestionUsuarios)
+const styleCarrera = document.createElement('style');
+styleCarrera.textContent = `
+  @keyframes fieldErrorPop {
+    0% { transform: translateY(0) scale(1); }
+    30% { transform: translateY(-3px) scale(1.01); }
+    60% { transform: translateY(1px) scale(0.995); }
+    100% { transform: translateY(0) scale(1); }
+  }
+  .animate-field-error-pop { animation: fieldErrorPop 220ms ease-out; transform-origin: center; }
+`;
+document.head.appendChild(styleCarrera);
+const ERROR_MOTION_CLASS = 'animate-field-error-pop';
+
+// InputField con pulso de error (reproduce clase cuando cambia `pulse`)
+const InputFieldPulse = ({ label, name, type = 'text', value, onChange, required, error, pulse = 0, ...rest }) => {
+  const [isPulsing, setIsPulsing] = useState(false);
+  const errorMessage = Array.isArray(error) ? (error[0] || '') : (typeof error === 'string' ? error : '');
+
+  useEffect(() => {
+    if (!error) { setIsPulsing(false); return; }
+    setIsPulsing(false);
+    const frame = requestAnimationFrame(() => setIsPulsing(true));
+    const to = setTimeout(() => setIsPulsing(false), 260);
+    return () => { cancelAnimationFrame(frame); clearTimeout(to); };
+  }, [error, pulse]);
+
+  return (
+    <div className={error && isPulsing ? ERROR_MOTION_CLASS : ''}>
+      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label}{error && <span className="ml-1 text-red-500">*</span>}</label>
+      <input
+        type={type}
+        name={name}
+        value={value}
+        onChange={onChange}
+        required={required}
+        {...rest}
+        className={`w-full px-4 py-2.5 rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm ${error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'}`}
+      />
+      {errorMessage && <p className="text-xs text-red-600 mt-1">{errorMessage}</p>}
+    </div>
+  );
+};
+
 const SelectConDropdown = ({
   label,
   name,
@@ -40,7 +84,8 @@ const SelectConDropdown = ({
   setFacultadOptions,
   getFacultadesCarrera,
   formData,
-  setFormData
+  setFormData,
+  pulse = 0,
 }) => {
   const [open, setOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -186,12 +231,22 @@ const SelectConDropdown = ({
     }
   }, [open, searchable, selectedLabel]);
 
+  // pulse handling for error rebote
+  const [isPulsing, setIsPulsing] = useState(false);
+  useEffect(() => {
+    if (!error) { setIsPulsing(false); return; }
+    setIsPulsing(false);
+    const frame = requestAnimationFrame(() => setIsPulsing(true));
+    const to = setTimeout(() => setIsPulsing(false), 260);
+    return () => { cancelAnimationFrame(frame); clearTimeout(to); };
+  }, [error, pulse]);
+
   const filteredOptions = searchable
     ? options.filter((opt) => String(opt.label || '').toLowerCase().includes(searchTerm.toLowerCase()))
     : options;
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className={`relative ${error && isPulsing ? ERROR_MOTION_CLASS : ''}`}>
       {label && (
         <label className="block text-sm font-semibold text-slate-800 dark:text-slate-300 mb-2">
           {manageMode ? 'Agregar, Editar, Eliminar Facultades' : label} {error && <span className="text-red-500">*</span>}
@@ -524,8 +579,9 @@ function parseDisplayDate(display) {
   return d;
 }
 
-const DatePickerField = ({ label, name, value, onDateChange, error, required, maxIsoDate }) => {
+const DatePickerField = ({ label, name, value, onDateChange, error, required, maxIsoDate, pulse = 0 }) => {
   const [open, setOpen] = useState(false);
+  const [isPulsing, setIsPulsing] = useState(false);
   const [openQuickPicker, setOpenQuickPicker] = useState(null);
   const [inputValue, setInputValue] = useState(formatDisplayDate(value));
   const [visibleMonth, setVisibleMonth] = useState(() => {
@@ -545,6 +601,14 @@ const DatePickerField = ({ label, name, value, onDateChange, error, required, ma
   useEffect(() => {
     setInputValue(formatDisplayDate(value));
   }, [value]);
+
+  useEffect(() => {
+    if (!error) { setIsPulsing(false); return; }
+    setIsPulsing(false);
+    const frame = requestAnimationFrame(() => setIsPulsing(true));
+    const to = setTimeout(() => setIsPulsing(false), 260);
+    return () => { cancelAnimationFrame(frame); clearTimeout(to); };
+  }, [error, pulse]);
 
   useEffect(() => {
     const handleOutside = (event) => {
@@ -673,7 +737,7 @@ const DatePickerField = ({ label, name, value, onDateChange, error, required, ma
   const errorMessage = Array.isArray(error) ? (error[0] || '') : error;
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className={`relative ${error && isPulsing ? ERROR_MOTION_CLASS : ''}`}>
       <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label} {error && <span className="text-red-500">*</span>}</label>
       <div className={`relative w-full rounded-xl border-2 bg-slate-50 dark:bg-slate-700 shadow-sm ${error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'} focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent`}>
         <input
@@ -1052,6 +1116,16 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
   // States para modal expandido de campos de texto
   const [expandedField, setExpandedField] = useState(null);
 
+  // Pulse state para reproducir rebote por campo
+  const [errorPulse, setErrorPulse] = useState({});
+  const pulseFieldErrors = (fields = []) => {
+    setErrorPulse((prev) => {
+      const next = { ...prev };
+      fields.forEach((f) => { next[f] = (next[f] || 0) + 1; });
+      return next;
+    });
+  };
+
   // Handler para el filtro de carreras
   const handleSelectCarreraFromFilter = (carrera) => {
     if (!carrera) {
@@ -1378,16 +1452,16 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
     }
 
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+      return newErrors;
   };
 
   const handleCreateSubmit = async (e) => {
     e.preventDefault();
     setErrors({});
-
-    const isValid = validateCarreraForm({ requireLogo: true });
-    if (!isValid) {
+    const newErrors = validateCarreraForm({ requireLogo: true });
+    if (Object.keys(newErrors).length > 0) {
       toast.error('Completa los campos obligatorios marcados en rojo.');
+      pulseFieldErrors(Object.keys(newErrors));
       return;
     }
 
@@ -1405,6 +1479,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
       const apiErrors = err.response?.data;
       if (apiErrors) {
         setErrors(apiErrors);
+        pulseFieldErrors(Object.keys(apiErrors));
         const errorMsg = Object.values(apiErrors).flat().join(' ');
         toast.error(`Error: ${errorMsg}`);
       } else {
@@ -1419,9 +1494,10 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
     e.preventDefault();
 
     setErrors({});
-    const isValid = validateCarreraForm({ requireLogo: false });
-    if (!isValid) {
+    const newErrors = validateCarreraForm({ requireLogo: false });
+    if (Object.keys(newErrors).length > 0) {
       toast.error('Completa los campos obligatorios marcados en rojo.');
+      pulseFieldErrors(Object.keys(newErrors));
       return;
     }
 
@@ -1742,9 +1818,16 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                     <div className="md:col-span-3 space-y-4">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Nombre de la Carrera {errors.nombre && <span className="text-red-500">*</span>}</label>
-                          <input type="text" name="nombre" value={formData.nombre} onChange={handleChange} required placeholder="Ej: Ingeniería de Sistemas" className={`w-full px-4 py-2.5 rounded-xl border-2 ${errors.nombre ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'} bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 placeholder:text-xs placeholder:italic transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:shadow-md`} />
-                          {errors.nombre && <p className="text-xs text-red-600 mt-1">{getErrorMessage(errors.nombre)}</p>}
+                          <InputFieldPulse
+                            label={`Nombre de la Carrera`}
+                            name="nombre"
+                            value={formData.nombre}
+                            onChange={handleChange}
+                            required
+                            error={errors.nombre}
+                            pulse={errorPulse.nombre || 0}
+                            placeholder="Ej: Ingeniería de Sistemas"
+                          />
                         </div>
 
                         <SelectConDropdown
@@ -1763,21 +1846,36 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                           searchable
                           options={facultadOptions}
                           error={errors.facultad}
+                          pulse={errorPulse.facultad || 0}
                           placeholder="Seleccione una facultad..."
                         />
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Código {errors.codigo && <span className="text-red-500">*</span>}</label>
-                          <input type="text" name="codigo" value={formData.codigo} onChange={handleChange} required placeholder="Ej: IS" className={`w-full px-4 py-2.5 rounded-xl border-2 ${errors.codigo ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'} bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 placeholder:text-xs placeholder:italic transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:shadow-md`} />
-                          {errors.codigo && <p className="text-xs text-red-600 mt-1">{getErrorMessage(errors.codigo)}</p>}
+                          <InputFieldPulse
+                            label="Código"
+                            name="codigo"
+                            value={formData.codigo}
+                            onChange={handleChange}
+                            required
+                            error={errors.codigo}
+                            pulse={errorPulse.codigo || 0}
+                            placeholder="Ej: IS"
+                          />
                         </div>
 
                         <div>
-                          <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Resolución Ministerial {errors.resolucion_ministerial && <span className="text-red-500">*</span>}</label>
-                          <input type="text" name="resolucion_ministerial" value={formData.resolucion_ministerial} onChange={handleChange} required placeholder="Ej: RM 123/2020" className={`w-full px-4 py-2.5 rounded-xl border-2 ${errors.resolucion_ministerial ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'} bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 placeholder:text-xs placeholder:italic transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:shadow-md`} />
-                          {errors.resolucion_ministerial && <p className="text-xs text-red-600 mt-1">{getErrorMessage(errors.resolucion_ministerial)}</p>}
+                          <InputFieldPulse
+                            label="Resolución Ministerial"
+                            name="resolucion_ministerial"
+                            value={formData.resolucion_ministerial}
+                            onChange={handleChange}
+                            required
+                            error={errors.resolucion_ministerial}
+                            pulse={errorPulse.resolucion_ministerial || 0}
+                            placeholder="Ej: RM 123/2020"
+                          />
                         </div>
                       </div>
 
@@ -1789,6 +1887,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                           onDateChange={handleDateChange}
                           required
                           error={errors.fecha_resolucion}
+                          pulse={errorPulse.fecha_resolucion || 0}
                           maxIsoDate={FECHA_MAXIMA_HOY}
                         />
 
@@ -1824,41 +1923,43 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                         />
 
                         <div className="flex-1 flex items-center justify-center">
-                          <div className="mx-auto w-40 h-40 rounded-full overflow-hidden border border-blue-300 dark:border-blue-700 shadow-md relative group bg-white dark:bg-slate-900">
-                            {logoPreview ? (
-                              <img src={logoPreview} alt="Logo de carrera" className="w-full h-full object-cover" />
-                            ) : (
-                              <div className="w-full h-full bg-gradient-to-br from-blue-900 to-blue-950" />
-                            )}
-
-                            <div className="absolute inset-0 flex opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                          <div className={errors.logo_carrera_file && (errorPulse.logo_carrera_file || 0) ? ERROR_MOTION_CLASS : ''}>
+                            <div className="mx-auto w-40 h-40 rounded-full overflow-hidden border border-blue-300 dark:border-blue-700 shadow-md relative group bg-white dark:bg-slate-900">
                               {logoPreview ? (
-                                <>
+                                <img src={logoPreview} alt="Logo de carrera" className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="w-full h-full bg-gradient-to-br from-blue-900 to-blue-950" />
+                              )}
+
+                              <div className="absolute inset-0 flex opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                                {logoPreview ? (
+                                  <>
+                                    <div
+                                      onClick={() => createLogoInputRef.current?.click()}
+                                      className="w-1/2 h-full bg-black/45 hover:bg-black/65 backdrop-blur-md flex flex-col items-center justify-center cursor-pointer text-white"
+                                      title="Cambiar logo"
+                                    >
+                                      <span className="text-[10px] font-bold">CAMBIAR</span>
+                                    </div>
+                                    <div className="w-px h-full bg-white/20" />
+                                    <div
+                                      onClick={handleRemoveLogo}
+                                      className="w-1/2 h-full bg-red-600/65 hover:bg-red-600/85 backdrop-blur-md flex flex-col items-center justify-center cursor-pointer text-white"
+                                      title="Eliminar logo"
+                                    >
+                                      <span className="text-[10px] font-bold">BORRAR</span>
+                                    </div>
+                                  </>
+                                ) : (
                                   <div
                                     onClick={() => createLogoInputRef.current?.click()}
-                                    className="w-1/2 h-full bg-black/45 hover:bg-black/65 backdrop-blur-md flex flex-col items-center justify-center cursor-pointer text-white"
-                                    title="Cambiar logo"
+                                    className="w-full h-full bg-black/35 hover:bg-black/55 backdrop-blur-md flex items-center justify-center cursor-pointer text-white"
+                                    title="Subir logo"
                                   >
-                                    <span className="text-[10px] font-bold">CAMBIAR</span>
+                                    <span className="text-xs font-bold">SUBIR FOTO</span>
                                   </div>
-                                  <div className="w-px h-full bg-white/20" />
-                                  <div
-                                    onClick={handleRemoveLogo}
-                                    className="w-1/2 h-full bg-red-600/65 hover:bg-red-600/85 backdrop-blur-md flex flex-col items-center justify-center cursor-pointer text-white"
-                                    title="Eliminar logo"
-                                  >
-                                    <span className="text-[10px] font-bold">BORRAR</span>
-                                  </div>
-                                </>
-                              ) : (
-                                <div
-                                  onClick={() => createLogoInputRef.current?.click()}
-                                  className="w-full h-full bg-black/35 hover:bg-black/55 backdrop-blur-md flex items-center justify-center cursor-pointer text-white"
-                                  title="Subir logo"
-                                >
-                                  <span className="text-xs font-bold">SUBIR FOTO</span>
-                                </div>
-                              )}
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>

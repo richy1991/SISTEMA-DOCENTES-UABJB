@@ -15,6 +15,13 @@ import hashlib
 import os
 
 
+MENSAJE_INCOMPATIBILIDAD_DEDICACION_GESTION = (
+    'Según normativa UABJB, los cargos de gestión (Director/Jefe/Instituto) '
+    'solo son compatibles con docencia a Tiempo Horario. '
+    'No se permite dedicación Tiempo Completo o Medio Tiempo.'
+)
+
+
 class DatosLaborales(models.Model):
     """
     'ADN Laboral' universal para cualquier persona que trabaja en la U.A.B.J.B.
@@ -116,10 +123,19 @@ class Docente(models.Model):
         ('horario_48', 'Horario 48hrs/mes'),
     ]
 
-    # === Datos personales (independientes de carrera) ===
-    nombres = models.CharField(max_length=100)
-    apellido_paterno = models.CharField(max_length=100)
-    apellido_materno = models.CharField(max_length=100, blank=True)
+    user = models.OneToOneField(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='docente_relacion',
+        help_text="Usuario del sistema vinculado al docente"
+    )
+
+    # === Datos legacy de compatibilidad ===
+    nombres = models.CharField(max_length=100, blank=True, default='')
+    apellido_paterno = models.CharField(max_length=100, blank=True, default='')
+    apellido_materno = models.CharField(max_length=100, blank=True, default='')
 
     # === Datos laborales compartidos ===
     datos_laborales = models.OneToOneField(
@@ -147,11 +163,22 @@ class Docente(models.Model):
         ordering = ['apellido_paterno', 'apellido_materno', 'nombres']
 
     def __str__(self):
-        return f"{self.apellido_paterno} {self.apellido_materno} {self.nombres}"
+        return self.nombre_completo or f"Docente #{self.pk}"
 
     @property
     def nombre_completo(self):
+        if self.user_id:
+            full_name = self.user.get_full_name().strip()
+            if full_name:
+                return full_name
+            return self.user.username
         return f"{self.nombres} {self.apellido_paterno} {self.apellido_materno}".strip()
+
+    @property
+    def correo_institucional(self):
+        if self.user_id:
+            return self.user.email
+        return self.email
 
     @property
     def ci(self):
@@ -251,6 +278,34 @@ class DocenteCarrera(models.Model):
     def clean(self):
         from django.core.exceptions import ValidationError
         super().clean()
+
+        if self.dedicacion in {'tiempo_completo', 'medio_tiempo'}:
+            user_ids = set()
+            if self.docente and self.docente.user_id:
+                user_ids.add(self.docente.user_id)
+
+            perfiles_relacionados = PerfilUsuario.objects.filter(
+                docente=self.docente,
+                user__isnull=False,
+                activo=True,
+            ).values_list('user_id', flat=True)
+            user_ids.update(user_id for user_id in perfiles_relacionados if user_id)
+
+            tiene_asignacion_gestion = user_ids and AsignacionCarrera.objects.filter(
+                user_id__in=user_ids,
+                activo=True,
+                rol__in=['iiisyp', 'director', 'jefe_estudios'],
+            ).exists()
+            tiene_perfil_gestion = user_ids and PerfilUsuario.objects.filter(
+                user_id__in=user_ids,
+                activo=True,
+                rol__in=['iiisyp', 'director', 'jefe_estudios'],
+            ).exists()
+
+            if tiene_asignacion_gestion or tiene_perfil_gestion:
+                raise ValidationError({
+                    'dedicacion': MENSAJE_INCOMPATIBILIDAD_DEDICACION_GESTION
+                })
 
         # Validación de capacidad: no superar 40h/sem entre todos los vínculos activos.
         if self.pk:
@@ -751,8 +806,8 @@ class FondoTiempo(models.Model):
         """Determina si un usuario puede editar este fondo"""
         estados_editables = ['borrador', 'observado', 'en_ejecucion']
 
-        # Solo un iiisyp (que es staff) puede editar. Directores y Jefes no.
-        if usuario.is_staff and hasattr(usuario, 'perfil') and usuario.perfil.rol == 'iiisyp':
+        # Solo el staff con rol de gestión real puede editar.
+        if usuario.is_staff and hasattr(usuario, 'perfil') and usuario.perfil.rol in ['director', 'jefe_estudios']:
             return self.estado in estados_editables
         
         # El docente dueño puede editar si el estado lo permite.
@@ -768,8 +823,8 @@ class FondoTiempo(models.Model):
         """
         Valida permisos para cambiar el estado del Fondo de Tiempo.
         
-        - 'observado': Solo jefe_estudios (del mismo programa) o admin
-        - Otros cambios: Solo admin o director (is_staff)
+        - 'observado': Solo jefe_estudios (del mismo programa)
+        - Otros cambios: Solo staff con rol de gestión real
         """
         # Necesario ser staff
         if not usuario.is_staff:
@@ -780,7 +835,7 @@ class FondoTiempo(models.Model):
             # Solo admin o jefe_estudios pueden cambiar a 'observado'
             if hasattr(usuario, 'perfil') and usuario.perfil:
                 rol = usuario.perfil.rol
-                if rol in ['iiisyp', 'jefe_estudios']:
+                if rol == 'jefe_estudios':
                     return True
             return False
         
@@ -788,8 +843,12 @@ class FondoTiempo(models.Model):
         return True
     
     def puede_archivar(self, usuario):
-        """Solo admin puede archivar"""
-        return usuario.is_staff
+        """Solo el staff con rol de gestión real puede archivar"""
+        return bool(
+            usuario.is_staff
+            and hasattr(usuario, 'perfil')
+            and usuario.perfil.rol in ['director', 'jefe_estudios']
+        )
 
     def _obtener_vinculo(self):
         """Obtiene el vínculo DocenteCarrera activo para este fondo."""
@@ -1689,4 +1748,3 @@ def auto_poblar_responsable_carrera(sender, instance, **kwargs):
 
     if responsable_nombre and carrera.responsable != responsable_nombre:
         Carrera.objects.filter(pk=carrera.pk).update(responsable=responsable_nombre)
-
