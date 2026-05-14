@@ -55,6 +55,8 @@ const isAuthExpired = (err) => {
 function ChatFlotantePOA({ currentUser }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [panelPosition, setPanelPosition] = useState(null);
+  const [isDraggingPanel, setIsDraggingPanel] = useState(false);
   const [loadingContactos, setLoadingContactos] = useState(false);
   const [contactosSugeridos, setContactosSugeridos] = useState([]);
   const [contactosRecientes, setContactosRecientes] = useState([]);
@@ -79,6 +81,8 @@ function ChatFlotantePOA({ currentUser }) {
   const chatListRef = useRef(null);
   const actionsMenuRef = useRef(null);
   const messageInputRef = useRef(null);
+  const panelRef = useRef(null);
+  const dragStateRef = useRef(null);
   const notifiedConnectionRef = useRef(false);
 
   const currentUserSnapshot = useMemo(() => currentUser || getStoredUser(), [currentUser]);
@@ -111,6 +115,13 @@ function ChatFlotantePOA({ currentUser }) {
     window.requestAnimationFrame(() => {
       messageInputRef.current?.focus();
     });
+  }, []);
+
+  const closeChat = useCallback(() => {
+    setOpen(false);
+    setPanelPosition(null);
+    setIsDraggingPanel(false);
+    dragStateRef.current = null;
   }, []);
 
   const fetchEstadoBloqueo = useCallback(async (peerId) => {
@@ -258,6 +269,48 @@ function ChatFlotantePOA({ currentUser }) {
     }, 1800);
     return () => window.clearInterval(intervalId);
   }, [open, peerActualId, fetchMensajes, pollingPaused]);
+
+  useEffect(() => {
+    if (!isDraggingPanel) return undefined;
+
+    const handlePointerMove = (event) => {
+      const dragState = dragStateRef.current;
+      if (!dragState) return;
+
+      const dx = event.clientX - dragState.startX;
+      const dy = event.clientY - dragState.startY;
+
+      const panel = panelRef.current;
+      const panelWidth = panel?.offsetWidth || 390;
+      const panelHeight = panel?.offsetHeight || 640;
+
+      const minLeft = 8;
+      const minTop = 8;
+      const maxLeft = Math.max(minLeft, window.innerWidth - 80);
+      const maxTop = Math.max(minTop, window.innerHeight - 80);
+
+      const unclampedLeft = dragState.startLeft + dx;
+      const unclampedTop = dragState.startTop + dy;
+
+      const left = Math.min(Math.max(unclampedLeft, minLeft - panelWidth + 80), maxLeft);
+      const top = Math.min(Math.max(unclampedTop, minTop), Math.max(minTop, maxTop - panelHeight + 80));
+
+      setPanelPosition({ left, top });
+    };
+
+    const handlePointerUp = () => {
+      setIsDraggingPanel(false);
+      dragStateRef.current = null;
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [isDraggingPanel]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -433,10 +486,45 @@ function ChatFlotantePOA({ currentUser }) {
     focusMessageInput();
   }, [open, peerActualId, focusMessageInput]);
 
+  const handlePanelPointerDown = (event) => {
+    if (event.button !== 0) return;
+
+    const clickedNoDrag = event.target.closest('[data-no-drag="true"]');
+    const clickedDragHandle = event.target.closest('[data-drag-handle="true"]');
+    if (clickedNoDrag || !clickedDragHandle) return;
+
+    const panel = panelRef.current;
+    if (!panel) return;
+
+    const rect = panel.getBoundingClientRect();
+    const startLeft = panelPosition?.left ?? rect.left;
+    const startTop = panelPosition?.top ?? rect.top;
+
+    dragStateRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      startLeft,
+      startTop,
+    };
+
+    setPanelPosition({ left: startLeft, top: startTop });
+    setIsDraggingPanel(true);
+  };
+
   return (
     <>
       <button
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={() => {
+          setOpen((prev) => {
+            const next = !prev;
+            if (!next) {
+              setPanelPosition(null);
+              setIsDraggingPanel(false);
+              dragStateRef.current = null;
+            }
+            return next;
+          });
+        }}
         className="fixed bottom-[5.5rem] right-32 w-14 h-14 rounded-full shadow-2xl transition-all duration-300 hover:scale-110 flex items-center justify-center text-white z-[121] bg-gradient-to-br from-cyan-500 via-cyan-600 to-blue-700 border-2 border-white/25"
         title="Mensajes"
       >
@@ -445,14 +533,19 @@ function ChatFlotantePOA({ currentUser }) {
 
       {open && (
         <div className="fixed inset-0 z-[122] pointer-events-none">
-          <div className="absolute right-6 bottom-24 w-[390px] max-w-[calc(100vw-1.5rem)] h-[640px] max-h-[calc(100vh-8rem)] rounded-3xl border border-cyan-300/30 bg-slate-950/95 overflow-hidden shadow-2xl flex flex-col pointer-events-auto">
-            <div className="relative z-20 border-b border-slate-700 bg-gradient-to-r from-cyan-600 to-teal-600">
-              <div className="px-4 py-3 flex items-center gap-2">
+          <div
+            ref={panelRef}
+            onPointerDown={handlePanelPointerDown}
+            style={panelPosition ? { left: panelPosition.left, top: panelPosition.top } : undefined}
+            className={`absolute w-[390px] max-w-[calc(100vw-1.5rem)] h-[640px] max-h-[calc(100vh-8rem)] rounded-3xl border border-cyan-300/30 bg-slate-950/95 overflow-hidden shadow-2xl flex flex-col pointer-events-auto ${panelPosition ? '' : 'right-6 bottom-24'}`}
+          >
+            <div data-drag-handle="true" className={`relative z-20 border-b border-slate-700 bg-gradient-to-r from-cyan-600 to-teal-600 ${isDraggingPanel ? 'cursor-grabbing' : 'cursor-grab'}`}>
+              <div data-drag-handle="true" className="px-4 py-3 flex items-center gap-2 select-none">
                 <MessageCircle size={16} className="text-white" />
                 <div className="text-white font-bold text-sm truncate">
                   {peerActual ? ` ${formatNombre(peerActual)}` : 'Chat'}
                 </div>
-                <div className="ml-auto flex items-center gap-1">
+                <div data-no-drag="true" className="ml-auto flex items-center gap-1">
                   <button
                     onClick={() => {
                       setShowSearch((prev) => !prev);
@@ -514,7 +607,7 @@ function ChatFlotantePOA({ currentUser }) {
                     )}
                   </div>
                   <button
-                    onClick={() => setOpen(false)}
+                    onClick={closeChat}
                     className="w-8 h-8 rounded-lg text-white hover:bg-white/20 flex items-center justify-center"
                     title="Cerrar"
                   >
