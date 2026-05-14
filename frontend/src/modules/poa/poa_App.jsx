@@ -76,8 +76,8 @@ function POAApp({ user }) {
     return () => { mounted = false; };
   }, [user?.id]);
 
-  // Admin principal POA: solo superusuario global
-  const isAdminPrincipal = Boolean(user?.is_superuser);
+  // Admin principal POA: superusuario global o administrador de carrera (iiisyp)
+  const isAdminPrincipal = Boolean(user?.is_superuser || user?.perfil?.rol === 'iiisyp');
 
   const poaPermissions = {
     canEdit: poaRoles.includes('elaborador'),

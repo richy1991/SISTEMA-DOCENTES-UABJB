@@ -145,7 +145,7 @@ def _es_admin_principal(user):
 
 def _requerir_gestor_accesos(request):
     if not (_es_elaborador(request.user) or _es_admin_principal(request.user)):
-        raise PermissionDenied('Solo el rol Elaborador POA o el superusuario puede gestionar accesos POA.')
+        raise PermissionDenied('Solo el rol Elaborador POA o Administrador principal puede gestionar accesos POA.')
 
 
 def _requerir_revisor(request):

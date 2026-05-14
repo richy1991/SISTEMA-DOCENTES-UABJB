@@ -340,10 +340,9 @@ function App() {
             </Route>
 
             {/* Módulos de Administración y Catálogos (protegidos) */}
-            {(user.is_staff || user.is_superuser) && (
+            {user.is_staff && (
               <Route path="/admin" element={<AdminPanel user={user} onLogout={handleLogout} />}>
                 <Route index element={<AdminDashboard user={user} />} />
-                <Route path="calendarios" element={<AnimatedRoute><ListaCalendarios /></AnimatedRoute>} />
                 {/* Redirección por si se entra a /admin/ sin nada más */}
                 <Route path="*" element={<Navigate to="/admin" replace />} />
               </Route>
