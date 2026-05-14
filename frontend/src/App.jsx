@@ -14,6 +14,7 @@ import AccesosPOAPage from './modules/poa/pages/AccesosPOAPage';
 import DocumentosPOAPage from './modules/poa/pages/DocumentosPOAPage';
 import DocumentosRevisionPOAPage from './modules/poa/pages/DocumentosRevisionPOAPage';
 import ActividadesPage from './modules/poa/pages/ActividadesPage';
+import EvidenciaPage from './modules/poa/pages/EvidenciaPage';
 import ObjetivosEspecificosPage from './modules/poa/pages/ObjetivosEspecificosPage';
 import CatalogoItems from './modules/poa/pages/CatalogoItems';
 import CatalogosMenu from './modules/poa/pages/CatalogosMenu';
@@ -352,6 +353,7 @@ function App() {
               <Route path="documentos/nuevo" element={<AnimatedRoute><DocumentosPOAPage /></AnimatedRoute>} />
               <Route path="actividades" element={<AnimatedRoute><ActividadesPage /></AnimatedRoute>} />
               <Route path="actividades/:objetivoEspecificoId" element={<AnimatedRoute><ActividadesPage /></AnimatedRoute>} />
+              <Route path="actividades/:actividadId/evidencias" element={<AnimatedRoute><EvidenciaPage /></AnimatedRoute>} />
               <Route path="objetivos" element={<AnimatedRoute><ObjetivosEspecificosPage /></AnimatedRoute>} />
               <Route path="objetivos-especificos/:documentId" element={<AnimatedRoute><ObjetivosEspecificosPage /></AnimatedRoute>} />
               <Route path="catalogos" element={<AnimatedRoute><CatalogosMenu /></AnimatedRoute>} />
