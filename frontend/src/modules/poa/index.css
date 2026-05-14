@@ -565,56 +565,48 @@ button {
 .dark .btn-futuristic,
 .btn-futuristic {
   position: relative;
-  border-radius: 0.9rem;
+  border-radius: 0.75rem;
   overflow: hidden;
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
 }
 
-/* Futuristic gradient core */
+/* Estilo de botones alineado al sistema principal */
 .btn-futuristic {
-  background: linear-gradient(90deg, #22d3ee, #3b82f6 45%, #7c3aed);
+  background: linear-gradient(to right, #2563eb, #4f46e5);
   color: #fff;
-  box-shadow: 0 12px 28px rgba(14,165,233,0.35);
+  border-color: rgba(37, 99, 235, 0.22);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
 }
+
 .dark .btn-futuristic {
-  background: linear-gradient(90deg, #22d3ee, #0ea5e9 40%, #6366f1);
-  box-shadow: 0 16px 40px rgba(14,165,233,0.45);
+  background: linear-gradient(to right, #1e40af, #3730a3);
+  color: #e2e8f0;
+  border-color: rgba(99, 102, 241, 0.35);
+  box-shadow: 0 6px 16px rgba(2, 6, 23, 0.5);
 }
 
-/* Animated light sweep */
 .btn-futuristic::before {
-  content: "";
-  position: absolute;
-  top: 0; left: -30%;
-  width: 40%; height: 100%;
-  background: linear-gradient(90deg, rgba(255,255,255,0.35), rgba(255,255,255,0));
-  transform: skewX(-20deg);
-  filter: blur(0.5px);
-  transition: left 0.8s ease;
+  content: none;
 }
-.btn-futuristic:hover::before { left: 110%; }
 
-/* Border glow */
 .btn-futuristic::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(120deg, rgba(14,165,233,0.85), rgba(99,102,241,0.75));
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-          mask-composite: exclude;
+  content: none;
 }
 
 .btn-futuristic:hover {
-  transform: translateY(-3px);
+  transform: translateY(-1px) scale(1.02);
+  filter: brightness(1.03);
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.35);
+}
+
+.dark .btn-futuristic:hover {
+  box-shadow: 0 10px 22px rgba(2, 6, 23, 0.65);
   filter: brightness(1.06);
-  box-shadow: 0 20px 55px rgba(14,165,233,0.55);
 }
 
 .btn-futuristic:active {
-  transform: translateY(-1px) scale(0.995);
+  transform: translateY(0) scale(0.995);
 }
 button:not(:disabled):hover {
   transform: translateY(-3px);

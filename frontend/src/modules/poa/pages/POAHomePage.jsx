@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react';
-import { getDocumentosPOAPorGestion } from '../../../apis/poa.api';
+import { getDocumentosPOAPorGestion, getChatContactosPOA } from '../../../apis/poa.api';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -12,12 +12,15 @@ import {
   FaCheckCircle,
   FaClock,
   FaLayerGroup,
+  FaExclamationTriangle,
+  FaArrowRight,
 } from 'react-icons/fa';
 
 const POAHomePage = () => {
   const [documentos, setDocumentos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [alertaElaborador, setAlertaElaborador] = useState(null);
   const navigate = useNavigate();
 
   const resolveGestionCandidate = (value) => {
@@ -35,12 +38,45 @@ const POAHomePage = () => {
     return (!Number.isNaN(numeric) && Number.isFinite(numeric)) ? numeric : null;
   };
 
+  const normalizeApiError = (err, fallbackMessage) => {
+    const detail = err?.response?.data?.detail ?? err?.response?.data;
+    if (typeof detail === 'string') {
+      const normalized = detail.trim();
+      if (normalized.startsWith('<!DOCTYPE html') || normalized.startsWith('<html') || normalized.includes('OperationError')) {
+        return fallbackMessage;
+      }
+      return normalized;
+    }
+    if (detail && typeof detail === 'object') {
+      try {
+        return JSON.stringify(detail);
+      } catch {
+        return fallbackMessage;
+      }
+    }
+    return err?.message || fallbackMessage;
+  };
+
+  const getUnidadSolicitanteLabel = (doc) => {
+    const carrera = doc?.unidad_solicitante_detalle;
+    if (carrera && typeof carrera === 'object') {
+      return carrera.nombre || carrera.codigo || `Carrera #${carrera.id}`;
+    }
+    if (typeof doc?.unidad_solicitante === 'object') {
+      return doc.unidad_solicitante.nombre || doc.unidad_solicitante.codigo || '';
+    }
+    return String(doc?.unidad_solicitante || '').trim();
+  };
+
   useEffect(() => {
     setLoading(true);
     const currentYear = new Date().getFullYear();
-    getDocumentosPOAPorGestion(currentYear)
-      .then((res) => {
-        const data = res.data;
+    Promise.all([
+      getDocumentosPOAPorGestion(currentYear),
+      getChatContactosPOA(),
+    ])
+      .then(([docsRes, contactosRes]) => {
+        const data = docsRes.data;
         let docs = [];
         if (Array.isArray(data)) docs = data;
         else if (Array.isArray(data.results)) docs = data.results;
@@ -55,10 +91,11 @@ const POAHomePage = () => {
           }
         }
         setDocumentos(docs);
+        setAlertaElaborador(contactosRes?.data?.alerta_asignacion || null);
         setLoading(false);
       })
       .catch((err) => {
-        setError(err?.response?.data?.detail || err?.response?.data || err.message);
+        setError(normalizeApiError(err, 'Error al cargar los documentos POA.'));
         setLoading(false);
       });
   }, []);
@@ -67,7 +104,7 @@ const POAHomePage = () => {
     const list = Array.isArray(documentos) ? documentos : [];
     const total = list.length;
     const programas = new Set(list.map((d) => String(d?.programa || '').trim()).filter(Boolean)).size;
-    const unidades = new Set(list.map((d) => String(d?.unidad_solicitante || '').trim()).filter(Boolean)).size;
+    const unidades = new Set(list.map((d) => String(getUnidadSolicitanteLabel(d) || '').trim()).filter(Boolean)).size;
     const observados = list.filter((d) => String(d?.estado || '').toLowerCase() === 'observado').length;
     const enRevision = list.filter((d) => String(d?.estado || '').toLowerCase() === 'revision').length;
     return { total, programas, unidades, observados, enRevision };
@@ -127,6 +164,33 @@ const POAHomePage = () => {
 
         {!loading && !error && (
           <>
+            {alertaElaborador && (
+              <motion.div
+                variants={itemVariants}
+                initial="hidden"
+                animate="show"
+                className="mt-4 rounded-2xl border border-amber-400/50 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-100 dark:from-amber-950/55 dark:via-orange-950/45 dark:to-amber-900/40 p-4 shadow-sm"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 rounded-xl bg-amber-500/15 p-3 text-amber-700 dark:text-amber-300">
+                    <FaExclamationTriangle />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm md:text-base font-extrabold text-amber-900 dark:text-amber-100">{alertaElaborador.titulo}</p>
+                    <p className="mt-1 text-sm text-amber-900/90 dark:text-amber-100/85 leading-relaxed">{alertaElaborador.mensaje}</p>
+                    <button
+                      type="button"
+                      onClick={() => navigate(alertaElaborador.link || '/poa/accesos')}
+                      className="mt-3 inline-flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-amber-400 transition-colors"
+                    >
+                      {alertaElaborador.texto_link || 'Asignar'}
+                      <FaArrowRight />
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
             <motion.div
               variants={containerVariants}
               initial="hidden"
@@ -164,7 +228,7 @@ const POAHomePage = () => {
                 documentos.map((doc, idx) => {
                   const gestion = typeof doc.gestion === 'object' ? (doc.gestion.nombre || '') : (doc.gestion || 'N/A');
                   const programa = typeof doc.programa === 'object' ? (doc.programa.nombre || '') : (doc.programa || 'Sin programa');
-                  const unidad = typeof doc.unidad_solicitante === 'object' ? (doc.unidad_solicitante.nombre || '') : (doc.unidad_solicitante || 'No especificada');
+                  const unidad = getUnidadSolicitanteLabel(doc) || 'No especificada';
                   const entidad = typeof doc.entidad === 'object' ? (doc.entidad.nombre || 'UABJB') : (doc.entidad || 'UABJB');
                   const objetivo = typeof doc.objetivo_gestion_institucional === 'object'
                     ? (doc.objetivo_gestion_institucional.nombre || '')

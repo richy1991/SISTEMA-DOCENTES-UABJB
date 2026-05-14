@@ -6,15 +6,12 @@ import { buscarUsuariosSistema, createUsuarioPOA, updateUsuarioPOA, ROL_POA_CHOI
 import { Modal } from './base';
 import { buildClientErrorMessages, formatApiErrors, mapApiErrorsToFieldErrors, ModalErrorAlert } from './formErrorUtils';
 
-const REVISORES = ['revisor_1', 'revisor_2', 'revisor_3', 'revisor_4'];
-
 const AsignarAccesoPOAModal = ({ onClose, accesoToEdit, onCreated, onUpdated }) => {
   const [searchQ, setSearchQ] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [rol, setRol] = useState('elaborador');
-  const [nombreEntidad, setNombreEntidad] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessages, setErrorMessages] = useState([]);
   const [fieldErrors, setFieldErrors] = useState({});
@@ -34,8 +31,7 @@ const AsignarAccesoPOAModal = ({ onClose, accesoToEdit, onCreated, onUpdated }) 
 
   useEffect(() => {
     if (!accesoToEdit) return;
-    setRol(accesoToEdit.rol || 'elaborador');
-    setNombreEntidad(accesoToEdit.nombre_entidad || '');
+    setRol('elaborador');
     if (accesoToEdit.user_detalle) {
       setSelectedUser({
         id: accesoToEdit.user_detalle.id,
@@ -90,9 +86,6 @@ const AsignarAccesoPOAModal = ({ onClose, accesoToEdit, onCreated, onUpdated }) 
     setFieldErrors({});
     if (!selectedUser) nextFieldErrors.user = 'Seleccione un usuario del sistema.';
     if (!rol) nextFieldErrors.rol = 'Seleccione un rol POA.';
-    if (REVISORES.includes(rol) && !nombreEntidad.trim()) {
-      nextFieldErrors.nombre_entidad = 'Ingrese el nombre de la entidad revisora.';
-    }
     if (Object.keys(nextFieldErrors).length > 0) {
       const messages = buildClientErrorMessages(nextFieldErrors);
       setFieldErrors(nextFieldErrors);
@@ -105,8 +98,8 @@ const AsignarAccesoPOAModal = ({ onClose, accesoToEdit, onCreated, onUpdated }) 
     try {
       const payload = {
         user: selectedUser.id,
-        rol,
-        nombre_entidad: REVISORES.includes(rol) ? nombreEntidad.trim() : '',
+        rol: 'elaborador',
+        nombre_entidad: '',
         activo: true,
       };
       if (accesoToEdit?.id) {
@@ -225,49 +218,21 @@ const AsignarAccesoPOAModal = ({ onClose, accesoToEdit, onCreated, onUpdated }) 
             <label className="block text-sm font-semibold mb-2 text-gray-700 dark:text-slate-300">
               Rol / Permiso <span className="text-red-500">*</span>
             </label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2">
               {ROL_POA_CHOICES.map(r => (
                 <button
                   key={r.value}
                   type="button"
-                  onClick={() => setRol(r.value)}
-                  className={`text-left px-3 py-2.5 rounded-lg border-2 text-sm font-medium transition-all duration-150 ${
-                    rol === r.value
-                      ? 'border-blue-500 bg-blue-600 text-white shadow-md'
-                      : 'border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-300 hover:border-blue-300 hover:bg-blue-50 dark:hover:bg-slate-700'
-                  }`}
+                  onClick={() => setRol('elaborador')}
+                  className="text-left px-3 py-2.5 rounded-lg border-2 text-sm font-medium transition-all duration-150 border-blue-500 bg-blue-600 text-white shadow-md"
                 >
-                  <span className={`inline-block w-2 h-2 rounded-full mr-2 ${
-                    REVISORES.includes(r.value) ? 'bg-violet-400' : 'bg-blue-400'
-                  } ${rol === r.value ? 'bg-white' : ''}`} />
+                  <span className="inline-block w-2 h-2 rounded-full mr-2 bg-white" />
                   {r.label}
                 </button>
               ))}
             </div>
             {fieldErrors.rol && <div className="mt-1 text-xs text-red-600 dark:text-red-400">{fieldErrors.rol}</div>}
           </div>
-
-          {REVISORES.includes(rol) && (
-            <div>
-              <label className="block text-sm font-semibold mb-1.5 text-gray-700 dark:text-slate-300">
-                Nombre de la Entidad Revisora <span className="text-red-500">*</span>
-              </label>
-              <input
-                name="nombre_entidad"
-                value={nombreEntidad}
-                onChange={e => {
-                  setNombreEntidad(e.target.value);
-                  if (fieldErrors.nombre_entidad) setFieldErrors(prev => ({ ...prev, nombre_entidad: '' }));
-                }}
-                placeholder="Ej: DAF, VRA, DI, Rectorado…"
-                className={`poa-input block w-full border border-gray-300 dark:border-slate-600 rounded-lg px-4 py-2.5 text-sm ${fieldErrors.nombre_entidad ? 'border-red-500 dark:border-red-500 focus:ring-red-500 dark:focus:ring-red-500' : ''}`}
-              />
-              <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
-                Nombre de la institución o unidad que revisa y aprueba documentos POA.
-              </p>
-              {fieldErrors.nombre_entidad && <div className="mt-1 text-xs text-red-600 dark:text-red-400">{fieldErrors.nombre_entidad}</div>}
-            </div>
-          )}
 
         </div>
 

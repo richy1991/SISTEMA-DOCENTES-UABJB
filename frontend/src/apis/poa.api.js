@@ -31,6 +31,7 @@ api.interceptors.response.use(
 			try {
 				const refreshToken = localStorage.getItem('refresh_token');
 				if (!refreshToken) {
+					sessionStorage.setItem('post_login_redirect', window.location.pathname + window.location.search + window.location.hash);
 					localStorage.clear();
 					window.location.href = '/login';
 					return Promise.reject(error);
@@ -45,6 +46,7 @@ api.interceptors.response.use(
 				originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
 				return api(originalRequest);
 			} catch (refreshError) {
+				sessionStorage.setItem('post_login_redirect', window.location.pathname + window.location.search + window.location.hash);
 				localStorage.clear();
 				window.location.href = '/login';
 				return Promise.reject(refreshError);
@@ -127,14 +129,11 @@ export const getHistorialDocumentoPOA = (id, gestion) => {
 	return api.get(`/api/poa/documentos_poa/${id}/historial/`, { params: { gestion: Number(gestion) } });
 };
 
-export const enviarRevisionDocumentoPOA = (id, gestion, revisoresIds = []) => {
+export const enviarRevisionDocumentoPOA = (id, gestion) => {
 	if (gestion === undefined || gestion === null || Number.isNaN(Number(gestion)) ) {
 		return badRequest({ gestion: ['El parámetro "gestion" es obligatorio y debe ser un entero.'] });
 	}
-	if (!Array.isArray(revisoresIds) || revisoresIds.length !== 2) {
-		return badRequest({ revisores_ids: ['Debe seleccionar exactamente 2 entidades revisoras.'] });
-	}
-	return api.post(`/api/poa/documentos_poa/${id}/enviar-revision/`, { revisores_ids: revisoresIds.map((value) => Number(value)) }, { params: { gestion: Number(gestion) } });
+	return api.post(`/api/poa/documentos_poa/${id}/enviar-revision/`, {}, { params: { gestion: Number(gestion) } });
 };
 
 export const aprobarDocumentoPOA = (id, gestion, observacion = '') => {
@@ -271,9 +270,7 @@ export const createCatalogoItem = (payload) => api.post('/api/catalogos/items/',
 export const updateCatalogoItem = (id, payload) => api.patch(`/api/catalogos/items/${id}/`, payload);
 export const deleteCatalogoItem = (id) => api.delete(`/api/catalogos/items/${id}/`);
 export const importarCatalogoItemsExcel = (formData) =>
-	api.post('/api/catalogos/items/importar-excel/', formData, {
-		headers: { 'Content-Type': 'multipart/form-data' },
-	});
+	api.post('/api/catalogos/items/importar-excel/', formData);
 export const descargarCatalogoItemsExcel = (options = {}) =>
 	api.get('/api/catalogos/items-catalogo/exportar-excel/', {
 		responseType: 'blob',
@@ -285,13 +282,13 @@ export const descargarCatalogoItemsExcel = (options = {}) =>
 export const getCatalogoPartidas = () => api.get('/api/catalogos/partidas/');
 
 // Operaciones (indicadores)
-export const getCatalogoOperaciones = () => api.get('/api/catalogos/operaciones/');
+export const getCatalogoOperaciones = (params) => api.get('/api/catalogos/operaciones/', { params });
 export const getCatalogoOperacionPorId = (id) => api.get(`/api/catalogos/operaciones/${id}/`);
 export const createCatalogoOperacion = (payload) => api.post('/api/catalogos/operaciones/', payload);
 export const updateCatalogoOperacion = (id, payload) => api.patch(`/api/catalogos/operaciones/${id}/`, payload);
 export const deleteCatalogoOperacion = (id) => api.delete(`/api/catalogos/operaciones/${id}/`);
 // Buscar operaciones/catalogo con parámetro 'search' (útil para autocompletes)
-export const searchCatalogoOperaciones = (q) => api.get('/api/catalogos/operaciones/', { params: { search: q } });
+export const searchCatalogoOperaciones = (q, extraParams = {}) => api.get('/api/catalogos/operaciones/', { params: { search: q, ...extraParams } });
 export const searchOperacionesCatalogo = (q) => api.get('/api/catalogos/operaciones-catalogo/', { params: { search: q } });
 
 // Obtener operaciones filtradas por dirección (si el backend soporta ?direccion_id=)
@@ -317,6 +314,9 @@ export const buscarUsuariosSistema = (q) => {
 	return api.get('/api/poa/usuarios/buscar/', { params: { q: String(q).trim() } });
 };
 
+// Director de carrera de la carrera activa del usuario autenticado
+export const getDirectorCarreraActual = () => api.get('/api/poa/director-carrera-actual/');
+
 // Buscar docentes del sistema principal para asignar
 export const buscarDocentesPOA = (q) => {
 	if (!q || String(q).trim().length < 2) return Promise.resolve({ data: [] });
@@ -325,32 +325,71 @@ export const buscarDocentesPOA = (q) => {
 
 export const ROL_POA_CHOICES = [
 	{ value: 'elaborador',       label: 'Elaborador del POA',    color: 'blue' },
-	{ value: 'director_carrera', label: 'Director de Carrera',   color: 'indigo' },
-	{ value: 'revisor_1',        label: 'Entidad Revisora 1',    color: 'violet' },
-	{ value: 'revisor_2',        label: 'Entidad Revisora 2',    color: 'purple' },
-	{ value: 'revisor_3',        label: 'Entidad Revisora 3',    color: 'fuchsia' },
-	{ value: 'revisor_4',        label: 'Entidad Revisora 4',    color: 'pink' },
 ];
 
-// ─── Conversaciones POA ───────────────────────────────────────────────────────
+// ─── Chat directo independiente (por usuario) ───────────────────────────────
 
-// Obtener hilos de conversación de un documento
-export const getComentariosPOA = (documentoId) =>
-	api.get('/api/poa/comentarios-poa/', { params: { documento: documentoId } });
+export const getChatContactosPOA = () =>
+	api.get('/api/poa/chat-contactos/');
 
-// Abrir un nuevo hilo de conversación (solo si no hay uno activo)
-export const crearComentarioPOA = (documentoId) =>
-	api.post('/api/poa/comentarios-poa/', { documento: documentoId });
+export const buscarUsuariosChatPOA = (q) => {
+	if (!q || String(q).trim().length < 2) return Promise.resolve({ data: [] });
+	return api.get('/api/poa/usuarios-chat/buscar/', { params: { q: String(q).trim() } });
+};
 
-// Cerrar/reabrir un hilo
-export const cerrarComentarioPOA = (comentarioId) =>
-	api.patch(`/api/poa/comentarios-poa/${comentarioId}/`, { abierto: false });
+export const getMensajesChatPOA = (peerUserId) =>
+	api.get('/api/poa/mensajes-chat/', { params: { peer_user_id: peerUserId } });
 
-// Enviar un mensaje a un hilo
-export const enviarMensajePOA = (comentarioId, texto) =>
-	api.post('/api/poa/mensajes-poa/', { comentario: comentarioId, texto });
+export const getCurrentUserPOA = () => api.get('/api/poa/me/');
 
-// Eliminar un mensaje (solo el autor o superusuario)
-export const eliminarMensajePOA = (mensajeId) =>
-	api.delete(`/api/poa/mensajes-poa/${mensajeId}/`);
+export const enviarMensajeChatPOA = (destinatarioId, texto) =>
+	api.post('/api/poa/mensajes-chat/', {
+		receptor: destinatarioId,
+		texto,
+	});
+
+export const vaciarChatPOA = (peerUserId) =>
+	api.delete('/api/poa/mensajes-chat/vaciar/', { data: { peer_user_id: peerUserId } });
+
+export const getEstadoBloqueoChatPOA = (peerUserId) =>
+	api.get('/api/poa/mensajes-chat/bloqueo-estado/', { params: { peer_user_id: peerUserId } });
+
+export const bloquearUsuarioChatPOA = (peerUserId) =>
+	api.post('/api/poa/mensajes-chat/bloquear/', { peer_user_id: peerUserId });
+
+export const desbloquearUsuarioChatPOA = (peerUserId) =>
+	api.post('/api/poa/mensajes-chat/desbloquear/', { peer_user_id: peerUserId });
+
+// Evidencias de actividades
+export const getEvidenciasPorActividad = (actividad_id) => {
+	if (actividad_id === undefined || actividad_id === null || Number.isNaN(Number(actividad_id))) {
+		return badRequest({ actividad_id: ['El parámetro "actividad_id" es obligatorio y debe ser un entero.'] });
+	}
+	return api.get('/api/poa/evidencias/', { params: { actividad_id: Number(actividad_id) } });
+};
+
+export const crearEvidencia = (payload) => {
+	// payload puede ser FormData o un JSON simple; preferimos FormData cuando haya archivos
+	if (payload instanceof FormData) {
+		return api.post('/api/poa/evidencias/', payload, { headers: { 'Content-Type': 'multipart/form-data' } });
+	}
+	return api.post('/api/poa/evidencias/', payload);
+};
+
+export const updateEvidencia = (id, payload) => {
+	if (id === undefined || id === null || Number.isNaN(Number(id))) {
+		return badRequest({ id: ['El parámetro "id" es obligatorio y debe ser un entero.'] });
+	}
+	if (payload instanceof FormData) {
+		return api.patch(`/api/poa/evidencias/${id}/`, payload, { headers: { 'Content-Type': 'multipart/form-data' } });
+	}
+	return api.patch(`/api/poa/evidencias/${id}/`, payload);
+};
+
+export const deleteEvidencia = (id) => {
+	if (id === undefined || id === null || Number.isNaN(Number(id))) {
+		return badRequest({ id: ['El parámetro "id" es obligatorio y debe ser un entero.'] });
+	}
+	return api.delete(`/api/poa/evidencias/${id}/`);
+};
 

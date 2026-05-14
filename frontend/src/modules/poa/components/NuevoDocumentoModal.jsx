@@ -2,13 +2,13 @@ import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import IconButton from './IconButton';
 import { FaTimes, FaSave, FaCalendarAlt } from 'react-icons/fa';
-import { createDocumentoPOA, updateDocumentoPOA, getUsuariosPOA, getDocumentosPOAPorGestion } from '../../../apis/poa.api';
+import { getCarreras } from '../../../apis/api';
+import { createDocumentoPOA, updateDocumentoPOA, getUsuariosPOA, getDocumentosPOAPorGestion, getDirectorCarreraActual } from '../../../apis/poa.api';
 import { Textarea, Modal } from './base';
 import { DEFAULT_ENTIDAD } from '../config/defaults';
 import { DEFAULT_ERROR_LABELS, formatApiErrors, mapApiErrorsToFieldErrors, ModalErrorAlert } from './formErrorUtils';
 
 const ELABORADOR_ROLE = 'elaborador';
-const DIRECTOR_ROLE = 'director_carrera';
 
 const ERROR_LABELS = {
   ...DEFAULT_ERROR_LABELS,
@@ -40,7 +40,28 @@ const matchesPersonaQuery = (persona, query) => {
   return candidates.some((value) => String(value).toLowerCase().includes(normalizedQuery));
 };
 
-const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: docToEdit, onUpdated }) => {
+const normalizeCarreraValue = (value) => {
+  if (value && typeof value === 'object') {
+    return value.id ?? value.pk ?? '';
+  }
+  return value ?? '';
+};
+
+const resolvePersonaNombre = (personaIdOrName, personas, fallbackText = '') => {
+  if (!personaIdOrName && !fallbackText) return '';
+  const persona = personas.find((item) => String(item.id) === String(personaIdOrName));
+  if (persona?.nombre) return persona.nombre;
+  const fallback = String(fallbackText || personaIdOrName || '').trim();
+  return fallback;
+};
+
+const getCurrentUserDisplayName = (user) => {
+  if (!user) return '';
+  const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
+  return fullName || user?.perfil?.nombre_completo || user?.username || '';
+};
+
+const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: docToEdit, onUpdated, currentUser = null }) => {
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -77,6 +98,9 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
   const [personas, setPersonas] = useState([]);
   const [personasLoading, setPersonasLoading] = useState(true);
   const [personasError, setPersonasError] = useState(null);
+  const [carreras, setCarreras] = useState([]);
+  const [carrerasLoading, setCarrerasLoading] = useState(true);
+  const [carrerasError, setCarrerasError] = useState(null);
 
   const [elabQuery, setElabQuery] = useState('');
   const [elabFilteredPersonas, setElabFilteredPersonas] = useState([]);
@@ -88,6 +112,16 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
   const [showJefeDropdown, setShowJefeDropdown] = useState(false);
   const [jefeHighlight, setJefeHighlight] = useState(0);
   const [justificacionEdicion, setJustificacionEdicion] = useState('');
+  const isCreateMode = !docToEdit?.id;
+  const userFromStorage = (() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      return JSON.parse(window.localStorage.getItem('user') || 'null');
+    } catch {
+      return null;
+    }
+  })();
+  const effectiveUser = currentUser || userFromStorage;
 
   const requiereJustificacionEdicion = Boolean(
     docToEdit?.id && ['aprobado', 'ejecucion'].includes(String(docToEdit?.estado || '').toLowerCase())
@@ -119,6 +153,19 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
     }
   }, [initialGestion]);
 
+
+  useEffect(() => {
+    setCarrerasLoading(true);
+    getCarreras()
+      .then((res) => {
+        const raw = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+        setCarreras(raw);
+      })
+      .catch((err) => {
+        setCarrerasError(err?.response?.data || err.message || 'Error al cargar carreras');
+      })
+      .finally(() => setCarrerasLoading(false));
+  }, []);
   useEffect(() => {
     if (!docToEdit) return;
     try {
@@ -127,7 +174,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
         entidad: docToEdit.entidad ?? DEFAULT_ENTIDAD,
         gestion: (docToEdit.gestion ?? initialGestion) || new Date().getFullYear(),
         programa: typeof docToEdit.programa === 'object' ? (docToEdit.programa.nombre || docToEdit.programa) : (docToEdit.programa || ''),
-        unidad_solicitante: docToEdit.unidad_solicitante?.nombre ?? docToEdit.unidad_solicitante ?? docToEdit.unidad_solicitante_id ?? '',
+        unidad_solicitante: normalizeCarreraValue(docToEdit.unidad_solicitante_id ?? docToEdit.unidad_solicitante),
         objetivo_gestion_institucional: docToEdit.objetivo_gestion_institucional ?? '',
         elaborado_por: docToEdit.elaborado_por?.id ?? docToEdit.elaborado_por_id ?? docToEdit.elaborado_por ?? '',
         jefe_unidad: docToEdit.jefe_unidad?.id ?? docToEdit.jefe_unidad_id ?? docToEdit.jefe_unidad ?? '',
@@ -141,6 +188,72 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
       // ignore
     }
   }, [docToEdit, initialGestion]);
+
+  useEffect(() => {
+    if (!isCreateMode) return;
+    const carreraId = effectiveUser?.perfil?.carrera;
+    if (!carreraId) return;
+    setForm((prev) => ({ ...prev, unidad_solicitante: String(carreraId) }));
+  }, [effectiveUser?.perfil?.carrera, isCreateMode]);
+
+  useEffect(() => {
+    if (!isCreateMode) return;
+    if (fechaElab) return;
+    const today = new Date();
+    const yyyy = String(today.getFullYear());
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    setFechaElab(`${yyyy}-${mm}-${dd}`);
+  }, [isCreateMode, fechaElab]);
+
+  useEffect(() => {
+    if (!isCreateMode || personasLoading) return;
+
+    const currentUserId = Number(effectiveUser?.id || 0);
+    const currentUserName = getCurrentUserDisplayName(effectiveUser);
+
+    const currentAsElaborador = personas.find(
+      (p) => p.activo && p.rol === ELABORADOR_ROLE && (
+        Number(p.raw?.user_detalle?.id || 0) === currentUserId ||
+        Number(p.raw?.user || 0) === currentUserId
+      )
+    );
+
+    if (currentAsElaborador) {
+      setForm((prev) => ({ ...prev, elaborado_por: currentAsElaborador.id }));
+      setElabQuery(currentAsElaborador.nombre || currentUserName);
+    } else if (currentUserName) {
+      setForm((prev) => ({ ...prev, elaborado_por: currentUserName }));
+      setElabQuery(currentUserName);
+    }
+
+  }, [isCreateMode, personasLoading, personas, effectiveUser]);
+
+  useEffect(() => {
+    if (!isCreateMode) return;
+    if (jefeQuery) return;
+
+    let mounted = true;
+    getDirectorCarreraActual()
+      .then((res) => {
+        if (!mounted) return;
+        const nombre = String(res?.data?.nombre || '').trim();
+        if (!nombre) return;
+        setForm((prev) => ({ ...prev, jefe_unidad: nombre }));
+        setJefeQuery(nombre);
+      })
+      .catch(() => {
+        // Si no hay director cargado en sistema, mantenemos el campo editable.
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [isCreateMode, jefeQuery]);
+
+  const lockUnidadSolicitante = Boolean(form.unidad_solicitante);
+  const lockElaborador = Boolean(elabQuery);
+  const lockJefeUnidad = Boolean(jefeQuery);
 
   useEffect(() => {
     let mounted = true;
@@ -159,7 +272,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
 
   useEffect(() => {
     let mounted = true;
-    const directores = personas.filter(p => p.activo && p.rol === DIRECTOR_ROLE && String(p.id) !== String(form.elaborado_por));
+    const directores = [];
     if (!jefeQuery || jefeQuery.trim().length === 0) {
       setJefeFilteredPersonas(directores.slice(0, 10));
       return undefined;
@@ -212,9 +325,9 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
         gestion: Number(form.gestion),
         programa: form.programa || null,
         objetivo_gestion_institucional: form.objetivo_gestion_institucional || null,
-        unidad_solicitante: form.unidad_solicitante || null,
-        elaborado_por_id: form.elaborado_por ? Number(form.elaborado_por) : null,
-        jefe_unidad_id: form.jefe_unidad ? Number(form.jefe_unidad) : null,
+        unidad_solicitante: form.unidad_solicitante ? Number(form.unidad_solicitante) : null,
+        elaborado_por: resolvePersonaNombre(form.elaborado_por, personas, elabQuery) || null,
+        jefe_unidad: resolvePersonaNombre(form.jefe_unidad, personas, jefeQuery) || null,
         fecha_elaboracion: fechaElab || null,
         observaciones: form.observaciones || '',
       };
@@ -322,13 +435,26 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
             <div className="grid grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Unidad solicitante</label>
-                <input
-                  name="unidad_solicitante"
-                  value={form.unidad_solicitante}
-                  onChange={handleChange}
-                  className={`poa-input block w-full ${fieldErrors.unidad_solicitante ? 'border-red-500 dark:border-red-500 focus:ring-red-500 dark:focus:ring-red-500' : ''}`}
-                  placeholder="Ingrese la unidad solicitante..."
-                />
+                {carrerasLoading ? (
+                  <div className="mt-1 text-sm text-gray-600 dark:text-slate-400">Cargando carreras...</div>
+                ) : carrerasError ? (
+                  <div className="mt-1 text-sm text-red-600 dark:text-red-400">{String(carrerasError)}</div>
+                ) : (
+                  <select
+                    name="unidad_solicitante"
+                    value={form.unidad_solicitante}
+                    onChange={handleChange}
+                    disabled={lockUnidadSolicitante}
+                    className={`poa-input block w-full ${fieldErrors.unidad_solicitante ? 'border-red-500 dark:border-red-500 focus:ring-red-500 dark:focus:ring-red-500' : ''}`}
+                  >
+                    <option value="">Seleccione una carrera...</option>
+                    {carreras.map((carrera) => (
+                      <option key={carrera.id} value={carrera.id}>
+                        {carrera.codigo ? `${carrera.codigo} - ${carrera.nombre}` : carrera.nombre}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Programa</label>
@@ -368,6 +494,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
                     <input
                       name="elaborado_por_id"
                       value={elabQuery}
+                      disabled={lockElaborador}
                       onChange={e => {
                         setElabQuery(e.target.value);
                         setForm(f => ({ ...f, elaborado_por: '' }));
@@ -383,7 +510,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
                       placeholder="Buscar persona..."
                       className={`poa-input mt-1 block w-full bg-white dark:bg-slate-900 ${fieldErrors.elaborado_por_id ? 'border-red-500 dark:border-red-500 focus:ring-red-500 dark:focus:ring-red-500' : ''}`}
                     />
-                    {showElabDropdown && elabFilteredPersonas.length > 0 && (
+                    {!lockElaborador && showElabDropdown && elabFilteredPersonas.length > 0 && (
                       <ul className="absolute z-50 mt-1 w-full max-w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded shadow-lg max-h-56 overflow-auto">
                         {elabFilteredPersonas.map((p, i) => (
                           <li key={p.id} onMouseEnter={() => setElabHighlight(i)} onMouseDown={ev => ev.preventDefault()} onClick={() => { setForm(f => ({ ...f, elaborado_por: p.id })); setElabQuery(p.nombre || p.username || ''); setShowElabDropdown(false); }} className={`px-3 py-2 cursor-pointer ${elabHighlight === i ? 'bg-blue-100 dark:bg-slate-700' : 'hover:bg-gray-100 dark:hover:bg-slate-700'}`}>
@@ -392,7 +519,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
                         ))}
                       </ul>
                     )}
-                    {showElabDropdown && elabFilteredPersonas.length === 0 && (
+                    {!lockElaborador && showElabDropdown && elabFilteredPersonas.length === 0 && (
                       <div className="absolute z-50 mt-1 w-full max-w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded shadow-lg px-3 py-2 text-sm text-gray-500 dark:text-slate-400">
                         No hay usuarios POA activos con rol Elaborador del POA.
                       </div>
@@ -412,6 +539,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
                     <input
                       name="jefe_unidad_id"
                       value={jefeQuery || (form.jefe_unidad ? (personas.find(p => String(p.id) === String(form.jefe_unidad))?.nombre || '') : '')}
+                      disabled={lockJefeUnidad}
                       onChange={e => {
                         const q = e.target.value;
                         setJefeQuery(q);
@@ -428,7 +556,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
                       placeholder="Buscar jefe de unidad..."
                       className={`poa-input mt-1 block w-full bg-white dark:bg-slate-900 ${fieldErrors.jefe_unidad_id ? 'border-red-500 dark:border-red-500 focus:ring-red-500 dark:focus:ring-red-500' : ''}`}
                     />
-                    {showJefeDropdown && jefeFilteredPersonas.length > 0 && (
+                    {!lockJefeUnidad && showJefeDropdown && jefeFilteredPersonas.length > 0 && (
                       <ul className="absolute z-50 mt-1 w-full max-w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded shadow-lg max-h-56 overflow-auto">
                         {jefeFilteredPersonas.map((p, i) => (
                           <li key={p.id} onMouseEnter={() => setJefeHighlight(i)} onMouseDown={ev => ev.preventDefault()} onClick={() => { setForm(f => ({ ...f, jefe_unidad: p.id })); setJefeQuery(p.nombre || p.username || ''); setShowJefeDropdown(false); }} className={`px-3 py-2 cursor-pointer ${jefeHighlight === i ? 'bg-blue-100 dark:bg-slate-700' : 'hover:bg-gray-100 dark:hover:bg-slate-700'}`}>
@@ -437,7 +565,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
                         ))}
                       </ul>
                     )}
-                    {showJefeDropdown && jefeFilteredPersonas.length === 0 && (
+                    {!lockJefeUnidad && showJefeDropdown && jefeFilteredPersonas.length === 0 && (
                       <div className="absolute z-50 mt-1 w-full max-w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded shadow-lg px-3 py-2 text-sm text-gray-500 dark:text-slate-400">
                         No hay usuarios POA activos con rol Director de Carrera.
                       </div>

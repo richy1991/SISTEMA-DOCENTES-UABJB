@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
 import NuevaActividadModal from '../components/NuevaActividadModal';
 import IconButton from '../components/IconButton';
+import Dialog from '../components/base/Dialog';
 import { FaPlus } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import { getActividadesPorObjetivo, getObjetivoPorId, deleteActividad } from '../../../apis/poa.api';
@@ -18,6 +19,7 @@ const ActividadesPage = () => {
   const [showNueva, setShowNueva] = useState(false);
   const [selectedActividad, setSelectedActividad] = useState(null);
   const [actividadEdit, setActividadEdit] = useState(null);
+  const [deleteDialogActividad, setDeleteDialogActividad] = useState(null);
   const [objetivo, setObjetivo] = useState(null);
   const [objetivoLoading, setObjetivoLoading] = useState(true);
   const [objetivoError, setObjetivoError] = useState(null);
@@ -94,22 +96,28 @@ const ActividadesPage = () => {
         setActividadEdit(actividad);
         setShowNueva(true);
       } else if (action === 'delete') {
-        const ok = window.confirm(`Eliminar actividad ${actividad.codigo} - ${actividad.nombre}?`);
-        if (!ok) return;
-        try {
-          await deleteActividad(actividad.id);
-          setActividades(prev => (prev || []).filter(a => a.id !== actividad.id));
-          setSelectedActividad(null);
-          toast.success('Actividad eliminada');
-        } catch (err) {
-          const msg = err?.response?.data || err?.message || String(err);
-          toast.error('Error eliminando actividad: ' + (typeof msg === 'string' ? msg : JSON.stringify(msg)));
-        }
+        setDeleteDialogActividad(actividad);
       }
     };
     window.addEventListener('header-action', handler);
     return () => window.removeEventListener('header-action', handler);
   }, [canEdit]);
+
+  const confirmarEliminarActividad = async () => {
+    const actividad = deleteDialogActividad;
+    if (!actividad) return;
+    try {
+      await deleteActividad(actividad.id);
+      setActividades(prev => (prev || []).filter(a => a.id !== actividad.id));
+      setSelectedActividad(null);
+      toast.success('Actividad eliminada');
+    } catch (err) {
+      const msg = err?.response?.data || err?.message || String(err);
+      toast.error('Error eliminando actividad: ' + (typeof msg === 'string' ? msg : JSON.stringify(msg)));
+    } finally {
+      setDeleteDialogActividad(null);
+    }
+  };
 
   // Helper para obtener valores del indicador intentando varias claves/nombres que el backend
   // podría usar. Devuelve '—' si no encuentra nada.
@@ -147,8 +155,36 @@ const ActividadesPage = () => {
     };
   }, [actividades]);
 
+  const { actividadesCompletadas, actividadesProgramadas } = React.useMemo(() => {
+    if (!actividades || actividades.length === 0) return { actividadesCompletadas: 0, actividadesProgramadas: 0 };
+
+    let completadas = 0;
+    let programadas = 0;
+
+    for (const act of actividades) {
+      const estado = String(act.estado || '').toLowerCase();
+      if (estado === 'completado') {
+        completadas += 1;
+      } else if (estado === 'programado') {
+        programadas += 1;
+      }
+    }
+
+    return { actividadesCompletadas: completadas, actividadesProgramadas: programadas };
+  }, [actividades]);
+
   return (
   <section className="flex flex-col items-start justify-start flex-1 pt-0 pb-12 w-full px-0">
+      <Dialog
+        open={Boolean(deleteDialogActividad)}
+        type="danger"
+        title="Eliminar actividad"
+        message={deleteDialogActividad ? `Eliminar actividad ${deleteDialogActividad.codigo} - ${deleteDialogActividad.nombre}?` : ''}
+        confirmText="Eliminar"
+        cancelText="Cancelar"
+        onConfirm={confirmarEliminarActividad}
+        onCancel={() => setDeleteDialogActividad(null)}
+      />
       {/* Tarjeta del objetivo con diseño mejorado */}
       <div className="w-full mb-4 mt-0">
         {objetivoLoading ? (
@@ -172,14 +208,18 @@ const ActividadesPage = () => {
                 </div>
               </div>
               
-              <div className="grid grid-cols-2 gap-4 pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
                 <div className="flex flex-col bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 backdrop-blur-sm rounded-lg p-4 shadow-xl dark:shadow-2xl dark:shadow-blue-900/50 hover:shadow-2xl transition-shadow transform hover:scale-105">
                   <span className="text-xs font-bold uppercase tracking-widest text-blue-100 mb-1">Total Actividades</span>
                   <span className="text-5xl font-bold text-white">{totalActividades}</span>
                 </div>
-                <div className="flex flex-col bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 backdrop-blur-sm rounded-lg p-4 shadow-xl dark:shadow-2xl dark:shadow-blue-900/50 hover:shadow-2xl transition-shadow transform hover:scale-105">
-                  <span className="text-xs font-bold uppercase tracking-widest text-blue-100 mb-1">Monto Total</span>
-                  <span className="text-2xl font-bold text-white">Bs. {formatMoney(montoTotal)}</span>
+                <div className="flex flex-col bg-gradient-to-r from-emerald-500 to-emerald-600 dark:from-emerald-600 dark:to-emerald-700 backdrop-blur-sm rounded-lg p-4 shadow-xl dark:shadow-2xl dark:shadow-blue-900/50 hover:shadow-2xl transition-shadow transform hover:scale-105">
+                  <span className="text-xs font-bold uppercase tracking-widest text-emerald-100 mb-1">Actividades Completadas</span>
+                  <span className="text-5xl font-bold text-white">{actividadesCompletadas}</span>
+                </div>
+                <div className="flex flex-col bg-gradient-to-r from-amber-500 to-orange-500 dark:from-amber-600 dark:to-orange-600 backdrop-blur-sm rounded-lg p-4 shadow-xl dark:shadow-2xl dark:shadow-blue-900/50 hover:shadow-2xl transition-shadow transform hover:scale-105">
+                  <span className="text-xs font-bold uppercase tracking-widest text-amber-100 mb-1">Actividades Programadas</span>
+                  <span className="text-5xl font-bold text-white">{actividadesProgramadas}</span>
                 </div>
               </div>
             </div>
@@ -255,6 +295,9 @@ const ActividadesPage = () => {
               const mesInicio = act.mes_inicio || act.mes || act.fecha_inicio || '';
               const mesFin = act.mes_fin || act.mes_finicio || '';
               const tieneRango = mesInicio && mesFin && mesInicio !== '—' && mesFin !== '—';
+              const cumplimiento = Math.max(0, Math.min(100, Number(act.evidencia_cumplimiento || 0)));
+              const estadoActividad = String(act.estado || '').toLowerCase();
+              const isRealizada = estadoActividad === 'completado';
               
               return (
                 <tr
@@ -267,13 +310,20 @@ const ActividadesPage = () => {
                     <div className={`${selectedActividad && selectedActividad.id === act.id ? 'table-cell-expand' : 'table-cell-clamp'}`}>
                       <span className="inline-block px-2 py-0.5 text-xs font-bold bg-blue-500 text-white rounded mr-2">{act.codigo}</span>
                       <span className="font-medium">{act.nombre}</span>
+                      {isRealizada && (
+                        <span className="ml-2 inline-block px-2 py-0.5 text-[10px] font-bold bg-emerald-600 text-white rounded-full align-middle">Realizada</span>
+                      )}
                     </div>
-                    {tieneRango && (
+                    {(tieneRango || isRealizada) && (
                       <div className="mt-2 flex items-center gap-2">
-                        <span className="text-xs text-gray-600 dark:text-gray-400">Duración:</span>
+                        <span className="text-xs text-gray-600 dark:text-gray-400">Estado:</span>
                         <div className="flex-1 h-2 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
-                          <div className="h-full bg-gradient-to-r from-blue-400 to-blue-600 rounded-full" style={{ width: '75%' }}></div>
+                          <div
+                            className={`h-full rounded-full transition-all duration-300 ${isRealizada ? 'bg-gradient-to-r from-emerald-400 to-emerald-600' : 'bg-gradient-to-r from-amber-400 to-orange-500'}`}
+                            style={{ width: isRealizada ? '100%' : '20%' }}
+                          ></div>
                         </div>
+                        <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">{isRealizada ? '100%' : 'Programada'}</span>
                       </div>
                     )}
                   </td>

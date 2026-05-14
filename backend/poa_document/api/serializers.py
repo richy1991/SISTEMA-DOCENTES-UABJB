@@ -2,8 +2,9 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 
 # Modelos del paquete
-from poa_document.models import DocumentoPOA, ObjetivoEspecifico, Actividad, DetallePresupuesto, UsuarioPOA, RevisionDocumentoPOA, HistorialDocumentoPOA, ComentarioPOA, MensajeComentarioPOA
-from fondos.models import Docente
+from poa_document.models import DocumentoPOA, ObjetivoEspecifico, Actividad, DetallePresupuesto, UsuarioPOA, RevisionDocumentoPOA, HistorialDocumentoPOA, MensajeChat
+from poa_document.models import Evidencia, EvidenciaArchivo
+from fondos.models import Docente, Carrera
 from catalogos.api.serializers import DireccionSerializer
 from catalogos.models import Direccion
 from catalogos.models import OperacionCatalogo
@@ -29,6 +30,12 @@ class UserSimpleSerializer(serializers.ModelSerializer):
         return obj.get_full_name() or obj.username
 
 
+class CarreraSimpleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Carrera
+        fields = ['id', 'nombre', 'codigo']
+
+
 class UsuarioPOASerializer(serializers.ModelSerializer):
     user_detalle = UserSimpleSerializer(source='user', read_only=True)
     docente_detalle = DocenteSimpleSerializer(source='docente', read_only=True)
@@ -52,6 +59,11 @@ class UsuarioPOASerializer(serializers.ModelSerializer):
         if obj.docente:
             return obj.docente.nombre_completo
         return f'UsuarioPOA #{obj.pk}'
+
+    def validate_rol(self, value):
+        if value != 'elaborador':
+            raise serializers.ValidationError('Solo se permite asignar el rol Elaborador del POA.')
+        return value
 
 
 class RevisionDocumentoPOASerializer(serializers.ModelSerializer):
@@ -116,11 +128,10 @@ class HistorialDocumentoPOASerializer(serializers.ModelSerializer):
 
 
 class DocumentoPOASerializer(serializers.ModelSerializer):
-    elaborado_por = UsuarioPOASerializer(read_only=True)
-    jefe_unidad = UsuarioPOASerializer(read_only=True)
+    unidad_solicitante_detalle = CarreraSimpleSerializer(source='unidad_solicitante', read_only=True)
 
-    elaborado_por_id = serializers.PrimaryKeyRelatedField(queryset=UsuarioPOA.objects.all(), source='elaborado_por', write_only=True, required=False, allow_null=True)
-    jefe_unidad_id = serializers.PrimaryKeyRelatedField(queryset=UsuarioPOA.objects.all(), source='jefe_unidad', write_only=True, required=False, allow_null=True)
+    elaborado_por_id = serializers.PrimaryKeyRelatedField(queryset=UsuarioPOA.objects.all(), write_only=True, required=False, allow_null=True)
+    jefe_unidad_id = serializers.PrimaryKeyRelatedField(queryset=UsuarioPOA.objects.all(), write_only=True, required=False, allow_null=True)
 
     objetivos = serializers.SerializerMethodField()
     revisiones_activas = serializers.SerializerMethodField()
@@ -129,7 +140,7 @@ class DocumentoPOASerializer(serializers.ModelSerializer):
     class Meta:
         model = DocumentoPOA
         fields = [
-            'id', 'gestion', 'unidad_solicitante', 'programa', 'objetivo_gestion_institucional',
+            'id', 'gestion', 'unidad_solicitante', 'unidad_solicitante_detalle', 'programa', 'objetivo_gestion_institucional',
             'elaborado_por', 'jefe_unidad', 'fecha_elaboracion', 'estado', 'observaciones', 'ciclo_revision_actual',
             'creado_en', 'actualizado_en', 'elaborado_por_id', 'jefe_unidad_id', 'objetivos', 'revisiones_activas', 'historial'
         ]
@@ -137,8 +148,10 @@ class DocumentoPOASerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         request = self.context.get('request')
         user = getattr(request, 'user', None)
-        elaborado_por = attrs.get('elaborado_por', getattr(self.instance, 'elaborado_por', None))
-        jefe_unidad = attrs.get('jefe_unidad', getattr(self.instance, 'jefe_unidad', None))
+        elaborado_por_obj = attrs.pop('elaborado_por_id', None)
+        jefe_unidad_obj = attrs.pop('jefe_unidad_id', None)
+        elaborado_por = elaborado_por_obj or attrs.get('elaborado_por', getattr(self.instance, 'elaborado_por', ''))
+        jefe_unidad = jefe_unidad_obj or attrs.get('jefe_unidad', getattr(self.instance, 'jefe_unidad', ''))
         estado = attrs.get('estado', getattr(self.instance, 'estado', 'elaboracion'))
         observaciones = attrs.get('observaciones', getattr(self.instance, 'observaciones', ''))
 
@@ -150,21 +163,19 @@ class DocumentoPOASerializer(serializers.ModelSerializer):
             if not carrera:
                 errors['unidad_solicitante'] = 'El usuario no tiene una carrera asignada para crear o editar documentos POA.'
             else:
-                attrs['unidad_solicitante'] = carrera.nombre
+                attrs['unidad_solicitante'] = carrera
 
         if elaborado_por is not None:
-            if not elaborado_por.activo:
+            if hasattr(elaborado_por, 'activo') and not elaborado_por.activo:
                 errors['elaborado_por_id'] = 'El usuario seleccionado para "Elaborado por" debe estar activo en Accesos POA.'
-            elif elaborado_por.rol != 'elaborador':
+            elif hasattr(elaborado_por, 'rol') and elaborado_por.rol != 'elaborador':
                 errors['elaborado_por_id'] = 'El usuario seleccionado para "Elaborado por" debe tener el rol Elaborador del POA.'
 
         if jefe_unidad is not None:
-            if not jefe_unidad.activo:
+            if hasattr(jefe_unidad, 'activo') and not jefe_unidad.activo:
                 errors['jefe_unidad_id'] = 'El usuario seleccionado para "Jefe de unidad" debe estar activo en Accesos POA.'
-            elif jefe_unidad.rol != 'director_carrera':
-                errors['jefe_unidad_id'] = 'El usuario seleccionado para "Jefe de unidad" debe tener el rol Director de Carrera.'
 
-        if elaborado_por is not None and jefe_unidad is not None and elaborado_por.pk == jefe_unidad.pk:
+        if hasattr(elaborado_por, 'pk') and hasattr(jefe_unidad, 'pk') and elaborado_por.pk == jefe_unidad.pk:
             errors['non_field_errors'] = '"Elaborado por" y "Jefe de unidad" deben ser personas diferentes.'
 
         if estado == 'observado' and not str(observaciones or '').strip():
@@ -174,6 +185,33 @@ class DocumentoPOASerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(errors)
 
         return attrs
+
+    def _resolver_nombre_usuario_poa(self, usuario_poa):
+        if not usuario_poa:
+            return ''
+        if getattr(usuario_poa, 'user_id', None):
+            return usuario_poa.user.get_full_name() or usuario_poa.user.username
+        if getattr(usuario_poa, 'docente_id', None):
+            return usuario_poa.docente.nombre_completo
+        return getattr(usuario_poa, 'nombre_display', '') or f'UsuarioPOA #{usuario_poa.pk}'
+
+    def create(self, validated_data):
+        elaborado_por_obj = validated_data.pop('elaborado_por_id', None)
+        jefe_unidad_obj = validated_data.pop('jefe_unidad_id', None)
+        if elaborado_por_obj is not None:
+            validated_data['elaborado_por'] = self._resolver_nombre_usuario_poa(elaborado_por_obj)
+        if jefe_unidad_obj is not None:
+            validated_data['jefe_unidad'] = self._resolver_nombre_usuario_poa(jefe_unidad_obj)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        elaborado_por_obj = validated_data.pop('elaborado_por_id', None)
+        jefe_unidad_obj = validated_data.pop('jefe_unidad_id', None)
+        if elaborado_por_obj is not None:
+            validated_data['elaborado_por'] = self._resolver_nombre_usuario_poa(elaborado_por_obj)
+        if jefe_unidad_obj is not None:
+            validated_data['jefe_unidad'] = self._resolver_nombre_usuario_poa(jefe_unidad_obj)
+        return super().update(instance, validated_data)
 
     def get_objetivos(self, obj):
         return ObjetivoEspecificoSerializer(obj.objetivos.all(), many=True).data
@@ -208,6 +246,8 @@ class ActividadSerializer(serializers.ModelSerializer):
     # indicador_descripcion ahora es un TextField: se puede escribir directamente como texto
     indicador_descripcion_texto = serializers.CharField(source='indicador_descripcion', read_only=True)
     indicadores_disponibles = serializers.SerializerMethodField()
+    evidencia_registrada = serializers.SerializerMethodField()
+    evidencia_cumplimiento = serializers.SerializerMethodField()
 
     # campo write-only para relacionar el objetivo (misma convención)
     objetivo_id = serializers.PrimaryKeyRelatedField(queryset=ObjetivoEspecifico.objects.all(), source='objetivo', write_only=True, required=False)
@@ -219,7 +259,8 @@ class ActividadSerializer(serializers.ModelSerializer):
             'mes_inicio', 'mes_fin', 'indicador_descripcion', 'indicador_descripcion_texto',
             'indicadores_disponibles',
             'indicador_unidad', 'indicador_linea_base', 'indicador_meta',
-            'monto_funcion', 'monto_inversion', 'estado'
+            'monto_funcion', 'monto_inversion', 'estado',
+            'evidencia_registrada', 'evidencia_cumplimiento'
         ]
         read_only_fields = ['id']
 
@@ -253,8 +294,20 @@ class ActividadSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(f"Error al actualizar la actividad: {str(e)}")
 
     def get_indicadores_disponibles(self, obj):
-        # unidad_solicitante ahora es texto libre, no hay filtro por dirección
+        # La carrera solicitante ya está resuelta en el documento; no aplica filtro adicional aquí.
         return []
+
+    def get_evidencia_registrada(self, obj):
+        return bool(getattr(obj, 'evidencias', None) and obj.evidencias.exists())
+
+    def get_evidencia_cumplimiento(self, obj):
+        try:
+            evidencia = obj.evidencias.first()
+            if not evidencia:
+                return 0
+            return float(evidencia.grado_cumplimiento or 0)
+        except Exception:
+            return 0
 
 
 # Serializer para DetallePresupuesto (integrado en poa_document)
@@ -284,44 +337,54 @@ class DetallePresupuestoSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'costo_total']
 
 
-# ─── Conversaciones POA ───────────────────────────────────────────────────────
-
-class MensajeComentarioPOASerializer(serializers.ModelSerializer):
-    autor_nombre = serializers.SerializerMethodField()
-    autor_username = serializers.CharField(source='autor.username', read_only=True)
-
-    class Meta:
-        model = MensajeComentarioPOA
-        fields = ['id', 'comentario', 'autor', 'autor_nombre', 'autor_username',
-                  'texto', 'es_revisor', 'fecha']
-        read_only_fields = ['id', 'autor', 'autor_nombre', 'autor_username',
-                            'es_revisor', 'fecha']
-
-    def get_autor_nombre(self, obj):
-        return obj.autor.get_full_name() or obj.autor.username
-
-
-class ComentarioPOASerializer(serializers.ModelSerializer):
-    mensajes = MensajeComentarioPOASerializer(many=True, read_only=True)
-    cantidad_mensajes = serializers.SerializerMethodField()
-    ultimo_mensaje = serializers.SerializerMethodField()
+class MensajeChatSerializer(serializers.ModelSerializer):
+    emisor_nombre = serializers.SerializerMethodField()
+    emisor_username = serializers.CharField(source='emisor.username', read_only=True)
+    receptor_nombre = serializers.SerializerMethodField()
+    receptor_username = serializers.CharField(source='receptor.username', read_only=True)
 
     class Meta:
-        model = ComentarioPOA
-        fields = ['id', 'documento', 'gestion', 'abierto', 'creado_en',
-                  'mensajes', 'cantidad_mensajes', 'ultimo_mensaje']
-        read_only_fields = ['id', 'gestion', 'abierto', 'creado_en']
+        model = MensajeChat
+        fields = [
+            'id', 'emisor', 'emisor_nombre', 'emisor_username',
+            'receptor', 'receptor_nombre', 'receptor_username',
+            'texto', 'fecha', 'leido_en',
+        ]
+        read_only_fields = fields
 
-    def get_cantidad_mensajes(self, obj):
-        return obj.mensajes.count()
+    def get_emisor_nombre(self, obj):
+        return obj.emisor.get_full_name() or obj.emisor.username
 
-    def get_ultimo_mensaje(self, obj):
-        ultimo = obj.mensajes.last()
-        if ultimo:
-            return {
-                'texto': ultimo.texto,
-                'autor': ultimo.autor.get_full_name() or ultimo.autor.username,
-                'fecha': ultimo.fecha,
-                'es_revisor': ultimo.es_revisor,
-            }
+    def get_receptor_nombre(self, obj):
+        return obj.receptor.get_full_name() or obj.receptor.username
+
+
+class EvidenciaArchivoSerializer(serializers.ModelSerializer):
+    archivo_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = EvidenciaArchivo
+        fields = ['id', 'tipo', 'archivo', 'archivo_url', 'url', 'creado_en']
+        read_only_fields = ['id', 'archivo_url', 'creado_en']
+
+    def get_archivo_url(self, obj):
+        request = self.context.get('request')
+        if obj.archivo and request:
+            return request.build_absolute_uri(obj.archivo.url)
         return None
+
+
+class EvidenciaSerializer(serializers.ModelSerializer):
+    archivos = EvidenciaArchivoSerializer(many=True, read_only=True)
+    actividad_id = serializers.PrimaryKeyRelatedField(queryset=Actividad.objects.all(), source='actividad', write_only=True)
+    resultados_logrados = serializers.CharField(required=True, allow_blank=False)
+
+    class Meta:
+        model = Evidencia
+        fields = ['id', 'actividad', 'actividad_id', 'resultados_logrados', 'programado', 'ejecutado', 'grado_cumplimiento', 'creado_en', 'actualizado_en', 'archivos']
+        read_only_fields = ['id', 'actividad', 'creado_en', 'actualizado_en', 'archivos']
+
+    def create(self, validated_data):
+        # actividad llega como objeto por actividad_id
+        return Evidencia.objects.create(**validated_data)
+

@@ -7,10 +7,11 @@ import { useTheme } from '../../useTheme';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import ThemeToggle from '../../components/ThemeToggle';
+import ChatFlotantePOA from './components/ChatFlotantePOA';
+import Dialog from './components/base/Dialog';
 import GestionSelectorModal from './components/GestionSelectorModal';
 import NuevoIndicadorModal from './components/NuevoIndicadorModal';
 import POAHomePage from './pages/POAHomePage';
-import DireccionesPage from './pages/DireccionesPage';
 import AccesosPOAPage from './pages/AccesosPOAPage';
 import DocumentosPOAPage from './pages/DocumentosPOAPage';
 import ActividadesPage from './pages/ActividadesPage';
@@ -36,6 +37,7 @@ function POAApp({ user }) {
   const [headerSelectedActividad, setHeaderSelectedActividad] = useState(null);
   const [headerSelectedDireccion, setHeaderSelectedDireccion] = useState(null);
   const [headerSelectedOperacion, setHeaderSelectedOperacion] = useState(null);
+  const [showAsignarElaboradorDialog, setShowAsignarElaboradorDialog] = useState(false);
   const [showHeader, setShowHeader] = useState(true);
   const [forceShowHeader, setForceShowHeader] = useState(false);
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
@@ -80,7 +82,7 @@ function POAApp({ user }) {
   const poaPermissions = {
     canEdit: poaRoles.includes('elaborador'),
     canManageAccess: poaRoles.includes('elaborador') || isAdminPrincipal,
-    canReview: poaRoles.some((r) => ['revisor_1', 'revisor_2', 'revisor_3', 'revisor_4', 'director_carrera'].includes(r)),
+    canReview: Boolean(user?.is_superuser || user?.perfil?.rol === 'director'),
   };
 
   // Control del header por scroll
@@ -143,7 +145,7 @@ function POAApp({ user }) {
     return () => window.removeEventListener('header-actions', onHeaderActions);
   }, []);
 
-  // Escuchar selecciÃ³n de direcciÃ³n desde DireccionesPage
+  // Escuchar selecciÃ³n de direcciÃ³n desde la página de indicadores
   useEffect(() => {
     const h = (e) => {
       const dir = e?.detail ?? null;
@@ -153,7 +155,7 @@ function POAApp({ user }) {
     return () => window.removeEventListener('direccion-selected', h);
   }, []);
 
-  // Escuchar selecciÃ³n de operaciÃ³n desde DireccionesPage
+  // Escuchar selecciÃ³n de operaciÃ³n desde la página de indicadores
   useEffect(() => {
     const h = (e) => {
       const op = e?.detail ?? null;
@@ -176,6 +178,22 @@ function POAApp({ user }) {
     return () => window.removeEventListener('open-edit-operacion', h);
   }, []);
 
+  // Escuchar peticion global para crear nuevo indicador desde el header.
+  useEffect(() => {
+    const h = (e) => {
+      const page = e?.detail?.page ?? null;
+      if (page !== 'indicadores') return;
+      if (!headerSelectedDireccion) {
+        setShowAsignarElaboradorDialog(true);
+        return;
+      }
+      setEditOperacion(null);
+      setShowNuevoIndicadorModal(true);
+    };
+    window.addEventListener('open-new', h);
+    return () => window.removeEventListener('open-new', h);
+  }, [headerSelectedDireccion]);
+
   return (
     <div className={`poa-app flex min-h-screen transition-colors duration-500`}>
       {/* Toast notifications */}
@@ -183,6 +201,7 @@ function POAApp({ user }) {
 
       {/* Selector de Tema - Flotante Global */}
       <ThemeToggle theme={theme} setTheme={setTheme} />
+      <ChatFlotantePOA currentUser={user} />
 
       {/* Sidebar */}
       <Sidebar
@@ -200,6 +219,7 @@ function POAApp({ user }) {
       {/* Modal de gestiÃ³n */}
       {showGestionModal && (
         <GestionSelectorModal
+          currentUser={user}
           onClose={() => setShowGestionModal(false)}
           onSuccess={({ gestion, documentos }) => {
             setShowGestionModal(false);
@@ -240,6 +260,17 @@ function POAApp({ user }) {
           <Outlet context={{ user, poaRoles, poaPermissions }} />
         </section>
       </main>
+
+      <Dialog
+        open={showAsignarElaboradorDialog}
+        type="info"
+        title="Selecciona una dirección primero"
+        message="Primero selecciona una dirección para crear un indicador."
+        confirmText="Aceptar"
+        hideCancel
+        onConfirm={() => setShowAsignarElaboradorDialog(false)}
+        onClose={() => setShowAsignarElaboradorDialog(false)}
+      />
     </div>
   );
 }
