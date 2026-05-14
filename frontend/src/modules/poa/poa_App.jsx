@@ -81,7 +81,8 @@ function POAApp({ user }) {
 
   const poaPermissions = {
     canEdit: poaRoles.includes('elaborador'),
-    canManageAccess: poaRoles.includes('elaborador') || isAdminPrincipal,
+    // Permitir gestionar accesos a elaboradores, a administradores principales y a Directores de Carrera
+    canManageAccess: poaRoles.includes('elaborador') || isAdminPrincipal || Boolean(user?.perfil?.rol === 'director'),
     canReview: Boolean(user?.is_superuser || user?.perfil?.rol === 'director'),
   };
 
