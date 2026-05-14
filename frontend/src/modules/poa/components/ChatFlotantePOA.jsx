@@ -78,6 +78,7 @@ function ChatFlotantePOA({ currentUser }) {
   const searchContainerRef = useRef(null);
   const chatListRef = useRef(null);
   const actionsMenuRef = useRef(null);
+  const messageInputRef = useRef(null);
   const notifiedConnectionRef = useRef(false);
 
   const currentUserSnapshot = useMemo(() => currentUser || getStoredUser(), [currentUser]);
@@ -104,6 +105,12 @@ function ChatFlotantePOA({ currentUser }) {
     const parsed = new Date(fecha);
     if (Number.isNaN(parsed.getTime())) return '';
     return parsed.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' });
+  }, []);
+
+  const focusMessageInput = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      messageInputRef.current?.focus();
+    });
   }, []);
 
   const fetchEstadoBloqueo = useCallback(async (peerId) => {
@@ -297,6 +304,7 @@ function ChatFlotantePOA({ currentUser }) {
     setShowActionsMenu(false);
     await fetchEstadoBloqueo(peerId);
     await fetchMensajes(peerId, { silent: false });
+    focusMessageInput();
   };
 
   useEffect(() => {
@@ -369,6 +377,7 @@ function ChatFlotantePOA({ currentUser }) {
       toast.error(err?.response?.data?.detail || 'No se pudo enviar el mensaje.');
     } finally {
       setSending(false);
+      focusMessageInput();
     }
   };
 
@@ -419,6 +428,11 @@ function ChatFlotantePOA({ currentUser }) {
     );
   };
 
+  useEffect(() => {
+    if (!open) return;
+    focusMessageInput();
+  }, [open, peerActualId, focusMessageInput]);
+
   return (
     <>
       <button
@@ -430,9 +444,8 @@ function ChatFlotantePOA({ currentUser }) {
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-[122]">
-          <div className="absolute inset-0 bg-black/45 backdrop-blur-sm" onClick={() => setOpen(false)} />
-          <div className="absolute right-6 bottom-24 w-[390px] max-w-[calc(100vw-1.5rem)] h-[640px] max-h-[calc(100vh-8rem)] rounded-3xl border border-cyan-300/30 bg-slate-950/95 overflow-hidden shadow-2xl flex flex-col">
+        <div className="fixed inset-0 z-[122] pointer-events-none">
+          <div className="absolute right-6 bottom-24 w-[390px] max-w-[calc(100vw-1.5rem)] h-[640px] max-h-[calc(100vh-8rem)] rounded-3xl border border-cyan-300/30 bg-slate-950/95 overflow-hidden shadow-2xl flex flex-col pointer-events-auto">
             <div className="relative z-20 border-b border-slate-700 bg-gradient-to-r from-cyan-600 to-teal-600">
               <div className="px-4 py-3 flex items-center gap-2">
                 <MessageCircle size={16} className="text-white" />
@@ -590,6 +603,7 @@ function ChatFlotantePOA({ currentUser }) {
             <div className="p-3 border-t border-slate-700 bg-slate-900">
               <div className="flex items-center gap-2">
                 <input
+                  ref={messageInputRef}
                   value={texto}
                   onChange={(e) => setTexto(e.target.value)}
                   onKeyDown={(e) => {
