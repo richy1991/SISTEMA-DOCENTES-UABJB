@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { createActividad, updateActividad, getCatalogoOperaciones, searchOperacionesCatalogo } from '../../../apis/poa.api';
+import { createActividad, updateActividad, searchOperacionesCatalogo } from '../../../apis/poa.api';
 import IconButton from './IconButton';
 import { FaTimes, FaSave } from 'react-icons/fa';
 import { Input, Textarea, Select, Modal } from './base';
@@ -166,7 +166,9 @@ const NuevaActividadModal = ({ onClose, onCreated, onUpdated, objetivoId, activi
 
   useEffect(() => {
     let mounted = true;
-    getCatalogoOperaciones()
+    // Obtener operaciones del catálogo sin filtro obligatorio por dirección
+    // searchOperacionesCatalogo usa /api/catalogos/operaciones-catalogo/ que no requiere parámetros
+    searchOperacionesCatalogo('')
       .then(r => {
         if (!mounted) return;
         const list = Array.isArray(r.data) ? r.data : (r.data.results || []);
