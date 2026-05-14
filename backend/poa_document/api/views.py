@@ -148,6 +148,12 @@ def _requerir_gestor_accesos(request):
         raise PermissionDenied('Solo el rol Elaborador POA o el superusuario puede gestionar accesos POA.')
 
 
+def _requerir_gestor_o_director(request):
+    """Permite gestionar accesos a: Elaborador POA, Director de carrera o admin principal/superuser."""
+    if not (_es_elaborador(request.user) or _es_admin_principal(request.user) or _es_revisor(request.user)):
+        raise PermissionDenied('Solo Elaborador POA, Director de Carrera o el superusuario puede gestionar accesos POA.')
+
+
 def _requerir_revisor(request):
     if not _es_revisor(request.user):
         raise PermissionDenied('Solo el Director del sistema principal puede realizar esta acción.')
@@ -218,19 +224,19 @@ class UsuarioPOAViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def create(self, request, *args, **kwargs):
-        _requerir_gestor_accesos(request)
+        _requerir_gestor_o_director(request)
         return super().create(request, *args, **kwargs)
 
     def update(self, request, *args, **kwargs):
-        _requerir_gestor_accesos(request)
+        _requerir_gestor_o_director(request)
         return super().update(request, *args, **kwargs)
 
     def partial_update(self, request, *args, **kwargs):
-        _requerir_gestor_accesos(request)
+        _requerir_gestor_o_director(request)
         return super().partial_update(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):
-        _requerir_gestor_accesos(request)
+        _requerir_gestor_o_director(request)
         return super().destroy(request, *args, **kwargs)
 
     def get_queryset(self):
@@ -248,7 +254,7 @@ class DocenteBusquedaView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        _requerir_gestor_accesos(request)
+        _requerir_gestor_o_director(request)
         q = request.query_params.get('q', '').strip()
         if len(q) < 2:
             return Response([])
@@ -260,6 +266,24 @@ class DocenteBusquedaView(APIView):
             Q(email__icontains=q),
             activo=True,
         ).order_by('apellido_paterno', 'nombres')[:20]
+        # Si el solicitante es Director, limitar resultados a la misma carrera
+        perfil = _get_user_profile(request.user)
+        perfil_rol = getattr(perfil, 'rol', None)
+        roles_poa = _poa_roles_activos(request.user)
+        es_director = request.user.is_superuser or perfil_rol == 'director' or 'director' in roles_poa
+        carrera = _carrera_usuario_poa(request.user)
+        if es_director and carrera:
+            qs = Docente.objects.filter(
+                Q(nombres__icontains=q) |
+                Q(apellido_paterno__icontains=q) |
+                Q(apellido_materno__icontains=q) |
+                Q(ci__icontains=q) |
+                Q(email__icontains=q),
+                activo=True,
+            ).filter(
+                Q(asignaciones_carrera__carrera_id=carrera.id, asignaciones_carrera__activo=True)
+            ).order_by('apellido_paterno', 'nombres')[:20]
+
         return Response(DocenteSimpleSerializer(qs, many=True).data)
 
 
@@ -268,7 +292,7 @@ class UsuarioBusquedaView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        _requerir_gestor_accesos(request)
+        _requerir_gestor_o_director(request)
         q = request.query_params.get('q', '').strip()
         if len(q) < 2:
             return Response([])
@@ -279,6 +303,23 @@ class UsuarioBusquedaView(APIView):
             Q(email__icontains=q),
             is_active=True,
         ).order_by('last_name', 'first_name')[:20]
+        # Si el solicitante es Director, limitar la búsqueda a usuarios de la misma carrera
+        perfil = _get_user_profile(request.user)
+        perfil_rol = getattr(perfil, 'rol', None)
+        roles_poa = _poa_roles_activos(request.user)
+        es_director = request.user.is_superuser or perfil_rol == 'director' or 'director' in roles_poa
+        carrera = _carrera_usuario_poa(request.user)
+        if es_director and carrera:
+            qs = User.objects.select_related('perfil', 'perfil__docente').filter(
+                Q(username__icontains=q) |
+                Q(first_name__icontains=q) |
+                Q(last_name__icontains=q) |
+                Q(email__icontains=q),
+                is_active=True,
+            ).filter(
+                Q(perfil__carrera_id=carrera.id) |
+                Q(perfil__docente__asignaciones_carrera__carrera_id=carrera.id, perfil__docente__asignaciones_carrera__activo=True)
+            ).order_by('last_name', 'first_name')[:20]
         results = []
         for u in qs:
             perfil = _get_user_profile(u)
