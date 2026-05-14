@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate, Link, useLocation } f
 import { useState, useEffect } from 'react';
 import { useTheme } from './useTheme';
 import { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
 
 // Vistas y Componentes
 import api from './apis/api';
@@ -60,6 +61,17 @@ function App() {
   
   const { theme, setTheme, isDark } = useTheme();
 
+  // Constante de inactividad: 2 horas en milisegundos
+  const INACTIVITY_TIMEOUT = 2 * 60 * 60 * 1000;
+
+  const handleLogout = () => {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('user');
+    sessionStorage.removeItem('last_activity');
+    setUser(null);
+  };
+
   const normalizarCarreraActiva = (userData, carreraIdPreferida = null) => {
     if (!userData) return userData;
 
@@ -79,15 +91,66 @@ function App() {
     };
   };
 
+  // Recuperar usuario de localStorage al cargar la app
   useEffect(() => {
-    // Requisito: Forzar el login siempre.
-    // Se limpia cualquier sesión guardada en el navegador al cargar la aplicación.
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    localStorage.removeItem('user');
-    
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      try {
+        const userData = JSON.parse(storedUser);
+        setUser(userData);
+      } catch {
+        localStorage.removeItem('user');
+      }
+    }
     setLoading(false);
   }, []);
+
+  // Sistema de inactividad: detectar cambios de inactividad y logout automático
+  useEffect(() => {
+    if (!user) return;
+
+    // Guardar timestamp de última actividad
+    const updateLastActivity = () => {
+      const now = Date.now();
+      sessionStorage.setItem('last_activity', String(now));
+    };
+
+    // Registrar actividad del usuario en cualquier evento
+    const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
+    events.forEach((event) => {
+      window.addEventListener(event, updateLastActivity, { passive: true });
+    });
+
+    // Establecer timestamp inicial de actividad
+    updateLastActivity();
+
+    // Timer para verificar inactividad cada minuto
+    const inactivityCheckInterval = setInterval(() => {
+      const lastActivityStr = sessionStorage.getItem('last_activity');
+      if (!lastActivityStr) {
+        updateLastActivity();
+        return;
+      }
+
+      const lastActivity = Number(lastActivityStr);
+      const now = Date.now();
+      const inactiveTime = now - lastActivity;
+
+      // Si han pasado 2 horas sin actividad, hacer logout
+      if (inactiveTime > INACTIVITY_TIMEOUT) {
+        handleLogout();
+        toast.error('Tu sesión expiró por inactividad. Por favor, inicia sesión nuevamente.');
+      }
+    }, 60 * 1000); // Verificar cada minuto
+
+    // Limpiar listeners y timer al desmontar
+    return () => {
+      events.forEach((event) => {
+        window.removeEventListener(event, updateLastActivity);
+      });
+      clearInterval(inactivityCheckInterval);
+    };
+  }, [user]);
 
   const handleLogin = (userData) => {
     const userNormalizado = normalizarCarreraActiva(userData);
@@ -96,13 +159,6 @@ function App() {
     }
     localStorage.setItem('user', JSON.stringify(userNormalizado));
     setUser(userNormalizado);
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    localStorage.removeItem('user');
-    setUser(null);
   };
 
   const handleProfileUpdate = async () => {
