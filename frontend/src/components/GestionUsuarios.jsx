@@ -38,55 +38,6 @@ style.textContent = `
       transform: translateX(0);
     }
   }
-
-  @keyframes toastPop {
-    0% {
-      transform: translateY(0) scale(1);
-    }
-    35% {
-      transform: translateY(-4px) scale(1.02);
-    }
-    70% {
-      transform: translateY(1px) scale(0.99);
-    }
-    100% {
-      transform: translateY(0) scale(1);
-    }
-  }
-
-  .toast-brinco {
-    animation: toastPop 240ms ease-out;
-  }
-  
-  @keyframes fieldErrorPop {
-    0% { transform: translateY(0) scale(1); }
-    35% { transform: translateY(-6px) scale(1.02); }
-    70% { transform: translateY(1px) scale(0.99); }
-    100% { transform: translateY(0) scale(1); }
-  }
-  
-  .animate-field-error-pop {
-    animation: fieldErrorPop 240ms cubic-bezier(.2,.9,.3,1);
-    transform-origin: center;
-  }
-
-  @keyframes panelAsignacionSlideDown {
-    from {
-      opacity: 0;
-      transform: translateY(-14px);
-      max-height: 0;
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-      max-height: 240px;
-    }
-  }
-
-  .animate-panel-asignacion {
-    animation: panelAsignacionSlideDown 260ms ease-out;
-    transform-origin: top;
-  }
 `;
 document.head.appendChild(style);
 
@@ -120,180 +71,31 @@ const TrashIcon = (props) => (
     </svg>
 );
 
-const ERROR_MOTION_CLASS = 'animate-field-error-pop';
-const MENSAJE_ASIGNACION_INVALIDA = 'Esta combinación de roles no es válida según las reglas de asignación del sistema';
-const MENSAJE_CONFLICTO_AUTORIDAD = 'No se puede asignar dos roles de autoridad en la misma carrera';
-
-const ROL_LABELS = {
-  iiisyp: '🔬 Instituto de investigación',
-  director: '🏛️ Director de Carrera',
-  jefe_estudios: '📚 Jefe de Estudios',
-  docente: '👨‍🏫 Docente',
-};
-
-const ROL_STYLES = {
-  iiisyp: 'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 border-sky-500 dark:border-sky-700',
-  director: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-500 dark:border-blue-700',
-  jefe_estudios: 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 border-cyan-500 dark:border-cyan-700',
-  docente: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-500 dark:border-green-700',
-};
-
-const obtenerTextoRolUsuario = (usuario) => {
-  if (!usuario?.perfil) return 'Sin rol';
-
-  const rolPrincipal = String(usuario.perfil.rol || '').trim();
-  const rolesExtra = Array.isArray(usuario.asignaciones)
-    ? usuario.asignaciones
-        .filter((item) => item?.rol)
-        .map((item) => String(item.rol).trim())
-    : [];
-
-  const rolesUnicos = [...new Set([rolPrincipal, ...rolesExtra].filter(Boolean))];
-
-  if (rolesUnicos.length === 0) return 'Sin rol';
-
-  return rolesUnicos.map((rol) => ROL_LABELS[rol] || rol).join(' / ');
-};
-
-const obtenerRolesUsuario = (usuario) => {
-  if (!usuario?.perfil) return [];
-
-  const rolPrincipal = String(usuario.perfil.rol || '').trim();
-  const rolesExtra = Array.isArray(usuario.asignaciones)
-    ? usuario.asignaciones
-        .filter((item) => item?.rol && item?.activo !== false)
-        .map((item) => String(item.rol).trim())
-    : [];
-
-  return [...new Set([rolPrincipal, ...rolesExtra].filter(Boolean))];
-};
-
-const obtenerCarrerasUsuario = (usuario) => {
-  if (!usuario) return [];
-
-  const carreraPrincipal = String(usuario?.perfil?.carrera?.codigo || usuario?.carrera_codigo || '').trim();
-  const carrerasExtra = Array.isArray(usuario.asignaciones)
-    ? usuario.asignaciones
-        .filter((item) => item?.carrera_codigo)
-        .map((item) => String(item.carrera_codigo).trim())
-    : [];
-
-  return [...new Set([carreraPrincipal, ...carrerasExtra].filter(Boolean))];
-};
-
-const obtenerTextoCarrerasUsuario = (usuario) => {
-  const carreras = obtenerCarrerasUsuario(usuario);
-  if (carreras.length === 0) return 'Sin carrera';
-  return carreras.join(' / ');
-};
-
-const ROLES_AUTORIDAD = ['director', 'jefe_estudios', 'iiisyp'];
-
-const usuarioTieneRolDocente = (usuario) => obtenerRolesUsuario(usuario).includes('docente');
-const usuarioTieneVinculoDocente = (usuario) => Boolean(usuario?.perfil?.docente_id || usuario?.perfil?.docente);
-
-const usuarioTienePerfilDocentePendiente = (usuario) => {
-  const roles = obtenerRolesUsuario(usuario);
-  return (
-    roles.length > 1
-    && roles.includes('docente')
-    && roles.some((rol) => ROLES_AUTORIDAD.includes(rol))
-    && !usuarioTieneVinculoDocente(usuario)
-  );
-};
-
-const AnimatedInlineMessage = ({ show, message, wrapperClassName = '', messageClassName = '' }) => {
-  const [shouldRender, setShouldRender] = useState(show);
-  const [isVisible, setIsVisible] = useState(show);
-
-  useEffect(() => {
-    if (show) {
-      setShouldRender(true);
-      const frameId = requestAnimationFrame(() => setIsVisible(true));
-      return () => cancelAnimationFrame(frameId);
-    }
-
-    setIsVisible(false);
-    const timeoutId = setTimeout(() => setShouldRender(false), 260);
-
-    return () => clearTimeout(timeoutId);
-  }, [show]);
-
-  if (!shouldRender) return null;
-
-  return (
-    <div
-      className={`overflow-hidden transition-all duration-300 ease-out ${isVisible ? 'max-h-20 opacity-100 translate-y-0' : 'max-h-0 opacity-0 -translate-y-2'} ${wrapperClassName}`}
-    >
-      <p className={`transition-all duration-300 ease-out ${isVisible ? 'translate-y-0' : '-translate-y-1'} ${messageClassName}`}>
-        {message}
-      </p>
-    </div>
-  );
-};
-
-const InputField = ({ label, name, type = 'text', value, onChange, required, disabled, error, pulse = 0, ...rest }) => {
-  const [isPulsing, setIsPulsing] = useState(false);
-  const errorMessage = Array.isArray(error) ? (error[0] || '') : (typeof error === 'string' ? error : '');
-
-  useEffect(() => {
-    if (!error) {
-      setIsPulsing(false);
-      return;
-    }
-
-    setIsPulsing(false);
-    const frameId = requestAnimationFrame(() => setIsPulsing(true));
-    const timeoutId = setTimeout(() => setIsPulsing(false), 260);
-
-    return () => {
-      cancelAnimationFrame(frameId);
-      clearTimeout(timeoutId);
-    };
-  }, [error, pulse]);
-
-  return (
-  <div className={error && isPulsing ? ERROR_MOTION_CLASS : ''}>
-    <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
-      {label}
-      {error && <span className="ml-1 text-red-500">*</span>}
-    </label>
+const InputField = ({ label, name, type = 'text', value, onChange, required, disabled, error }) => (
+  <div>
+    <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label}</label>
     <input
       type={type}
       name={name}
       value={value}
       onChange={onChange}
+      required={required}
       disabled={disabled}
       placeholder={required ? '' : ' '}
-      {...rest}
-      className={`w-full px-4 py-3 rounded-xl border-2 bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 transition-all shadow-sm ${error ? '!border-red-600 dark:!border-red-500 focus:ring-red-500/60' : 'border-slate-400 dark:border-slate-600 focus:ring-blue-500'}`}
+      className={`w-full px-4 py-3 rounded-xl border-2 bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm ${error ? 'border-red-500' : 'border-slate-400 dark:border-slate-600'}`}
     />
-    <AnimatedInlineMessage
-      show={Boolean(errorMessage)}
-      message={errorMessage}
-      wrapperClassName="mt-1"
-      messageClassName="text-xs text-red-600 dark:text-red-400"
-    />
+    {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
   </div>
-  );
-};
+);
 
 // Componente Select con Dropdown animado (igual que en ListaDocentes)
 const SELECT_INPUT_BASE_CLASS = 'border-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700';
 
 const STATIC_CONTROL_STYLE = { transition: 'none', transform: 'none', animation: 'none' };
 
-const SelectConDropdown = ({ label, name, value, onChange, options, error, disabled = false, required = false, placeholder = 'Seleccione...', hoverEffect = true, stable = false, standardStyle = false, onInteract = null, selectedIndex = null, selectedIndexesByValue = null, forwardedRef = null, pulse = 0 }) => {
+const SelectConDropdown = ({ label, name, value, onChange, options, error, disabled = false, required = false, placeholder = 'Seleccione...', hoverEffect = true, stable = false, standardStyle = false, onInteract = null }) => {
   const [open, setOpen] = useState(false);
-  const [isPulsing, setIsPulsing] = useState(false);
   const containerRef = useRef(null);
-  const errorMessage = Array.isArray(error) ? (error[0] || '') : (typeof error === 'string' ? error : '');
-
-  useEffect(() => {
-    if (forwardedRef) {
-      forwardedRef.current = { open: () => setOpen(true), close: () => setOpen(false) };
-    }
-  }, [forwardedRef]);
 
   useEffect(() => {
     const handleOutside = (event) => {
@@ -307,30 +109,13 @@ const SelectConDropdown = ({ label, name, value, onChange, options, error, disab
     return () => document.removeEventListener('mousedown', handleOutside);
   }, [open]);
 
-  useEffect(() => {
-    if (!error) {
-      setIsPulsing(false);
-      return;
-    }
-
-    setIsPulsing(false);
-    const frameId = requestAnimationFrame(() => setIsPulsing(true));
-    const timeoutId = setTimeout(() => setIsPulsing(false), 260);
-
-    return () => {
-      cancelAnimationFrame(frameId);
-      clearTimeout(timeoutId);
-    };
-  }, [error, pulse]);
-
   const selectedLabel = options.find(opt => opt.value === value)?.label;
 
   return (
-    <div ref={containerRef} className={`relative ${error && isPulsing ? ERROR_MOTION_CLASS : ''}`}>
+    <div ref={containerRef} className="relative">
       {label && (
         <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
           {label}
-          {error && <span className="ml-1 text-red-500">*</span>}
         </label>
       )}
       <button
@@ -348,14 +133,14 @@ const SelectConDropdown = ({ label, name, value, onChange, options, error, disab
               disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
             } ${
               error
-                ? `border-2 !border-red-600 dark:!border-red-500 bg-slate-50 dark:bg-slate-700 focus:ring-red-500/60 ${error && isPulsing ? ERROR_MOTION_CLASS : ''}`
+                ? 'border-2 border-red-500 bg-slate-50 dark:bg-slate-700'
                 : SELECT_INPUT_BASE_CLASS
             }`
           : `w-full h-[52px] px-4 py-3 rounded-xl text-left flex items-center justify-between shadow-sm transition-none transform-none hover:shadow-none ${
               disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
             } ${
               error 
-                ? `border-2 !border-red-600 dark:!border-red-500 bg-slate-50 dark:bg-slate-700 focus:ring-red-500/60 ${error && isPulsing ? ERROR_MOTION_CLASS : ''}` 
+                ? 'border-2 border-red-500 bg-slate-50 dark:bg-slate-700' 
                 : SELECT_INPUT_BASE_CLASS
             }`
         }
@@ -378,60 +163,30 @@ const SelectConDropdown = ({ label, name, value, onChange, options, error, disab
           </svg>
         </div>
       </button>
-      <AnimatedInlineMessage
-        show={Boolean(errorMessage)}
-        message={errorMessage}
-        wrapperClassName="mt-1"
-        messageClassName="text-xs text-red-600 dark:text-red-400"
-      />
       {open && (
         <div className="absolute z-50 mt-1 w-full rounded-xl border-2 border-[#2C4AAE] bg-white dark:bg-slate-800 shadow-xl max-h-48 overflow-auto">
-          {options.map((option) => {
-            const isSelected = value === option.value;
-            const markers = selectedIndexesByValue?.[String(option.value)] || (isSelected && selectedIndex !== null ? [selectedIndex] : []);
-            return (
-              <button
-                key={option.value}
-                type="button"
-                disabled={option.disabled}
-                onClick={() => {
-                  if (option.disabled) return;
-                  onChange({ target: { name, value: option.value } });
-                  setOpen(false);
-                }}
-                className={`w-full text-left px-4 py-2.5 text-sm transition-colors flex items-center justify-between ${
-                  isSelected
-                    ? 'bg-[#2C4AAE] text-white font-semibold'
-                    : option.disabled
-                    ? 'text-slate-400 dark:text-slate-500 cursor-not-allowed bg-slate-100 dark:bg-slate-800/80'
-                    : 'text-slate-700 dark:text-slate-300 hover:bg-[#2C4AAE] hover:text-white'
-                }`}
-              >
-                <span>{option.label}</span>
-                {markers.length > 0 && (
-                  <span className="inline-flex items-center gap-1">
-                    {markers.map((marker) => (
-                      <span key={marker} className="inline-flex items-center justify-center h-5 min-w-5 px-1 rounded-full bg-white text-[#2C4AAE] text-[11px] font-bold leading-none">
-                        {marker}
-                      </span>
-                    ))}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => {
+                onChange({ target: { name, value: option.value } });
+                setOpen(false);
+              }}
+              className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                value === option.value
+                  ? 'bg-[#2C4AAE] text-white font-semibold'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-[#2C4AAE] hover:text-white'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
         </div>
       )}
+      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
     </div>
   );
-};
-
-const obtenerNombreCompletoDocente = (docente) => {
-  if (!docente) return '';
-  // Si ya tiene nombre_completo, usarlo
-  if (docente.nombre_completo) return docente.nombre_completo;
-  // Si no, construir desde campos separados
-  return `${docente.nombres || ''} ${docente.apellido_paterno || ''} ${docente.apellido_materno || ''}`.trim();
 };
 
 const FilterDocentes = ({
@@ -453,8 +208,8 @@ const FilterDocentes = ({
   const selectedDocente = docentes.find((d) => String(d.id) === String(value));
 
   useEffect(() => {
-    if (selectedDocente) {
-      setSearchTerm(obtenerNombreCompletoDocente(selectedDocente));
+    if (selectedDocente?.nombre_completo) {
+      setSearchTerm(selectedDocente.nombre_completo);
     } else if (!value) {
       setSearchTerm('');
     }
@@ -474,7 +229,7 @@ const FilterDocentes = ({
 
   const filteredDocentes = docentes.filter((docente) => {
     const term = searchTerm.toLowerCase();
-    const nombre = obtenerNombreCompletoDocente(docente).toLowerCase();
+    const nombre = (docente.nombre_completo || '').toLowerCase();
     const ci = String(docente.ci || '').toLowerCase();
     return nombre.includes(term) || ci.includes(term);
   });
@@ -503,7 +258,7 @@ const FilterDocentes = ({
 
   const handleSelectDocente = (docente) => {
     onChange({ target: { name, value: docente.id } });
-    setSearchTerm(obtenerNombreCompletoDocente(docente));
+    setSearchTerm(docente.nombre_completo || '');
     setOpen(false);
   };
 
@@ -521,7 +276,7 @@ const FilterDocentes = ({
           disabled
             ? `cursor-not-allowed opacity-60 ${SELECT_INPUT_BASE_CLASS}`
             : error
-              ? 'border-2 !border-red-600 dark:!border-red-500 bg-slate-50 dark:bg-slate-700'
+              ? 'border-2 border-red-500 bg-slate-50 dark:bg-slate-700'
               : SELECT_INPUT_BASE_CLASS
         }`}
       >
@@ -557,11 +312,7 @@ const FilterDocentes = ({
 
       {open && !disabled && (
         <div className="absolute z-50 mt-2 w-full rounded-xl border-2 border-[#2C4AAE] bg-white dark:bg-slate-800 shadow-xl max-h-64 overflow-auto">
-          {docentes.length === 0 ? (
-            <div className="px-4 py-3 text-sm text-red-600 dark:text-red-400 text-center font-bold">
-              ⚠️ No hay docentes cargados
-            </div>
-          ) : filteredDocentes.length > 0 ? (
+          {filteredDocentes.length > 0 ? (
             filteredDocentes.map((docente) => (
               <button
                 key={docente.id}
@@ -569,7 +320,7 @@ const FilterDocentes = ({
                 onClick={() => handleSelectDocente(docente)}
                 className="w-full text-left px-4 py-3 text-sm transition-colors text-slate-700 dark:text-slate-300 hover:bg-[#2C4AAE] hover:text-white border-b border-slate-200 dark:border-slate-700 last:border-b-0"
               >
-                <div className="font-semibold">{obtenerNombreCompletoDocente(docente)}</div>
+                <div className="font-semibold">{docente.nombre_completo}</div>
               </button>
             ))
           ) : searchTerm ? (
@@ -578,11 +329,13 @@ const FilterDocentes = ({
             </div>
           ) : (
             <div className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400 text-center">
-              Escribe para buscar docentes ({docentes.length} disponibles)
+              Escribe para buscar docentes
             </div>
           )}
         </div>
       )}
+
+      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
     </div>
   );
 };
@@ -686,7 +439,7 @@ const FilterCarreras = ({
           disabled
             ? `cursor-not-allowed opacity-60 ${SELECT_INPUT_BASE_CLASS}`
             : error
-              ? 'border-2 !border-red-600 dark:!border-red-500 bg-slate-50 dark:bg-slate-700'
+              ? 'border-2 border-red-500 bg-slate-50 dark:bg-slate-700'
               : SELECT_INPUT_BASE_CLASS
         }`}
       >
@@ -745,12 +498,7 @@ const FilterCarreras = ({
         </div>
       )}
 
-      <AnimatedInlineMessage
-        show={Boolean(error)}
-        message={error || ''}
-        wrapperClassName="mt-1"
-        messageClassName="text-xs text-red-600 dark:text-red-400"
-      />
+      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
     </div>
   );
 };
@@ -944,41 +692,8 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
   const [crearNuevoDocente, setCrearNuevoDocente] = useState(false);
   const [bloquearCrearNuevoDocente, setBloquearCrearNuevoDocente] = useState(false);
   const [asignacionesExtra, setAsignacionesExtra] = useState([]);
-  const [indiceAsignacionActiva, setIndiceAsignacionActiva] = useState(0);
-  const rolDropdownRef = useRef(null);
-  const carreraDropdownRef = useRef(null);
-  const lastToastRef = useRef({});
-  const TOAST_DEBOUNCE_MS = 1500;
-  const showToastOnce = (msg) => {
-    try {
-      const last = lastToastRef.current[msg];
-      const now = Date.now();
-      if (last && (now - last) < TOAST_DEBOUNCE_MS) return;
-      lastToastRef.current[msg] = now;
-      toast.error(msg, { className: 'toast-brinco' });
-    } catch (e) {
-      // en caso de fallo, fallar silenciosamente mostrando el toast normal
-      toast.error(msg, { className: 'toast-brinco' });
-    }
-  };
-
-  const pulseFieldErrors = (fields = []) => {
-    if (!fields.length) return;
-
-    setErrorPulse((prev) => {
-      const next = { ...prev };
-      fields.forEach((field) => {
-        next[field] = (next[field] || 0) + 1;
-      });
-      return next;
-    });
-  };
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
-  const [errorPulse, setErrorPulse] = useState({});
-  const [addRoleButtonPulse, setAddRoleButtonPulse] = useState(0);
-  const [isAddRoleButtonPulsing, setIsAddRoleButtonPulsing] = useState(false);
-  const [showAddRoleTooltip, setShowAddRoleTooltip] = useState(false);
   const [abrirModalAlVolver, setAbrirModalAlVolver] = useState(false);
   const [vinculacionRapidaDocente, setVinculacionRapidaDocente] = useState(false);
 
@@ -992,8 +707,8 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCarrera, setSelectedCarrera] = useState('');
   
-  // Usuarios huerfanos: sin perfil o con cualquier rol docente sin docente vinculado
-  const esUsuarioHuerfano = (u) => !u?.perfil || (usuarioTieneRolDocente(u) && !usuarioTieneVinculoDocente(u));
+  // Usuarios huerfanos: sin perfil o con rol docente sin docente vinculado
+  const esUsuarioHuerfano = (u) => !u?.perfil || (u.perfil?.rol === 'docente' && !u.perfil?.docente_id);
   const hayOrfanos = usuarios.length > 0 && usuarios.some(esUsuarioHuerfano);
 
   useEffect(() => {
@@ -1064,7 +779,6 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
           password_confirm: datosCrearUsuario?.password_confirm || '',
         });
         setAsignacionesExtra([]);
-        setIndiceAsignacionActiva(0);
         setCrearNuevoDocente(false);
         setBloquearCrearNuevoDocente(false);
         setErrors({});
@@ -1112,7 +826,6 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
         setCrearNuevoDocente(false);
         setBloquearCrearNuevoDocente(Boolean(docenteRetornado?.id));
         setAsignacionesExtra([]);
-        setIndiceAsignacionActiva(0);
         sessionStorage.removeItem('datosCrearUsuario');
         sessionStorage.removeItem('docenteRetornadoDesdeUsuarios');
         sessionStorage.removeItem('flujoDocenteDesdeUsuarios');
@@ -1174,11 +887,10 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
 
   const docentesActivosDisponibles = docentesDisponibles.filter((docente) => docente?.activo !== false);
   const docentesPorId = new Map(docentes.map((docente) => [String(docente.id), docente]));
-  const usuarioEsDocenteSinVinculo = (usuario) => Boolean(usuarioTieneRolDocente(usuario) && !usuarioTieneVinculoDocente(usuario));
 
   const usuarioTieneDocenteInactivo = (usuario) => {
-    if (!usuarioTieneRolDocente(usuario)) return false;
-    const docenteId = usuario?.perfil?.docente_id || usuario?.perfil?.docente;
+    if (usuario?.perfil?.rol !== 'docente') return false;
+    const docenteId = usuario?.perfil?.docente_id;
     if (!docenteId) return false;
     const docente = docentesPorId.get(String(docenteId));
     return Boolean(docente && docente.activo === false);
@@ -1238,25 +950,25 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
         return;
       }
       
-      const carreraDefault = '';
+      // Admin de carrera: bloquear con su propia carrera
+      const esAdminCarrera = user?.perfil?.rol === 'iiisyp' && !user?.is_superuser;
+      const carreraDefault = esAdminCarrera ? user?.perfil?.carrera : '';
       
-const initialData = {
-  username: '',
-  email: '',
-  nombre_completo: '',
-  first_name: '',
-  last_name: '',
-  ci: '',
-  rol: '',
-  carrera: carreraDefault,
-  docente: '',
-  docente_data: null,
-  password: '',
-  password_confirm: '',
-};
+      const initialData = {
+        username: '',
+        email: '',
+        nombre_completo: '',
+        first_name: '',
+        last_name: '',
+        rol: 'docente',
+        carrera: carreraDefault,
+        docente: '',
+        docente_data: null,
+        password: '',
+        password_confirm: '',
+      };
       setFormData(initialData);
       setAsignacionesExtra([]);
-      setIndiceAsignacionActiva(0);
       setVinculacionRapidaDocente(false);
       setCrearNuevoDocente(false);
       setBloquearCrearNuevoDocente(false);
@@ -1270,32 +982,11 @@ const initialData = {
     if (isCreating) {
       setVinculacionRapidaDocente(false);
       setAsignacionesExtra([]);
-      setIndiceAsignacionActiva(0);
       setBloquearCrearNuevoDocente(false);
     }
     setIsCreating(!isCreating);
     setUsuarioEditando(null); // Ensure we are not in edit mode
   };
-
-  const triggerAddRoleButtonError = () => {
-    setAddRoleButtonPulse((prev) => prev + 1);
-  };
-
-  useEffect(() => {
-    if (!addRoleButtonPulse) {
-      setIsAddRoleButtonPulsing(false);
-      return;
-    }
-
-    setIsAddRoleButtonPulsing(false);
-    const frameId = requestAnimationFrame(() => setIsAddRoleButtonPulsing(true));
-    const timeoutId = setTimeout(() => setIsAddRoleButtonPulsing(false), 260);
-
-    return () => {
-      cancelAnimationFrame(frameId);
-      clearTimeout(timeoutId);
-    };
-  }, [addRoleButtonPulse]);
 
   const abrirModalEditar = (usuario) => {
     sessionStorage.removeItem('datosEditarUsuario');
@@ -1394,6 +1085,12 @@ const initialData = {
       return updated;
     });
 
+    if (name === 'carrera') {
+      setAsignacionesExtra((prev) => prev.map((item) => (
+        item.rol === 'docente' ? { ...item, carrera: value } : item
+      )));
+    }
+
     if (name === 'docente' && value) {
       setCrearNuevoDocente(false);
     }
@@ -1409,10 +1106,6 @@ const initialData = {
         if (!prev?.[name]) return prev;
         delete next[name];
       }
-      // Limpiar error de asignaciones al cambiar carrera
-      if (name === 'carrera') {
-        delete next.asignaciones;
-      }
       return next;
     });
   };
@@ -1421,27 +1114,22 @@ const initialData = {
     if (vinculacionRapidaDocente) return;
 
     const newRol = e.target.value;
+    const esAdminCarrera = user?.perfil?.rol === 'iiisyp' && !user?.is_superuser;
 
-    setErrors((prev) => {
-      const next = { ...prev };
-      next.rol = null;
-      next.carrera = null;
-      next.docente = null;
-      // Limpiar errores de asignaciones al cambiar rol
-      delete next.asignaciones;
-      return next;
-    });
+    setErrors((prev) => ({ ...prev, rol: null }));
     
     setFormData(prev => ({
       ...prev,
       rol: newRol,
-      carrera: prev.carrera,
+      // Admin de carrera siempre mantiene su carrera, otros roles la pierden al cambiar
+      carrera: (newRol === 'director' || newRol === 'jefe_estudios' || newRol === 'iiisyp') 
+        ? (esAdminCarrera ? user?.perfil?.carrera : prev.carrera) 
+        : (newRol === 'docente' ? prev.carrera : ''),
       docente: newRol !== 'docente' ? '' : prev.docente,
       docente_data: newRol !== 'docente' ? null : prev.docente_data,
     }));
     if (newRol !== 'docente') {
       setCrearNuevoDocente(false);
-      setVinculacionRapidaDocente(false);
     }
   };
 
@@ -1468,232 +1156,112 @@ const initialData = {
   };
 
   const handleAsignacionChange = (index, field, value) => {
-    // Solo actualizamos el valor sin validación en tiempo real
-    // La validación ocurre solo en handleSubmit
-    setAsignacionesExtra((prev) => {
-      if (index !== 0) return prev;
-      return prev.map((item, itemIndex) => (itemIndex !== index ? item : { ...item, [field]: value }));
-    });
-
-    // Limpiar error de asignaciones cuando se edita la segunda asignación
-    setErrors((prev) => {
-      if (prev?.asignaciones) {
-        const next = { ...prev };
-        delete next.asignaciones;
-        return next;
+    setAsignacionesExtra((prev) => prev.map((item, itemIndex) => {
+      if (itemIndex !== index) return item;
+      if (field === 'rol') {
+        return {
+          ...item,
+          rol: value,
+          carrera: value === 'docente' ? (formData.carrera || '') : item.carrera,
+          docente: value === 'docente' ? item.docente : '',
+        };
       }
-      return prev;
-    });
-  };
-
-  const handleRolSeleccionActual = (e) => {
-    if (indiceAsignacionActiva === 0) {
-      handleRolChange(e);
-      return;
-    }
-
-    const newRol = e.target.value;
-    handleAsignacionChange(0, 'rol', newRol);
-    setErrors((prev) => ({
-      ...prev,
-      rol: null,
-      carrera: null,
-      asignaciones: null,
-      docente: null,
-    }));
-  };
-
-  const handleCarreraSeleccionActual = (e) => {
-    if (indiceAsignacionActiva === 0) {
-      handleChange(e);
-      return;
-    }
-
-    const newCarrera = e.target.value;
-    handleAsignacionChange(0, 'carrera', newCarrera);
-    setErrors((prev) => ({
-      ...prev,
-      rol: null,
-      carrera: null,
-      asignaciones: null,
+      if (field === 'carrera' && item.rol === 'docente') {
+        return item;
+      }
+      return { ...item, [field]: value };
     }));
   };
 
   const MAX_ASIGNACIONES_TOTAL = 2;
   const totalAsignaciones = 1 + asignacionesExtra.length;
-  const primeraAsignacionCompleta = Boolean(
-    String(formData.rol || '').trim() && String(formData.carrera || '').trim()
-  );
-  const puedeAgregarAsignacion = primeraAsignacionCompleta && totalAsignaciones < MAX_ASIGNACIONES_TOTAL;
+  const puedeAgregarAsignacion = totalAsignaciones < MAX_ASIGNACIONES_TOTAL;
 
   const agregarAsignacion = () => {
+    if (asignacionesExtra.length > 0) {
+      setAsignacionesExtra([]);
+      return;
+    }
     if (!puedeAgregarAsignacion) return;
-    setAsignacionesExtra((prev) => {
-      if (prev.length >= 1) return prev;
-      return [...prev, { rol: '', carrera: '' }];
-    });
-    setIndiceAsignacionActiva(1);
-    setTimeout(() => {
-      rolDropdownRef.current?.open?.();
-      carreraDropdownRef.current?.open?.();
-    }, 0);
+    setAsignacionesExtra((prev) => ([...prev, { rol: 'docente', carrera: formData.carrera || '', docente: '' }]));
   };
 
   const eliminarAsignacion = (index) => {
     setAsignacionesExtra((prev) => prev.filter((_, itemIndex) => itemIndex !== index));
-    setIndiceAsignacionActiva(0);
-    // Limpiar errores de asignaciones cuando se elimina la segunda asignación
-    setErrors((prev) => {
-      const next = { ...prev };
-      delete next.asignaciones;
-      return next;
-    });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
-    const validationErrors = {};
-    const camposFaltantes = [];
-    const usernameNormalizado = String(formData.username || '').trim();
-    const nombreCompletoNormalizado = String(formData.nombre_completo || `${formData.first_name || ''} ${formData.last_name || ''}`).trim();
-    const emailNormalizado = String(formData.email || '').trim();
-    const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNormalizado);
-    const rolNormalizado = String(formData.rol || '').trim();
-    const carreraNormalizada = String(formData.carrera || '').trim();
-
-    if (!usernameNormalizado) {
-      validationErrors.username = 'Debe ingresar un usuario.';
-      camposFaltantes.push('Usuario');
-    }
-
-    if (mostrarNombreCompletoCreacion && !nombreCompletoNormalizado) {
-      validationErrors.nombre_completo = 'Debe ingresar nombre y apellido.';
-      camposFaltantes.push('Nombre completo');
-    }
-
-    if (!emailNormalizado) {
-      validationErrors.email = 'No debe estar vacío.';
-      camposFaltantes.push('Email');
-    } else if (!emailValido) {
-      validationErrors.email = 'Ingresa un correo electrónico válido.';
-      camposFaltantes.push('Email');
-    }
-
-    if (!rolNormalizado) {
-      validationErrors.rol = 'Debe seleccionar un rol.';
-      camposFaltantes.push('Rol');
-    }
-
-    if (!carreraNormalizada) {
-      validationErrors.carrera = 'Debe seleccionar una carrera.';
-      camposFaltantes.push('Carrera');
-    }
-
-    const ciNormalizado = (formData.ci || '').trim();
-    if (mostrarCiCreacion && !ciNormalizado) {
-      validationErrors.ci = ['El C.I. es obligatorio.'];
-      camposFaltantes.push('C.I.');
-    }
-
-    if (Object.keys(validationErrors).length > 0) {
-      pulseFieldErrors(Object.keys(validationErrors));
-      setErrors(validationErrors);
-      const faltanSoloRolYCarrera = !rolNormalizado && !carreraNormalizada && Object.keys(validationErrors).length === 2;
-      showToastOnce(
-        faltanSoloRolYCarrera
-          ? 'Debes seleccionar un rol y una carrera para poder continuar.'
-          : 'Completa los campos obligatorios marcados en rojo.'
-      );
-      return;
-    }
-
     setIsSubmitting(true);
     setErrors({});
 
-    const asignacionesSeleccionadas = [
-      { rol: formData.rol, carrera: formData.carrera },
-      ...asignacionesExtra,
-    ];
+    const esUsuarioSistema = ['iiisyp', 'director', 'jefe_estudios'].includes(formData.rol);
+    const ciNormalizado = (formData.ci || '').trim();
 
-    const combinacionKey = (asignacion) => `${String(asignacion.rol || '').trim()}::${String(asignacion.carrera || '').trim()}`;
-
-    if (!formData.rol || !carreraNormalizada) {
-      pulseFieldErrors(['rol', 'carrera']);
+    if (esUsuarioSistema && !ciNormalizado) {
       setErrors((prev) => ({
         ...prev,
-        rol: !formData.rol ? ['Debe seleccionar un rol.'] : prev.rol,
-        carrera: !carreraNormalizada ? ['Debe seleccionar una carrera.'] : prev.carrera,
+        ci: ['El C.I. es obligatorio para este tipo de usuario.'],
       }));
-      toast.error('La primera selección de rol y carrera es obligatoria.');
+      toast.error('El C.I. es obligatorio para este tipo de usuario.');
       setIsSubmitting(false);
       return;
     }
 
-    if (asignacionesExtra.length > 0) {
-      const segunda = asignacionesExtra[0];
-      const segundaRol = String(segunda?.rol || '').trim();
-      const segundaCarrera = String(segunda?.carrera || '').trim();
+    const resolverDocenteId = () => {
+      const valorDocente = formData.docente;
+      const valorNormalizado = String(valorDocente ?? '').trim();
 
-      if (!segundaRol || !segundaCarrera) {
-        pulseFieldErrors(['rol', 'carrera', 'asignaciones']);
-        setErrors((prev) => ({
-          ...prev,
-          asignaciones: ['La segunda selección de rol y carrera es obligatoria cuando está habilitada.'],
-        }));
-        toast.error('Completa la segunda selección de rol y carrera.');
-        setIsSubmitting(false);
-        return;
-      }
-    }
-
-    const primeraAsignacion = {
-      rol: String(formData.rol || '').trim(),
-      carrera: String(formData.carrera || '').trim(),
-    };
-    const segundaAsignacion = asignacionesExtra[0]
-      ? {
-          rol: String(asignacionesExtra[0].rol || '').trim(),
-          carrera: String(asignacionesExtra[0].carrera || '').trim(),
+      if (valorNormalizado) {
+        const idNumerico = Number(valorNormalizado);
+        if (!Number.isNaN(idNumerico) && idNumerico > 0) {
+          const existeDocente = docentesDisponibles.some((docente) => String(docente.id) === String(idNumerico));
+          return existeDocente ? idNumerico : null;
         }
+
+        const encontradoPorId = docentesDisponibles.find((docente) => String(docente.id) === valorNormalizado);
+        if (encontradoPorId) {
+          const idEncontrado = Number(encontradoPorId.id);
+          return Number.isNaN(idEncontrado) ? encontradoPorId.id : idEncontrado;
+        }
+      }
+
+      const nombreCompletoNormalizado = String(formData.nombre_completo || '').trim().toLowerCase();
+      if (nombreCompletoNormalizado) {
+        const encontradoPorNombre = docentesDisponibles.find((docente) =>
+          String(docente.nombre_completo || '').trim().toLowerCase() === nombreCompletoNormalizado
+        );
+        if (encontradoPorNombre) {
+          const idEncontrado = Number(encontradoPorNombre.id);
+          return Number.isNaN(idEncontrado) ? encontradoPorNombre.id : idEncontrado;
+        }
+      }
+
+      return null;
+    };
+
+    const docenteId = resolverDocenteId();
+    const docenteTemporal = formData.docente_data && typeof formData.docente_data === 'object'
+      ? formData.docente_data
       : null;
-    const esRolMando = (rol) => ['director', 'jefe_estudios'].includes(String(rol || '').trim());
+    const carreraDocente = formData.carrera || docenteTemporal?.carrera || '';
 
-    if (segundaAsignacion) {
-      const mismaCombinacion = primeraAsignacion.rol === segundaAsignacion.rol && primeraAsignacion.carrera === segundaAsignacion.carrera;
-      if (mismaCombinacion) {
-        pulseFieldErrors(['asignaciones']);
-        setErrors((prev) => ({
-          ...prev,
-          asignaciones: [MENSAJE_ASIGNACION_INVALIDA],
-        }));
-        showToastOnce(MENSAJE_ASIGNACION_INVALIDA);
-        setIsSubmitting(false);
-        return;
-      }
-
-      const mismaCarrera = primeraAsignacion.carrera === segundaAsignacion.carrera;
-      const ambasAutoridad = esRolMando(primeraAsignacion.rol) && esRolMando(segundaAsignacion.rol);
-      if (mismaCarrera && ambasAutoridad) {
-        pulseFieldErrors(['asignaciones']);
-        setErrors((prev) => ({
-          ...prev,
-          asignaciones: [MENSAJE_CONFLICTO_AUTORIDAD],
-        }));
-        showToastOnce(MENSAJE_CONFLICTO_AUTORIDAD);
-        setIsSubmitting(false);
-        return;
-      }
-    }
-
-    const combinaciones = asignacionesSeleccionadas.map(combinacionKey);
-    // Solo validar duplicados si hay más de una asignación
-    if (asignacionesSeleccionadas.length > 1 && new Set(combinaciones).size !== combinaciones.length) {
+    if (formData.rol === 'docente' && !carreraDocente) {
       setErrors((prev) => ({
         ...prev,
-        asignaciones: [MENSAJE_ASIGNACION_INVALIDA],
+        carrera: ['Debe seleccionar una carrera para el docente.'],
       }));
-      toast.error(MENSAJE_ASIGNACION_INVALIDA);
+      toast.error('Debe seleccionar una carrera para el docente.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (formData.rol === 'docente' && !docenteId && !docenteTemporal) {
+      setErrors((prev) => ({
+        ...prev,
+        docente: ['Debe seleccionar un docente para vincular.'],
+      }));
+      toast.error('Debe seleccionar o registrar un docente para vincular.');
       setIsSubmitting(false);
       return;
     }
@@ -1708,22 +1276,32 @@ const initialData = {
       password_confirm: formData.password_confirm,
     };
 
-    payload.asignaciones = asignacionesExtra.map((item) => ({
-      rol: String(item.rol || '').trim(),
-      carrera: String(item.carrera || '').trim(),
-    }));
+    if (asignacionesExtra.length > 0) {
+      payload.asignaciones = asignacionesExtra;
+    }
 
-    payload.carrera = carreraNormalizada;
-
-    // Enviar CI siempre
-    payload.ci = ciNormalizado;
+    // Admin, Director y Jefe de Estudios deben enviar carrera
+    if (formData.rol === 'iiisyp' || formData.rol === 'director' || formData.rol === 'jefe_estudios') {
+      payload.carrera = formData.carrera;
+      payload.ci = ciNormalizado;
+    }
+    if (formData.rol === 'docente') {
+      payload.carrera = carreraDocente;
+      if (docenteTemporal) {
+        payload.docente_data = {
+          ...docenteTemporal,
+          carrera: carreraDocente,
+        };
+      } else {
+        payload.docente = docenteId;
+      }
+    }
 
     try {
       await api.post('/usuarios/', payload);
       toast.success('Usuario creado correctamente');
       setIsCreating(false);
       setAsignacionesExtra([]);
-      setIndiceAsignacionActiva(0);
       sessionStorage.removeItem('docenteTemporalDesdeUsuarios');
       sessionStorage.removeItem('flujoDocenteDesdeUsuarios');
       cargarDatos();
@@ -1738,10 +1316,6 @@ const initialData = {
             || backendMessage.includes('ya tiene un Director asignado')
             || backendMessage.includes('ya tiene un Jefe de Estudios asignado');
 
-          const fieldsToPulse = esErrorDeCargoPorCarrera
-            ? [...new Set([...Object.keys(apiErrors), 'rol'])]
-            : Object.keys(apiErrors);
-          pulseFieldErrors(fieldsToPulse);
           setErrors(
             esErrorDeCargoPorCarrera
               ? { ...apiErrors, rol: [backendMessage] }
@@ -1781,41 +1355,13 @@ const initialData = {
 
   const nombreCompletoError = Array.isArray(errors?.nombre_completo)
     ? errors.nombre_completo[0]
-    : (typeof errors?.nombre_completo === 'string'
-      ? errors.nombre_completo
-      : (Array.isArray(errors?.first_name)
-        ? errors.first_name[0]
-        : (Array.isArray(errors?.last_name)
-          ? errors.last_name[0]
-          : (typeof errors?.first_name === 'string'
-            ? errors.first_name
-            : (typeof errors?.last_name === 'string' ? errors.last_name : null)))));
-
-  const asignacionesError = Array.isArray(errors?.asignaciones)
-    ? errors.asignaciones[0]
-    : (typeof errors?.asignaciones === 'string' ? errors.asignaciones : null);
-
-  const obtenerRolLabel = (rolValue) => roles.find((item) => item.value === rolValue)?.label || rolValue || 'Sin rol';
-  const obtenerCarreraLabel = (carreraValue) => carreras.find((item) => String(item.id) === String(carreraValue))?.nombre || 'Sin carrera';
-
-  const asignacionesActivas = [
-    { rol: formData.rol || '', carrera: formData.carrera || '' },
-    ...asignacionesExtra,
-  ];
-  const crearMarcadoresSeleccion = (campo) => asignacionesActivas.reduce((acc, item, index) => {
-    const key = String(item?.[campo] || '').trim();
-    if (!key) return acc;
-    acc[key] = [...(acc[key] || []), index + 1];
-    return acc;
-  }, {});
-  const rolSelectionMarkers = crearMarcadoresSeleccion('rol');
-  const carreraSelectionMarkers = crearMarcadoresSeleccion('carrera');
-  const rolSeleccionCreacion = indiceAsignacionActiva === 0
-    ? String(formData.rol || '').trim()
-    : String(asignacionesExtra[0]?.rol || '').trim();
-  const mostrarCarreraCreacion = Boolean(rolSeleccionCreacion) || indiceAsignacionActiva === 1;
-  const mostrarNombreCompletoCreacion = true;
-  const mostrarCiCreacion = true;
+    : (Array.isArray(errors?.first_name)
+      ? errors.first_name[0]
+      : (Array.isArray(errors?.last_name)
+        ? errors.last_name[0]
+        : (typeof errors?.first_name === 'string'
+          ? errors.first_name
+          : (typeof errors?.last_name === 'string' ? errors.last_name : null))));
 
   if (loading) {
     return (
@@ -1878,7 +1424,7 @@ const initialData = {
           >
             <div className={`flex items-center justify-center w-full h-full ${crearNuevoDocente && formData.rol === 'docente' ? 'gap-6' : ''}`}>
               {/* Modal Usuario - mantiene su tamaño original */}
-              <div className={`bg-white dark:bg-slate-800 rounded-2xl shadow-2xl animate-fade-in transition-all duration-300 max-h-[90vh] flex flex-col ${crearNuevoDocente && formData.rol === 'docente' ? 'max-w-2xl w-full' : 'max-w-2xl w-full mx-4'}`}>
+              <div className={`bg-white dark:bg-slate-800 rounded-2xl shadow-2xl animate-fade-in transition-all duration-300 ${crearNuevoDocente && formData.rol === 'docente' ? 'max-w-2xl w-full' : 'max-w-2xl w-full mx-4'}`} style={{ overflow: 'visible' }}>
                 {/* Header azul */}
                 <div className="bg-[#2C4AAE] dark:bg-[#1a3a8a] px-6 py-4 rounded-t-2xl">
                   <h2 className="text-xl font-bold text-white">
@@ -1886,180 +1432,250 @@ const initialData = {
                   </h2>
                 </div>
 
-              <form onSubmit={handleSubmit} noValidate>
-                  <div className="p-6 overflow-y-auto">
+              <form onSubmit={handleSubmit}>
+                <div className="p-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Fila 1: Usuario - Nombre completo */}
-                    <InputField label="Usuario" name="username" value={formData.username || ''} onChange={handleChange} error={errors.username} required pulse={errorPulse.username || 0} />
-                    {mostrarNombreCompletoCreacion ? (
+                    {/* Fila 1 */}
+                    <InputField label="Usuario" name="username" value={formData.username || ''} onChange={handleChange} error={errors.username} />
+                    <InputField
+                      label="Nombre completo"
+                      name="nombre_completo"
+                      value={formData.nombre_completo || ''}
+                      onChange={handleChange}
+                      error={nombreCompletoError}
+                    />
+
+                    {/* Fila 2: Carrera - Vincular docente */}
+                    <div>
+                      {(formData.rol === 'docente' || formData.rol === 'iiisyp' || formData.rol === 'director' || formData.rol === 'jefe_estudios') ? (
+                        <FilterCarreras
+                          label="Carrera"
+                          name="carrera"
+                          value={formData.carrera || ''}
+                          onChange={handleChange}
+                          carreras={carreras}
+                          error={errors.carrera}
+                          disabled={formData.rol !== 'docente' && user?.perfil?.rol === 'iiisyp' && !user?.is_superuser}
+                          required={formData.rol !== 'docente'}
+                          placeholder="Buscar carrera..."
+                        />
+                      ) : (
+                        <div />
+                      )}
+                    </div>
+
+                    <div>
+                      <div className="flex items-start gap-2">
+                        <div className="flex-1 min-w-0">
+                          <SelectConDropdown
+                            label="Rol"
+                            name="rol"
+                            value={formData.rol || 'docente'}
+                            onChange={handleRolChange}
+                            onInteract={() => setErrors((prev) => ({ ...prev, rol: null }))}
+                            options={roles.map(rol => ({ value: rol.value, label: rol.label }))}
+                            error={errors.rol}
+                            disabled={vinculacionRapidaDocente}
+                            required
+                            standardStyle
+                          />
+                        </div>
+                        <div className="shrink-0 pt-[28px]">
+                          <button
+                            type="button"
+                            onClick={agregarAsignacion}
+                            disabled={!puedeAgregarAsignacion && asignacionesExtra.length === 0}
+                            style={STATIC_CONTROL_STYLE}
+                            className={`h-[52px] w-16 rounded-2xl border-2 border-[#2C4AAE] text-white font-black text-2xl leading-none shadow-sm flex items-center justify-center transition-none transform-none hover:shadow-none ${(puedeAgregarAsignacion || asignacionesExtra.length > 0) ? 'bg-[#2C4AAE]' : 'bg-slate-400 cursor-not-allowed opacity-70'}`}
+                            title={asignacionesExtra.length > 0 ? 'Cerrar asignación adicional' : 'Agregar asignación adicional'}
+                          >
+                            {asignacionesExtra.length > 0 ? '−' : '+'}
+                          </button>
+                        </div>
+                      </div>
+                      {vinculacionRapidaDocente && (
+                        <p className="text-xs text-blue-600 dark:text-blue-300 mt-1">
+                          Vinculo rapido desde "Sin Cuenta": rol bloqueado en Docente.
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      {formData.rol === 'docente' ? (
+                        <div>
+                          <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
+                            Vincular a Docente Existente
+                          </label>
+                          <div className="flex items-start gap-2">
+                            <div className="flex-1">
+                              <FilterDocentes
+                                name="docente"
+                                value={formData.docente}
+                                onChange={handleChange}
+                                docentes={docentesActivosDisponibles}
+                                error={docenteError}
+                                disabled={vinculacionRapidaDocente}
+                                placeholder="Buscar docente..."
+                              />
+                            </div>
+                            {!vinculacionRapidaDocente && (
+                              <button
+                                type="button"
+                                disabled={bloquearCrearNuevoDocente || formData.rol !== 'docente'}
+                                onClick={() => {
+                                  if (bloquearCrearNuevoDocente || formData.rol !== 'docente') return;
+                                  handleCrearNuevoDocente();
+                                }}
+                                title="Crear nuevo registro de docente"
+                                className="h-[52px] w-[52px] bg-[#2C4AAE] hover:bg-[#1a3a8a] disabled:bg-slate-400 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center justify-center flex-shrink-0"
+                              >
+                                <span className="text-xl leading-none">+</span>
+                              </button>
+                            )}
+                          </div>
+                          {formData.rol !== 'docente' && (
+                            <p className="text-xs text-amber-500 dark:text-amber-300 mt-1">
+                              No disponible para este rol
+                            </p>
+                          )}
+                        </div>
+                      ) : (formData.rol === 'iiisyp' || formData.rol === 'director' || formData.rol === 'jefe_estudios') ? (
+                        <div>
+                          <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">C.I.</label>
+                          <input
+                            type="text"
+                            name="ci"
+                            value={formData.ci || ''}
+                            onChange={handleChange}
+                            className={`w-full px-4 py-3 rounded-xl border-2 bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                              ciError ? 'border-red-500 dark:border-red-500' : 'border-slate-400 dark:border-slate-600'
+                            }`}
+                          />
+                          {ciError && <p className="text-xs text-red-600 mt-1">{ciError}</p>}
+                        </div>
+                      ) : (
+                        <div />
+                      )}
+                    </div>
+
+                    {(formData.rol === 'docente' || formData.rol === 'iiisyp' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && !crearNuevoDocente ? (
                       <InputField
-                        label="Nombre completo"
-                        name="nombre_completo"
-                        value={formData.nombre_completo || ''}
+                        label="Email"
+                        name="email"
+                        type="email"
+                        value={formData.email || ''}
                         onChange={handleChange}
-                        error={nombreCompletoError}
-                        required
-                        pulse={errorPulse.nombre_completo || errorPulse.first_name || errorPulse.last_name || 0}
+                        error={errors.email}
                       />
                     ) : (
                       <div />
                     )}
 
-                    {/* Fila 2: Rol (+) - Carrera o Email */}
-                    <div className="flex items-center gap-3">
-                      <div className="flex-1 min-w-0">
-                        <SelectConDropdown
-                          label="Rol"
-                          name="rol"
-                          value={indiceAsignacionActiva === 0 ? (formData.rol || '') : (asignacionesExtra[0]?.rol || '')}
-                          onChange={handleRolSeleccionActual}
-                          onInteract={() => setErrors((prev) => ({ ...prev, rol: null }))}
-                          options={roles.map(rol => ({ value: rol.value, label: rol.label }))}
-                          error={errors.rol}
-                          disabled={vinculacionRapidaDocente}
-                          required
-                          standardStyle
-                          selectedIndex={indiceAsignacionActiva === 0 ? 1 : 2}
-                          selectedIndexesByValue={rolSelectionMarkers}
-                          forwardedRef={rolDropdownRef}
-                          pulse={errorPulse.rol || 0}
-                        />
+                    {/* Fila 4 (Docente): Contraseña inicial - Asignaciones adicionales */}
+                    {formData.rol === 'docente' && !crearNuevoDocente && (
+                        <div>
+                        <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Contraseña inicial</label>
+                        <div className="w-full px-4 py-3 rounded-xl border-2 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 font-mono font-semibold">
+                          {formData.username ? `${formData.username}UABJB` : 'usuarioUABJB'}
+                        </div>
                       </div>
+                    )}
 
-                      <div className="relative shrink-0 pt-[28px]">
-                        {showAddRoleTooltip && (
-                          <div className="absolute left-1/2 bottom-full z-20 -translate-x-1/2 translate-y-[14px]">
-                            <div className="relative rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-lg whitespace-nowrap dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">
-                              Asignar un solo rol
-                              <div className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-l-[7px] border-r-[7px] border-t-[8px] border-l-transparent border-r-transparent border-t-slate-300 dark:border-t-slate-600" />
-                              <div className="absolute left-1/2 top-[calc(100%-1px)] h-0 w-0 -translate-x-1/2 border-l-[7px] border-r-[7px] border-t-[8px] border-l-transparent border-r-transparent border-t-white dark:border-t-slate-800" />
+                    {(formData.rol === 'iiisyp' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && !crearNuevoDocente && (
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Contraseña inicial</label>
+                        <div className="w-full px-4 py-3 rounded-xl border-2 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 font-mono font-semibold">
+                          {formData.username ? `${formData.username}UABJB` : 'usuarioUABJB'}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* C.I. para admin/director/jefe_estudios - abajo de Rol */}
+                    {false && (formData.rol === 'iiisyp' || formData.rol === 'director' || formData.rol === 'jefe_estudios') && (
+                      <div className="md:col-span-2">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">C.I.</label>
+                            <input
+                              type="text"
+                              name="ci"
+                              value={formData.ci || ''}
+                              onChange={handleChange}
+                              className={`w-full px-4 py-3 rounded-xl border-2 bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                ciError ? 'border-red-500 dark:border-red-500' : 'border-slate-400 dark:border-slate-600'
+                              }`}
+                            />
+                            {ciError && <p className="text-xs text-red-600 mt-1">{ciError}</p>}
+                          </div>
+                          <div>
+                            <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Contraseña inicial</label>
+                            <div className="w-full px-4 py-3 rounded-xl border-2 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 font-mono font-semibold">
+                              {formData.username ? `${formData.username}UABJB` : 'usuarioUABJB'}
                             </div>
-                          </div>
-                        )}
-                        <button
-                          type="button"
-                          onMouseEnter={() => setShowAddRoleTooltip(true)}
-                          onMouseLeave={() => setShowAddRoleTooltip(false)}
-                          onFocus={() => setShowAddRoleTooltip(true)}
-                          onBlur={() => setShowAddRoleTooltip(false)}
-                          onClick={() => {
-                            if (!puedeAgregarAsignacion) {
-                              pulseFieldErrors(['rol', 'carrera']);
-                              triggerAddRoleButtonError();
-                              toast.error('No puedes asignar otro rol porque faltan completar Rol y Carrera.', { className: 'toast-brinco', position: 'top-right' });
-                              return;
-                            }
-                            agregarAsignacion();
-                          }}
-                          style={
-                            !puedeAgregarAsignacion && isAddRoleButtonPulsing
-                              ? { transition: 'none', transform: 'none' }
-                              : STATIC_CONTROL_STYLE
-                          }
-                          className={`h-[52px] w-16 rounded-2xl border-2 text-white font-black text-2xl leading-none shadow-sm flex items-center justify-center transition-none transform-none hover:shadow-none ${
-                            !puedeAgregarAsignacion && isAddRoleButtonPulsing
-                              ? `${ERROR_MOTION_CLASS} border-red-600 dark:border-red-500 bg-[#2C4AAE] dark:bg-[#2C4AAE]`
-                              : 'border-[#2C4AAE] bg-[#2C4AAE] dark:border-[#4f6fd6] dark:bg-[#2C4AAE]'
-                          }`}
-                          aria-label="Agregar segunda asignación"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Fila 2b: Carrera */}
-                    <div>
-                      <SelectConDropdown
-                        label="Carrera"
-                        name="carrera"
-                        value={indiceAsignacionActiva === 0 ? (formData.carrera || '') : (asignacionesExtra[0]?.carrera || '')}
-                        onChange={handleCarreraSeleccionActual}
-                        options={carreras.map(c => ({ value: c.id, label: c.nombre }))}
-                        error={errors.carrera}
-                        required
-                        standardStyle
-                        selectedIndex={indiceAsignacionActiva === 0 ? 1 : 2}
-                        selectedIndexesByValue={carreraSelectionMarkers}
-                        forwardedRef={carreraDropdownRef}
-                        pulse={errorPulse.carrera || 0}
-                      />
-                    </div>
-
-                    {asignacionesExtra.length > 0 && (
-                      <div className="md:col-span-2 animate-panel-asignacion overflow-hidden">
-                        <div className="rounded-xl border border-slate-300 dark:border-slate-600 px-4 py-3 bg-slate-50 dark:bg-slate-700/30">
-                          <div className="mb-2 flex items-center justify-between gap-3">
-                            <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">Panel de asignaciones activas</p>
-                            <button
-                              type="button"
-                              onClick={() => eliminarAsignacion(0)}
-                              className="h-9 px-3 rounded-xl border-2 border-red-500 text-red-600 dark:text-red-300 text-xs font-bold hover:bg-red-50 dark:hover:bg-red-900/20 shrink-0"
-                            >
-                              Quitar selección 2
-                            </button>
-                          </div>
-                          <div className="flex flex-col gap-2">
-                            {asignacionesActivas.map((item, index) => (
-                              <span
-                                key={`${item.rol || 'sin-rol'}-${item.carrera || 'sin-carrera'}-${index}`}
-                                className="inline-flex items-center gap-2 rounded-full border border-[#2C4AAE]/30 bg-[#2C4AAE]/10 px-3 py-1 text-xs font-semibold text-[#2C4AAE] dark:text-blue-300"
-                              >
-                                {`#${index + 1} ${obtenerRolLabel(item.rol)} - ${obtenerCarreraLabel(item.carrera)}`}
-                              </span>
-                            ))}
                           </div>
                         </div>
                       </div>
                     )}
 
-                    {/* Fila 3: Email - Cargo profesional / CI */}
-                    <InputField
-                      label="Email"
-                      name="email"
-                      type="text"
-                      value={formData.email || ''}
-                      onChange={handleChange}
-                      error={errors.email}
-                      required
-                      pulse={errorPulse.email || 0}
-                      autoComplete="email"
-                      inputMode="email"
-                    />
+                    <div className="md:col-span-2 mt-2">
+                      {false && !puedeAgregarAsignacion && (
+                        <p className="text-xs text-amber-600 dark:text-amber-300 mb-3">
+                          Límite alcanzado: máximo 2 asignaciones totales por usuario.
+                        </p>
+                      )}
 
-                    {mostrarCiCreacion ? (
-                      <InputField
-                        label="C.I."
-                        name="ci"
-                        type="text"
-                        value={formData.ci || ''}
-                        onChange={handleChange}
-                        error={errors.ci}
-                        pulse={errorPulse.ci || 0}
-                      />
-                    ) : (
-                      <div />
-                    )}
+                      <div
+                        className={`${asignacionesExtra.length > 0 ? 'block' : 'hidden'}`}
+                      >
+                        <div className="space-y-4 pt-2">
+                          {asignacionesExtra.map((asignacion, index) => {
+                            const mostrarDocente = asignacion.rol === 'docente';
+                            return (
+                              <div key={index} className="rounded-2xl border-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/40 p-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  <FilterCarreras
+                                    label="Carrera"
+                                    name={`asignacion-carrera-${index}`}
+                                    value={asignacion.carrera || ''}
+                                    onChange={(e) => handleAsignacionChange(index, 'carrera', e.target.value)}
+                                    carreras={carreras}
+                                    error={errors[`asignaciones.${index}.carrera`]}
+                                    required
+                                    placeholder="Buscar carrera..."
+                                  />
 
-                    {/* Fila 4: Contraseña inicial (izquierda) - vacío */}
-                    <div>
-                      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Contraseña inicial</label>
-                      <div className="w-full px-4 py-3 rounded-xl border-2 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 font-mono font-semibold">
-                        {formData.username ? `${formData.username}UABJB` : 'usuarioUABJB'}
+                                  {mostrarDocente ? (
+                                    <FilterDocentes
+                                      label="Docente"
+                                      name={`asignacion-docente-${index}`}
+                                      value={asignacion.docente || ''}
+                                      onChange={(e) => handleAsignacionChange(index, 'docente', e.target.value)}
+                                      docentes={docentesActivosDisponibles}
+                                      error={errors[`asignaciones.${index}.docente`]}
+                                      placeholder="Buscar docente..."
+                                    />
+                                  ) : (
+                                    <div />
+                                  )}
+
+                                  <div className="md:col-span-2">
+                                    <SelectConDropdown
+                                      label="Rol"
+                                      name={`asignacion-rol-${index}`}
+                                      value={asignacion.rol || 'docente'}
+                                      onChange={(e) => handleAsignacionChange(index, 'rol', e.target.value)}
+                                      options={roles.map(rol => ({ value: rol.value, label: rol.label }))}
+                                      error={errors[`asignaciones.${index}.rol`]}
+                                      required
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
-                      <p className="mt-1 text-xs text-[#2C4AAE] dark:text-slate-400">
-                        Se genera automáticamente con el usuario. Si el usuario está vacío, no se puede crear.
-                      </p>
                     </div>
-                    <div />
-
-                    <AnimatedInlineMessage
-                      show={Boolean(asignacionesError)}
-                      message={asignacionesError || ''}
-                      wrapperClassName="md:col-span-2"
-                      messageClassName="text-xs text-red-600 dark:text-red-400"
-                    />
-
                   </div>
                 </div>
 
@@ -2138,7 +1754,10 @@ const initialData = {
                     Usuario
                   </th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">
-                    Nombre completo
+                    Nombre
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">
+                    Apellidos
                   </th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">
                     C.I.
@@ -2160,16 +1779,14 @@ const initialData = {
               <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                 {usuariosFiltrados.map(usuario => (
                   (() => {
-                    const docenteSinVinculo = usuarioEsDocenteSinVinculo(usuario);
-                    const perfilDocentePendiente = usuarioTienePerfilDocentePendiente(usuario);
-                    const filaInactiva = (usuario.is_active === false || (docenteSinVinculo && !perfilDocentePendiente)) && !usuario.is_superuser;
+                    const filaInactiva = usuario.is_active === false && !usuario.is_superuser;
                     const textoFila = filaInactiva ? 'text-red-700 dark:text-red-300' : 'text-slate-700 dark:text-slate-300';
                     const textoPrincipal = filaInactiva ? 'font-bold text-red-700 dark:text-red-300' : 'font-bold text-slate-800 dark:text-white';
                     return (
                   <tr
                     key={usuario.id}
                     className={`transition-colors ${
-                      !filaInactiva
+                      usuario.is_active
                         ? 'hover:bg-slate-50 dark:hover:bg-slate-700/30'
                         : 'bg-red-200/90 dark:bg-red-950/35 hover:bg-red-300/80 dark:hover:bg-red-900/45'
                     }`}
@@ -2190,23 +1807,22 @@ const initialData = {
                             ⚠️ Sin Perfil
                           </div>
                         )}
-                        {perfilDocentePendiente && (
-                          <div className="text-xs font-semibold text-amber-600 dark:text-amber-400">
-                            ⚠️ Perfil Docente Pendiente
-                          </div>
-                        )}
-                        {docenteSinVinculo && !perfilDocentePendiente && (
-                          <div className="text-xs font-semibold text-red-700 dark:text-red-400">
-                            Estado: ⚠️ Sin perfil docente vinculado
+                        {/* Aviso si el usuario tiene rol docente pero no tiene docente vinculado */}
+                        {usuario.perfil?.rol === 'docente' && (!usuario.perfil?.docente_id || usuario.perfil.docente_id === null) && (
+                          <div className="text-xs font-semibold text-red-600 dark:text-red-400">
+                            ❌ Sin Vínculo Docente
                           </div>
                         )}
                       </div>
                     </td>
                     <td className={`px-6 py-4 whitespace-nowrap ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
                       <div className={`text-sm ${textoFila}`}>
-                        {((usuario.first_name || usuario.last_name)
-                          ? `${(usuario.first_name || '').trim()} ${(usuario.last_name || '').trim()}`.trim()
-                          : (usuario.nombre_completo || '-'))}
+                        {usuario.first_name || '-'}
+                      </div>
+                    </td>
+                    <td className={`px-6 py-4 whitespace-nowrap ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
+                      <div className={`text-sm ${textoFila}`}>
+                        {usuario.last_name || '-'}
                       </div>
                     </td>
                     <td className={`px-6 py-4 whitespace-nowrap ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
@@ -2214,46 +1830,29 @@ const initialData = {
                         {usuario.ci || '-'}
                       </div>
                     </td>
-                    <td className={`px-6 py-4 whitespace-nowrap text-center ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
+                    <td className={`px-6 py-4 whitespace-nowrap ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
                       <div className={`text-sm font-bold ${textoFila}`}>
-                        {obtenerTextoCarrerasUsuario(usuario) || '-'}
+                        {usuario.carrera_codigo || '-'}
                       </div>
                     </td>
                     <td className={`px-6 py-4 whitespace-nowrap ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
                       {(() => {
                         const docenteInactivo = usuarioTieneDocenteInactivo(usuario);
-                        const rolesUsuario = obtenerRolesUsuario(usuario);
-                        const tieneVariosRoles = rolesUsuario.length > 1;
-                        const claseBase = 'inline-flex items-center rounded-lg border-2 px-3 py-1.5 text-xs font-bold shadow-none';
-                        if (usuario.is_superuser) {
-                          return <span className={`${claseBase} bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 border-amber-500 dark:border-amber-600`}>👑 Super Admin</span>;
-                        }
-
-                        if (tieneVariosRoles) {
-                          return (
-                            <>
-                              {rolesUsuario.map((rol, index) => (
-                                <span key={rol} className="inline-flex items-center">
-                                  {index > 0 && <span className="px-1 text-slate-500 dark:text-slate-400 font-bold">/</span>}
-                                  <span
-                                    className={`${claseBase} ${ROL_STYLES[rol] || 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-500 dark:border-green-700'}`}
-                                  >
-                                    {ROL_LABELS[rol] || rol}
-                                    {docenteInactivo && rol === 'docente' ? ' (inactivo)' : ''}
-                                  </span>
-                                </span>
-                              ))}
-                            </>
-                          );
-                        }
-
-                        const rolUnico = rolesUsuario[0];
-                        const textoRol = obtenerTextoRolUsuario(usuario);
                         return (
-                          <span className={`${claseBase} ${ROL_STYLES[rolUnico] || 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-500 dark:border-green-700'}`}>
-                            {textoRol}
-                            {docenteInactivo ? ' (inactivo)' : ''}
-                          </span>
+                      <span className={`px-3 py-1.5 inline-flex text-xs font-bold rounded-lg border-2 shadow-sm ${
+                        usuario.is_superuser ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 border-amber-400 dark:border-amber-600' :
+                        docenteInactivo ? 'bg-red-200 dark:bg-red-900/30 text-red-900 dark:text-red-200 border-red-600 dark:border-red-700' :
+                        usuario.perfil?.rol === 'iiisyp' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-700' :
+                        usuario.perfil?.rol === 'director' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700' :
+                        usuario.perfil?.rol === 'jefe_estudios' ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 border-cyan-300 dark:border-cyan-700' :
+                        'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700'
+                      }`}>
+                        {usuario.is_superuser ? '👑 Super Admin' :
+                         usuario.perfil?.rol === 'iiisyp' ? '🛡️ Admin' :
+                         usuario.perfil?.rol === 'director' ? '🏛️ Director de Carrera' :
+                         usuario.perfil?.rol === 'jefe_estudios' ? '📚 Jefe de Estudios' :
+                         docenteInactivo ? '👨‍🏫 Docente (inactivo)' : '👨‍🏫 Docente'}
+                      </span>
                         );
                       })()}
                     </td>
@@ -2261,16 +1860,14 @@ const initialData = {
                       <div className="flex items-center justify-center gap-3">
                         {!usuario.is_superuser && (
                           <ToggleSwitch
-                            isActive={!docenteSinVinculo && usuario.is_active}
-                            disabled={usuario.is_superuser || (docenteSinVinculo && !perfilDocentePendiente)}
+                            isActive={usuario.is_active}
+                            disabled={usuario.is_superuser}
                             onChange={() => handleToggleActivo(usuario)}
                           />
                         )}
                         <span className="text-sm font-semibold">
                           {usuario.is_superuser
                             ? <span className="text-amber-600 dark:text-amber-400 italic">protegido</span>
-                            : docenteSinVinculo
-                            ? <span className="text-red-800 dark:text-red-400 font-black italic tracking-wide">sin vínculo docente</span>
                             : usuario.is_active
                             ? <span className="text-emerald-600 dark:text-emerald-400 italic">Activo</span>
                             : <span className="text-red-800 dark:text-red-400 font-black italic tracking-wide">inactivo</span>

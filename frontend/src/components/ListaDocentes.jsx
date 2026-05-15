@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { FaChevronLeft, FaChevronRight, FaEdit, FaTrash, FaExclamationTriangle } from 'react-icons/fa';
+import { FaEdit, FaTrash, FaExclamationTriangle } from 'react-icons/fa';
 import { getDocentes } from '../apis/api';
 import api from '../apis/api';
 import toast from 'react-hot-toast';
@@ -341,27 +341,13 @@ function FechaIngresoPicker({ value, onChange, error }) {
 }
 
 // Componente Select con dise+�o personalizado (mismo estilo que FechaIngresoPicker)
-const SelectConDropdown = ({
-  label,
-  value,
-  onChange,
-  options,
-  error,
-  name,
-  disabled = false,
-  menuClassName = '',
-  containerClassName = '',
-  showLock = false,
-  lockTooltip = '',
-}) => {
+const SelectConDropdown = ({ label, value, onChange, options, error, name, disabled = false }) => {
   const [open, setOpen] = useState(false);
   const containerRef = React.useRef(null);
-  const menuRef = React.useRef(null);
-  const [menuStyle, setMenuStyle] = useState(null);
 
   React.useEffect(() => {
     const handleOutside = (event) => {
-      if (containerRef.current && !containerRef.current.contains(event.target) && (!menuRef.current || !menuRef.current.contains(event.target))) {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
         setOpen(false);
       }
     };
@@ -372,29 +358,6 @@ const SelectConDropdown = ({
       document.removeEventListener('mousedown', handleOutside);
     };
   }, [open]);
-
-  React.useLayoutEffect(() => {
-    if (!open || !containerRef.current) {
-      setMenuStyle(null);
-      return;
-    }
-
-    const anchorRect = containerRef.current.getBoundingClientRect();
-    const estimatedHeight = Math.min(options.length * 40 + 16, window.innerHeight - 16);
-    const spaceBelow = window.innerHeight - anchorRect.bottom - 12;
-    const spaceAbove = anchorRect.top - 12;
-    const placeAbove = spaceBelow < estimatedHeight && spaceAbove > spaceBelow;
-
-    setMenuStyle({
-      position: 'fixed',
-      left: `${anchorRect.left}px`,
-      width: `${anchorRect.width}px`,
-      top: placeAbove
-        ? `${Math.max(12, anchorRect.top - estimatedHeight - 8)}px`
-        : `${anchorRect.bottom + 8}px`,
-      zIndex: 99999,
-    });
-  }, [open, options.length]);
 
   const selectedLabel = value && options.find(opt => String(opt.value) === String(value))?.label;
   const displayLabel = selectedLabel || 'Seleccione...';
@@ -407,17 +370,10 @@ const SelectConDropdown = ({
 
   return (
     <div ref={containerRef} className="relative">
-      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
-        <span className="inline-flex items-center gap-1.5">
-          <span>{label}</span>
-          {showLock && (
-            <span title={lockTooltip || 'No editable'} className="text-slate-500 dark:text-slate-400">🔒</span>
-          )}
-        </span>
-      </label>
+      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label}</label>
       
       {/* Bot+�n principal */}
-      <div className={`relative w-full rounded-xl border-2 bg-slate-50 dark:bg-slate-700 shadow-sm ${disabled ? 'opacity-70' : ''} ${error ? 'border-red-500' : open ? 'border-[#3A56AF] dark:border-[#3A56AF]' : 'border-slate-300 dark:border-slate-600'} ${containerClassName}`}>
+      <div className={`relative w-full rounded-xl border-2 bg-slate-50 dark:bg-slate-700 shadow-sm ${disabled ? 'opacity-70' : ''} ${error ? 'border-red-500' : open ? 'border-[#3A56AF] dark:border-[#3A56AF]' : 'border-slate-300 dark:border-slate-600'}`}>
         <button
           type="button"
           onClick={() => {
@@ -426,7 +382,6 @@ const SelectConDropdown = ({
           }}
           disabled={disabled}
           className={`w-full text-left px-4 py-2.5 rounded-xl bg-transparent text-slate-800 dark:text-white flex items-center justify-between gap-2 ${disabled ? 'cursor-not-allowed' : ''}`}
-          title={disabled ? (lockTooltip || 'No editable') : undefined}
         >
           <span className={`truncate ${!value ? 'text-slate-400 dark:text-slate-500' : ''}`}>{displayLabel}</span>
           {!disabled ? (
@@ -446,32 +401,25 @@ const SelectConDropdown = ({
       </div>
 
       {/* Men+� desplegable */}
-      {open && menuStyle && createPortal(
-        <div ref={menuRef} className="rounded-xl border-2 border-[#3A56AF] bg-white dark:bg-slate-900 shadow-xl" style={menuStyle}>
-          <div className={`p-2 ${menuClassName}`}>
+      {open && (
+        <div className="absolute z-50 mt-2 w-full rounded-xl border-2 border-[#3A56AF] bg-white dark:bg-slate-900 shadow-xl">
+          <div className="max-h-40 overflow-auto p-2">
             {options.map((option) => (
               <button
                 key={option.value}
                 type="button"
-                disabled={option.disabled}
-                onClick={() => {
-                  if (option.disabled) return;
-                  handleSelect(option.value);
-                }}
-                className={`w-full text-left px-3 py-1.5 text-xs rounded-lg transition-colors ${
+                onClick={() => handleSelect(option.value)}
+                className={`w-full text-left px-3 py-1.5 text-xs border-l-2 rounded-lg transition-colors ${
                   option.value === value
-                    ? 'bg-cyan-50 dark:bg-cyan-900/30 shadow-[inset_2px_0_0_0_#06b6d4] text-cyan-800 dark:text-cyan-200 font-semibold'
-                    : option.disabled
-                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed'
-                    : 'bg-transparent text-slate-700 dark:text-slate-200 hover:bg-[#2C4AAE] hover:text-white hover:shadow-[inset_2px_0_0_0_#2C4AAE] dark:hover:bg-[#2C4AAE]'
+                    ? 'bg-cyan-50 dark:bg-cyan-900/30 border-cyan-500 text-cyan-800 dark:text-cyan-200 font-semibold'
+                    : 'bg-transparent border-transparent text-slate-700 dark:text-slate-200 hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-[#2C4AAE]'
                 }`}
               >
                 <span className="block truncate">{option.label}</span>
               </button>
             ))}
           </div>
-        </div>,
-        document.body
+        </div>
       )}
 
       {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
@@ -485,29 +433,9 @@ const InfoIcon = (props) => (
   </svg>
 );
 
-const InputField = ({
-  label,
-  name,
-  type = 'text',
-  value,
-  onChange,
-  required,
-  error,
-  disabled = false,
-  readOnly = false,
-  inputClassName = '',
-  showLock = false,
-  lockTooltip = '',
-}) => (
+const InputField = ({ label, name, type = 'text', value, onChange, required, error, disabled = false, readOnly = false }) => (
   <div>
-    <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
-      <span className="inline-flex items-center gap-1.5">
-        <span>{label} {required && <span className="text-red-500">*</span>}</span>
-        {showLock && (
-          <span title={lockTooltip || 'No editable'} className="text-slate-500 dark:text-slate-400">🔒</span>
-        )}
-      </span>
-    </label>
+    <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label} {required && <span className="text-red-500">*</span>}</label>
     <input
       type={type}
       name={name}
@@ -516,8 +444,7 @@ const InputField = ({
       required={required}
       disabled={disabled}
       readOnly={readOnly}
-      title={(disabled || readOnly) ? (lockTooltip || 'No editable') : undefined}
-      className={`w-full px-4 py-2.5 rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white italic focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md ${inputClassName} ${disabled ? 'cursor-not-allowed opacity-80' : ''} ${error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'}`}
+      className={`w-full px-4 py-2.5 rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md ${disabled ? 'cursor-not-allowed opacity-80' : ''} ${error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'}`}
     />
     {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
   </div>
@@ -568,7 +495,7 @@ const SimpleDropdown = ({ value, onChange, options, placeholder = 'Carreras', cl
         }}
         className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border-2 border-transparent focus:border-blue-500 rounded-2xl text-left flex items-center justify-between transition-all"
       >
-        <span className={`${selectedLabel ? 'text-slate-800 dark:text-white font-semibold text-sm leading-tight italic' : 'text-slate-400 dark:text-slate-500 italic'}`}>
+        <span className={`${selectedLabel ? 'text-slate-800 dark:text-white font-semibold text-sm leading-tight' : 'text-slate-400 dark:text-slate-500'}`}>
           {selectedLabel || placeholder}
         </span>
         <div className="w-8 h-8 bg-[#2C4AAE] hover:bg-[#1a3a8a] rounded-lg flex items-center justify-center transition-colors">
@@ -591,7 +518,7 @@ const SimpleDropdown = ({ value, onChange, options, placeholder = 'Carreras', cl
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Buscar carrera..."
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-sm text-slate-800 dark:text-white italic placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-sm text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           {filteredOptions.map((option) => (
@@ -603,7 +530,7 @@ const SimpleDropdown = ({ value, onChange, options, placeholder = 'Carreras', cl
                 setOpen(false);
                 setSearch('');
               }}
-              className={`w-full text-left px-4 py-2.5 text-sm italic transition-colors ${
+              className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
                 String(value) === String(option.value)
                   ? 'bg-[#2C4AAE] text-white font-semibold'
                   : 'text-slate-700 dark:text-slate-300 hover:bg-[#2C4AAE] hover:text-white'
@@ -659,7 +586,7 @@ const SearchInput = ({ value, onChange, placeholder = 'Buscar por nombre o C.I..
           onChange={(e) => onChange(e.target.value)}
           onBlur={handleBlur}
           placeholder={placeholder}
-          className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border-2 border-[#2C4AAE] rounded-xl text-slate-800 dark:text-white italic placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none transition-all"
+          className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border-2 border-[#2C4AAE] rounded-xl text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none transition-all"
         />
       </div>
     </div>
@@ -668,52 +595,46 @@ const SearchInput = ({ value, onChange, placeholder = 'Buscar por nombre o C.I..
 
 const dedicacionStyles = {
   tiempo_completo: {
-    bg: 'bg-blue-50 dark:bg-blue-900/10',
-    accent: 'ring-1 ring-inset ring-blue-600/50 dark:ring-blue-400/50 border-l-[12px] !border-l-blue-800 dark:!border-l-blue-400',
-    leftBorder: '#1d4ed8',
-    icon: 'text-blue-700',
-    title: 'text-blue-900 dark:text-blue-300',
-    text: 'text-blue-800 dark:text-blue-400',
+    bg: 'bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20',
+    border: 'border-blue-500',
+    icon: 'text-blue-500',
+    title: 'text-blue-800 dark:text-blue-300',
+    text: 'text-blue-700 dark:text-blue-400',
   },
   medio_tiempo: {
-    bg: 'bg-green-50 dark:bg-green-900/10',
-    accent: 'ring-1 ring-inset ring-green-600/50 dark:ring-green-400/50 border-l-[12px] !border-l-green-800 dark:!border-l-green-400',
-    leftBorder: '#15803d',
-    icon: 'text-green-700',
-    title: 'text-green-900 dark:text-green-300',
-    text: 'text-green-800 dark:text-green-400',
+    bg: 'bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20',
+    border: 'border-green-500',
+    icon: 'text-green-500',
+    title: 'text-green-800 dark:text-green-300',
+    text: 'text-green-700 dark:text-green-400',
   },
   horario_16: {
-    bg: 'bg-cyan-50 dark:bg-cyan-900/10',
-    accent: 'ring-1 ring-inset ring-cyan-600/50 dark:ring-cyan-400/50 border-l-[12px] !border-l-cyan-800 dark:!border-l-cyan-400',
-    leftBorder: '#0e7490',
-    icon: 'text-cyan-700',
-    title: 'text-cyan-900 dark:text-cyan-300',
-    text: 'text-cyan-800 dark:text-cyan-400',
+    bg: 'bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-900/20 dark:to-amber-900/20',
+    border: 'border-orange-500',
+    icon: 'text-orange-500',
+    title: 'text-orange-800 dark:text-orange-300',
+    text: 'text-orange-700 dark:text-orange-400',
   },
   horario_24: {
-    bg: 'bg-emerald-50 dark:bg-emerald-900/10',
-    accent: 'ring-1 ring-inset ring-emerald-600/50 dark:ring-emerald-400/50 border-l-[12px] !border-l-emerald-800 dark:!border-l-emerald-400',
-    leftBorder: '#047857',
-    icon: 'text-emerald-700',
-    title: 'text-emerald-900 dark:text-emerald-300',
-    text: 'text-emerald-800 dark:text-emerald-400',
+    bg: 'bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-900/20 dark:to-amber-900/20',
+    border: 'border-orange-500',
+    icon: 'text-orange-500',
+    title: 'text-orange-800 dark:text-orange-300',
+    text: 'text-orange-700 dark:text-orange-400',
   },
   horario_40: {
-    bg: 'bg-amber-50 dark:bg-amber-900/10',
-    accent: 'ring-1 ring-inset ring-amber-600/50 dark:ring-amber-400/50 border-l-[12px] !border-l-amber-800 dark:!border-l-amber-400',
-    leftBorder: '#b45309',
-    icon: 'text-amber-700',
-    title: 'text-amber-900 dark:text-amber-300',
-    text: 'text-amber-800 dark:text-amber-400',
+    bg: 'bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-900/20 dark:to-amber-900/20',
+    border: 'border-orange-500',
+    icon: 'text-orange-500',
+    title: 'text-orange-800 dark:text-orange-300',
+    text: 'text-orange-700 dark:text-orange-400',
   },
   horario_48: {
-    bg: 'bg-rose-50 dark:bg-rose-900/10',
-    accent: 'ring-1 ring-inset ring-rose-600/50 dark:ring-rose-400/50 border-l-[12px] !border-l-rose-800 dark:!border-l-rose-400',
-    leftBorder: '#be123c',
-    icon: 'text-rose-700',
-    title: 'text-rose-900 dark:text-rose-300',
-    text: 'text-rose-800 dark:text-rose-400',
+    bg: 'bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-900/20 dark:to-amber-900/20',
+    border: 'border-orange-500',
+    icon: 'text-orange-500',
+    title: 'text-orange-800 dark:text-orange-300',
+    text: 'text-orange-700 dark:text-orange-400',
   },
 };
 
@@ -780,40 +701,10 @@ function ListaDocentes({ sidebarCollapsed = false }) {
     return Math.max(Math.floor(horasEfectivas), 0);
   };
 
-  // Obtener roles combinados del docente (solo roles extra, sin docente)
-  const obtenerRolesDocente = (docente) => {
-    if (!docente) return null;
-    
-    const rolesExtra = Array.isArray(docente.asignaciones)
-      ? docente.asignaciones
-          .filter((item) => item?.rol && item?.rol !== 'docente' && item?.activo !== false)
-          .map((item) => String(item.rol).trim())
-      : [];
-
-    // Solo incluir el rol principal si no es 'docente'
-    const rolPrincipal = String(docente.usuario_rol || '').trim();
-    if (rolPrincipal && rolPrincipal !== 'docente' && !rolesExtra.includes(rolPrincipal)) {
-      rolesExtra.unshift(rolPrincipal);
-    }
-
-    const rolesUnicos = [...new Set(rolesExtra.filter(Boolean))];
-
-    if (rolesUnicos.length === 0) return null;
-
-    const ROL_LABELS = {
-      iiisyp: '🔬 Instituto de investigación',
-      director: '🏛️ Director de Carrera',
-      jefe_estudios: '📚 Jefe de Estudios',
-    };
-
-    return rolesUnicos.map((rol) => ROL_LABELS[rol] || rol).join(' / ');
-  };
-
   const navigate = useNavigate();
   const restoringCreateFormRef = React.useRef(false);
   const [docentes, setDocentes] = useState([]);
   const [carreras, setCarreras] = useState([]);
-  const [usuarios, setUsuarios] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [user, setUser] = useState(null);
@@ -824,15 +715,10 @@ function ListaDocentes({ sidebarCollapsed = false }) {
 
   // Formulario
   const [formData, setFormData] = useState({
-    user: '',
-    username: '',
-    password: '',
-    password_confirm: '',
     nombre_completo: '',
     nombres: '',
     apellido_paterno: '',
     apellido_materno: '',
-    cargo_profesional: '',
     carrera: '',
     ci: '',
     categoria: 'catedratico',
@@ -852,67 +738,10 @@ function ListaDocentes({ sidebarCollapsed = false }) {
 
   // State for inline creation form
   const [isCreating, setIsCreating] = useState(false);
-  const [buscarUsuario, setBuscarUsuario] = useState('');
   const [abrirDesdeUsuarios, setAbrirDesdeUsuarios] = useState(false);
   const [flujoDesdeUsuarios, setFlujoDesdeUsuarios] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCarrera, setSelectedCarrera] = useState('');
-  const [showUserInfo, setShowUserInfo] = useState(false);
-  const [userInfoKey, setUserInfoKey] = useState(null);
-  const gestionWarningTimeoutRef = React.useRef(null);
-  const dedicacionInfoTimeoutRef = React.useRef(null);
-  const [showGestionWarningVisible, setShowGestionWarningVisible] = useState(false);
-  const [gestionWarningInfoKey, setGestionWarningInfoKey] = useState(null);
-  const [searchMode, setSearchMode] = useState(false);
-  const [showDedicacionInfo, setShowDedicacionInfo] = useState(false);
-  const [dedicacionInfoKey, setDedicacionInfoKey] = useState(null);
-
-  React.useEffect(() => {
-    return () => {
-      if (gestionWarningTimeoutRef.current) clearTimeout(gestionWarningTimeoutRef.current);
-      if (dedicacionInfoTimeoutRef.current) clearTimeout(dedicacionInfoTimeoutRef.current);
-    };
-  }, []);
-  const [showAutocomplete, setShowAutocomplete] = useState(false);
-  const [userInfoShownBefore, setUserInfoShownBefore] = useState(false);
-  const [confirmacionCambioPendiente, setConfirmacionCambioPendiente] = useState(null);
-  const [infoEdicionIndex, setInfoEdicionIndex] = useState(0);
-  const [infoEdicionDirection, setInfoEdicionDirection] = useState('right');
-  const [confirmacionDesactivarDocente, setConfirmacionDesactivarDocente] = useState(null);
-
-  // Efecto: cuando showUserInfo pasa a true POR PRIMERA VEZ, establecer userInfoKey para trigger animación
-  useEffect(() => {
-    if (showUserInfo && !userInfoShownBefore) {
-      setUserInfoKey(Date.now());
-      setUserInfoShownBefore(true);
-    }
-  }, [showUserInfo, userInfoShownBefore]);
-
-  useEffect(() => {
-    if (dedicacionInfoTimeoutRef.current) {
-      clearTimeout(dedicacionInfoTimeoutRef.current);
-      dedicacionInfoTimeoutRef.current = null;
-    }
-
-    if (!formData.dedicacion) {
-      setShowDedicacionInfo(false);
-      setDedicacionInfoKey(null);
-      return;
-    }
-
-    setShowDedicacionInfo(false);
-    dedicacionInfoTimeoutRef.current = setTimeout(() => {
-      setDedicacionInfoKey(Date.now());
-      setShowDedicacionInfo(true);
-    }, 1000);
-
-    return () => {
-      if (dedicacionInfoTimeoutRef.current) {
-        clearTimeout(dedicacionInfoTimeoutRef.current);
-        dedicacionInfoTimeoutRef.current = null;
-      }
-    };
-  }, [formData.dedicacion]);
 
   useEffect(() => {
     cargarDocentes();
@@ -948,29 +777,17 @@ function ListaDocentes({ sidebarCollapsed = false }) {
     }
   }, []);
 
-  React.useEffect(() => {
-    if (showModal) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => { document.body.style.overflow = ''; };
-  }, [showModal]);
-
   const cargarDocentes = async () => {
     setLoading(true);
     try {
-      const [docentesResponse, carrerasResponse, usuariosResponse] = await Promise.all([
+      const [docentesResponse, carrerasResponse] = await Promise.all([
         getDocentes(),
         api.get('/carreras/'),
-        api.get('/usuarios/'),
       ]);
       const docentesData = docentesResponse.data.results || docentesResponse.data;
       const carrerasData = carrerasResponse.data.results || carrerasResponse.data;
-      const usuariosData = usuariosResponse.data.results || usuariosResponse.data;
       setDocentes(Array.isArray(docentesData) ? docentesData : []);
       setCarreras(Array.isArray(carrerasData) ? carrerasData : []);
-      setUsuarios(Array.isArray(usuariosData) ? usuariosData : []);
       setLoading(false);
     } catch (err) {
       setError('Error al cargar docentes');
@@ -981,15 +798,10 @@ function ListaDocentes({ sidebarCollapsed = false }) {
 
   useEffect(() => {
     const initialData = {
-      user: '',
-      username: '',
-      password: '',
-      password_confirm: '',
       nombre_completo: '',
       nombres: '',
       apellido_paterno: '',
       apellido_materno: '',
-      cargo_profesional: '',
       carrera: '',
       ci: '',
       categoria: '',
@@ -1001,21 +813,13 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       activo: true,
     };
     if (isCreating) {
-      // SIEMPRE resetear estados de animación, incluso en restoration
-      setShowUserInfo(false);
-      setShowDedicacionInfo(false);
-      setDedicacionInfoKey(null);
-      setSearchMode(false);
-      setShowAutocomplete(false);
-      setUserInfoShownBefore(false);
-      setBuscarUsuario('');
-      setErrors({});
-      
       if (restoringCreateFormRef.current) {
         restoringCreateFormRef.current = false;
+        setErrors({});
         return;
       }
       setFormData(initialData);
+      setErrors({});
     }
   }, [isCreating]);
 
@@ -1027,80 +831,10 @@ function ListaDocentes({ sidebarCollapsed = false }) {
     }
   };
 
-  const obtenerConfigConfirmacionCampo = (name, value) => {
-    if (name === 'dedicacion') {
-      const etiqueta = opcionesDedicacion.find((op) => String(op.value) === String(value))?.label || String(value || 'sin valor');
-      return {
-        titulo: 'Confirmar cambio de dedicación',
-        mensaje: `Este cambio puede recalcular el cumplimiento de horas del docente.\n\nNueva dedicación: ${etiqueta}\n\n¿Desea continuar?`,
-      };
-    }
-
-    if (name === 'categoria') {
-      const mapaCategorias = {
-        catedratico: 'Catedrático',
-        adjunto: 'Adjunto',
-        asistente: 'Asistente',
-      };
-      const etiqueta = mapaCategorias[String(value || '')] || String(value || 'sin valor');
-      return {
-        titulo: 'Confirmar cambio de categoría',
-        mensaje: `Este cambio puede impactar el cálculo de vacaciones del docente.\n\nNueva categoría: ${etiqueta}\n\n¿Desea continuar?`,
-      };
-    }
-
-    return null;
-  };
-
-  const aplicarCambioFormulario = (name, value, type = 'text', checked = false) => {
-    setFormData(prev => {
-      let nextValue = type === 'checkbox' ? checked : value;
-      const newState = {
-        ...prev,
-        [name]: nextValue,
-      };
-
-      if (name === 'nombre_completo') {
-        const nombresSplit = splitNombreCompleto(String(nextValue));
-        newState.nombres = nombresSplit.nombres;
-        newState.apellido_paterno = nombresSplit.apellido_paterno;
-        newState.apellido_materno = nombresSplit.apellido_materno;
-      }
-
-      if (name === 'dedicacion') {
-        if (
-          usuarioFormularioTieneRolGestion
-          && ['tiempo_completo', 'medio_tiempo'].includes(String(nextValue || ''))
-        ) {
-          return prev;
-        }
-        newState.horas_contrato_semanales = null;
-      }
-
-      if (isCreating && abrirDesdeUsuarios) {
-        sessionStorage.setItem('datosCrearDocente', JSON.stringify({
-          nombre_completo: newState.nombre_completo,
-          nombres: newState.nombres,
-          apellido_paterno: newState.apellido_paterno,
-          apellido_materno: newState.apellido_materno,
-          ci: newState.ci,
-          telefono: newState.telefono,
-          carrera: newState.carrera,
-        }));
-      }
-
-      return newState;
-    });
-  };
-
   const abrirModalEditar = (docente) => {
     setDocenteSeleccionado(docente);
     setFormData({
-      user: docente.user_id || docente.usuario_id || '',
-      username: '',
-      password: '',
-      password_confirm: '',
-      nombre_completo: docente.usuario_nombre || buildNombreCompleto(
+      nombre_completo: buildNombreCompleto(
         docente.nombres,
         docente.apellido_paterno,
         docente.apellido_materno
@@ -1108,7 +842,6 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       nombres: docente.nombres,
       apellido_paterno: docente.apellido_paterno,
       apellido_materno: docente.apellido_materno || '',
-      cargo_profesional: obtenerRolesDocente(docente),
       carrera: docente.vinculos?.[0]?.carrera || '',
       ci: docente.ci,
       categoria: docente.vinculos?.[0]?.categoria || '',
@@ -1121,101 +854,40 @@ function ListaDocentes({ sidebarCollapsed = false }) {
     });
     setShowModal(true);
     setIsCreating(false);
-    setShowUserInfo(true);
-    setInfoEdicionIndex(0);
-    setInfoEdicionDirection('right');
   };
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    const esEdicion = showModal && Boolean(docenteSeleccionado);
-    const esCampoConConfirmacion = esEdicion && ['dedicacion', 'categoria'].includes(name);
-    const valorActual = formData[name];
+    setFormData(prev => {
+      let nextValue = type === 'checkbox' ? checked : value;
+      const newState = {
+        ...prev,
+        [name]: nextValue
+      };
 
-    if (esEdicion && name === 'activo' && type === 'checkbox' && valorActual === true && checked === false) {
-      const horasDeclaradas = Number(docenteSeleccionado?.horas_declaradas || 0);
-      const fondosValidados = Number(docenteSeleccionado?.fondos_validados || 0);
-      setConfirmacionDesactivarDocente({
-        tieneHistorial: horasDeclaradas > 0 || fondosValidados > 0,
-      });
-      return;
-    }
-
-    if (esCampoConConfirmacion && String(valorActual ?? '') !== String(value ?? '')) {
-      const config = obtenerConfigConfirmacionCampo(name, value);
-      if (config) {
-        setConfirmacionCambioPendiente({
-          name,
-          value,
-          type,
-          checked,
-          ...config,
-        });
-        return;
+      if (name === 'nombre_completo') {
+        const nombresSplit = splitNombreCompleto(String(nextValue));
+        newState.nombres = nombresSplit.nombres;
+        newState.apellido_paterno = nombresSplit.apellido_paterno;
+        newState.apellido_materno = nombresSplit.apellido_materno;
       }
-    }
 
-    aplicarCambioFormulario(name, value, type, checked);
-  };
-
-  const getRolesActivosUsuario = (usuarioItem) => {
-    const roles = [];
-    const rolPrincipal = String(usuarioItem?.perfil?.rol || '').trim().toLowerCase();
-    if (rolPrincipal) roles.push(rolPrincipal);
-
-    const asignaciones = Array.isArray(usuarioItem?.asignaciones) ? usuarioItem.asignaciones : [];
-    asignaciones.forEach((asignacion) => {
-      if (asignacion?.activo === false) return;
-      const rolAsignacion = String(asignacion?.rol || '').trim().toLowerCase();
-      if (rolAsignacion) roles.push(rolAsignacion);
+      if (name === 'dedicacion') {
+        newState.horas_contrato_semanales = null;
+      }
+      if (isCreating && abrirDesdeUsuarios) {
+        sessionStorage.setItem('datosCrearDocente', JSON.stringify({
+          nombre_completo: newState.nombre_completo,
+          nombres: newState.nombres,
+          apellido_paterno: newState.apellido_paterno,
+          apellido_materno: newState.apellido_materno,
+          ci: newState.ci,
+          telefono: newState.telefono,
+          carrera: newState.carrera,
+        }));
+      }
+      return newState;
     });
-
-    return Array.from(new Set(roles));
-  };
-
-  const usuarioTieneRol = (usuarioItem, rolBuscado) =>
-    getRolesActivosUsuario(usuarioItem).includes(String(rolBuscado || '').trim().toLowerCase());
-
-  const usuarioTienePerfilDocente = (usuarioItem) => Boolean(
-    usuarioItem?.perfil?.docente_id || usuarioItem?.perfil?.docente
-  );
-
-  const handleSeleccionUsuario = (usuarioItem) => {
-    const usuarioTieneRolGestion = ['director', 'jefe_estudios', 'iiisyp'].some((rol) => usuarioTieneRol(usuarioItem, rol));
-    setBuscarUsuario(`${usuarioItem.first_name || ''} ${usuarioItem.last_name || ''}`.trim());
-    setFormData((prev) => ({
-      ...prev,
-      user: usuarioItem.id,
-      nombre_completo: buildNombreCompleto(usuarioItem.first_name, usuarioItem.last_name),
-      ci: usuarioItem.ci || prev.ci || '',
-      cargo_profesional: getRolesActivosUsuario(usuarioItem).join(' / ') || usuarioItem.perfil?.rol_display || usuarioItem.perfil?.rol || '',
-      email: usuarioItem.email || '',
-      username: usuarioItem.username || '',
-      password: '',
-      password_confirm: '',
-      carrera: usuarioItem?.perfil?.carrera || prev.carrera || '',
-      dedicacion: usuarioTieneRolGestion && ['tiempo_completo', 'medio_tiempo'].includes(String(prev.dedicacion || ''))
-        ? 'horario_40'
-        : prev.dedicacion,
-    }));
-    setShowAutocomplete(false);
-    setShowUserInfo(true);
-
-    // limpiar timeout previo
-    if (gestionWarningTimeoutRef.current) {
-      clearTimeout(gestionWarningTimeoutRef.current);
-      gestionWarningTimeoutRef.current = null;
-    }
-    setShowGestionWarningVisible(false);
-    setGestionWarningInfoKey(null);
-
-    // si el usuario tiene rol de gestión, mostrar la advertencia tras 1s con la misma animación visual
-    if (usuarioTieneRolGestion) {
-      gestionWarningTimeoutRef.current = setTimeout(() => {
-        setGestionWarningInfoKey(Date.now());
-        setShowGestionWarningVisible(true);
-      }, 1000);
-    }
   };
 
   const validarCiUnicoLocal = (ciValor, docenteIdExcluir = null) => {
@@ -1227,80 +899,11 @@ function ListaDocentes({ sidebarCollapsed = false }) {
     });
   };
 
-  const usuariosAutocomplete = usuarios.filter((usuarioItem) => {
-    const tieneRolDocente = usuarioTieneRol(usuarioItem, 'docente');
-    const tienePerfilDocente = usuarioTienePerfilDocente(usuarioItem);
-    const yaTieneDocente = docentes.some((docente) => String(docente.user_id || docente.usuario_id || '') === String(usuarioItem.id || ''));
-    if (!tieneRolDocente || tienePerfilDocente || yaTieneDocente) return false;
-
-    const query = buscarUsuario.trim().toLowerCase();
-    if (!query) return true;
-    const nombre = `${usuarioItem.first_name || ''} ${usuarioItem.last_name || ''}`.trim().toLowerCase();
-    const correo = String(usuarioItem.email || '').toLowerCase();
-    const username = String(usuarioItem.username || '').toLowerCase();
-    return nombre.includes(query) || correo.includes(query) || username.includes(query);
-  }).slice(0, 8);
-
-  const usuarioSeleccionado = usuarios.find((usuarioItem) => String(usuarioItem.id) === String(formData.user || ''));
-  const usuarioFormularioTieneRolGestion = ['director', 'jefe_estudios', 'iiisyp'].some((rol) =>
-    usuarioTieneRol(usuarioSeleccionado, rol)
-  );
-  const dedicacionEsTiempoHorario = ['horario_16', 'horario_24', 'horario_40', 'horario_48'].includes(String(formData.dedicacion || ''));
-  const mostrarAdvertenciaGestion = usuarioFormularioTieneRolGestion && showGestionWarningVisible && !dedicacionEsTiempoHorario;
-  const opcionesDedicacion = [
-    { value: 'tiempo_completo', label: 'Tiempo Completo' },
-    { value: 'medio_tiempo', label: 'Medio Tiempo' },
-    { value: 'horario_16', label: 'Horario 16hrs/mes' },
-    { value: 'horario_24', label: 'Horario 24hrs/mes' },
-    { value: 'horario_40', label: 'Horario 40hrs/mes' },
-    { value: 'horario_48', label: 'Horario 48hrs/mes' },
-  ].filter((opcion) => (
-    !usuarioFormularioTieneRolGestion || !['tiempo_completo', 'medio_tiempo'].includes(opcion.value)
-  ));
-  const carreraSeleccionadaNombre = carreras.find((carrera) => String(carrera.id) === String(formData.carrera || ''))?.nombre || '';
-  const mensajeIncompatibilidadGestion = 'Los cargos de gestión solo son compatibles con docencia a Tiempo Horario';
-  const mensajesInfoEdicion = [
-    {
-      titulo: 'Datos de identidad',
-      subtitulo: 'Nombre, CI, Email',
-      contenido: 'Se gestionan exclusivamente desde "Usuarios" para mantener consistencia entre todos los roles del usuario.',
-    },
-    {
-      titulo: 'Datos contractuales',
-      subtitulo: 'Carrera, Fecha de Ingreso',
-      contenido: 'Editables solo si el docente no tiene horas declaradas. Si existe historial de fondo de tiempo, estos campos se bloquean para preservar la trazabilidad de los cálculos ya validados (Art. 11-12, Reglamento de Control y Distribución del Tiempo).',
-    },
-  ];
-  const infoEdicionActual = mensajesInfoEdicion[infoEdicionIndex];
-  const moverInfoEdicion = (direction) => {
-    setInfoEdicionDirection(direction);
-    setInfoEdicionIndex((prev) => {
-      if (direction === 'left') {
-        return prev === 0 ? mensajesInfoEdicion.length - 1 : prev - 1;
-      }
-      return (prev + 1) % mensajesInfoEdicion.length;
-    });
-  };
-  const horasSemanalesDerivadas = formData.dedicacion === 'tiempo_completo' ? 40
-    : formData.dedicacion === 'medio_tiempo' ? 20
-    : formData.dedicacion === 'horario_16' ? 4
-    : formData.dedicacion === 'horario_24' ? 6
-    : formData.dedicacion === 'horario_40' ? 10
-    : formData.dedicacion === 'horario_48' ? 12
-    : '';
-
   const handleCreateSubmit = async (e) => {
     e.preventDefault();
     console.log('Iniciando submit...', formData);
     setIsSubmitting(true);
     setErrors({});
-
-    if (!formData.user) {
-      setErrors((prev) => ({ ...prev, user: ['Debe seleccionar un usuario existente.'] }));
-      toast.error('Debe seleccionar un usuario para vincular el docente.');
-      setIsSubmitting(false);
-      return;
-    }
 
     if (!formData.carrera) {
       setErrors((prev) => ({ ...prev, carrera: ['Debe seleccionar una carrera.'] }));
@@ -1310,16 +913,16 @@ function ListaDocentes({ sidebarCollapsed = false }) {
     }
 
     const ciNormalizado = (formData.ci || '').trim();
-    if (ciNormalizado && validarCiUnicoLocal(ciNormalizado)) {
-      setErrors((prev) => ({ ...prev, ci: ['Ya existe un docente con este C.I.'] }));
-      toast.error('Ya existe un docente con este C.I.');
+    if (!ciNormalizado) {
+      setErrors((prev) => ({ ...prev, ci: ['El C.I. es obligatorio.'] }));
+      toast.error('El C.I. es obligatorio.');
       setIsSubmitting(false);
       return;
     }
 
-    if (usuarioFormularioTieneRolGestion && ['tiempo_completo', 'medio_tiempo'].includes(String(formData.dedicacion || ''))) {
-      setErrors((prev) => ({ ...prev, dedicacion: [mensajeIncompatibilidadGestion] }));
-      toast.error(mensajeIncompatibilidadGestion);
+    if (validarCiUnicoLocal(ciNormalizado)) {
+      setErrors((prev) => ({ ...prev, ci: ['Ya existe un docente con este C.I.'] }));
+      toast.error('Ya existe un docente con este C.I.');
       setIsSubmitting(false);
       return;
     }
@@ -1354,7 +957,6 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       delete payload.nombre_completo;
       if (payload.email === '') payload.email = null;
       if (payload.telefono === '') payload.telefono = null;
-      payload.user = Number(formData.user);
 
       console.log('Enviando payload:', payload);
       const response = await api.post('/docentes/', payload);
@@ -1373,13 +975,17 @@ function ListaDocentes({ sidebarCollapsed = false }) {
             ci: docenteCreado.ci || payload.ci || '',
             carrera: formData.carrera || '',
           }));
+          // Este retorno pertenece al flujo "Crear Usuario" y no debe activar
+          // el modo de "vinculo rapido" (ese modo bloquea el selector y oculta el check).
           sessionStorage.removeItem('vincularDocentePendiente');
         }
       }
 
+      // ���� Si venimos desde usuarios, volver autom+�ticamente
       if (abrirDesdeUsuarios) {
         toast.success('Docente creado. Volviendo a Crear Usuario...');
         setTimeout(() => {
+          // Limpiar flag pero mantener datos en sessionStorage
           sessionStorage.removeItem('abrirModalDesdeUsuarios');
           sessionStorage.removeItem('datosCrearDocente');
           navigate('/usuarios');
@@ -1391,24 +997,35 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       }
     } catch (err) {
       console.error('Error al crear docente:', err);
-      console.error('Response data:', err.response?.data);
-      console.error('Response status:', err.response?.status);
       const apiErrors = err.response?.data;
       if (apiErrors) {
         setErrors(apiErrors);
-        toast.error(getBackendErrorMessage(apiErrors, 'Error al crear docente'));
+        toast.error(getBackendErrorMessage(apiErrors, 'Error al crear el docente.'));
       } else {
-        toast.error('Error al crear docente: ' + (err.message || 'Error desconocido'));
+        toast.error('Ocurri+� un error inesperado.');
       }
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const handleCrearCuentaParaDocente = (docente) => {
+    sessionStorage.setItem(
+      'vincularDocentePendiente',
+      JSON.stringify({
+        docenteId: docente.id,
+        carrera: docente.carrera_id || '',
+        first_name: docente.nombres || '',
+        last_name: [docente.apellido_paterno, docente.apellido_materno].filter(Boolean).join(' '),
+        email: docente.email || '',
+      })
+    );
+    navigate('/usuarios');
+  };
+
   const handleUpdateSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
-    setErrors({});
 
     if (!formData.carrera) {
       setErrors((prev) => ({ ...prev, carrera: ['Debe seleccionar una carrera.'] }));
@@ -1417,18 +1034,12 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       return;
     }
 
-    if (usuarioFormularioTieneRolGestion && ['tiempo_completo', 'medio_tiempo'].includes(String(formData.dedicacion || ''))) {
-      setErrors((prev) => ({ ...prev, dedicacion: [mensajeIncompatibilidadGestion] }));
-      toast.error(mensajeIncompatibilidadGestion);
-      setIsSubmitting(false);
-      return;
-    }
-
+    // Validación de fecha_ingreso
     if (formData.fecha_ingreso) {
       const fechaIngreso = new Date(formData.fecha_ingreso + 'T00:00:00');
       const hoy = new Date();
       hoy.setHours(0, 0, 0, 0);
-      const fundacionUABJB = new Date(1967, 10, 18);
+      const fundacionUABJB = new Date(1967, 10, 18); // 18 de noviembre de 1967
       if (fechaIngreso > hoy) {
         setErrors((prev) => ({ ...prev, fecha_ingreso: ['La fecha de ingreso no puede ser una fecha futura.'] }));
         toast.error('La fecha de ingreso no puede ser una fecha futura.');
@@ -1455,20 +1066,13 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       payload.nombres = nombresSplit.nombres;
       payload.apellido_paterno = nombresSplit.apellido_paterno;
       payload.apellido_materno = nombresSplit.apellido_materno;
-      delete payload.cargo_profesional;
-      delete payload.cargo_profesional;
       delete payload.nombre_completo;
       if (payload.email === '') payload.email = null;
       if (payload.telefono === '') payload.telefono = null;
 
-      const response = await api.put(`/docentes/${docenteSeleccionado.id}/`, payload);
-      const actualizado = response.data;
-      // Actualizar estado local inmediatamente
-      setDocentes((prev) => prev.map((d) => (d.id === actualizado.id ? actualizado : d)));
+      await api.put(`/docentes/${docenteSeleccionado.id}/`, payload);
       toast.success('Docente actualizado correctamente');
       setShowModal(false);
-      setDocenteSeleccionado(actualizado);
-      // Sincronizar con backend por si hay otros cambios
       cargarDocentes();
     } catch (err) {
       console.error(err);
@@ -1529,26 +1133,6 @@ function ListaDocentes({ sidebarCollapsed = false }) {
   // iiisyp es solo lectura: solo superuser y director pueden crear/editar/eliminar
   const esAdmin = () => user?.is_superuser || (user?.perfil?.rol === 'director');
   const docenteVinculadoAUsuario = Boolean(docenteSeleccionado?.usuario_id);
-  const horasDeclaradasDocente = Number(docenteSeleccionado?.horas_declaradas || 0);
-  const fondosValidadosDocente = Number(docenteSeleccionado?.fondos_validados || 0);
-  const docenteTieneHistorial = horasDeclaradasDocente > 0 || fondosValidadosDocente > 0;
-  const tooltipBloqueoHistorial = 'No editable: existe historial de horas declaradas';
-  const tooltipDatosUsuarios = 'Estos datos se gestionan desde Usuarios';
-  const estiloBloqueado = 'bg-slate-300 dark:bg-slate-800 text-slate-500 dark:text-slate-400 cursor-not-allowed opacity-100 border-slate-500 dark:border-slate-600';
-  const estiloAdvertenciaEditable = 'border-amber-300 dark:border-amber-700';
-
-  const handleEditarEnUsuarios = () => {
-    const userId = docenteSeleccionado?.usuario_id || docenteSeleccionado?.user_id;
-    if (!userId) {
-      toast.error('Este docente no tiene un usuario vinculado.');
-      return;
-    }
-
-    sessionStorage.setItem('datosEditarUsuario', JSON.stringify({ userId }));
-    setShowModal(false);
-    navigate('/usuarios');
-  };
-
   const docentesFiltrados = (() => {
     let result = docentes;
 
@@ -1634,7 +1218,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
         {/* MODAL DE CREACION DE DOCENTE */}
         {isCreating && createPortal((
           <div
-            className="fixed top-0 right-0 bottom-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            className="fixed top-0 right-0 bottom-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in"
             style={{ left: sidebarCollapsed ? '5rem' : '18rem' }}
           >
             <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden">
@@ -1652,115 +1236,38 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                 </div>
               </div>
               {/* Body */}
-              <form id="crear-docente-form" onSubmit={handleCreateSubmit} noValidate className="flex-1 overflow-hidden p-6 space-y-6 bg-slate-50 dark:bg-slate-900 transition-all duration-300 ease-out">
+              <form id="crear-docente-form" onSubmit={handleCreateSubmit} noValidate className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 dark:bg-slate-900">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
-                      Buscar nombre o usuario
-                    </label>
-                    <div className="relative space-y-2 overflow-visible">
-                      <input
-                        type="text"
-                        value={buscarUsuario}
-                        onMouseDown={(e) => {
-                          // Comportamiento por pasos: si ya hay un usuario seleccionado,
-                          // el primer click activa el modo de búsqueda sin borrar el texto;
-                          // un segundo click borra el texto visible para comenzar a escribir.
-                          if (formData.user) {
-                            if (!searchMode) {
-                              setSearchMode(true);
-                              e.preventDefault();
-                              setTimeout(() => {
-                                const el = e.currentTarget;
-                                try { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } catch (_) {}
-                              }, 0);
-                              return;
-                            }
-                            // si ya estamos en searchMode, el segundo click limpia el texto y abre autocompletado
-                            setBuscarUsuario('');
-                            setShowAutocomplete(true);
-                            return;
-                          }
-                          // si no hay usuario seleccionado, entrar directamente en modo búsqueda
-                          setSearchMode(true);
-                          setShowAutocomplete(true);
-                        }}
-                        onChange={(e) => {
-                          setBuscarUsuario(e.target.value);
-                          setShowAutocomplete(true);
-                        }}
-                        placeholder="Buscar por nombre, correo o usuario..."
-                        className={`w-full px-4 py-3 rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white ${
-                          errors.user ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'
-                        }`}
-                      />
-                      {showAutocomplete && buscarUsuario !== null && (
-                        <>
-                          <style>{`@keyframes slideDown{from{transform:translateY(-8px);opacity:0}to{transform:translateY(0);opacity:1}} .slide-down{animation:slideDown 220ms ease-out forwards}`}</style>
-                          <div className="absolute left-0 top-full z-50 mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 max-h-48 overflow-auto shadow-2xl slide-down">
-                            {usuariosAutocomplete.map((usuarioItem) => (
-                              <button
-                                key={usuarioItem.id}
-                                type="button"
-                                onClick={() => handleSeleccionUsuario(usuarioItem)}
-                                className="w-full text-left px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 border-b last:border-b-0 border-slate-100 dark:border-slate-700"
-                              >
-                                <div className="font-semibold text-slate-800 dark:text-white">
-                                  {`${usuarioItem.first_name || ''} ${usuarioItem.last_name || ''}`.trim() || usuarioItem.username}
-                                </div>
-                                <div className="text-xs text-slate-500 dark:text-slate-400">
-                                  {usuarioItem.email || 'Sin correo'} · @{usuarioItem.username}
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                    {errors.user && <p className="text-xs text-red-600 mt-1">{Array.isArray(errors.user) ? errors.user[0] : errors.user}</p>}
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <div
-                      className={`overflow-hidden transition-all duration-500 ease-out ${
-                        formData.user || showUserInfo
-                          ? 'max-h-[260px] opacity-100 translate-y-0'
-                          : 'max-h-0 opacity-0 -translate-y-1 pointer-events-none'
-                      }`}
-                    >
-                      <div key={userInfoKey} className="slide-down rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4 shadow-sm">
-                        <div className="flex items-center justify-between mb-3">
-                          <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200"></h4>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                          <InputField
-                            label="Cargo profesional"
-                            name="cargo_profesional"
-                            value={formData.cargo_profesional || ''}
-                            onChange={() => {}}
-                            disabled
-                            inputClassName="text-sm"
-                          />
-                          <InputField
-                            label="Carrera"
-                            name="carrera_info"
-                            value={carreraSeleccionadaNombre}
-                            onChange={() => {}}
-                            disabled
-                            inputClassName="text-sm"
-                          />
-                          <InputField
-                            label="C.I."
-                            name="ci_info"
-                            value={formData.ci || ''}
-                            onChange={() => {}}
-                            disabled
-                            inputClassName="text-sm"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  <InputField
+                    label="Nombre completo"
+                    name="nombre_completo"
+                    value={formData.nombre_completo}
+                    onChange={handleChange}
+                    required
+                    error={errors.nombre_completo || errors.nombres || errors.apellido_paterno || errors.apellido_materno}
+                  />
+                  <InputField label="Cedula de Identidad (CI)" name="ci" value={formData.ci} onChange={handleChange} required error={errors.ci} />
+                  {abrirDesdeUsuarios && flujoDesdeUsuarios === 'crear_usuario' ? (
+                    <InputField
+                      label="Carrera"
+                      name="carrera_readonly"
+                      value={carreras.find((c) => String(c.id) === String(formData.carrera))?.nombre || ''}
+                      onChange={() => {}}
+                      required
+                      disabled
+                      error={errors.carrera}
+                    />
+                  ) : (
+                    <SelectConDropdown
+                      label="Carrera"
+                      name="carrera"
+                      value={formData.carrera}
+                      onChange={handleChange}
+                      options={carreras.map((c) => ({ value: c.id, label: c.nombre }))}
+                      error={errors.carrera}
+                      disabled={abrirDesdeUsuarios}
+                    />
+                  )}
                   <FechaIngresoPicker
                     value={formData.fecha_ingreso}
                     onChange={(val) => setFormData(prev => ({ ...prev, fecha_ingreso: val }))}
@@ -1772,8 +1279,14 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                     name="dedicacion"
                     value={formData.dedicacion}
                     onChange={handleChange}
-                    options={opcionesDedicacion}
-                    menuClassName="overflow-visible"
+                    options={[
+                      { value: 'tiempo_completo', label: 'Tiempo Completo' },
+                      { value: 'medio_tiempo', label: 'Medio Tiempo' },
+                      { value: 'horario_16', label: 'Horario 16hrs/mes' },
+                      { value: 'horario_24', label: 'Horario 24hrs/mes' },
+                      { value: 'horario_40', label: 'Horario 40hrs/mes' },
+                      { value: 'horario_48', label: 'Horario 48hrs/mes' },
+                    ]}
                     error={errors.dedicacion}
                   />
                   <SelectConDropdown
@@ -1788,15 +1301,23 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                     ]}
                     error={errors.categoria}
                   />
-                  <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-[minmax(0,380px)_1fr] gap-4 items-start">
+                  <div>
                     <div>
-                    <InputField
-                      label="Horas Semanales"
-                      name="horas_contrato_semanales"
-                      value={horasSemanalesDerivadas}
-                      onChange={() => {}}
-                      disabled
-                    />
+                      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
+                        Horas Semanales (derivadas)
+                      </label>
+                      <div className="w-full px-3 py-2.5 rounded-xl border-2 bg-gradient-to-r from-slate-100 to-slate-50 dark:from-slate-700 dark:to-slate-700/50 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600 flex items-center justify-between min-h-[46px]">
+                        <span className="font-bold text-lg text-slate-700 dark:text-slate-300">
+                          {formData.dedicacion === 'tiempo_completo' ? 40
+                           : formData.dedicacion === 'medio_tiempo' ? 20
+                           : formData.dedicacion === 'horario_16' ? 4
+                           : formData.dedicacion === 'horario_24' ? 6
+                           : formData.dedicacion === 'horario_40' ? 10
+                           : formData.dedicacion === 'horario_48' ? 12
+                           : ''}
+                        </span>
+                        <span className="text-xs text-slate-400 dark:text-slate-500">hrs/sem</span>
+                      </div>
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
                         {formData.dedicacion === 'horario_16' && 'Este docente trabaja 16 horas al mes (4 horas por semana).'}
                         {formData.dedicacion === 'horario_24' && 'Este docente trabaja 24 horas al mes (6 horas por semana).'}
@@ -1806,51 +1327,18 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                           && 'Horas semanales fijas por reglamento.'}
                       </p>
                     </div>
+                  </div>
 
-                    <div className="space-y-3">
+                  <div className="md:col-span-2">
                     <div
-                      className={`overflow-hidden transition-all duration-500 ease-out ${
-                        mostrarAdvertenciaGestion
-                          ? 'max-h-[180px] opacity-100 translate-y-0'
-                          : 'max-h-0 opacity-0 -translate-y-1 pointer-events-none'
+                      className={`rounded-xl border-l-4 p-3.5 shadow-sm min-h-[92px] transition-opacity ${
+                        formData.dedicacion
+                          ? `${dedicacionStyles[formData.dedicacion]?.bg} ${dedicacionStyles[formData.dedicacion]?.border} opacity-100`
+                          : 'bg-transparent border-transparent opacity-0'
                       }`}
                     >
-                      {mostrarAdvertenciaGestion && (
-                        <div
-                          key={gestionWarningInfoKey}
-                          className="gestion-warning-accent slide-down rounded-xl p-3.5 shadow-sm bg-gradient-to-r from-blue-600/10 to-indigo-600/10 dark:from-blue-600/20 dark:to-indigo-600/20 ring-1 ring-inset ring-blue-600/50 dark:ring-blue-400/50 border-l-[12px] !border-l-blue-800 dark:!border-l-blue-400"
-                        >
-                          <div className="flex items-start gap-3">
-                            <span className="text-xl">
-                              📋
-                            </span>
-                            <div className="space-y-1">
-                              <p className="text-sm font-bold text-blue-900 dark:text-blue-300">
-                                Cargos de gestión solo compatibles con docencia a Tiempo Horario.
-                              </p>
-                              <p className="text-xs leading-5 text-blue-800 dark:text-blue-400">
-                                Usuarios con rol de Director, Jefe de Estudios o Instituto solo pueden usar: 16, 24, 40 o 48 hrs/mes. TC y MT no aplican.
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    <div
-                      className={`overflow-hidden transition-all duration-500 ease-out ${
-                        showDedicacionInfo && formData.dedicacion
-                          ? 'max-h-[220px] opacity-100 translate-y-0'
-                          : 'max-h-0 opacity-0 -translate-y-1 pointer-events-none'
-                      }`}
-                    >
-                      {showDedicacionInfo && formData.dedicacion && (
-                        <div
-                          key={dedicacionInfoKey}
-                          className={`dedicacion-accent slide-down rounded-xl p-3.5 shadow-sm ${dedicacionStyles[formData.dedicacion]?.bg} ${dedicacionStyles[formData.dedicacion]?.accent}`}
-                          style={{ '--dedicacion-accent-color': dedicacionStyles[formData.dedicacion]?.leftBorder }}
-                        >
-                          <div className="flex items-start gap-3">
+                      {formData.dedicacion && (
+                        <div className="flex items-start gap-3">
                           <InfoIcon className={`w-5 h-5 flex-shrink-0 mt-0.5 ${dedicacionStyles[formData.dedicacion]?.icon}`} />
                           <div>
                             <h5 className={`text-sm font-semibold ${dedicacionStyles[formData.dedicacion]?.title}`}>Informacion sobre Dedicacion</h5>
@@ -1877,9 +1365,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                             </p>
                           </div>
                         </div>
-                        </div>
                       )}
-                    </div>
                     </div>
                   </div>
                 </div>
@@ -1933,112 +1419,89 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                 className={`rounded-2xl border-2 shadow-md hover:shadow-xl transition-all duration-200 hover:scale-[1.01] ${
                   docente.activo
                     ? 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700'
-                    : 'docente-inactivo-card bg-red-50 dark:bg-red-900/15 border-red-400 dark:border-red-700'
+                    : 'bg-red-50 dark:bg-red-900/15 border-red-400 dark:border-red-700'
                 }`}
               >
                 <div className="p-5">
-                  <div className="flex flex-col gap-3">
-                    {/* Primera línea: Avatar + Nombre + Botones */}
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex items-center gap-4 flex-1">
-                        <div className={`w-14 h-14 rounded-xl flex items-center justify-center text-white font-bold shadow-md text-xl flex-shrink-0 ${
-                          docente.activo
-                            ? 'bg-gradient-to-br from-blue-500 to-indigo-600'
-                            : 'bg-gradient-to-br from-red-500 to-rose-700'
-                        }`}>
-                          {docente.nombres[0]}{docente.apellido_paterno[0]}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h3 className={`text-lg font-bold truncate ${docente.activo ? 'text-blue-600 dark:text-white' : 'text-red-700 dark:text-red-300'}`}>
-                            {docente.usuario_nombre || docente.nombre_completo}
-                          </h3>
-                          {!docente.usuario_id && (
-                            <button
-                              type="button"
-                              onClick={() => handleCrearCuentaParaDocente(docente)}
-                              className="mt-1 text-sm font-semibold text-red-600 transition-colors hover:text-red-700 hover:underline dark:text-red-400 dark:hover:text-red-300"
-                            >
-                              <span className="inline-flex items-center gap-1">
-                                <FaExclamationTriangle className="text-amber-500" size={12} />
-                                Sin Cuenta
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    {/* Info del docente */}
+                    <div className="flex items-center gap-4 flex-1">
+                      <div className={`w-14 h-14 rounded-xl flex items-center justify-center text-white font-bold shadow-md text-xl flex-shrink-0 ${
+                        docente.activo
+                          ? 'bg-gradient-to-br from-blue-500 to-indigo-600'
+                          : 'bg-gradient-to-br from-red-500 to-rose-700'
+                      }`}>
+                        {docente.nombres[0]}{docente.apellido_paterno[0]}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className={`text-lg font-bold truncate ${docente.activo ? 'text-blue-600 dark:text-white' : 'text-red-700 dark:text-red-300'}`}>
+                          {docente.nombres} {docente.apellido_paterno} {docente.apellido_materno}
+                        </h3>
+                        {!docente.usuario_id && (
+                          <button
+                            type="button"
+                            onClick={() => handleCrearCuentaParaDocente(docente)}
+                            className="mt-1 text-sm font-semibold text-red-600 transition-colors hover:text-red-700 hover:underline dark:text-red-400 dark:hover:text-red-300"
+                          >
+                            <span className="inline-flex items-center gap-1">
+                              <FaExclamationTriangle className="text-amber-500" size={12} />
+                              Sin Cuenta
+                            </span>
+                          </button>
+                        )}
+                        <div className="flex flex-wrap items-center gap-2 mt-2">
+                          <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-slate-50 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border-2 border-slate-300 dark:border-slate-600 shadow-sm">
+                            CI: {docente.ci}
+                          </span>
+                          {docente.carrera_nombre && (
+                            <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 border-2 border-violet-300 dark:border-violet-700 shadow-sm">
+                              Carrera: {docente.carrera_nombre}
+                            </span>
+                          )}
+                          {docente.activo ? (
+                            <>
+                              <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-2 border-blue-300 dark:border-blue-700 shadow-sm">
+                                {docente.vinculos?.[0]?.categoria === 'catedratico' ? 'Catedratico' :
+                                  docente.vinculos?.[0]?.categoria === 'adjunto' ? 'Adjunto' : 'Asistente'}
                               </span>
-                            </button>
+                              <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-2 border-green-300 dark:border-green-700 shadow-sm">
+                                {docente.vinculos?.[0]?.dedicacion === 'tiempo_completo' ? 'Tiempo Completo'
+                                  : docente.vinculos?.[0]?.dedicacion === 'medio_tiempo' ? 'Medio Tiempo'
+                                  : docente.vinculos?.[0]?.dedicacion === 'horario_16' ? 'Horario 16hrs/mes'
+                                  : docente.vinculos?.[0]?.dedicacion === 'horario_24' ? 'Horario 24hrs/mes'
+                                  : docente.vinculos?.[0]?.dedicacion === 'horario_40' ? 'Horario 40hrs/mes'
+                                  : docente.vinculos?.[0]?.dedicacion === 'horario_48' ? 'Horario 48hrs/mes'
+                                  : docente.vinculos?.[0]?.dedicacion}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-2 border-red-300 dark:border-red-700 shadow-sm">
+                              Docente inactivo
+                            </span>
                           )}
                         </div>
                       </div>
-                      {/* Botones de acción - Solo admin */}
-                      {esAdmin() && (() => {
-                        const blockedBtn = (docente?.horas_declaradas || 0) > 0 || (docente?.fondos_validados || 0) > 0;
-                        const titleMsg = blockedBtn ? 'Acción deshabilitada: existe historial operativo' : '';
-                        return (
-                          <div className="flex gap-3 flex-shrink-0">
-                            <button
-                              onClick={() => !blockedBtn && abrirModalEditar(docente)}
-                              disabled={blockedBtn}
-                              className={`text-blue-500 ${blockedBtn ? 'opacity-50 cursor-not-allowed' : 'hover:text-blue-400 dark:text-blue-400 dark:hover:text-blue-300'} transition-all duration-200 ${blockedBtn ? '' : 'hover:scale-110'}`}
-                              title={titleMsg || 'Editar'}
-                            >
-                              <FaEdit size={18} />
-                            </button>
-                            <button
-                              onClick={() => !blockedBtn && eliminarDocente(docente)}
-                              disabled={blockedBtn}
-                              className={`text-red-500 ${blockedBtn ? 'opacity-50 cursor-not-allowed' : 'hover:text-red-400 dark:text-red-400 dark:hover:text-red-300'} transition-all duration-200 ${blockedBtn ? '' : 'hover:scale-110'}`}
-                              title={titleMsg || 'Eliminar'}
-                            >
-                              <FaTrash size={18} />
-                            </button>
-                          </div>
-                        );
-                      })()}
                     </div>
 
-                    {/* Segunda línea: CI, Email, Carrera */}
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-slate-50 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border-2 border-slate-300 dark:border-slate-600 shadow-sm">
-                        CI: {docente.ci}
-                      </span>
-                      {docente.usuario_email && (
-                        <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 border-2 border-cyan-300 dark:border-cyan-700 shadow-sm">
-                          {docente.usuario_email}
-                        </span>
-                      )}
-                      {docente.carrera_nombre && (
-                        <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 border-2 border-violet-300 dark:border-violet-700 shadow-sm">
-                          Carrera: {docente.carrera_nombre}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Tercera línea: Categoría, Dedicación, Rol adicional */}
-                    <div className="flex flex-wrap items-center gap-2">
-                      {docente.activo ? (
-                        <>
-                          <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-2 border-blue-300 dark:border-blue-700 shadow-sm">
-                            {docente.vinculos?.[0]?.categoria === 'catedratico' ? 'Catedrático' :
-                              docente.vinculos?.[0]?.categoria === 'adjunto' ? 'Adjunto' : 'Asistente'}
-                          </span>
-                          <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-2 border-green-300 dark:border-green-700 shadow-sm">
-                            {docente.vinculos?.[0]?.dedicacion === 'tiempo_completo' ? 'Tiempo Completo'
-                              : docente.vinculos?.[0]?.dedicacion === 'medio_tiempo' ? 'Medio Tiempo'
-                              : docente.vinculos?.[0]?.dedicacion === 'horario_16' ? 'Horario 16hrs/mes'
-                              : docente.vinculos?.[0]?.dedicacion === 'horario_24' ? 'Horario 24hrs/mes'
-                              : docente.vinculos?.[0]?.dedicacion === 'horario_40' ? 'Horario 40hrs/mes'
-                              : docente.vinculos?.[0]?.dedicacion === 'horario_48' ? 'Horario 48hrs/mes'
-                              : docente.vinculos?.[0]?.dedicacion}
-                          </span>
-                          {obtenerRolesDocente(docente) && (
-                            <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 border-2 border-orange-300 dark:border-orange-700 shadow-sm">
-                              {obtenerRolesDocente(docente)}
-                            </span>
-                          )}
-                        </>
-                      ) : (
-                        <span className="docente-inactivo-badge px-3 py-1 rounded-lg text-xs font-semibold bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-2 border-red-300 dark:border-red-700 shadow-sm">
-                          Docente inactivo
-                        </span>
-                      )}
-                    </div>
+                    {/* Botones de acci+�n - Solo admin */}
+                    {esAdmin() && (
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => abrirModalEditar(docente)}
+                          className="text-blue-500 hover:text-blue-400 dark:text-blue-400 dark:hover:text-blue-300 transition-all duration-200 hover:scale-110"
+                          title="Editar"
+                        >
+                          <FaEdit size={18} />
+                        </button>
+                        <button
+                          onClick={() => eliminarDocente(docente)}
+                          className="text-red-500 hover:text-red-400 dark:text-red-400 dark:hover:text-red-300 transition-all duration-200 hover:scale-110"
+                          title="Eliminar"
+                        >
+                          <FaTrash size={18} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2081,73 +1544,21 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                 <h2 className="text-xl font-bold text-white flex items-center gap-2">
                   Editar Docente
                 </h2>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={formData.activo}
-                  aria-label={formData.activo ? 'Marcar docente como inactivo' : 'Marcar docente como activo'}
-                  title={formData.activo ? 'Docente activo' : 'Docente inactivo'}
-                  onClick={() => handleChange({
-                    target: {
-                      name: 'activo',
-                      type: 'checkbox',
-                      checked: !formData.activo,
-                    },
-                  })}
-                  className={`relative inline-flex h-8 w-14 items-center rounded-full border transition-all ${
-                    formData.activo
-                      ? 'border-white bg-white/95'
-                      : 'border-white/70 bg-slate-900/25'
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-6 w-6 transform rounded-full shadow-md transition-transform ${
-                      formData.activo
-                        ? 'translate-x-7 bg-[#2C4AAE]'
-                        : 'translate-x-1 bg-white'
-                    }`}
-                  />
-                </button>
               </div>
             </div>
 
             {/* Body */}
-            <form id="editar-docente-form" onSubmit={handleUpdateSubmit} className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 dark:bg-slate-900 transition-all duration-300 ease-out">
+            <form id="editar-docente-form" onSubmit={handleUpdateSubmit} className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 dark:bg-slate-900">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <InputField
                   label="Nombre completo"
                   name="nombre_completo"
                   value={formData.nombre_completo}
                   onChange={handleChange}
+                  required
                   error={errors.nombre_completo || errors.nombres || errors.apellido_paterno || errors.apellido_materno}
-                  readOnly
-                  showLock
-                  lockTooltip={tooltipDatosUsuarios}
-                  inputClassName={estiloBloqueado}
                 />
-                <InputField
-                  label="Cedula de Identidad (CI)"
-                  name="ci"
-                  value={formData.ci}
-                  onChange={handleChange}
-                  error={errors.ci}
-                  readOnly
-                  showLock
-                  lockTooltip={tooltipDatosUsuarios}
-                  inputClassName={estiloBloqueado}
-                />
-                <InputField
-                  label="Email"
-                  name="email"
-                  type="email"
-                  value={formData.email || ''}
-                  onChange={handleChange}
-                  error={errors.email}
-                  readOnly
-                  showLock
-                  lockTooltip={tooltipDatosUsuarios}
-                  inputClassName={estiloBloqueado}
-                />
+                <InputField label="Cedula de Identidad (CI)" name="ci" value={formData.ci} onChange={handleChange} required error={errors.ci} />
                 <SelectConDropdown
                   label="Carrera"
                   name="carrera"
@@ -2155,44 +1566,31 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                   onChange={handleChange}
                   options={carreras.map((c) => ({ value: c.id, label: c.nombre }))}
                   error={errors.carrera}
-                  disabled={docenteTieneHistorial}
-                  showLock={docenteTieneHistorial}
-                  lockTooltip={tooltipBloqueoHistorial}
-                  containerClassName={docenteTieneHistorial ? estiloBloqueado : ''}
+                  disabled={docenteVinculadoAUsuario}
                 />
-                {docenteTieneHistorial ? (
-                  <div>
-                    <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
-                      <span className="inline-flex items-center gap-1.5">
-                        <span>Fecha de Ingreso</span>
-                        <span title={tooltipBloqueoHistorial} className="text-slate-500 dark:text-slate-400">🔒</span>
+                <div>
+                  <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Fecha de Ingreso</label>
+                  <div className="relative w-full rounded-xl border-2 bg-slate-50 dark:bg-slate-700 shadow-sm opacity-70 border-slate-300 dark:border-slate-600">
+                    <div className="w-full text-left px-4 py-2.5 rounded-xl bg-transparent text-slate-800 dark:text-white flex items-center justify-between gap-2 cursor-not-allowed">
+                      <span className="truncate">{formatDisplayDate(formData.fecha_ingreso) || formData.fecha_ingreso}</span>
+                      <span className="flex items-center justify-center h-6 w-6 rounded-md bg-slate-500 ring-1 ring-slate-500">
+                        <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 10V7a4 4 0 00-8 0v3m-2 0h12a1 1 0 011 1v8a1 1 0 01-1 1H6a1 1 0 01-1-1v-8a1 1 0 011-1z" />
+                        </svg>
                       </span>
-                    </label>
-                    <div className="relative w-full rounded-xl border-2 shadow-sm border-slate-500 dark:border-slate-600 bg-slate-300 dark:bg-slate-800">
-                      <div className="w-full text-left px-4 py-2.5 rounded-xl bg-transparent text-slate-500 dark:text-slate-400 flex items-center justify-between gap-2 cursor-not-allowed" title={tooltipBloqueoHistorial}>
-                        <span className="truncate">{formatDisplayDate(formData.fecha_ingreso) || formData.fecha_ingreso}</span>
-                        <span className="flex items-center justify-center h-6 w-6 rounded-md bg-slate-500 ring-1 ring-slate-500">
-                          <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 10V7a4 4 0 00-8 0v3m-2 0h12a1 1 0 011 1v8a1 1 0 01-1 1H6a1 1 0 01-1-1v-8a1 1 0 011-1z" />
-                          </svg>
-                        </span>
-                      </div>
                     </div>
-                    {errors.fecha_ingreso && <p className="text-xs text-red-600 mt-1">{errors.fecha_ingreso}</p>}
                   </div>
-                ) : (
-                  <FechaIngresoPicker
-                    value={formData.fecha_ingreso}
-                    onChange={(isoDate) => handleChange({
-                      target: {
-                        name: 'fecha_ingreso',
-                        value: isoDate,
-                        type: 'text',
-                      },
-                    })}
-                    error={errors.fecha_ingreso}
-                  />
-                )}
+                  {errors.fecha_ingreso && <p className="text-xs text-red-600 mt-1">{errors.fecha_ingreso}</p>}
+                </div>
+                <InputField
+                  label="Email"
+                  name="email"
+                  type="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  error={errors.email}
+                  readOnly
+                />
                 <InputField label="Telefono" name="telefono" value={formData.telefono} onChange={handleChange} error={errors.telefono} />
 
                 <SelectConDropdown
@@ -2206,26 +1604,39 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                     { value: 'asistente', label: 'Asistente' },
                   ]}
                   error={errors.categoria}
-                  containerClassName={estiloAdvertenciaEditable}
                 />
                 <SelectConDropdown
                   label="Dedicacion"
                   name="dedicacion"
                   value={formData.dedicacion}
                   onChange={handleChange}
-                  options={opcionesDedicacion}
+                  options={[
+                    { value: 'tiempo_completo', label: 'Tiempo Completo' },
+                    { value: 'medio_tiempo', label: 'Medio Tiempo' },
+                    { value: 'horario_16', label: 'Horario 16hrs/mes' },
+                    { value: 'horario_24', label: 'Horario 24hrs/mes' },
+                    { value: 'horario_40', label: 'Horario 40hrs/mes' },
+                    { value: 'horario_48', label: 'Horario 48hrs/mes' },
+                  ]}
                   error={errors.dedicacion}
-                  containerClassName={estiloAdvertenciaEditable}
                 />
-                <div className="md:col-span-2 grid grid-cols-1 gap-4 md:grid-cols-2 md:items-center">
-                  <div className="min-w-0">
-                    <InputField
-                      label="Horas Semanales"
-                      name="horas_contrato_semanales"
-                      value={horasSemanalesDerivadas}
-                      onChange={() => {}}
-                      disabled
-                    />
+                <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-[minmax(0,380px)_1fr] gap-4 items-start">
+                  <div>
+                    <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
+                      Horas Semanales (derivadas)
+                    </label>
+                    <div className="w-full px-3 py-2.5 rounded-xl border-2 bg-gradient-to-r from-slate-100 to-slate-50 dark:from-slate-700 dark:to-slate-700/50 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600 flex items-center justify-between min-h-[46px]">
+                      <span className="font-bold text-lg text-slate-700 dark:text-slate-300">
+                        {formData.dedicacion === 'tiempo_completo' ? 40
+                         : formData.dedicacion === 'medio_tiempo' ? 20
+                         : formData.dedicacion === 'horario_16' ? 4
+                         : formData.dedicacion === 'horario_24' ? 6
+                         : formData.dedicacion === 'horario_40' ? 10
+                         : formData.dedicacion === 'horario_48' ? 12
+                         : ''}
+                      </span>
+                      <span className="text-xs text-slate-400 dark:text-slate-500">hrs/sem</span>
+                    </div>
                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
                       {formData.dedicacion === 'horario_16' && 'Este docente trabaja 16 horas al mes (4 horas por semana).'}
                       {formData.dedicacion === 'horario_24' && 'Este docente trabaja 24 horas al mes (6 horas por semana).'}
@@ -2235,66 +1646,85 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                         && 'Horas semanales fijas por reglamento.'}
                     </p>
                   </div>
-                </div>
-                <div className="gestion-warning-accent md:col-span-2 slide-down min-h-[180px] rounded-xl border border-blue-200 border-l-[12px] border-l-[#1E3A8A] bg-gradient-to-r from-blue-50 to-indigo-50 p-4 shadow-sm ring-1 ring-inset ring-blue-600/30 transition-all duration-300 dark:border-blue-900/40 dark:border-l-blue-400 dark:from-blue-600/20 dark:to-indigo-600/20 dark:ring-blue-400/50">
-                  <div className="flex items-start gap-3">
-                    <InfoIcon className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-800 dark:text-blue-300" />
-                    <div className="min-w-0 flex-1 space-y-3 text-sm leading-6 text-blue-900 dark:text-blue-200">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <h5 className="font-bold uppercase tracking-wide text-blue-950 dark:text-blue-100">
-                            Información de edición
-                          </h5>
-                        </div>
-                        <div className="flex flex-shrink-0 items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => moverInfoEdicion('left')}
-                            className="info-nav-button flex h-8 w-8 items-center justify-center rounded-lg border text-blue-800 transition-colors hover:bg-blue-200 dark:border-blue-700 dark:bg-slate-900/40 dark:text-blue-200 dark:hover:bg-blue-900/40"
-                            title="Mensaje anterior"
-                            aria-label="Mensaje anterior"
-                          >
-                            <FaChevronLeft size={13} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => moverInfoEdicion('right')}
-                            className="info-nav-button flex h-8 w-8 items-center justify-center rounded-lg border text-blue-800 transition-colors hover:bg-blue-200 dark:border-blue-700 dark:bg-slate-900/40 dark:text-blue-200 dark:hover:bg-blue-900/40"
-                            title="Mensaje siguiente"
-                            aria-label="Mensaje siguiente"
-                          >
-                            <FaChevronRight size={13} />
-                          </button>
+
+                  <div
+                    className={`rounded-xl border-l-4 p-3.5 shadow-sm min-h-[92px] transition-opacity ${
+                      formData.dedicacion
+                        ? `${dedicacionStyles[formData.dedicacion]?.bg} ${dedicacionStyles[formData.dedicacion]?.border} opacity-100`
+                        : 'bg-transparent border-transparent opacity-0'
+                    }`}
+                  >
+                    {formData.dedicacion && (
+                      <div className="flex items-start gap-3">
+                        <InfoIcon className={`w-5 h-5 flex-shrink-0 mt-0.5 ${dedicacionStyles[formData.dedicacion]?.icon}`} />
+                        <div>
+                          <h5 className={`text-sm font-semibold ${dedicacionStyles[formData.dedicacion]?.title}`}>Informacion sobre Dedicacion</h5>
+                          <p className={`text-xs leading-5 mt-1 ${dedicacionStyles[formData.dedicacion]?.text}`}>
+                            {(() => {
+                              const horas = calcularHorasEfectivas(formData.dedicacion, formData.fecha_ingreso);
+                              const antiguedad = formData.fecha_ingreso
+                                ? Math.max(0, new Date().getFullYear() - new Date(formData.fecha_ingreso + 'T00:00:00').getFullYear())
+                                : 0;
+                              const dedicacionLabels = {
+                                tiempo_completo: 'Tiempo Completo',
+                                medio_tiempo: 'Medio Tiempo',
+                                horario_16: 'Horario 16hrs/mes',
+                                horario_24: 'Horario 24hrs/mes',
+                                horario_40: 'Horario 40hrs/mes',
+                                horario_48: 'Horario 48hrs/mes',
+                              };
+                              const label = dedicacionLabels[formData.dedicacion] || formData.dedicacion;
+                              if (horas !== null) {
+                                return `${label}: ${horas.toFixed(0)} horas efectivas anuales (${antiguedad} año${antiguedad !== 1 ? 's' : ''} de antigüedad, vacaciones calculadas según antigüedad).`;
+                              }
+                              return `${label}: complete la fecha de ingreso para calcular las horas efectivas.`;
+                            })()}
+                          </p>
                         </div>
                       </div>
-                      <div
-                        key={infoEdicionActual.titulo}
-                        className={`min-h-[76px] ${infoEdicionDirection === 'left' ? 'slide-info-from-left' : 'slide-info-from-right'}`}
-                      >
-                        <p className="text-xs font-bold uppercase tracking-wide text-blue-700 dark:text-blue-300">
-                          {infoEdicionActual.subtitulo}
-                        </p>
-                        <p>
-                          <span className="font-bold">{infoEdicionActual.titulo}:</span> {infoEdicionActual.contenido}
-                        </p>
-                      </div>
-                    </div>
+                    )}
                   </div>
                 </div>
+              </div>
+
+              <div className={`rounded-xl p-3 border-2 ${
+                formData.activo
+                  ? 'bg-slate-50 dark:bg-slate-700/30 border-slate-300 dark:border-slate-600'
+                  : 'bg-red-50 dark:bg-red-900/20 border-red-300 dark:border-red-700'
+              }`}>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={formData.activo}
+                    onClick={() => handleChange({
+                      target: {
+                        name: 'activo',
+                        type: 'checkbox',
+                        checked: !formData.activo,
+                      },
+                    })}
+                    className={`relative inline-flex h-8 w-14 items-center rounded-full border transition-all ${
+                      formData.activo
+                        ? 'bg-blue-600 border-blue-500'
+                        : 'bg-slate-500 border-slate-400'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-6 w-6 transform rounded-full bg-white shadow-md transition-transform ${
+                        formData.activo ? 'translate-x-7' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                  <span className={`text-sm font-medium ${formData.activo ? 'text-slate-800 dark:text-slate-300' : 'text-red-700 dark:text-red-300'}`}>
+                    {formData.activo ? 'Docente activo' : 'Docente inactivo'}
+                  </span>
+                </label>
               </div>
             </form>
 
             {/* Footer */}
             <div className="px-6 py-4 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
-                {docenteVinculadoAUsuario && infoEdicionIndex === 0 && (
-                  <button
-                    type="button"
-                    onClick={handleEditarEnUsuarios}
-                    className="px-6 py-2.5 rounded-xl font-semibold border-2 border-blue-600 text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-all"
-                  >
-                    Editar en Usuarios
-                  </button>
-                )}
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
@@ -2318,98 +1748,6 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                     Actualizar
                   </>
                 )}
-              </button>
-            </div>
-          </div>
-        </div>
-      ), document.body)}
-
-      {confirmacionDesactivarDocente && createPortal((
-        <div
-          className="fixed top-0 right-0 bottom-0 z-[75] flex items-center justify-center p-4"
-          style={{ left: sidebarCollapsed ? '5rem' : '18rem' }}
-        >
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px]" onClick={() => setConfirmacionDesactivarDocente(null)} />
-          <div className="relative w-full max-w-lg rounded-2xl border border-amber-500/80 dark:border-amber-700/60 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden animate-slide-up" style={{ animationDuration: '160ms' }}>
-            <div className="px-5 py-4 border-b border-amber-400/70 dark:border-slate-700/70 bg-gradient-to-r from-amber-300 via-amber-100 to-amber-50 dark:from-amber-900/30 dark:via-slate-900 dark:to-slate-900">
-              <h4 className="text-lg font-bold text-amber-900 dark:text-amber-300 flex items-center gap-2">
-                <span>{confirmacionDesactivarDocente.tieneHistorial ? '⚠️' : 'ℹ️'}</span>
-                Confirmar desactivación
-              </h4>
-            </div>
-            <div className="px-5 py-4 text-slate-700 dark:text-slate-200">
-              {confirmacionDesactivarDocente.tieneHistorial ? (
-                <p className="text-sm leading-relaxed whitespace-pre-line">
-                  Este docente tiene horas declaradas o fondos validados.{'\n'}
-                  Al desactivarlo: se bloquean nuevas declaraciones,{'\n'}
-                  pero su historial se conserva para auditoría.{'\n'}
-                  ¿Confirmar desactivación?
-                </p>
-              ) : (
-                <p className="text-sm leading-relaxed whitespace-pre-line">
-                  Al desactivar este docente no podrá declarar horas{'\n'}
-                  ni aparecer en listados activos hasta que sea reactivado.{'\n'}
-                  ¿Confirmar?
-                </p>
-              )}
-            </div>
-            <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-700/70 flex justify-end gap-3 bg-slate-50 dark:bg-slate-950/70">
-              <button
-                type="button"
-                onClick={() => setConfirmacionDesactivarDocente(null)}
-                className="px-4 py-2 rounded-lg font-semibold text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setConfirmacionDesactivarDocente(null);
-                  aplicarCambioFormulario('activo', '', 'checkbox', false);
-                }}
-                className="px-4 py-2 rounded-lg font-bold text-white bg-amber-600 hover:bg-amber-700 dark:bg-amber-700 dark:hover:bg-amber-800"
-              >
-                Desactivar
-              </button>
-            </div>
-          </div>
-        </div>
-      ), document.body)}
-
-      {confirmacionCambioPendiente && createPortal((
-        <div
-          className="fixed top-0 right-0 bottom-0 z-[75] flex items-center justify-center p-4"
-          style={{ left: sidebarCollapsed ? '5rem' : '18rem' }}
-        >
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px]" onClick={() => setConfirmacionCambioPendiente(null)} />
-          <div className="relative w-full max-w-lg rounded-2xl border border-amber-500/80 dark:border-amber-700/60 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden animate-slide-up" style={{ animationDuration: '160ms' }}>
-            <div className="px-5 py-4 border-b border-amber-400/70 dark:border-slate-700/70 bg-gradient-to-r from-amber-300 via-amber-100 to-amber-50 dark:from-amber-900/30 dark:via-slate-900 dark:to-slate-900">
-              <h4 className="text-lg font-bold text-amber-900 dark:text-amber-300 flex items-center gap-2">
-                <span>⚠️</span>
-                {confirmacionCambioPendiente.titulo}
-              </h4>
-            </div>
-            <div className="px-5 py-4 space-y-3 text-slate-700 dark:text-slate-200">
-              <p className="text-sm leading-relaxed whitespace-pre-line">{confirmacionCambioPendiente.mensaje}</p>
-            </div>
-            <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-700/70 flex justify-end gap-3 bg-slate-50 dark:bg-slate-950/70">
-              <button
-                type="button"
-                onClick={() => setConfirmacionCambioPendiente(null)}
-                className="px-4 py-2 rounded-lg font-semibold text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const cambio = confirmacionCambioPendiente;
-                  setConfirmacionCambioPendiente(null);
-                  aplicarCambioFormulario(cambio.name, cambio.value, cambio.type, cambio.checked);
-                }}
-                className="px-4 py-2 rounded-lg font-bold text-white bg-amber-600 hover:bg-amber-700 dark:bg-amber-700 dark:hover:bg-amber-800"
-              >
-                Confirmar cambio
               </button>
             </div>
           </div>

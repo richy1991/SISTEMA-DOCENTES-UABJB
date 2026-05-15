@@ -71,12 +71,12 @@ const AdminPanel = ({ user, onLogout }) => {
             path: '/admin/carreras',
             icon: CarrerasIcon,
         },
-        ...(user?.is_superuser ? [{
+        {
             name: 'Gestión de Calendarios',
             description: 'Administrar periodos académicos.',
             path: '/admin/calendarios',
             icon: CalendarioIcon,
-        }] : []),
+        },
     ];
 
     const handleLogoutClick = () => {

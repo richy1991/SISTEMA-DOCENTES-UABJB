@@ -80,14 +80,11 @@ function Sidebar({ user, onLogout, collapsed, setCollapsed, theme, setTheme, onP
   };
 
   const getRoleName = (user) => {
-    if (user?.is_superuser) {
-      return 'Super Admin';
-    }
     if (!user?.perfil?.rol) {
       return user?.is_staff ? 'Administrador' : 'Usuario';
     }
     const roles = {
-      iiisyp: 'Instituto de investigación',
+      iiisyp: 'Administrador',
       director: 'Director de Carrera',
       jefe_estudios: 'Jefe de Estudios',
       docente: 'Docente',
@@ -104,9 +101,9 @@ function Sidebar({ user, onLogout, collapsed, setCollapsed, theme, setTheme, onP
       { path: '/fondo-tiempo/archivados', icon: ArchiveIcon, label: 'Fondos Archivados', roles: ['iiisyp', 'director', 'jefe_estudios', 'docente'] },
     ],
     administracion: [
-      { path: '/fondo-tiempo/docentes', icon: AcademicCapIcon, label: 'Docentes', roles: ['iiisyp', 'director', 'jefe_estudios'] },
+      { path: '/fondo-tiempo/docentes', icon: AcademicCapIcon, label: 'Docentes', roles: ['director', 'jefe_estudios'] },
       { path: '/fondo-tiempo/cargas-horarias', icon: ClockIcon, label: 'Carga Horaria', roles: ['jefe_estudios'] },
-      { path: '/fondo-tiempo/calendarios', icon: CalendarioIcon, label: 'Calendario Académico', superuser: true },
+      { path: '/fondo-tiempo/calendarios', icon: CalendarioIcon, label: 'Calendario Académico', roles: [] }, // iiisyp ya no ve esto
       { path: '/fondo-tiempo/materias', icon: BookOpenIcon, label: 'Materias', roles: ['director', 'jefe_estudios'] },
     ]
   };
@@ -115,10 +112,7 @@ function Sidebar({ user, onLogout, collapsed, setCollapsed, theme, setTheme, onP
   const userRole = user?.perfil?.rol;
 
   // Función helper para filtrar items
-  const filterItems = (items) => items.filter(item => (
-    (item.roles && userRole && item.roles.includes(userRole))
-    || (item.superuser && user?.is_superuser)
-  ));
+  const filterItems = (items) => items.filter(item => !item.roles || (userRole && item.roles.includes(userRole)));
 
   const visiblePrincipal = filterItems(menuItems.principal);
   const visibleAdmin = filterItems(menuItems.administracion);
@@ -205,12 +199,12 @@ function Sidebar({ user, onLogout, collapsed, setCollapsed, theme, setTheme, onP
                   key={item.path}
                   to={item.path}
                   title={item.label}
-                  className={`group flex items-center gap-4 w-full transition-all duration-300 rounded-xl ${
+                  className={`group flex items-center gap-4 w-full transition-all duration-300 rounded-xl border-l-4 ${
                     collapsed ? 'justify-center h-14' : 'px-4 py-3'
                   } ${
                     isActive(item.path)
-                      ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-[inset_4px_0_0_0_#ffffff,0_10px_24px_rgba(0,0,0,0.22)]'
-                    : 'text-blue-200 hover:bg-blue-800/50 hover:text-white hover:shadow-[inset_4px_0_0_0_#ffffff]'
+                      ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg border-white'
+                    : 'text-blue-200 hover:bg-blue-800/50 hover:text-white border-transparent hover:border-white'
                   }`}
                 >
                   <item.icon className="w-6 h-6 flex-shrink-0" />
@@ -233,12 +227,12 @@ function Sidebar({ user, onLogout, collapsed, setCollapsed, theme, setTheme, onP
                       key={item.path}
                       to={item.path}
                       title={item.label}
-                      className={`group flex items-center gap-4 w-full transition-all duration-300 rounded-xl ${
+                      className={`group flex items-center gap-4 w-full transition-all duration-300 rounded-xl border-l-4 ${
                         collapsed ? 'justify-center h-14' : 'px-4 py-3'
                       } ${
                         isActive(item.path)
-                          ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-[inset_4px_0_0_0_#ffffff,0_10px_24px_rgba(0,0,0,0.22)]'
-                          : 'text-blue-200 hover:bg-blue-800/50 hover:text-white hover:shadow-[inset_4px_0_0_0_#ffffff]'
+                          ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg border-white'
+                          : 'text-blue-200 hover:bg-blue-800/50 hover:text-white border-transparent hover:border-white'
                       }`}
                     >
                       <item.icon className="w-6 h-6 flex-shrink-0" />

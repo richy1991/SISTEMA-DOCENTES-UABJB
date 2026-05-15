@@ -77,63 +77,31 @@ def _docentes_por_carreras(carreras):
         return Docente.objects.none()
     return Docente.objects.filter(asignaciones_carrera__carrera__in=carreras, asignaciones_carrera__activo=True).distinct()
 
-
-def _usuario_docente_sin_vinculo(user):
-    if not user or user.is_superuser:
-        return False
-    perfil = getattr(user, 'perfil', None)
-    if not (perfil and perfil.rol == 'docente' and not perfil.docente_id):
-        return False
-
-    tiene_rol_autoridad = user.asignaciones_carrera.filter(rol__in=['director', 'jefe_estudios', 'iiisyp']).exists()
-    return not tiene_rol_autoridad
-
-
-def _sincronizar_estado_usuario_huerfano(user):
-    if not _usuario_docente_sin_vinculo(user):
-        return user
-
-    updates_user = []
-    if user.is_active:
-        user.is_active = False
-        updates_user.append('is_active')
-    if user.is_staff:
-        user.is_staff = False
-        updates_user.append('is_staff')
-    if updates_user:
-        user.save(update_fields=updates_user)
-
-    perfil = getattr(user, 'perfil', None)
-    if perfil and perfil.activo:
-        perfil.activo = False
-        perfil.save(update_fields=['activo'])
-
-    user.asignaciones_carrera.filter(rol='docente', activo=True).update(activo=False)
-    return user
-
 class IsFullAdmin(BasePermission):
     """
-    Permite acceso solo a usuarios autenticados que sean superusuarios.
+    Permite acceso solo a usuarios autenticados con perfil y rol 'iiisyp'.
+    Bloquea a cualquier otro rol aunque tenga is_staff=True.
     """
     def has_permission(self, request, view):
         return bool(
             request.user
             and request.user.is_authenticated
-            and request.user.is_superuser
+            and hasattr(request.user, 'perfil')
+            and request.user.perfil.rol == 'iiisyp'
         )
 
 class IsAdminOrDirector(BasePermission):
     def has_permission(self, request, view):
         return bool(request.user and request.user.is_authenticated and (
             request.user.is_superuser or 
-            (hasattr(request.user, 'perfil') and request.user.perfil.rol in ['director', 'jefe_estudios'])
+            (hasattr(request.user, 'perfil') and request.user.perfil.rol in ['iiisyp', 'director'])
         ))
 
 class DocenteViewSet(viewsets.ModelViewSet):
-    queryset = Docente.objects.select_related('user', 'datos_laborales').prefetch_related('vinculos_carrera__carrera').all()
+    queryset = Docente.objects.all()
     serializer_class = DocenteSerializer
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['user__first_name', 'user__last_name', 'user__email', 'nombres', 'apellido_paterno', 'apellido_materno', 'datos_laborales__ci']
+    search_fields = ['nombres', 'apellido_paterno', 'apellido_materno', 'ci']
     ordering_fields = ['apellido_paterno', 'nombres']
     ordering = ['apellido_paterno']
 
@@ -383,8 +351,9 @@ class DatosLaboralesViewSet(viewsets.ModelViewSet):
     """
     ViewSet para gestionar DatosLaborales de cualquier usuario.
 
-    Solo el superusuario puede gestionar los datos de empleo (vacaciones,
-    feriados, antigüedad) de usuarios administrativos puros.
+    Permite que el admin (IIISYP) gestione los datos de empleo (vacaciones,
+    feriados, antigüedad) de usuarios administrativos puros (Director,
+    Jefe de Estudios, IIISYP) que no tienen ficha de Docente.
     """
     queryset = DatosLaborales.objects.all().select_related('docente', 'perfiles')
     serializer_class = DatosLaboralesSerializer
@@ -437,15 +406,16 @@ class CarreraViewSet(viewsets.ModelViewSet):
         return user.perfil.rol
 
     def _can_edit_logo_only(self, user):
-        return self._rol_usuario(user) in ['director', 'jefe_estudios']
+        return self._rol_usuario(user) in ['iiisyp', 'director', 'jefe_estudios']
 
     def _enforce_create_destroy_permission(self, request):
         if not self._is_superuser(request.user):
             raise PermissionDenied('Solo el superusuario puede crear o eliminar carreras.')
 
     def _enforce_manage_facultad_permission(self, request):
-        if not self._is_superuser(request.user):
-            raise PermissionDenied('Solo el superusuario puede gestionar facultades.')
+        rol = self._rol_usuario(request.user)
+        if not (self._is_superuser(request.user) or rol == 'iiisyp'):
+            raise PermissionDenied('Solo el superusuario o el rol iiisyp pueden gestionar facultades.')
 
     def _serialize_facultades(self):
         # Solo devolver facultades que están en el catálogo editable
@@ -714,6 +684,13 @@ class MateriaViewSet(viewsets.ModelViewSet):
         if self._usuario_carrera_inactiva():
             return queryset.none()
         
+        # IIISYP de carrera solo ve materias de sus carreras activas
+        if hasattr(user, 'perfil') and user.perfil.rol == 'iiisyp':
+            carreras_activas = _obtener_carreras_activas_usuario(user)
+            if carreras_activas.exists():
+                return queryset.filter(carrera__in=carreras_activas)
+            return queryset.none()
+        
         # Jefe de Estudios y Director ven materias de su carrera
         if hasattr(user, 'perfil') and user.perfil.rol in ['jefe_estudios', 'director']:
             carreras_activas = _obtener_carreras_activas_usuario(user)
@@ -779,14 +756,14 @@ class CargaHorariaViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         """
-        Solo Jefes de Estudio pueden crear, editar o borrar.
+        Solo Jefes de Estudio y Admins pueden crear, editar o borrar.
         """
         if self._usuario_carrera_inactiva():
             raise PermissionDenied('Acceso bloqueado: tu carrera está inactiva.')
 
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            if not hasattr(self.request.user, 'perfil') or self.request.user.perfil.rol != 'jefe_estudios':
-                raise PermissionDenied("Solo Jefes de Estudio pueden modificar cargas horarias.")
+            if not hasattr(self.request.user, 'perfil') or self.request.user.perfil.rol not in ['iiisyp', 'jefe_estudios']:
+                raise PermissionDenied("Solo Jefes de Estudio o Administradores pueden modificar cargas horarias.")
         
         return super().get_permissions()
 
@@ -804,7 +781,7 @@ class CargaHorariaViewSet(viewsets.ModelViewSet):
         if self._usuario_carrera_inactiva():
             return queryset.none()
 
-        if not perfil:
+        if not perfil or perfil.rol == 'iiisyp' or user.is_staff:
             return queryset
 
         if perfil.rol in ['director', 'jefe_estudios']:
@@ -976,6 +953,10 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         if not perfil:
             return queryset.none()
 
+        # IIISYP ve todo
+        if perfil.rol == 'iiisyp':
+            return queryset
+
         # Director y Jefe de Estudios ven los de sus carreras activas
         if perfil.rol in ['director', 'jefe_estudios']:
             carreras_activas = _obtener_carreras_activas_usuario(user)
@@ -1007,7 +988,7 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         # 2. Aplicar filtros según la acción
         if self.action in ['retrieve', 'restaurar', 'destroy', 'generar_pdf_oficial']:
             # Acciones que permiten ver archivados (con validación de dueño)
-            if not self.request.user.is_superuser:
+            if not self.request.user.is_staff:
                 if hasattr(self.request.user, 'perfil') and self.request.user.perfil.docente:
                     queryset = queryset.filter(docente=self.request.user.perfil.docente)
                 else:
@@ -1025,6 +1006,8 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
 
             if not perfil:
                 queryset = queryset.none()
+            elif perfil.rol == 'iiisyp':
+                pass
             elif perfil.rol in ['director', 'jefe_estudios']:
                 carreras_activas = _obtener_carreras_activas_usuario(user)
                 if carreras_activas.exists():
@@ -1036,6 +1019,8 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
                     queryset = queryset.filter(docente=perfil.docente)
                 else:
                     queryset = queryset.none()
+            elif user.is_staff:
+                pass
         
         # Obtener el objeto por pk
         obj = get_object_or_404(queryset, pk=self.kwargs.get('pk'))
@@ -1093,7 +1078,7 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         """
         Aplica reglas de negocio para la creación de Fondos de Tiempo.
-        Según Reglamento (Art. 9, 14), la creación es responsabilidad de Jefatura, no del Docente.
+        Según Reglamento (Art. 9, 14), la creación es responsabilidad de Jefatura/Admin, no del Docente.
         """
         if self._usuario_carrera_inactiva(request.user):
             raise PermissionDenied('Acceso bloqueado: tu carrera está inactiva.')
@@ -1104,8 +1089,8 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         except Exception:
             perfil = None
 
-        # 1. Permitir solo Superuser
-        if user.is_superuser:
+        # 1. Permitir Admin/Superuser
+        if user.is_superuser or (perfil and perfil.rol == 'iiisyp'):
             pass
         # 2. Bloquear a Docentes
         elif perfil and perfil.rol == 'docente':
@@ -2257,7 +2242,7 @@ class ObservacionFondoViewSet(viewsets.ModelViewSet):
             observacion=observacion,
             autor=request.user,
             texto=texto,
-            es_admin=request.user.perfil.rol in ['director', 'jefe_estudios']
+            es_admin=request.user.perfil.rol in ['iiisyp', 'director', 'jefe_estudios']
        )
     
         # NUEVO: Si estaba resuelta y el admin envía mensaje, reabrir Y cambiar fondo a observado
@@ -2382,7 +2367,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
     queryset = User.objects.select_related('perfil', 'perfil__carrera', 'perfil__docente').all()
     permission_classes = [IsAuthenticated]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['username', 'email', 'first_name', 'last_name', 'perfil__docente__datos_laborales__ci']
+    search_fields = ['username', 'email', 'first_name', 'last_name', 'perfil__docente__ci']
     ordering_fields = ['username', 'date_joined', 'last_name']
     ordering = ['-date_joined']
 
@@ -2394,7 +2379,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         que puedan causar que la lista en el frontend esté incompleta.
         """
         roles = [
-            ('iiisyp', 'Instituto de investigación'),
+            ('iiisyp', 'Instituto I.I.S. y P.'),
             ('director', 'Director de Carrera'),
             ('jefe_estudios', 'Jefe de Estudios'),
             ('docente', 'Docente'),
@@ -2453,7 +2438,6 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-        user = _sincronizar_estado_usuario_huerfano(user)
 
         # Retornar con el serializer de lectura
         output_serializer = UsuarioSerializer(user)
@@ -2477,27 +2461,11 @@ class UsuarioViewSet(viewsets.ModelViewSet):
                 },
                 status=status.HTTP_400_BAD_REQUEST
             )
-        user = _sincronizar_estado_usuario_huerfano(user)
 
         # Retornar con el serializer de lectura
         output_serializer = UsuarioSerializer(user)
         output_serializer = UsuarioSerializer(user, context={'request': request})
         return Response(output_serializer.data)
-
-    def list(self, request, *args, **kwargs):
-        queryset = self.filter_queryset(self.get_queryset())
-        page = self.paginate_queryset(queryset)
-
-        if page is not None:
-            for user in page:
-                _sincronizar_estado_usuario_huerfano(user)
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-
-        for user in queryset:
-            _sincronizar_estado_usuario_huerfano(user)
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
     
     def destroy(self, request, *args, **kwargs):
         """
@@ -2657,36 +2625,19 @@ class UsuarioViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        if not user.is_active and _usuario_docente_sin_vinculo(user):
-            return Response(
-                {'error': 'No se puede reactivar este usuario hasta que se le asigne un docente vinculado.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
         user.is_active = not user.is_active
         user.save()
 
-        # Regla de sincronización: activar/desactivar usuario también afecta su docente y asignaciones
-        perfil = PerfilUsuario.objects.filter(user=user).select_related('docente').first()
-        
+        # Regla de independencia: si el usuario se desactiva,
+        # su docente vinculado tambien queda inactivo.
         if user.is_active is False:
-            # Desactivar usuario: también desactivar docente y asignaciones
+            perfil = PerfilUsuario.objects.filter(user=user).select_related('docente').first()
             if perfil and perfil.docente and perfil.docente.activo:
                 perfil.docente.activo = False
                 perfil.docente.save(update_fields=['activo'])
 
             # Revocar asignaciones operativas de rol docente para este usuario.
             user.asignaciones_carrera.filter(rol='docente', activo=True).update(activo=False)
-        else:
-            # Activar usuario: también activar docente y asignaciones
-            if perfil and perfil.docente and not perfil.docente.activo:
-                perfil.docente.activo = True
-                perfil.docente.save(update_fields=['activo'])
-
-            # Reactivar asignaciones de carrera para este usuario
-            user.asignaciones_carrera.filter(rol='docente', activo=False).update(activo=True)
-
-        user = _sincronizar_estado_usuario_huerfano(user)
         
         output_serializer = UsuarioSerializer(user)
         output_serializer = UsuarioSerializer(user, context={'request': request})
