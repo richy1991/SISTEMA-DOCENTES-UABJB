@@ -288,12 +288,12 @@ const FloatingToolButton = ({ name, description, path, icon: Icon, color }) => {
             to={path}
             className={`group flex items-center gap-3 w-full rounded-xl border bg-gradient-to-r ${buttonColor} bg-white/10 dark:bg-slate-800/20 backdrop-blur-sm px-4 py-3 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg`}
         >
-            <div className="w-10 h-10 rounded-lg bg-white/20 dark:bg-slate-900/30 flex items-center justify-center text-cyan-100">
+            <div className="w-10 h-10 rounded-lg bg-white/20 dark:bg-slate-900/30 flex items-center justify-center text-cyan-700 dark:text-cyan-100">
                 <Icon className="h-5 w-5" />
             </div>
             <div className="text-left">
-                <p className="font-semibold text-slate-100">{name}</p>
-                <p className="text-xs text-slate-300/90">{description}</p>
+                <p className="font-semibold text-slate-900 dark:text-slate-100">{name}</p>
+                <p className="text-xs text-slate-600 dark:text-slate-300">{description}</p>
             </div>
         </Link>
     );
