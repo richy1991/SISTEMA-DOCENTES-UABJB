@@ -1,18 +1,41 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import toast from 'react-hot-toast';
 
 function Login({ onLogin }) {
+  const LOGIN_EXIT_DURATION = 1400;
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isExiting, setIsExiting] = useState(false);
+  const [loginError, setLoginError] = useState('');
+  const loginErrorTimeoutRef = useRef(null);
   const navigate = useNavigate();
 
+  useEffect(() => {
+    if (!loginError) return undefined;
+    if (loginErrorTimeoutRef.current) {
+      window.clearTimeout(loginErrorTimeoutRef.current);
+    }
+    loginErrorTimeoutRef.current = window.setTimeout(() => {
+      setLoginError('');
+    }, 4500);
+
+    return () => {
+      if (loginErrorTimeoutRef.current) {
+        window.clearTimeout(loginErrorTimeoutRef.current);
+      }
+    };
+  }, [loginError]);
+
   const handleSubmit = async (e) => {
+  if (isExiting) return;
   e.preventDefault();
   setLoading(true);
+  setLoginError('');
+  let nextRoute = null;
+  let authenticatedUser = null;
 
   try {
     const response = await axios.post('http://127.0.0.1:8000/api/token/', {
@@ -30,32 +53,47 @@ function Login({ onLogin }) {
     });
 
     localStorage.setItem('user', JSON.stringify(userResponse.data));
-    onLogin(userResponse.data);
+    authenticatedUser = userResponse.data;
+
+    const redirectTo = sessionStorage.getItem('post_login_redirect');
+    if (redirectTo) {
+      sessionStorage.removeItem('post_login_redirect');
+    }
     
     if (userResponse.data.perfil?.debe_cambiar_password) {
-      navigate('/cambiar-password');
+      nextRoute = '/cambiar-password';
     } else {
-      navigate('/');
+      nextRoute = redirectTo || '/';
     }
+
+    setIsExiting(true);
+    window.setTimeout(() => {
+      if (authenticatedUser) {
+        onLogin(authenticatedUser);
+      }
+      navigate(nextRoute || '/');
+    }, LOGIN_EXIT_DURATION);
 
   } catch (err) {
     console.error(err);
     if (err.response?.status === 401) {
-      toast.error('Usuario o contraseña incorrectos');
+      setLoginError('Usuario o contraseña incorrectos.');
     } else if (err.response?.status === 500) {
-      toast.error('Error del servidor. Intenta más tarde.');
+      setLoginError('Error del servidor. Intenta más tarde.');
     } else if (!err.response) {
-      toast.error('No se puede conectar con el servidor.');
+      setLoginError('No se puede conectar con el servidor.');
     } else {
-      toast.error('Error al iniciar sesión.');
+      setLoginError('Error al iniciar sesión.');
     }
   } finally {
-    setLoading(false);
+    if (!nextRoute) {
+      setLoading(false);
+    }
   }
 };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center relative overflow-hidden font-sans text-slate-100">
+    <div className={`min-h-screen w-full flex items-center justify-center relative overflow-hidden font-sans text-slate-100 ${isExiting ? 'login-scene-exit' : ''}`}>
       
       {/* Background with Gradient and Shapes */}
       <div className="absolute inset-0 bg-gradient-to-br from-[#0b1735] via-[#12224a] to-[#2a1f52]">
@@ -73,16 +111,17 @@ function Login({ onLogin }) {
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.2),transparent_42%),radial-gradient(circle_at_bottom_right,rgba(139,92,246,0.24),transparent_40%)]"></div>
 
       {/* Login Card */}
-      <div className="relative w-full max-w-md p-8 mx-4 bg-white/12 backdrop-blur-2xl border border-white/20 rounded-3xl shadow-[0_32px_95px_rgba(8,15,40,0.62),0_10px_30px_rgba(59,130,246,0.2)] card-stand-up" style={{ perspective: '1200px' }}>
+      <div className={`login-fixed-theme relative w-full max-w-md p-8 mx-4 bg-white/12 backdrop-blur-2xl border border-white/20 rounded-3xl shadow-[0_32px_95px_rgba(8,15,40,0.62),0_10px_30px_rgba(59,130,246,0.2)] ${isExiting ? 'card-exit-portal' : 'card-stand-up'}`} style={{ perspective: '1200px' }}>
         <div className="absolute inset-x-10 -top-px h-px bg-gradient-to-r from-transparent via-blue-300/90 to-transparent" />
         <div className="absolute -bottom-8 inset-x-16 h-10 rounded-full bg-blue-500/20 blur-2xl pointer-events-none" />
         
         {/* Header */}
         <div className="text-center mb-10">
-          <div className="relative inline-flex items-center justify-center w-32 h-32 mb-6 rounded-[36px] overflow-hidden bubble-logo logo-intro transition-transform duration-300 hover:scale-105">
+          <div className={`relative inline-flex items-center justify-center w-32 h-32 mb-6 rounded-[36px] overflow-hidden bubble-logo ${isExiting ? 'logo-exit-portal' : 'logo-intro'} transition-transform duration-300 hover:scale-105`}>
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_28%_18%,rgba(255,255,255,0.65),transparent_42%),linear-gradient(145deg,#3b82f6_0%,#4338ca_48%,#7c3aed_100%)]" />
             <img src="/images/LOGOUAB.png" alt="Logo UAB" className="relative z-10 w-28 h-28 object-contain drop-shadow-[0_10px_24px_rgba(15,23,42,0.55)]" />
             <div className="absolute top-2 left-3 w-16 h-5 rounded-full bg-white/35 blur-sm" />
+            <div className={`pointer-events-none absolute inset-0 rounded-[36px] border border-blue-200/70 ${isExiting ? 'portal-ring-active' : 'portal-ring-idle'}`} />
           </div>
           <h1 className="text-3xl font-bold text-white mb-2 tracking-tight">Bienvenido</h1>
           <p className="text-blue-100/80 text-sm font-medium">Sistema de Planificacion y Gestion Institucional - UAB JB</p>
@@ -90,6 +129,18 @@ function Login({ onLogin }) {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-6">
+          {loginError && (
+            <div className="login-inline-error rounded-xl border border-red-300/80 bg-red-600/28 text-red-100 px-4 py-3 text-sm font-semibold shadow-[0_10px_26px_rgba(127,29,29,0.42)]">
+              <div className="flex items-start gap-3">
+                <span className="login-warning-icon mt-0.5 text-red-100" aria-hidden="true">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86l-8.08 14A2 2 0 003.95 21h16.1a2 2 0 001.74-3.14l-8.08-14a2 2 0 00-3.42 0z" />
+                  </svg>
+                </span>
+                <span className="leading-5">{loginError}</span>
+              </div>
+            </div>
+          )}
           
           {/* Username */}
           <div className="space-y-2">
@@ -105,7 +156,7 @@ function Login({ onLogin }) {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
-                className="block w-full pl-11 pr-4 py-4 bg-blue-500/20 border border-blue-400/40 rounded-xl text-white placeholder-blue-100/70 focus:outline-none focus:ring-4 focus:ring-blue-300/40 focus:border-blue-300/80 transition-all duration-200 hover:border-blue-300/60 hover:bg-blue-500/25 shadow-[0_10px_24px_rgba(8,15,40,0.35),inset_0_2px_4px_rgba(59,130,246,0.2)]"
+                className="login-fixed-input block w-full pl-11 pr-4 py-4 bg-blue-500/20 border border-blue-400/40 rounded-xl text-white placeholder-blue-100/70 focus:outline-none focus:ring-4 focus:ring-blue-300/40 focus:border-blue-300/80 transition-all duration-200 hover:border-blue-300/60 hover:bg-blue-500/25 shadow-[0_10px_24px_rgba(8,15,40,0.35),inset_0_2px_4px_rgba(59,130,246,0.2)]"
                 placeholder="Ingrese su usuario"
               />
             </div>
@@ -121,12 +172,13 @@ function Login({ onLogin }) {
                 </svg>
               </div>
               <input
-                type={showPassword ? 'text' : 'password'}
+                type="text"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="block w-full pl-11 pr-14 py-4 bg-blue-500/20 border border-blue-400/40 rounded-xl text-white placeholder-blue-100/70 focus:outline-none focus:ring-4 focus:ring-blue-300/40 focus:border-blue-300/80 transition-all duration-200 hover:border-blue-300/60 hover:bg-blue-500/25 shadow-[0_10px_24px_rgba(8,15,40,0.35),inset_0_2px_4px_rgba(59,130,246,0.2)]"
+                className={`login-fixed-input ${showPassword ? '' : 'login-password-masked'} block w-full pl-11 pr-14 py-4 bg-blue-500/20 border border-blue-400/40 rounded-xl text-white placeholder-blue-100/70 focus:outline-none focus:ring-4 focus:ring-blue-300/40 focus:border-blue-300/80 transition-all duration-200 hover:border-blue-300/60 hover:bg-blue-500/25 shadow-[0_10px_24px_rgba(8,15,40,0.35),inset_0_2px_4px_rgba(59,130,246,0.2)]`}
                 placeholder="Ingrese su contraseña"
+                autoComplete="current-password"
               />
               <button
                 type="button"
@@ -135,18 +187,10 @@ function Login({ onLogin }) {
                 aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
                 title={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
               >
-                {showPassword ? (
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 3l7 4v5c0 5-3.4 8.6-7 10-3.6-1.4-7-5-7-10V7l7-4z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4" />
-                  </svg>
-                ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 3l7 4v5c0 5-3.4 8.6-7 10-3.6-1.4-7-5-7-10V7l7-4z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.5 11.5h5" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9.5v4" />
-                  </svg>
-                )}
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
               </button>
             </div>
             <p className="text-[11px] text-blue-100/65 ml-1">Usa el icono para mostrar u ocultar la contraseña.</p>
@@ -155,7 +199,7 @@ function Login({ onLogin }) {
           {/* Button */}
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || isExiting}
             className="w-full py-4 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:from-blue-500 hover:via-indigo-500 hover:to-violet-500 text-white font-bold rounded-xl shadow-[0_16px_32px_rgba(79,70,229,0.45),0_8px_20px_rgba(8,15,40,0.35)] transform transition-all duration-200 hover:scale-[1.01] active:scale-[0.985] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-4"
           >
             {loading ? (
@@ -181,6 +225,59 @@ function Login({ onLogin }) {
       </div>
 
       <style>{`
+        .login-scene-exit {
+          animation: sceneExitZoom 1400ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+        @keyframes sceneExitZoom {
+          0% { transform: scale(1); filter: saturate(1); }
+          100% { transform: scale(1.04); filter: saturate(1.12); }
+        }
+        .login-fixed-theme label {
+          color: #dbeafe !important;
+        }
+        .login-inline-error {
+          animation: loginInlineErrorIn 220ms ease-out both;
+        }
+        .login-warning-icon {
+          animation: loginWarningWiggle 900ms ease-in-out infinite;
+          transform-origin: center;
+          filter: drop-shadow(0 0 6px rgba(248, 113, 113, 0.6));
+        }
+        @keyframes loginInlineErrorIn {
+          from { opacity: 0; transform: translateY(-6px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes loginWarningWiggle {
+          0%, 100% { transform: rotate(0deg) translateX(0); }
+          25% { transform: rotate(-8deg) translateX(-1px); }
+          50% { transform: rotate(7deg) translateX(1px); }
+          75% { transform: rotate(-5deg) translateX(-1px); }
+        }
+        .login-fixed-theme .login-fixed-input,
+        .login-fixed-theme .login-fixed-input:focus,
+        .login-fixed-theme .login-fixed-input:hover,
+        .login-fixed-theme .login-fixed-input:-webkit-autofill,
+        .login-fixed-theme .login-fixed-input:-webkit-autofill:hover,
+        .login-fixed-theme .login-fixed-input:-webkit-autofill:focus {
+          background-color: rgba(59, 130, 246, 0.2) !important;
+          border-color: rgba(96, 165, 250, 0.45) !important;
+          color: #ffffff !important;
+          -webkit-text-fill-color: #ffffff !important;
+          box-shadow: 0 10px 24px rgba(8, 15, 40, 0.35), inset 0 2px 4px rgba(59, 130, 246, 0.2) !important;
+        }
+        .login-fixed-theme .login-fixed-input::placeholder {
+          color: rgba(219, 234, 254, 0.7) !important;
+        }
+        .login-fixed-theme .login-fixed-input:focus {
+          box-shadow: 0 0 0 4px rgba(147, 197, 253, 0.4), 0 10px 24px rgba(8, 15, 40, 0.35), inset 0 2px 4px rgba(59, 130, 246, 0.2) !important;
+        }
+        .login-fixed-theme .login-password-masked {
+          -webkit-text-security: disc;
+        }
+        .login-fixed-theme .login-fixed-input:-webkit-autofill {
+          -webkit-box-shadow: 0 0 0 1000px rgba(59, 130, 246, 0.2) inset, 0 10px 24px rgba(8, 15, 40, 0.35) !important;
+          transition: background-color 9999s ease-out 0s;
+        }
         @keyframes blob {
           0% { transform: translate(0px, 0px) scale(1); }
           33% { transform: translate(30px, -50px) scale(1.1); }
@@ -188,13 +285,13 @@ function Login({ onLogin }) {
           100% { transform: translate(0px, 0px) scale(1); }
         }
         .animate-blob {
-          animation: blob 7s infinite;
+          animation: blob 11s infinite;
         }
         .animation-delay-2000 {
-          animation-delay: 2s;
+          animation-delay: 3s;
         }
         .animation-delay-4000 {
-          animation-delay: 4s;
+          animation-delay: 6s;
         }
         @keyframes fadeInUp {
           from {
@@ -226,17 +323,82 @@ function Login({ onLogin }) {
           }
         }
         .card-stand-up {
-          animation: cardStandUp 2200ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+          animation: cardStandUp 3300ms cubic-bezier(0.22, 1, 0.36, 1) both;
           transform-origin: center bottom;
           will-change: transform, opacity, filter;
+        }
+        .card-exit-portal {
+          animation: cardExitPortal 1400ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+          transform-origin: center center;
+          will-change: transform, opacity, filter;
+          pointer-events: none;
+        }
+        @keyframes cardExitPortal {
+          0% {
+            opacity: 1;
+            transform: rotateX(0deg) scale(1) translateY(0);
+            filter: blur(0px) brightness(1);
+          }
+          62% {
+            opacity: 1;
+            transform: rotateX(0deg) scale(1.25) translateY(16px);
+            filter: blur(0px) brightness(1.08);
+          }
+          100% {
+            opacity: 0;
+            transform: rotateX(0deg) scale(2.5) translateY(56px);
+            filter: blur(6px) brightness(1.18);
+          }
         }
         .bubble-logo {
           box-shadow: 0 24px 42px rgba(37, 99, 235, 0.5), 0 10px 22px rgba(8, 15, 40, 0.42), inset 0 1px 2px rgba(255, 255, 255, 0.45);
         }
         .logo-intro {
-          animation: logoCardIntro 1800ms cubic-bezier(0.2, 0.9, 0.2, 1) both, bubbleFloat 5s ease-in-out 2000ms infinite;
+          animation: logoCardIntro 2600ms cubic-bezier(0.22, 1, 0.36, 1) both, bubbleFloat 7s ease-in-out 2800ms infinite;
           transform-origin: center center;
           will-change: transform, opacity, filter;
+        }
+        .logo-exit-portal {
+          animation: logoPortalOpen 1400ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+          transform-origin: center center;
+          will-change: transform, filter;
+        }
+        @keyframes logoPortalOpen {
+          0% {
+            transform: scale(1);
+            filter: brightness(1);
+          }
+          55% {
+            transform: scale(1.08);
+            filter: brightness(1.18);
+          }
+          100% {
+            transform: scale(1.22);
+            filter: brightness(1.35);
+          }
+        }
+        .portal-ring-idle {
+          opacity: 0;
+        }
+        .portal-ring-active {
+          animation: portalRingExpand 1400ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+        @keyframes portalRingExpand {
+          0% {
+            opacity: 0;
+            transform: scale(1);
+            box-shadow: 0 0 0 rgba(96, 165, 250, 0);
+          }
+          40% {
+            opacity: 1;
+            transform: scale(1.06);
+            box-shadow: 0 0 35px rgba(96, 165, 250, 0.75), inset 0 0 18px rgba(191, 219, 254, 0.45);
+          }
+          100% {
+            opacity: 0;
+            transform: scale(1.35);
+            box-shadow: 0 0 65px rgba(129, 140, 248, 0.95), inset 0 0 28px rgba(191, 219, 254, 0.5);
+          }
         }
         @keyframes logoCardIntro {
           0% {
