@@ -400,6 +400,8 @@ html:not(.dark) .info-nav-button {
   background: rgba(248, 250, 252, 0.7) !important;
 }
 
+/* (Removed) Styles for login-fixed-theme moved to component scope to avoid global overrides */
+
 .dark #fondo-actividades-planificadas table th {
   background: rgba(30, 41, 59, 0.45) !important;
   color: #94a3b8 !important;

@@ -43,7 +43,7 @@ const CambiarPassword = ({ onPasswordChanged }) => {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center p-4 bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 relative overflow-hidden">
+    <div className="min-h-screen w-full flex items-center justify-center p-4 bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 relative overflow-hidden login-fixed-theme">
       
       {/* Elementos de fondo animados */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -81,7 +81,7 @@ const CambiarPassword = ({ onPasswordChanged }) => {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="block w-full px-4 py-3.5 bg-black/20 border border-white/10 rounded-xl text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-blue-400/50 focus:border-blue-400/50 transition-all duration-200 hover:bg-black/30"
+                className="login-fixed-input block w-full px-4 py-3.5 rounded-xl placeholder-white/40 focus:outline-none transition-all duration-200"
                 minLength={8}
                 placeholder="••••••••"
               />
@@ -96,7 +96,7 @@ const CambiarPassword = ({ onPasswordChanged }) => {
                 required
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="block w-full px-4 py-3.5 bg-black/20 border border-white/10 rounded-xl text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-blue-400/50 focus:border-blue-400/50 transition-all duration-200 hover:bg-black/30"
+                className="login-fixed-input block w-full px-4 py-3.5 rounded-xl placeholder-white/40 focus:outline-none transition-all duration-200"
                 minLength={8}
                 placeholder="••••••••"
               />
@@ -121,6 +121,17 @@ const CambiarPassword = ({ onPasswordChanged }) => {
             )}
           </button>
         </form>
+        {/* Scoped styles: solo color de fondo y placeholder para inputs (no sombras ni focus) */}
+        <style>{`
+          .login-fixed-theme .login-fixed-input {
+            background-color: rgba(59, 130, 246, 0.2) !important;
+            color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
+          }
+          .login-fixed-theme .login-fixed-input::placeholder {
+            color: rgba(219, 234, 254, 0.7) !important;
+          }
+        `}</style>
       </div>
     </div>
   );
