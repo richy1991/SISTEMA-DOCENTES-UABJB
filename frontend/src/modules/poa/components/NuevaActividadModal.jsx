@@ -224,7 +224,7 @@ const NuevaActividadModal = ({ onClose, onCreated, onUpdated, objetivoId, activi
                     setCodigo(e.target.value);
                     if (fieldErrors.codigo) setFieldErrors(prev => ({ ...prev, codigo: '' }));
                   }}
-                  maxLength={6}
+                  maxLength={13}
                   error={fieldErrors.codigo}
                 />
               </div>

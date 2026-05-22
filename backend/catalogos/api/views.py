@@ -140,6 +140,7 @@ class ItemCatalogoViewSet(viewsets.ModelViewSet):
         to_update = {}
         duplicados_conflicto = []
         existing_by_detalle = {}
+        pending_creates_by_detalle = {}
 
         if not dry_run:
             for item in ItemCatalogo.objects.all().only('id', 'detalle', 'partida', 'unidad_medida'):
@@ -200,14 +201,20 @@ class ItemCatalogoViewSet(viewsets.ModelViewSet):
                 stats['items_actualizados'] += 1
                 continue
 
-            to_create.append(
-                ItemCatalogo(
-                    partida=partida_codigo,
-                    detalle=detalle,
-                    unidad_medida=unidad_medida or 'Sin unidad',
-                )
+            pending_create = pending_creates_by_detalle.get(detail_key)
+            if pending_create is not None:
+                stats['duplicados_detectados'] += 1
+                pending_create.partida = partida_codigo
+                pending_create.unidad_medida = unidad_medida or 'Sin unidad'
+                continue
+
+            new_item = ItemCatalogo(
+                partida=partida_codigo,
+                detalle=detalle,
+                unidad_medida=unidad_medida or 'Sin unidad',
             )
-            existing_by_detalle[detail_key] = to_create[-1]
+            to_create.append(new_item)
+            pending_creates_by_detalle[detail_key] = new_item
 
         if not dry_run and duplicados_conflicto and not replace_duplicates:
             return Response(

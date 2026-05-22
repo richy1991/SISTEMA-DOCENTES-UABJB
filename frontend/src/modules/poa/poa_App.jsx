@@ -47,6 +47,7 @@ function POAApp({ user }) {
 
   const isHome = location?.pathname === '/poa' || location?.pathname === '/poa/';
   const isActividadesPage = location?.pathname?.includes('/poa/actividades/');
+  const isEvidenciasPage = location?.pathname?.includes('/poa/actividades/') && location?.pathname?.includes('/evidencias');
   const isPresupuestosPage = location?.pathname?.startsWith('/poa/presupuestos');
   const isObjetivosPage = location?.pathname?.startsWith('/poa/objetivos-especificos');
 
@@ -196,7 +197,7 @@ function POAApp({ user }) {
   }, [headerSelectedDireccion]);
 
   return (
-    <div className={`poa-app flex min-h-screen transition-colors duration-500`}>
+    <div className={`poa-app flex h-screen overflow-hidden transition-colors duration-500`}>
       {/* Toast notifications */}
       <Toaster position="top-right" />
 
@@ -257,7 +258,7 @@ function POAApp({ user }) {
         />
 
         {/* Contenido central */}
-        <section className={`poa-main-surface flex flex-col items-stretch justify-start flex-1 ${isHome ? 'pt-2 md:pt-2 pb-6' : 'pt-28 md:pt-24 pb-6'} ${(isActividadesPage || isPresupuestosPage || isObjetivosPage) ? 'px-2 md:px-4' : 'px-4 md:px-20'} w-full`}>
+        <section className={`poa-main-surface flex flex-col items-stretch justify-start flex-1 min-h-0 overflow-y-auto ${isHome ? 'pt-2 md:pt-2 pb-6' : 'pt-28 md:pt-24 pb-6'} ${isEvidenciasPage ? 'px-4 md:px-8 lg:px-10' : (isActividadesPage || isPresupuestosPage || isObjetivosPage) ? 'px-2 md:px-4' : 'px-4 md:px-20'} w-full`}>
           <Outlet context={{ user, poaRoles, poaPermissions }} />
         </section>
       </main>
