@@ -31,8 +31,8 @@ const EvidenciaPage = () => {
   const poaFieldClass = 'w-full px-4 py-3 rounded-lg border-2 border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm';
   const poaCompactFieldClass = 'w-full px-3 py-2 rounded-lg border-2 border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm';
   const poaTextAreaClass = `${poaFieldClass} resize-none`;
-  const poaCancelButtonClass = 'min-w-[104px] rounded-xl px-4 py-2.5 text-sm font-bold transition-colors border border-slate-300 bg-slate-100 text-slate-700 shadow-sm hover:bg-slate-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600';
-  const poaSaveButtonClass = 'min-w-[104px] rounded-xl px-4 py-2.5 text-sm font-bold transition-colors border border-emerald-500/60 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md hover:brightness-105';
+  const poaCancelButtonClass = 'min-w-[88px] rounded-xl px-3 py-2 text-xs sm:px-4 sm:py-2.5 sm:text-sm font-bold transition-colors border border-slate-300 bg-slate-100 text-slate-700 shadow-sm hover:bg-slate-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600';
+  const poaSaveButtonClass = 'min-w-[88px] rounded-xl px-3 py-2 text-xs sm:px-4 sm:py-2.5 sm:text-sm font-bold transition-colors border border-emerald-500/60 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md hover:brightness-105';
   const handleFormChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
@@ -313,6 +313,8 @@ const EvidenciaPage = () => {
   const pendingPreviewItems = files;
   const existingImageItems = (evidencia?.archivos || []).filter((archivo) => archivo.tipo === 'imagen' && archivo.archivo_url && !removedImageIds.includes(archivo.id));
   const removedImageItems = (evidencia?.archivos || []).filter((archivo) => archivo.tipo === 'imagen' && archivo.archivo_url && removedImageIds.includes(archivo.id));
+  const imagenes = (evidencia?.archivos || []).filter((archivo) => archivo.tipo === 'imagen' && archivo.archivo_url);
+  const links = (evidencia?.archivos || []).filter((archivo) => archivo.tipo === 'link' && archivo.url);
 
   return (
     <section className="flex flex-col gap-4 w-full pb-8">
@@ -353,208 +355,210 @@ const EvidenciaPage = () => {
         </div>
       ) : showForm && (
         <div className="flex justify-center">
-          <div className="w-full max-w-xl">
-            <form onSubmit={handleSubmit} className="bg-gradient-to-br from-slate-50 via-blue-50 to-cyan-50 dark:bg-gray-800 border border-slate-200 dark:border-gray-700 rounded-2xl shadow-lg p-6" onPaste={onPaste}>
-              <h2 className="text-2xl font-bold mb-2 text-gray-900 dark:text-white">{isEditingExisting ? 'Editar Evidencia' : 'Registrar Evidencia'}</h2>
+          <div className="w-full max-w-5xl">
+            <form onSubmit={handleSubmit} className="bg-gradient-to-br from-slate-50 via-blue-50 to-cyan-50 dark:bg-gray-800 border border-slate-200 dark:border-gray-700 rounded-2xl shadow-lg p-4 sm:p-6" onPaste={onPaste}>
+              <h2 className="text-xl sm:text-2xl font-bold mb-4 text-gray-900 dark:text-white">{isEditingExisting ? 'Editar Evidencia' : 'Registrar Evidencia'}</h2>
 
-              {/* Images area moved to bottom of form (see below) */}
+              <div className="grid gap-8 xl:grid-cols-[minmax(0,1.15fr)_minmax(380px,0.85fr)] items-start">
+                <div className="space-y-4 min-w-0">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1">Resultados logrados</label>
+                    <textarea
+                      placeholder="los resultados logrados en esta actividad son..."
+                      className={poaTextAreaClass}
+                      value={formData.resultados_logrados}
+                      onChange={(e) => handleFormChange('resultados_logrados', e.target.value)}
+                    />
+                  </div>
 
-              {/* Compact inputs */}
-              <div className="mb-3">
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1">Resultados logrados</label>
-                <textarea
-                  placeholder="los resultados logrados en esta actividad son..."
-                  className={poaTextAreaClass}
-                  value={formData.resultados_logrados}
-                  onChange={(e) => handleFormChange('resultados_logrados', e.target.value)}
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-[110px_110px_160px] gap-3 mb-3 items-center">
-                <div className="min-w-0">
-                  <label className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1 block min-h-[2.5rem] leading-tight flex items-end">Programado</label>
-                  <select className={poaCompactFieldClass} value={formData.programado} onChange={(e) => handleFormChange('programado', Number(e.target.value))}>
-                    <option value={1}>1</option>
-                    <option value={2}>2</option>
-                  </select>
-                </div>
-                <div className="min-w-0">
-                  <label className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1 block min-h-[2.5rem] leading-tight flex items-end">Ejecutado</label>
-                  <select className={poaCompactFieldClass} value={formData.ejecutado} onChange={(e) => handleFormChange('ejecutado', Number(e.target.value))}>
-                    <option value={1}>1</option>
-                    <option value={2}>2</option>
-                  </select>
-                </div>
-                <div className="min-w-0">
-                  <label className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1 block min-h-[2.5rem] leading-tight flex items-end">Grado de cumplimiento (%)</label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    autoComplete="off"
-                    className={`${poaCompactFieldClass} w-full`}
-                    placeholder="numero"
-                    value={formData.grado_cumplimiento}
-                    onChange={(e) => {
-                      const digitsOnly = e.target.value.replace(/\D/g, '');
-                      handleFormChange('grado_cumplimiento', digitsOnly);
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div className="mb-3">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-sm font-semibold text-gray-700 dark:text-gray-200 block">Medios (links)</label>
-                  <button
-                    type="button"
-                    onClick={addLinkItem}
-                    className="text-xs font-semibold text-green-600 hover:text-green-700"
-                  >
-                    Agregar enlace
-                  </button>
-                </div>
-                <div className="space-y-2">
-                  {linkItems.map((item, index) => (
-                    <div key={item.id} className="flex gap-2">
+                  <div className="grid grid-cols-1 md:grid-cols-[110px_110px_160px] gap-3 items-end">
+                    <div className="min-w-0">
+                      <label className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1 block">Programado</label>
+                      <select className={poaCompactFieldClass} value={formData.programado} onChange={(e) => handleFormChange('programado', Number(e.target.value))}>
+                        <option value={1}>1</option>
+                        <option value={2}>2</option>
+                      </select>
+                    </div>
+                    <div className="min-w-0">
+                      <label className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1 block">Ejecutado</label>
+                      <select className={poaCompactFieldClass} value={formData.ejecutado} onChange={(e) => handleFormChange('ejecutado', Number(e.target.value))}>
+                        <option value={1}>1</option>
+                        <option value={2}>2</option>
+                      </select>
+                    </div>
+                    <div className="min-w-0">
+                      <label className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1 block">Grado de cumplimiento (%)</label>
                       <input
-                        type="url"
-                        className={poaFieldClass}
-                        placeholder={`https://ejemplo.com/enlace-${index + 1}`}
-                        value={item.url}
-                        onChange={(e) => updateLinkItem(item.id, e.target.value)}
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="off"
+                        className={`${poaCompactFieldClass} w-full`}
+                        placeholder="numero"
+                        value={formData.grado_cumplimiento}
+                        onChange={(e) => {
+                          const digitsOnly = e.target.value.replace(/\D/g, '');
+                          handleFormChange('grado_cumplimiento', digitsOnly);
+                        }}
                       />
-                      <button
-                        type="button"
-                        onClick={() => removeLinkItem(item.id)}
-                        className="px-3 py-2 text-xs rounded-md border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-300"
-                      >
-                        Quitar
-                      </button>
                     </div>
-                  ))}
-                </div>
-                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                  Puedes editar los enlaces existentes o eliminarlos antes de guardar.
-                </p>
-              </div>
+                  </div>
 
-              {/* Sección de imágenes dentro de la tarjeta del formulario */}
-              <div className="mt-6 rounded-xl border border-dashed border-green-400/70 bg-green-50/30 dark:bg-green-900/10 p-4">
-                <div
-                  onClick={() => fileInputRef.current && fileInputRef.current.click()}
-                  onPaste={onPaste}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={onDrop}
-                  tabIndex={0}
-                  className="mb-4 flex min-h-44 items-center justify-center flex-col gap-3 rounded-lg border-2 border-dashed border-green-300 dark:border-green-600 bg-green-50 dark:bg-green-900/10 cursor-pointer px-4 py-6 text-center focus:outline-none focus:ring-2 focus:ring-green-500"
-                >
-                  <div className="text-5xl">🖼️</div>
-                  <div className="text-sm text-gray-700 dark:text-gray-300 max-w-sm">Pega aquí tus imágenes (Ctrl+V), arrástralas o haz click para seleccionar</div>
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      fileInputRef.current && fileInputRef.current.click();
-                    }}
-                    className="px-4 py-2 rounded-md bg-green-600 hover:bg-green-700 text-white text-sm font-semibold transition"
-                  >
-                    Seleccionar imágenes
-                  </button>
-                  <input ref={fileInputRef} type="file" multiple accept="image/*" onChange={onFileChange} className="hidden" />
-                </div>
-
-                {pendingPreviewItems.length > 0 && (
-                  <div className="mb-4">
+                  <div>
                     <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-                        Imágenes listas para guardar ({pendingPreviewItems.length})
-                      </h3>
+                      <label className="text-sm font-semibold text-gray-700 dark:text-gray-200 block">Medios (links)</label>
                       <button
                         type="button"
-                        onClick={clearPendingFiles}
-                        className="text-xs font-semibold text-red-600 hover:text-red-700"
+                        onClick={addLinkItem}
+                        className="text-xs font-semibold text-green-600 hover:text-green-700"
                       >
-                        Limpiar todo
+                        Agregar enlace
                       </button>
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      {pendingPreviewItems.map((item) => (
-                        <div key={item.id} className="group relative overflow-hidden rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
-                          <img src={item.previewUrl} alt={item.file.name} className="h-28 w-full object-cover" />
-                          <div className="p-2">
-                            <div className="truncate text-[11px] text-gray-600 dark:text-gray-400">{item.file.name}</div>
-                          </div>
+                    <div className="space-y-2">
+                      {linkItems.map((item, index) => (
+                        <div key={item.id} className="flex gap-2">
+                          <input
+                            type="url"
+                            className={poaFieldClass}
+                            placeholder={`https://ejemplo.com/enlace-${index + 1}`}
+                            value={item.url}
+                            onChange={(e) => updateLinkItem(item.id, e.target.value)}
+                          />
                           <button
                             type="button"
-                            onClick={() => removePendingFile(item.id)}
-                            className="absolute right-2 top-2 rounded-full bg-black/70 px-2 py-1 text-[11px] font-semibold text-white opacity-90 group-hover:opacity-100"
+                            onClick={() => removeLinkItem(item.id)}
+                            className="px-3 py-2 text-xs rounded-md border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-300"
                           >
-                            X
+                            Quitar
                           </button>
                         </div>
                       ))}
                     </div>
+                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                      Puedes editar los enlaces existentes o eliminarlos antes de guardar.
+                    </p>
                   </div>
-                )}
+                </div>
 
-                {editMode && evidencia?.archivos?.some((archivo) => archivo.tipo === 'imagen' && archivo.archivo_url) && (
-                  <div className="mb-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-                        Imágenes guardadas ({existingImageItems.length} activas{removedImageItems.length > 0 ? `, ${removedImageItems.length} marcadas para eliminar` : ''})
-                      </h3>
+                <div className="space-y-4 min-w-0 xl:sticky xl:top-4 xl:self-start">
+                  <div className="rounded-xl border border-dashed border-green-400/70 bg-green-50/30 dark:bg-green-900/10 p-3 sm:p-4">
+                    <div
+                      onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                      onPaste={onPaste}
+                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={onDrop}
+                      tabIndex={0}
+                      className="mb-4 flex min-h-40 items-center justify-center flex-col gap-3 rounded-lg border-2 border-dashed border-green-300 dark:border-green-600 bg-green-50 dark:bg-green-900/10 cursor-pointer px-3 py-4 sm:px-4 sm:py-5 text-center focus:outline-none focus:ring-2 focus:ring-green-500"
+                    >
+                      <div className="text-4xl">🖼️</div>
+                      <div className="text-sm text-gray-700 dark:text-gray-300 max-w-sm">Pega aquí tus imágenes (Ctrl+V), arrástralas o haz click para seleccionar</div>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          fileInputRef.current && fileInputRef.current.click();
+                        }}
+                        className="px-4 py-2 rounded-md bg-green-600 hover:bg-green-700 text-white text-sm font-semibold transition"
+                      >
+                        Seleccionar imágenes
+                      </button>
+                      <input ref={fileInputRef} type="file" multiple accept="image/*" onChange={onFileChange} className="hidden" />
                     </div>
-                    {existingImageItems.length > 0 ? (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                        {existingImageItems.map((archivo) => (
-                          <div key={archivo.id} className="group relative overflow-hidden rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
-                            <img src={archivo.archivo_url} alt={`Imagen guardada ${archivo.id}`} className="h-28 w-full object-cover" />
-                            <div className="p-2 flex items-center justify-between gap-2">
-                              <div className="truncate text-[11px] text-gray-600 dark:text-gray-400">Guardada</div>
+
+                    {pendingPreviewItems.length > 0 && (
+                      <div className="mb-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                            Imágenes listas para guardar ({pendingPreviewItems.length})
+                          </h3>
+                          <button
+                            type="button"
+                            onClick={clearPendingFiles}
+                            className="text-xs font-semibold text-red-600 hover:text-red-700"
+                          >
+                            Limpiar todo
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
+                          {pendingPreviewItems.map((item) => (
+                            <div key={item.id} className="group relative overflow-hidden rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
+                              <img src={item.previewUrl} alt={item.file.name} className="h-20 sm:h-24 w-full object-cover" />
+                              <div className="p-2">
+                                <div className="truncate text-[11px] text-gray-600 dark:text-gray-400">{item.file.name}</div>
+                              </div>
                               <button
                                 type="button"
-                                onClick={() => markImageForRemoval(archivo.id)}
-                                className="rounded-md border border-red-300 px-2 py-1 text-[11px] font-semibold text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-300"
+                                onClick={() => removePendingFile(item.id)}
+                                className="absolute right-2 top-2 rounded-full bg-black/70 px-2 py-1 text-[11px] font-semibold text-white opacity-90 group-hover:opacity-100"
                               >
                                 X
                               </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-600 p-4 text-sm text-gray-500 dark:text-gray-400">
-                        No quedan imágenes activas. Si cambias de idea, puedes volver a cargar nuevas antes de guardar.
-                      </div>
-                    )}
-
-                    {removedImageItems.length > 0 && (
-                      <div className="mt-4">
-                        <div className="text-xs font-semibold uppercase tracking-wide text-red-600 mb-2">Marcadas para eliminar</div>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                          {removedImageItems.map((archivo) => (
-                            <div key={archivo.id} className="group relative overflow-hidden rounded-lg border border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/20 opacity-75">
-                              <img src={archivo.archivo_url} alt={`Imagen marcada ${archivo.id}`} className="h-28 w-full object-cover grayscale" />
-                              <div className="p-2 flex items-center justify-between gap-2">
-                                <div className="truncate text-[11px] text-red-700 dark:text-red-300">Se eliminará al guardar</div>
-                                <button
-                                  type="button"
-                                  onClick={() => unmarkImageRemoval(archivo.id)}
-                                  className="rounded-md border border-green-300 px-2 py-1 text-[11px] font-semibold text-green-700 hover:bg-green-50 dark:border-green-700 dark:text-green-300"
-                                >
-                                  Deshacer
-                                </button>
-                              </div>
                             </div>
                           ))}
                         </div>
                       </div>
                     )}
+
+                    {editMode && evidencia?.archivos?.some((archivo) => archivo.tipo === 'imagen' && archivo.archivo_url) && (
+                      <div className="mb-1">
+                        <div className="flex items-center justify-between mb-2">
+                          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                            Imágenes guardadas ({existingImageItems.length} activas{removedImageItems.length > 0 ? `, ${removedImageItems.length} marcadas para eliminar` : ''})
+                          </h3>
+                        </div>
+                        {existingImageItems.length > 0 ? (
+                          <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
+                            {existingImageItems.map((archivo) => (
+                              <div key={archivo.id} className="group relative overflow-hidden rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
+                                <img src={archivo.archivo_url} alt={`Imagen guardada ${archivo.id}`} className="h-20 sm:h-24 w-full object-cover" />
+                                <div className="p-2 flex items-center justify-between gap-2">
+                                  <div className="truncate text-[11px] text-gray-600 dark:text-gray-400">Guardada</div>
+                                  <button
+                                    type="button"
+                                    onClick={() => markImageForRemoval(archivo.id)}
+                                    className="rounded-md border border-red-300 px-2 py-1 text-[11px] font-semibold text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-300"
+                                  >
+                                    X
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-600 p-3 sm:p-4 text-sm text-gray-500 dark:text-gray-400">
+                            No quedan imágenes activas. Si cambias de idea, puedes volver a cargar nuevas antes de guardar.
+                          </div>
+                        )}
+
+                        {removedImageItems.length > 0 && (
+                          <div className="mt-4">
+                            <div className="text-xs font-semibold uppercase tracking-wide text-red-600 mb-2">Marcadas para eliminar</div>
+                            <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
+                              {removedImageItems.map((archivo) => (
+                                <div key={archivo.id} className="group relative overflow-hidden rounded-lg border border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/20 opacity-75">
+                                  <img src={archivo.archivo_url} alt={`Imagen marcada ${archivo.id}`} className="h-20 sm:h-24 w-full object-cover grayscale" />
+                                  <div className="p-2 flex items-center justify-between gap-2">
+                                    <div className="truncate text-[11px] text-red-700 dark:text-red-300">Se eliminará al guardar</div>
+                                    <button
+                                      type="button"
+                                      onClick={() => unmarkImageRemoval(archivo.id)}
+                                      className="rounded-md border border-green-300 px-2 py-1 text-[11px] font-semibold text-green-700 hover:bg-green-50 dark:border-green-700 dark:text-green-300"
+                                    >
+                                      Deshacer
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
 
-              <div className="flex items-center justify-end gap-2 mt-4">
+              <div className="flex items-center justify-end gap-2 mt-6">
                 <button
                   type="button"
                   onClick={handleEditCancel}
@@ -573,202 +577,200 @@ const EvidenciaPage = () => {
 
       {/* Evidencia Display (si existe y no en editMode) */}
       {evidencia && !editMode && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl overflow-hidden">
-          {/* Header Section */}
-          <div className="bg-gradient-to-r from-green-500 to-emerald-600 dark:from-green-600 dark:to-emerald-700 p-4 text-white">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="text-3xl">✅</div>
-                <h3 className="text-xl font-bold">Evidencia Registrada</h3>
+        <div className="overflow-hidden rounded-3xl border border-slate-700/60 bg-slate-950/70 shadow-2xl">
+          <div className="border-b border-emerald-500/20 bg-gradient-to-r from-emerald-500/20 via-teal-500/10 to-cyan-500/10 px-5 py-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/20 text-2xl">
+                  ✅
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-lg sm:text-xl font-bold text-white">Evidencia registrada</h3>
+                  <p className="mt-1 text-sm text-slate-300 truncate">
+                    {actividad?.codigo} - {actividad?.nombre}
+                  </p>
+                </div>
+                <div className="flex sm:hidden items-center gap-2 ml-3">
+                  <button onClick={() => setEditMode(true)} className="p-2 rounded-md bg-blue-500 text-white">
+                    <FaEdit size={14} />
+                  </button>
+                  <button onClick={() => setShowDeleteDialog(true)} className="p-2 rounded-md bg-red-500 text-white">
+                    <FaTrash size={14} />
+                  </button>
+                </div>
               </div>
-              <div className="flex gap-2">
+              <div className="hidden sm:flex flex-wrap gap-2">
                 <button
                   onClick={() => setEditMode(true)}
-                  className="flex items-center gap-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded-lg transition"
+                  className="flex items-center gap-1 rounded-lg bg-blue-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-600"
                 >
-                  <FaEdit size={16} />
+                  <FaEdit size={15} />
                   Editar
                 </button>
                 <button
                   onClick={() => setShowDeleteDialog(true)}
-                  className="flex items-center gap-1 px-3 py-2 bg-red-500 hover:bg-red-600 text-white text-sm rounded-lg transition"
+                  className="flex items-center gap-1 rounded-lg bg-red-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-red-600"
                 >
-                  <FaTrash size={16} />
+                  <FaTrash size={15} />
                   Eliminar
                 </button>
               </div>
             </div>
           </div>
 
-          {/* Content Section */}
-          <div className="p-6">
-            
+          <div className="p-4 lg:p-6">
+            <div className="grid gap-6 xl:grid-cols-[minmax(0,1.12fr)_minmax(360px,0.88fr)]">
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="rounded-2xl border border-blue-500/20 bg-gradient-to-br from-blue-500/10 to-blue-950/40 p-4">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-blue-300">Programado</div>
+                    <div className="mt-2 text-3xl sm:text-4xl font-bold text-blue-100 leading-none">{evidencia.programado}</div>
+                    <div className="mt-1 text-xs text-blue-200/80">planificada</div>
+                  </div>
 
-            {/* Metrics Section */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-              <div className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 border border-blue-300 dark:border-blue-600/50 rounded-xl p-4">
-                <div className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide mb-1">📅 Programado para la gestion:</div>
-                <div className="text-4xl font-bold text-blue-700 dark:text-blue-300">{evidencia.programado}</div>
-                <div className="text-xs text-blue-600 dark:text-blue-400 mt-1">planificada</div>
-              </div>
+                  <div className="rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 to-emerald-950/40 p-4">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-300">Ejecutado</div>
+                    <div className="mt-2 text-3xl sm:text-4xl font-bold text-emerald-100 leading-none">{evidencia.ejecutado}</div>
+                    <div className="mt-1 text-xs text-emerald-200/80">completada</div>
+                  </div>
 
-              <div className="bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 border border-green-300 dark:border-green-600/50 rounded-xl p-4">
-                <div className="text-xs font-semibold text-green-600 dark:text-green-400 uppercase tracking-wide mb-1">✔️ Ejecutado en la gestion:</div>
-                <div className="text-4xl font-bold text-green-700 dark:text-green-300">{evidencia.ejecutado}</div>
-                <div className="text-xs text-green-600 dark:text-green-400 mt-1">completada</div>
-              </div>
+                  <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/10 to-purple-950/40 p-4">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-purple-300">Cumplimiento</div>
+                    <div className="mt-2 text-3xl sm:text-4xl font-bold text-purple-100 leading-none">{evidencia.grado_cumplimiento}%</div>
+                    <div className="mt-3 h-1.5 sm:h-2 overflow-hidden rounded-full bg-white/10">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-purple-400 to-fuchsia-500"
+                        style={{ width: `${Math.min(evidencia.grado_cumplimiento, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
 
-              <div className="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 border border-purple-300 dark:border-purple-600/50 rounded-xl p-4">
-                <div className="text-xs font-semibold text-purple-600 dark:text-purple-400 uppercase tracking-wide mb-1">🎯El grado de cumplimiento para esta actividad es de:</div>
-                <div className="text-4xl font-bold text-purple-700 dark:text-purple-300">{evidencia.grado_cumplimiento}%</div>
-                <div className="w-full bg-gray-300 dark:bg-gray-700 rounded-full h-2 mt-2">
-                  <div
-                    className="bg-gradient-to-r from-purple-500 to-purple-600 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${Math.min(evidencia.grado_cumplimiento, 100)}%` }}
-                  />
+                <div className="rounded-2xl border border-slate-700/70 bg-slate-900/60 p-4 sm:p-5 shadow-inner">
+                  <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-100">
+                    <span className="text-lg">📝</span>
+                    Resultados logrados
+                  </div>
+                  <p className="whitespace-pre-wrap break-words text-sm sm:text-base leading-6 sm:leading-7 text-slate-200">
+                    {evidencia.resultados_logrados}
+                  </p>
+                </div>
+
+
+                {/* Medios de verificación para pantallas pequeñas: aparece debajo de resultados */}
+                {links.length > 0 && (
+                  <div className="mt-4 block">
+                    <div className="rounded-2xl border border-sky-500/20 bg-slate-900/60 p-4 shadow-lg">
+                      <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-100">
+                        <FaLink size={16} className="text-sky-300" />
+                        Medios de verificación ({links.length})
+                      </h4>
+                      <div className="space-y-2">
+                        {links.map((link, idx) => (
+                          <a
+                            key={link.id}
+                            href={link.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex items-center gap-3 rounded-xl border border-slate-700 bg-slate-950/40 px-3 py-3 transition hover:border-sky-500/40 hover:bg-slate-950/70"
+                          >
+                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sky-500/15 text-sky-300">
+                              🔗
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Enlace {idx + 1}</div>
+                              <div className="truncate text-sm text-sky-300">{new URL(link.url).hostname || link.url}</div>
+                            </div>
+                            <FaFileDownload size={13} className="shrink-0 text-sky-300/80" />
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                                <div className="flex flex-col gap-3 rounded-2xl border border-slate-700/70 bg-slate-900/40 px-4 py-3 text-sm text-slate-300 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    📅 Registrada: <span className="font-semibold text-slate-100">{new Date(evidencia.creado_en).toLocaleString()}</span>
+                  </div>
+                  <div className="inline-flex w-fit items-center rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-300">
+                    Estado: Completada
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Results Section */}
-            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 border border-gray-200 dark:border-gray-600">
-              <h4 className="text-sm font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-                <span className="text-xl">📝</span>
-                Resultados Logrados
-              </h4>
-              <p className="text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap break-words">
-                {evidencia.resultados_logrados}
-              </p>
-            </div>
+              <div className="space-y-6 xl:sticky xl:top-4 xl:self-start">
+                {imagenes.length > 0 ? (
+                  <div className="overflow-hidden rounded-2xl border border-cyan-500/20 bg-slate-900/60 shadow-lg">
+                    <div className="flex items-center justify-between border-b border-cyan-500/10 px-4 py-3">
+                      <h4 className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+                        <span className="text-lg">🖼️</span>
+                        Evidencia visual
+                      </h4>
+                      {imagenes.length > 1 && (
+                        <div className="text-xs font-semibold text-slate-400">
+                          {carouselIndex + 1} / {imagenes.length}
+                        </div>
+                      )}
+                    </div>
 
-            {/* Timestamp */}
-            <div className="mt-4 text-xs text-gray-500 dark:text-gray-400 flex items-center justify-between">
-              <div>
-                📅 Registrada: <span className="font-semibold">{new Date(evidencia.creado_en).toLocaleString()}</span>
-              </div>
-              <div className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-3 py-1 rounded-full font-semibold">
-                Estado: Completada
-              </div>
-            </div>
-            {/* Gallery Section (moved to bottom) */}
-            {(() => {
-              const imagenes = evidencia.archivos.filter(a => a.tipo === 'imagen' && a.archivo_url);
-              const links = evidencia.archivos.filter(a => a.tipo === 'link' && a.url);
-
-              if (imagenes.length > 0) {
-                return (
-                  <div className="mt-8">
-                    <div className="mb-6">
-                      <div className="flex items-center justify-between mb-3">
-                        <h4 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                          <span className="text-xl">🖼️</span>
-                          Evidencia Visual ({imagenes.length} imagen{imagenes.length !== 1 ? 'es' : ''})
-                        </h4>
-                        {imagenes.length > 1 && (
-                          <div className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-                            {carouselIndex + 1} / {imagenes.length}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Main Image Display */}
-                      <div className="relative bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 rounded-xl overflow-hidden shadow-lg group">
+                    <div className="p-3">
+                      <div className="group relative flex h-[clamp(12rem,26vw,20rem)] sm:h-[clamp(14rem,28vw,22rem)] items-center justify-center overflow-hidden rounded-xl bg-slate-950/40 p-2">
                         <img
                           src={imagenes[carouselIndex].archivo_url}
                           alt={`Evidencia ${carouselIndex + 1}`}
-                          className="w-full h-80 sm:h-96 md:h-[450px] object-contain transition-transform duration-300"
+                          className="block h-full w-full object-contain"
                         />
 
-                        {/* Navigation Arrows */}
                         {imagenes.length > 1 && (
                           <>
                             <button
                               onClick={prevImage}
-                              className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/75 text-white p-3 rounded-full transition z-10 opacity-0 group-hover:opacity-100"
+                              className="absolute left-3 top-1/2 z-10 -translate-y-1/2 rounded-full bg-black/55 p-2 text-white opacity-0 transition hover:bg-black/80 group-hover:opacity-100"
                             >
-                              <FaChevronLeft size={20} />
+                              <FaChevronLeft size={16} />
                             </button>
                             <button
                               onClick={nextImage}
-                              className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/75 text-white p-3 rounded-full transition z-10 opacity-0 group-hover:opacity-100"
+                              className="absolute right-3 top-1/2 z-10 -translate-y-1/2 rounded-full bg-black/55 p-2 text-white opacity-0 transition hover:bg-black/80 group-hover:opacity-100"
                             >
-                              <FaChevronRight size={20} />
+                              <FaChevronRight size={16} />
                             </button>
+                            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-xs font-semibold text-white">
+                              {carouselIndex + 1} / {imagenes.length}
+                            </div>
                           </>
-                        )}
-
-                        {/* Slide Counter */}
-                        {imagenes.length > 1 && (
-                          <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black/60 text-white px-4 py-2 rounded-full text-sm font-semibold">
-                            {carouselIndex + 1} / {imagenes.length}
-                          </div>
                         )}
                       </div>
 
-                      {/* Thumbnail Strip */}
                       {imagenes.length > 1 && (
-                        <div className="mt-4 flex gap-2 overflow-x-auto pb-2">
-                          {imagenes.map((img, idx) => (
-                            <button
-                              key={img.id}
-                              onClick={() => setCarouselIndex(idx)}
-                              className={`flex-shrink-0 rounded-lg overflow-hidden transition-all ${
-                                idx === carouselIndex
-                                  ? 'ring-2 ring-green-500 scale-105'
-                                  : 'opacity-60 hover:opacity-100'
-                              }`}
-                            >
-                              <img
-                                src={img.archivo_url}
-                                alt={`Thumbnail ${idx + 1}`}
-                                className="w-20 h-20 object-cover"
-                              />
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                              <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+                                {imagenes.map((img, idx) => (
+                                  <button
+                                    key={img.id}
+                                    onClick={() => setCarouselIndex(idx)}
+                                    className={`flex-shrink-0 overflow-hidden rounded-lg transition-all ${
+                                      idx === carouselIndex ? 'ring-2 ring-cyan-400 scale-105' : 'opacity-65 hover:opacity-100'
+                                    }`}
+                                  >
+                                    <img
+                                      src={img.archivo_url}
+                                      alt={`Thumbnail ${idx + 1}`}
+                                      className="h-12 w-12 object-cover sm:h-14 sm:w-14"
+                                    />
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                     </div>
                   </div>
-                );
-              }
-              return null;
-            })()}
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-5 text-sm text-slate-400">
+                    No hay imágenes cargadas para esta evidencia.
+                  </div>
+                )}
 
-            {/* Links Section (moved to bottom) */}
-            {(() => {
-              const links = evidencia.archivos.filter(a => a.tipo === 'link' && a.url);
-              if (links.length > 0) {
-                return (
-                  <div className="mt-6 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-xl p-4 border border-blue-200 dark:border-blue-700/50">
-                    <h4 className="text-lg font-bold text-blue-900 dark:text-blue-200 mb-3 flex items-center gap-2">
-                      <FaLink size={18} />
-                      Medios de Verificación ({links.length} enlace{links.length !== 1 ? 's' : ''})
-                    </h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {links.map((link, idx) => (
-                        <a
-                          key={link.id}
-                          href={link.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="flex items-center gap-3 p-3 bg-white dark:bg-gray-800 rounded-lg hover:shadow-md transition border border-blue-300 dark:border-blue-600/50 group"
-                        >
-                          <div className="text-blue-600 dark:text-blue-400 text-xl flex-shrink-0">🔗</div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-semibold text-gray-500 dark:text-gray-400">Enlace {idx + 1}</div>
-                            <div className="text-sm text-blue-600 dark:text-blue-400 font-medium truncate group-hover:underline">
-                              {new URL(link.url).hostname || link.url}
-                            </div>
-                          </div>
-                          <FaFileDownload size={14} className="text-blue-600 dark:text-blue-400 flex-shrink-0 opacity-0 group-hover:opacity-100 transition" />
-                        </a>
-                      ))}
-                    </div>
-                  </div>
-                );
-              }
-              return null;
-            })()}
+              </div>
+            </div>
           </div>
         </div>
       )}

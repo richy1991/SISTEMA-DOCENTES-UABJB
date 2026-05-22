@@ -33,6 +33,8 @@ const CatalogoItems = () => {
 	const [importOmitidos, setImportOmitidos] = useState([]);
 	const [importArchivoNombre, setImportArchivoNombre] = useState('');
 	const [showImportResultModal, setShowImportResultModal] = useState(false);
+	const [importConflict, setImportConflict] = useState(null);
+	const [pendingImportFile, setPendingImportFile] = useState(null);
 	const [deleteDialogItem, setDeleteDialogItem] = useState(null);
 	const [searchQuery, setSearchQuery] = useState('');
 	const [appliedSearch, setAppliedSearch] = useState('');
@@ -297,6 +299,31 @@ const CatalogoItems = () => {
 		URL.revokeObjectURL(url);
 	};
 
+	const ejecutarImportacionExcel = async ({ file, replaceDuplicates = false }) => {
+		const formData = new FormData();
+		formData.append('archivo', file);
+		formData.append('dry_run', 'false');
+		if (replaceDuplicates) {
+			formData.append('replace_duplicates', 'true');
+		}
+
+		const res = await importarCatalogoItemsExcel(formData);
+		const resumen = res?.data?.resumen || null;
+		const omitidos = Array.isArray(res?.data?.omitidos) ? res.data.omitidos : [];
+		setImportResumen(resumen);
+		setImportOmitidos(omitidos);
+		setShowImportResultModal(true);
+
+		toast.success(
+			replaceDuplicates
+				? `Importación completada con reemplazo. Creados: ${resumen?.items_creados || 0}, Actualizados: ${resumen?.items_actualizados || 0}, Duplicados: ${resumen?.duplicados_detectados || 0}`
+				: `Importación completada. Creados: ${resumen?.items_creados || 0}, Actualizados: ${resumen?.items_actualizados || 0}, Duplicados: ${resumen?.duplicados_detectados || 0}`
+		);
+		setSelectedItem(null);
+		await cargarItems({ targetPage: 1, search: appliedSearch });
+		setPage(1);
+	};
+
 	const handleImportExcel = async (event) => {
 		if (!canEdit) {
 			event.target.value = '';
@@ -306,38 +333,48 @@ const CatalogoItems = () => {
 		const file = event.target.files?.[0];
 		if (!file) return;
 
-		const formData = new FormData();
-		formData.append('archivo', file);
-		formData.append('dry_run', 'false');
 		setImportResumen(null);
 		setImportOmitidos([]);
 		setShowImportResultModal(false);
+		setImportConflict(null);
+		setPendingImportFile(file);
 
 		setImporting(true);
 		setImportArchivoNombre(file.name || '');
 		try {
-			const res = await importarCatalogoItemsExcel(formData);
-
-			const resumen = res?.data?.resumen || null;
-			const omitidos = Array.isArray(res?.data?.omitidos) ? res.data.omitidos : [];
-			setImportResumen(resumen);
-			setImportOmitidos(omitidos);
-			setShowImportResultModal(true);
-
-			toast.success(
-				`Importación completada. Creados: ${resumen?.items_creados || 0}, ` +
-				`Omitidos: ${resumen?.omitidos_total || 0}, ` +
-				`Partidas únicas: ${resumen?.partidas_unicas_detectadas || 0}`
-			);
-			setSelectedItem(null);
-			await cargarItems({ targetPage: 1, search: appliedSearch });
-			setPage(1);
+			await ejecutarImportacionExcel({ file, replaceDuplicates: false });
 		} catch (err) {
+			if (err?.response?.status === 409 && err?.response?.data?.requires_confirmation) {
+				setImportConflict({
+					message: err?.response?.data?.detail || 'Se detectaron duplicados en el catálogo existente.',
+					duplicateCount: Array.isArray(err?.response?.data?.duplicados) ? err.response.data.duplicados.length : 0,
+					file,
+				});
+				return;
+			}
 			const detail = err?.response?.data?.detail || err?.message || 'No se pudo importar el archivo.';
 			toast.error(String(detail));
 		} finally {
 			setImporting(false);
 			event.target.value = '';
+			if (!importConflict) {
+				setPendingImportFile(null);
+			}
+		}
+	};
+
+	const confirmReplaceDuplicates = async () => {
+		if (!importConflict?.file) return;
+		setImportConflict(null);
+		setImporting(true);
+		try {
+			await ejecutarImportacionExcel({ file: importConflict.file, replaceDuplicates: true });
+			setPendingImportFile(null);
+		} catch (err) {
+			const detail = err?.response?.data?.detail || err?.message || 'No se pudo importar el archivo.';
+			toast.error(String(detail));
+		} finally {
+			setImporting(false);
 		}
 	};
 
@@ -350,6 +387,19 @@ const CatalogoItems = () => {
 
 	return (
 		<div className="relative w-full max-w-6xl mx-auto">
+			<Dialog
+				open={Boolean(importConflict)}
+				type="warning"
+				title="Duplicados detectados en la importación"
+				message={importConflict ? `${importConflict.message}${importConflict.duplicateCount ? ` (${importConflict.duplicateCount} registros)` : ''}. ¿Deseas reemplazar los registros existentes?` : ''}
+				confirmText="Reemplazar"
+				cancelText="Cancelar"
+				onConfirm={confirmReplaceDuplicates}
+				onCancel={() => {
+					setImportConflict(null);
+					setPendingImportFile(null);
+				}}
+			/>
 			<Dialog
 				open={Boolean(deleteDialogItem)}
 				type="danger"
@@ -546,15 +596,11 @@ const CatalogoItems = () => {
 							<div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm text-blue-900">
 								<div>Procesadas: <b>{importResumen.filas_procesadas || 0}</b></div>
 								<div>Filas vacías: <b>{importResumen.filas_vacias || 0}</b></div>
-								<div>Filas inválidas: <b>{importResumen.filas_invalidas || 0}</b></div>
-								<div>Nuevos detectados: <b>{importResumen.items_nuevos_detectados || 0}</b></div>
+								<div>Errores: <b>{importResumen.errores || 0}</b></div>
+								<div>Actualizados: <b>{importResumen.items_actualizados || 0}</b></div>
 								<div>Items creados: <b>{importResumen.items_creados || 0}</b></div>
-								<div>Omitidos total: <b>{importResumen.omitidos_total || 0}</b></div>
 								<div>Partidas únicas: <b>{importResumen.partidas_unicas_detectadas || 0}</b></div>
-								<div>Omitidos sin detalle: <b>{importResumen.omitidos_sin_detalle || 0}</b></div>
-								<div>Omitidos sin partida: <b>{importResumen.omitidos_sin_partida || 0}</b></div>
-								<div>Dup. en Excel: <b>{importResumen.omitidos_duplicado_en_excel || 0}</b></div>
-								<div>Dup. en BD: <b>{importResumen.omitidos_duplicado_en_bd || 0}</b></div>
+								<div>Duplicados detectados: <b>{importResumen.duplicados_detectados || 0}</b></div>
 							</div>
 
 							{importOmitidos.length > 0 && (
