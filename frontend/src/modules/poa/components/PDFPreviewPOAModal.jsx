@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 const PDFPreviewPOAModal = ({
@@ -8,10 +8,12 @@ const PDFPreviewPOAModal = ({
   downloadFileName = 'Documento_POA.pdf',
   title = 'Vista Previa del Documento POA',
   subtitle = 'Revise la información antes de descargar.',
+  showPrintButton = false,
 }) => {
   const [blobUrl, setBlobUrl] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const iframeRef = useRef(null);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -65,6 +67,17 @@ const PDFPreviewPOAModal = ({
 
   if (!isOpen) return null;
 
+  const handlePrint = () => {
+    const frame = iframeRef.current;
+    const win = frame?.contentWindow;
+    if (!win) {
+      setError('No se pudo abrir la vista previa para imprimir.');
+      return;
+    }
+    win.focus();
+    win.print();
+  };
+
   const modalContent = (
     <div className="fixed inset-0 z-[220] flex items-center justify-center p-1 md:p-2">
       <div
@@ -98,6 +111,7 @@ const PDFPreviewPOAModal = ({
 
           {!loading && !error && blobUrl && (
             <iframe
+              ref={iframeRef}
               src={`${blobUrl}#view=FitH&zoom=page-width`}
               className="w-full h-full"
               title="Vista Previa PDF POA"
@@ -108,6 +122,16 @@ const PDFPreviewPOAModal = ({
 
         <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex justify-end gap-3">
           <button onClick={onClose} className="px-4 py-2 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 font-medium">Cancelar</button>
+          {showPrintButton && blobUrl && (
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium shadow-lg flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2m-4 0v4H8v-4m8-8H8" /></svg>
+              Imprimir
+            </button>
+          )}
           {blobUrl && (
             <a
               href={blobUrl}

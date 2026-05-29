@@ -1,3 +1,5 @@
+from io import BytesIO
+
 from rest_framework import viewsets, mixins
 from rest_framework.permissions import IsAuthenticated, AllowAny, SAFE_METHODS
 from rest_framework.response import Response
@@ -10,6 +12,10 @@ from django.db import transaction
 from django.db.models import Q
 from django.core.exceptions import ObjectDoesNotExist
 from rest_framework.exceptions import PermissionDenied
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import landscape, letter
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.platypus import SimpleDocTemplate, Spacer, Table, TableStyle, Paragraph
 from poa_document.models import Direccion, DocumentoPOA, ObjetivoEspecifico, Actividad, DetallePresupuesto, UsuarioPOA, RevisionDocumentoPOA, HistorialDocumentoPOA, MensajeChat, BloqueoChat, Evidencia, EvidenciaArchivo
 from fondos.models import Docente
 from django.contrib.auth.models import User
@@ -398,6 +404,158 @@ class DirectorCarreraActualView(APIView):
             'carrera_id': carrera.id,
             'carrera_nombre': getattr(carrera, 'nombre', ''),
         })
+
+
+class ReporteGeneralPOAView(APIView):
+    """Genera un PDF con el resumen general de documentos POA por gestión."""
+    permission_classes = [IsAuthenticated]
+
+    def _build_pdf(self, documentos, gestion):
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=landscape(letter),
+            leftMargin=18,
+            rightMargin=18,
+            topMargin=18,
+            bottomMargin=18,
+        )
+
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            'poa-report-title',
+            parent=styles['Heading2'],
+            fontName='Helvetica-Bold',
+            fontSize=16,
+            leading=18,
+            textColor=colors.HexColor('#0f172a'),
+        )
+        subtitle_style = ParagraphStyle(
+            'poa-report-subtitle',
+            parent=styles['Normal'],
+            fontName='Helvetica',
+            fontSize=9,
+            leading=11,
+            textColor=colors.HexColor('#334155'),
+        )
+        cell_style = ParagraphStyle(
+            'poa-report-cell',
+            parent=styles['Normal'],
+            fontName='Helvetica',
+            fontSize=8,
+            leading=10,
+        )
+        cell_bold_style = ParagraphStyle(
+            'poa-report-cell-bold',
+            parent=styles['Normal'],
+            fontName='Helvetica-Bold',
+            fontSize=8,
+            leading=10,
+        )
+
+        total = len(documentos)
+        resumen = {
+            'elaboracion': 0,
+            'revision': 0,
+            'observado': 0,
+            'aprobado': 0,
+            'ejecucion': 0,
+        }
+        for documento in documentos:
+            estado = getattr(documento, 'estado', 'elaboracion')
+            if estado in resumen:
+                resumen[estado] += 1
+
+        story = [
+            Paragraph(f'Reporte General POA - Gestión {gestion}', title_style),
+            Paragraph('Resumen de documentos disponibles para la gestión seleccionada.', subtitle_style),
+            Spacer(1, 10),
+        ]
+
+        resumen_data = [
+            [Paragraph('<b>Total</b>', cell_bold_style), Paragraph(str(total), cell_style)],
+            [Paragraph('<b>En elaboración</b>', cell_bold_style), Paragraph(str(resumen['elaboracion']), cell_style)],
+            [Paragraph('<b>En revisión</b>', cell_bold_style), Paragraph(str(resumen['revision']), cell_style)],
+            [Paragraph('<b>Observado</b>', cell_bold_style), Paragraph(str(resumen['observado']), cell_style)],
+            [Paragraph('<b>Aprobado</b>', cell_bold_style), Paragraph(str(resumen['aprobado']), cell_style)],
+            [Paragraph('<b>En ejecución</b>', cell_bold_style), Paragraph(str(resumen['ejecucion']), cell_style)],
+        ]
+        resumen_table = Table(resumen_data, colWidths=[170, 60])
+        resumen_table.setStyle(TableStyle([
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f8fafc')),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ]))
+        story.extend([resumen_table, Spacer(1, 12)])
+
+        rows = [[
+            Paragraph('<b>#</b>', cell_bold_style),
+            Paragraph('<b>Programa</b>', cell_bold_style),
+            Paragraph('<b>Unidad solicitante</b>', cell_bold_style),
+            Paragraph('<b>Estado</b>', cell_bold_style),
+            Paragraph('<b>Fecha elaboración</b>', cell_bold_style),
+            Paragraph('<b>Elaborado por</b>', cell_bold_style),
+            Paragraph('<b>Director de Carrera</b>', cell_bold_style),
+        ]]
+
+        if documentos:
+            for index, documento in enumerate(documentos, start=1):
+                unidad = getattr(getattr(documento, 'unidad_solicitante', None), 'nombre', '') or getattr(getattr(documento, 'unidad_solicitante', None), 'codigo', '') or ''
+                rows.append([
+                    Paragraph(str(index), cell_style),
+                    Paragraph(str(getattr(documento, 'programa', '') or ''), cell_style),
+                    Paragraph(str(unidad), cell_style),
+                    Paragraph(str(documento.get_estado_display()), cell_style),
+                    Paragraph(str(getattr(documento, 'fecha_elaboracion', '')), cell_style),
+                    Paragraph(str(getattr(documento, 'elaborado_por', '') or ''), cell_style),
+                    Paragraph(str(getattr(documento, 'jefe_unidad', '') or ''), cell_style),
+                ])
+        else:
+            rows.append([
+                Paragraph('Sin documentos registrados para esta gestión.', cell_style), '', '', '', '', '', ''
+            ])
+
+        table = Table(rows, colWidths=[24, 170, 105, 72, 78, 115, 115], repeatRows=1)
+        table.setStyle(TableStyle([
+            ('GRID', (0, 0), (-1, -1), 0.45, colors.HexColor('#94a3b8')),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e2e8f0')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#0f172a')),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 5),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ]))
+        story.append(table)
+
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+
+    def get(self, request):
+        gestion_param = request.query_params.get('gestion')
+        if gestion_param in (None, ''):
+            return Response({'detail': "El parámetro de consulta 'gestion' es obligatorio. Ejemplo: ?gestion=2025"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            gestion = int(gestion_param)
+        except (TypeError, ValueError):
+            return Response({'detail': "El parámetro 'gestion' debe ser un entero válido."}, status=status.HTTP_400_BAD_REQUEST)
+
+        documentos = _filtrar_documentos_por_usuario(
+            _documentos_queryset().filter(gestion=gestion),
+            request.user,
+        ).select_related('unidad_solicitante').prefetch_related(
+            'objetivos__actividades__detalles_presupuesto',
+        ).order_by('programa', 'id')
+
+        buffer = DocumentoPOAPDFGenerator.generar_reporte_general(list(documentos), gestion)
+        nombre_archivo = f'reporte_documentos_{gestion}.pdf'
+        return FileResponse(buffer, as_attachment=True, filename=nombre_archivo)
 
 
 class ChatContactosPOAView(APIView):

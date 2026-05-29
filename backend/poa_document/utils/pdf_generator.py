@@ -117,8 +117,8 @@ class DocumentoPOAPDFGenerator:
         else:
             col_widths = [170, 430, 125]
 
-        jefe = DocumentoPOAPDFGenerator._texto(getattr(documento.jefe_unidad, 'nombre_display', None), 'No asignado')
-        elaborado = DocumentoPOAPDFGenerator._texto(getattr(documento.elaborado_por, 'nombre_display', None), 'No asignado')
+        jefe = DocumentoPOAPDFGenerator._texto(documento.jefe_unidad, 'No asignado')
+        elaborado = DocumentoPOAPDFGenerator._texto(documento.elaborado_por, 'No asignado')
         fecha = DocumentoPOAPDFGenerator._texto(documento.fecha_elaboracion)
         data = [
             [Paragraph('<b>Responsables de la información</b>', styles['cell_bold']), '', ''],
@@ -297,9 +297,19 @@ class DocumentoPOAPDFGenerator:
 
     @staticmethod
     def _formulario_3(documento, styles):
+        return DocumentoPOAPDFGenerator._formulario_3_actividad(documento, None, list(), styles)
+
+    @staticmethod
+    def _formulario_3_actividad(documento, actividad, detalles, styles):
+        titulo_actividad = 'Sin actividad específica'
+        if actividad is not None:
+            titulo_actividad = f"{DocumentoPOAPDFGenerator._texto(actividad.codigo)} - {DocumentoPOAPDFGenerator._texto(actividad.nombre)}"
+
         elems = [
             Paragraph('REQUERIMIENTO DE RECURSOS FÍSICOS Y FINANCIEROS', styles['title']),
             Paragraph('Formulario Nro. 3', styles['subtitle']),
+            Paragraph(titulo_actividad, styles['cell_bold']),
+            Spacer(1, 4),
             DocumentoPOAPDFGenerator._header_table(documento, styles, orientation='portrait'),
             Spacer(1, 6),
         ]
@@ -315,16 +325,10 @@ class DocumentoPOAPDFGenerator:
             Paragraph('<b>Mes Requerimiento</b>', styles['cell_bold']),
         ]]
 
-        detalles = []
-        for objetivo in documento.objetivos.prefetch_related('actividades__detalles_presupuesto').all():
-            for actividad in objetivo.actividades.all():
-                for d in actividad.detalles_presupuesto.all():
-                    detalles.append((actividad, d))
-
         if not detalles:
-            data.append([Paragraph('Sin requerimientos físicos/financieros registrados.', styles['cell'])] + [''] * 7)
+            data.append([Paragraph('Sin requerimientos físicos/financieros registrados para esta actividad.', styles['cell'])] + [''] * 7)
         else:
-            for actividad, d in detalles:
+            for d in detalles:
                 data.append([
                     Paragraph(DocumentoPOAPDFGenerator._texto(d.item), styles['cell']),
                     Paragraph(DocumentoPOAPDFGenerator._texto(d.unidad_medida), styles['cell']),
@@ -345,10 +349,9 @@ class DocumentoPOAPDFGenerator:
             ('ALIGN', (4, 1), (6, -1), 'RIGHT'),
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e6e6e6')),
         ]
-        for i, row in enumerate(data[1:], start=1):
-            if row[1] == '':
-                style.append(('SPAN', (0, i), (-1, i)))
-                style.append(('BACKGROUND', (0, i), (-1, i), colors.HexColor('#f2f2f2')))
+        if len(data) == 2 and not detalles:
+            style.append(('SPAN', (0, 1), (-1, 1)))
+            style.append(('BACKGROUND', (0, 1), (-1, 1), colors.HexColor('#f2f2f2')))
         tabla.setStyle(DocumentoPOAPDFGenerator._table_base_style(style))
 
         elems.extend([tabla, Spacer(1, 8), DocumentoPOAPDFGenerator._responsables_table(documento, styles, orientation='portrait')])
@@ -361,6 +364,27 @@ class DocumentoPOAPDFGenerator:
     @staticmethod
     def _on_portrait_page(canvas, _doc):
         canvas.setPageSize(letter)
+
+    @staticmethod
+    def _story_documento(documento, styles):
+        story = []
+        story.extend(DocumentoPOAPDFGenerator._formulario_1(documento, styles))
+        story.append(PageBreak())
+        story.extend(DocumentoPOAPDFGenerator._formulario_2(documento, styles))
+        story.append(NextPageTemplate('portrait'))
+
+        objetivos = list(documento.objetivos.prefetch_related('actividades__detalles_presupuesto').all())
+        actividades_con_presupuesto = []
+        for objetivo in objetivos:
+            for actividad in objetivo.actividades.all():
+                detalles = list(actividad.detalles_presupuesto.all())
+                if detalles:
+                    actividades_con_presupuesto.append((actividad, detalles))
+
+        for actividad, detalles in actividades_con_presupuesto:
+            story.append(PageBreak())
+            story.extend(DocumentoPOAPDFGenerator._formulario_3_actividad(documento, actividad, detalles, styles))
+        return story
 
     @staticmethod
     def generar_reporte_individual(documento):
@@ -399,13 +423,66 @@ class DocumentoPOAPDFGenerator:
         ])
 
         styles = DocumentoPOAPDFGenerator._styles()
+        story = DocumentoPOAPDFGenerator._story_documento(documento, styles)
+
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+
+    @staticmethod
+    def generar_reporte_general(documentos, gestion=None):
+        buffer = BytesIO()
+        margin = 18
+        l_w, l_h = landscape(letter)
+        p_w, p_h = letter
+
+        doc = BaseDocTemplate(
+            buffer,
+            pagesize=landscape(letter),
+            leftMargin=margin,
+            rightMargin=margin,
+            topMargin=margin,
+            bottomMargin=margin,
+        )
+
+        landscape_frame = Frame(
+            margin,
+            margin,
+            l_w - (margin * 2),
+            l_h - (margin * 2),
+            id='landscape-frame',
+        )
+        portrait_frame = Frame(
+            margin,
+            margin,
+            p_w - (margin * 2),
+            p_h - (margin * 2),
+            id='portrait-frame',
+        )
+
+        doc.addPageTemplates([
+            PageTemplate(id='landscape', frames=[landscape_frame], onPage=DocumentoPOAPDFGenerator._on_landscape_page),
+            PageTemplate(id='portrait', frames=[portrait_frame], onPage=DocumentoPOAPDFGenerator._on_portrait_page),
+        ])
+
+        styles = DocumentoPOAPDFGenerator._styles()
+        documentos = list(documentos or [])
+
+        if not documentos:
+            story = [
+                Paragraph('PROGRAMACIÓN DE OPERACIONES ANUAL', styles['title']),
+                Paragraph(f'No existen documentos POA para la gestión {gestion or "seleccionada"}.', styles['subtitle']),
+            ]
+            doc.build(story)
+            buffer.seek(0)
+            return buffer
+
         story = []
-        story.extend(DocumentoPOAPDFGenerator._formulario_1(documento, styles))
-        story.append(PageBreak())
-        story.extend(DocumentoPOAPDFGenerator._formulario_2(documento, styles))
-        story.append(NextPageTemplate('portrait'))
-        story.append(PageBreak())
-        story.extend(DocumentoPOAPDFGenerator._formulario_3(documento, styles))
+        for index, documento in enumerate(documentos):
+            if index > 0:
+                story.append(NextPageTemplate('landscape'))
+                story.append(PageBreak())
+            story.extend(DocumentoPOAPDFGenerator._story_documento(documento, styles))
 
         doc.build(story)
         buffer.seek(0)

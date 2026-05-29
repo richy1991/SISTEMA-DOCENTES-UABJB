@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import toast from 'react-hot-toast';
 import { DEFAULT_ENTIDAD } from '../config/defaults';
 import GestionSelectorModal from '../components/GestionSelectorModal';
 import NuevoDocumentoModal from '../components/NuevoDocumentoModal';
 import BitacoraModal from '../components/BitacoraModal';
 import Dialog from '../components/base/Dialog';
-import PDFPreviewPOAModal from '../components/PDFPreviewPOAModal';
+import FullscreenPDFViewer from '../../../components/FullscreenPDFViewer';
+import { useTheme } from '../../../useTheme';
 import {
   AlertCircle,
   Building,
@@ -29,7 +31,6 @@ import {
   enviarRevisionDocumentoPOA,
   aprobarDocumentoPOA,
   observarDocumentoPOA,
-  descargarReporteGeneralPOA,
   API_BASE,
 } from '../../../apis/poa.api';
 
@@ -104,6 +105,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
   const [showNuevoModal, setShowNuevoModal] = useState(false);
   const [showRevisionModal, setShowRevisionModal] = useState(false);
   const [showPdfPreviewModal, setShowPdfPreviewModal] = useState(false);
+  const [showGeneralReportViewer, setShowGeneralReportViewer] = useState(false);
   const [revisionDoc, setRevisionDoc] = useState(null);
   const [pdfPreviewDoc, setPdfPreviewDoc] = useState(null);
   const [editingDoc, setEditingDoc] = useState(null);
@@ -111,12 +113,14 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
   const [bitacoraDoc, setBitacoraDoc] = useState(null);
   const location = useLocation();
   const navigate = useNavigate();
+  const { effectiveTheme } = useTheme();
   const outletContext = useOutletContext() || {};
   const poaPermissions = outletContext.poaPermissions || {};
   const poaRoles = Array.isArray(outletContext.poaRoles) ? outletContext.poaRoles : [];
   const canEdit = !!poaPermissions.canEdit;
   const canReview = !!poaPermissions.canReview;
   const isRevisionBoard = viewMode === 'revision-observado';
+  const isDark = effectiveTheme === 'dark';
 
   const [docs, setDocs] = useState(location?.state?.documentos || []);
   const [gestionState, setGestionState] = useState(location?.state?.gestion || '');
@@ -126,6 +130,15 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
   const [updatingEstadoId, setUpdatingEstadoId] = useState(null);
   const [reviewNotesByDoc, setReviewNotesByDoc] = useState({});
   const [deleteDialogDoc, setDeleteDialogDoc] = useState(null);
+
+  useEffect(() => {
+    if (!showRevisionModal || !revisionDoc) return undefined;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [showRevisionModal, revisionDoc]);
 
   const resolveGestionCandidate = (value) => {
     if (value === undefined || value === null || value === '') return null;
@@ -216,26 +229,10 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
         toast.error('Seleccione una gestión antes de generar el reporte.');
         return;
       }
-      const toastId = toast.loading('Generando reporte general...');
-      try {
-        const res = await descargarReporteGeneralPOA(Number(gestion));
-        const fileUrl = window.URL.createObjectURL(new Blob([res.data]));
-        const a = document.createElement('a');
-        a.href = fileUrl;
-        a.download = `reporte_documentos_${gestion}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        window.URL.revokeObjectURL(fileUrl);
-        toast.success('Reporte descargado');
-      } catch (err) {
-        toast.error(err.message || 'Error al generar el reporte');
-      } finally {
-        toast.dismiss(toastId);
-      }
+      setShowGeneralReportViewer(true);
     };
-    window.addEventListener('generate-pdf-documentos', handler);
-    return () => window.removeEventListener('generate-pdf-documentos', handler);
+    window.addEventListener('generate-general-report-poa', handler);
+    return () => window.removeEventListener('generate-general-report-poa', handler);
   }, [gestionState, location?.state?.gestion]);
 
   const handleVerActividades = (docId, doc) => {
@@ -378,6 +375,68 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
     ? 'Aquí se concentran los documentos enviados a revisión u observados. Cuando un documento queda aprobado, deja de mostrarse en esta página.'
     : 'Seleccione una gestión para ver y administrar sus documentos.';
 
+  const statTone = isDark
+    ? {
+        total: 'bg-blue-950/35 border-blue-500/20 text-blue-50 ring-1 ring-blue-400/10',
+        revision: 'bg-sky-950/35 border-sky-500/20 text-sky-50 ring-1 ring-sky-400/10',
+        observado: 'bg-orange-950/35 border-orange-500/20 text-orange-50 ring-1 ring-orange-400/10',
+        elaboracion: 'bg-amber-950/35 border-amber-500/20 text-amber-50 ring-1 ring-amber-400/10',
+        aprobado: 'bg-emerald-950/35 border-emerald-500/20 text-emerald-50 ring-1 ring-emerald-400/10',
+        ejecucion: 'bg-violet-950/35 border-violet-500/20 text-violet-50 ring-1 ring-violet-400/10',
+      }
+    : {
+        total: 'bg-slate-100 border-slate-300 text-slate-800 ring-1 ring-slate-200',
+        revision: 'bg-sky-100 border-sky-200 text-sky-900 ring-1 ring-sky-100',
+        observado: 'bg-orange-100 border-orange-200 text-orange-900 ring-1 ring-orange-100',
+        elaboracion: 'bg-amber-100 border-amber-200 text-amber-900 ring-1 ring-amber-100',
+        aprobado: 'bg-emerald-100 border-emerald-200 text-emerald-900 ring-1 ring-emerald-100',
+        ejecucion: 'bg-violet-100 border-violet-200 text-violet-900 ring-1 ring-violet-100',
+      };
+
+  const statTextTone = isDark
+    ? {
+        label: 'text-slate-300',
+        value: 'text-slate-50',
+      }
+    : {
+        label: 'text-slate-700',
+        value: 'text-slate-950',
+      };
+
+  const statTextColor = isDark
+    ? {
+        label: { color: '#cbd5e1' },
+        value: { color: '#f8fafc' },
+      }
+    : {
+        label: { color: '#1d4ed8' },
+        value: { color: '#1e3a8a' },
+      };
+
+  const actionButtonBase = 'flex items-center justify-center gap-3 w-full rounded-xl px-4 py-2.5 text-sm font-semibold shadow-sm transition-all duration-200 border';
+  const actionButtonStyles = {
+    send: isDark
+      ? `${actionButtonBase} bg-slate-700 hover:bg-slate-600 text-slate-100 border-slate-600/60`
+      : `${actionButtonBase} bg-sky-600 hover:bg-sky-500 text-white border-sky-500/30`,
+    pdf: isDark
+      ? `${actionButtonBase} bg-cyan-700 hover:bg-cyan-600 text-slate-100 border-cyan-600/60`
+      : `${actionButtonBase} bg-cyan-600 hover:bg-cyan-500 text-white border-cyan-500/30`,
+    edit: isDark
+      ? `${actionButtonBase} bg-blue-700 hover:bg-blue-600 text-slate-100 border-blue-600/60`
+      : `${actionButtonBase} bg-blue-600 hover:bg-blue-500 text-white border-blue-500/30`,
+    delete: isDark
+      ? `${actionButtonBase} bg-rose-700 hover:bg-rose-600 text-slate-100 border-rose-600/60`
+      : `${actionButtonBase} bg-red-600 hover:bg-red-500 text-white border-red-500/30`,
+    bitacora: isDark
+      ? `${actionButtonBase} bg-slate-600 hover:bg-slate-500 text-slate-100 border-slate-500/60`
+      : `${actionButtonBase} bg-slate-700 hover:bg-slate-600 text-white border-slate-600/30`,
+  };
+
+  const actionIconWrap = isDark
+    ? 'inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-current ring-1 ring-inset ring-white/10'
+    : 'inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white/15 text-current ring-1 ring-inset ring-white/15';
+  const generalGestion = getGestionNumberForDoc({ gestion: gestionState || location?.state?.gestion }) || Number(new Date().getFullYear());
+
   return (
     <section className="flex flex-col items-start justify-start flex-1 pb-4 px-1 w-full">
       <div className="w-full">
@@ -426,66 +485,91 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
           onConfirm={confirmarEliminarDocumento}
           onCancel={() => setDeleteDialogDoc(null)}
         />
-        {showRevisionModal && revisionDoc && (
-          <div className="fixed inset-0 z-[75]" onClick={() => setShowRevisionModal(false)}>
-            <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" />
-            <div className="absolute inset-0 flex items-center justify-center p-4">
-              <div
-                onClick={(e) => e.stopPropagation()}
-                className="w-full max-w-lg rounded-2xl border border-sky-300/40 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl p-5"
-              >
-                <div className="flex items-center justify-between gap-3 mb-4">
-                  <div>
-                    <p className="text-[10px] uppercase tracking-wider font-bold text-sky-700 dark:text-sky-300">Enviar a revisión</p>
-                    <h4 className="text-base font-bold text-slate-900 dark:text-slate-100 truncate" title={revisionDoc.programa || ''}>
-                      {revisionDoc.programa || `Documento #${revisionDoc.id}`}
-                    </h4>
+        {showRevisionModal && revisionDoc && createPortal(
+          (
+            <div className="fixed inset-0 z-[220]">
+              <div className="absolute inset-0 bg-transparent" onClick={() => setShowRevisionModal(false)} />
+
+              <div className="absolute inset-0 flex items-center justify-center p-4">
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  className="w-full max-w-2xl rounded-2xl border border-sky-300/40 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden"
+                >
+                  <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/70 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs uppercase tracking-wider font-bold text-sky-700 dark:text-sky-300">Enviar a revisión</p>
+                      <h4 className="text-lg font-bold text-slate-900 dark:text-slate-100 truncate" title={revisionDoc.programa || ''}>
+                        {revisionDoc.programa || `Documento #${revisionDoc.id}`}
+                      </h4>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowRevisionModal(false)}
+                      className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-300 dark:border-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-white hover:border-slate-400 dark:hover:border-slate-500 transition"
+                      aria-label="Cerrar"
+                    >
+                      ×
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowRevisionModal(false)}
-                    className="w-9 h-9 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-white"
-                  >
-                    x
-                  </button>
-                </div>
 
-                <div className="rounded-md border border-indigo-200 dark:border-slate-700 bg-indigo-50/70 dark:bg-slate-800/60 px-3 py-2 mb-3">
-                  <p className="text-[10px] uppercase tracking-wider font-bold text-indigo-700 dark:text-indigo-300">Director automático</p>
-                  <p className="text-xs text-slate-700 dark:text-slate-200 mt-1">{getPersonaLabel(revisionDoc?.jefe_unidad || revisionDoc?.jefe_unidad_nombre || revisionDoc?.jefe_unidad_detalle, 'Debe asignar Director de Carrera en el documento')}</p>
-                </div>
+                  <div className="p-5">
+                    <div className="rounded-xl border border-indigo-200 dark:border-slate-700 bg-indigo-50/70 dark:bg-slate-800/45 px-4 py-4 mb-4">
+                      <p className="text-sm uppercase tracking-wider font-bold text-indigo-700 dark:text-indigo-300">Este documento se enviará al Director de Carrera</p>
+                      <p className="text-base text-slate-800 dark:text-slate-100 mt-2 leading-relaxed">{getPersonaLabel(revisionDoc?.jefe_unidad || revisionDoc?.jefe_unidad_nombre || revisionDoc?.jefe_unidad_detalle, 'Debe asignar Director de Carrera en el documento')}</p>
+                    </div>
 
-                {(() => {
-                  const hasDirector = Boolean(getPersonaLabel(revisionDoc?.jefe_unidad || revisionDoc?.jefe_unidad_nombre || revisionDoc?.jefe_unidad_detalle));
-                  const canSubmit = hasDirector;
-                  return (
-                    <>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          await handleCambioEstado(revisionDoc, 'revision');
-                          setShowRevisionModal(false);
-                          setRevisionDoc(null);
-                        }}
-                        disabled={updatingEstadoId === revisionDoc.id || !canSubmit}
-                        className="flex items-center justify-center gap-2 bg-sky-600 hover:bg-sky-500 text-white text-sm font-bold py-2 px-4 rounded-xl shadow transition-all w-full disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <SendHorizontal size={14} /> {updatingEstadoId === revisionDoc.id ? 'Enviando...' : (revisionDoc.estado === 'observado' ? 'Reenviar a revisión' : 'Enviar a revisión')}
-                      </button>
-                      {!canSubmit && (
-                        <p className="mt-2 text-[10px] text-slate-500 dark:text-slate-400">
-                          Para enviar, verifica que el documento tenga Director de Carrera asignado.
-                        </p>
-                      )}
-                    </>
-                  );
-                })()}
+                    <div className="rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/70 dark:bg-amber-950/25 px-4 py-4 mb-4">
+                      <p className="text-sm font-semibold text-amber-800 dark:text-amber-200 leading-relaxed">
+                        Nota: Una vez enviado a revisión, el documento cambiará de estado a "En Revisión" y quedará bloqueado para edición hasta que el Director de Carrera emita su resolución (aprobación u observación).
+                      </p>
+                    </div>
+
+                    {(() => {
+                      const hasDirector = Boolean(getPersonaLabel(revisionDoc?.jefe_unidad || revisionDoc?.jefe_unidad_nombre || revisionDoc?.jefe_unidad_detalle));
+                      const canSubmit = hasDirector;
+                      return (
+                        <>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowRevisionModal(false);
+                                setRevisionDoc(null);
+                              }}
+                              className="flex items-center justify-center gap-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-100 text-base font-bold py-3 px-4 rounded-xl shadow transition-all w-full"
+                            >
+                              Cancelar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                await handleCambioEstado(revisionDoc, 'revision');
+                                setShowRevisionModal(false);
+                                setRevisionDoc(null);
+                              }}
+                              disabled={updatingEstadoId === revisionDoc.id || !canSubmit}
+                              className="flex items-center justify-center gap-2 bg-sky-600 hover:bg-sky-500 text-white text-base font-bold py-3 px-4 rounded-xl shadow transition-all w-full disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <SendHorizontal size={14} /> {updatingEstadoId === revisionDoc.id ? 'Enviando...' : (revisionDoc.estado === 'observado' ? 'Reenviar a revisión' : 'Enviar a revisión')}
+                            </button>
+                          </div>
+                          {!canSubmit && (
+                            <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">
+                              Para enviar, verifica que el documento tenga Director de Carrera asignado.
+                            </p>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+          ),
+          document.body
         )}
         {showPdfPreviewModal && pdfPreviewDoc && (
-          <PDFPreviewPOAModal
+          <FullscreenPDFViewer
             isOpen={showPdfPreviewModal}
             onClose={() => {
               setShowPdfPreviewModal(false);
@@ -493,8 +577,19 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
             }}
             pdfUrl={`${API_BASE}/api/poa/documentos_poa/${pdfPreviewDoc.id}/pdf-oficial/?gestion=${getGestionNumberForDoc(pdfPreviewDoc)}`}
             downloadFileName={`documento_poa_${pdfPreviewDoc.id}_${getGestionNumberForDoc(pdfPreviewDoc)}.pdf`}
-            title="Vista Previa del Documento POA"
-            subtitle="Revise la información del documento antes de descargar el PDF oficial."
+            showPrint={true}
+            title={`Documento POA #${pdfPreviewDoc.id}`}
+          />
+        )}
+
+        {showGeneralReportViewer && (
+          <FullscreenPDFViewer
+            isOpen={showGeneralReportViewer}
+            onClose={() => setShowGeneralReportViewer(false)}
+            pdfUrl={`${API_BASE}/api/reportes/generar-reporte-general/?gestion=${generalGestion}`}
+            downloadFileName={`reporte_documentos_${generalGestion}.pdf`}
+            showPrint={true}
+            title="Reporte general POA"
           />
         )}
 
@@ -535,31 +630,31 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
 
             <div className="w-full mb-4">
               <div className={`grid gap-3 ${isRevisionBoard ? 'grid-cols-1 md:grid-cols-3' : 'grid-cols-2 md:grid-cols-6'}`}>
-                <div className="rounded-lg p-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg">
-                  <p className="text-[11px] uppercase tracking-widest font-bold opacity-90">Total</p>
-                  <p className="text-2xl font-bold">{filteredResumen.total}</p>
+                <div className={`poa-summary-stat rounded-lg p-3 border shadow-sm ${statTone.total}`}>
+                  <p className={`poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold ${statTextTone.label}`} style={statTextColor.label}>Total</p>
+                  <p className={`poa-summary-stat-value text-2xl font-bold ${statTextTone.value}`} style={statTextColor.value}>{filteredResumen.total}</p>
                 </div>
-                <div className="rounded-lg p-3 bg-gradient-to-r from-sky-500 to-sky-600 text-white shadow-lg">
-                  <p className="text-[11px] uppercase tracking-widest font-bold opacity-90">En revisión</p>
-                  <p className="text-2xl font-bold">{filteredResumen.revision}</p>
+                <div className={`poa-summary-stat rounded-lg p-3 border shadow-sm ${statTone.revision}`}>
+                  <p className={`poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold ${statTextTone.label}`} style={statTextColor.label}>En revisión</p>
+                  <p className={`poa-summary-stat-value text-2xl font-bold ${statTextTone.value}`} style={statTextColor.value}>{filteredResumen.revision}</p>
                 </div>
-                <div className="rounded-lg p-3 bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg">
-                  <p className="text-[11px] uppercase tracking-widest font-bold opacity-90">Observados</p>
-                  <p className="text-2xl font-bold">{filteredResumen.observado}</p>
+                <div className={`poa-summary-stat rounded-lg p-3 border shadow-sm ${statTone.observado}`}>
+                  <p className={`poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold ${statTextTone.label}`} style={statTextColor.label}>Observados</p>
+                  <p className={`poa-summary-stat-value text-2xl font-bold ${statTextTone.value}`} style={statTextColor.value}>{filteredResumen.observado}</p>
                 </div>
                 {!isRevisionBoard && (
                   <>
-                    <div className="rounded-lg p-3 bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-lg">
-                      <p className="text-[11px] uppercase tracking-widest font-bold opacity-90">En elaboración</p>
-                      <p className="text-2xl font-bold">{filteredResumen.elaboracion}</p>
+                    <div className={`poa-summary-stat rounded-lg p-3 border shadow-sm ${statTone.elaboracion}`}>
+                      <p className={`poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold ${statTextTone.label}`} style={statTextColor.label}>En elaboración</p>
+                      <p className={`poa-summary-stat-value text-2xl font-bold ${statTextTone.value}`} style={statTextColor.value}>{filteredResumen.elaboracion}</p>
                     </div>
-                    <div className="rounded-lg p-3 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-lg">
-                      <p className="text-[11px] uppercase tracking-widest font-bold opacity-90">Aprobados</p>
-                      <p className="text-2xl font-bold">{filteredResumen.aprobado}</p>
+                    <div className={`poa-summary-stat rounded-lg p-3 border shadow-sm ${statTone.aprobado}`}>
+                      <p className={`poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold ${statTextTone.label}`} style={statTextColor.label}>Aprobados</p>
+                      <p className={`poa-summary-stat-value text-2xl font-bold ${statTextTone.value}`} style={statTextColor.value}>{filteredResumen.aprobado}</p>
                     </div>
-                    <div className="rounded-lg p-3 bg-gradient-to-r from-violet-500 to-violet-600 text-white shadow-lg">
-                      <p className="text-[11px] uppercase tracking-widest font-bold opacity-90">En ejecución</p>
-                      <p className="text-2xl font-bold">{filteredResumen.ejecucion}</p>
+                    <div className={`poa-summary-stat rounded-lg p-3 border shadow-sm ${statTone.ejecucion}`}>
+                      <p className={`poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold ${statTextTone.label}`} style={statTextColor.label}>En ejecución</p>
+                      <p className={`poa-summary-stat-value text-2xl font-bold ${statTextTone.value}`} style={statTextColor.value}>{filteredResumen.ejecucion}</p>
                     </div>
                   </>
                 )}
@@ -600,27 +695,27 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                         <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-blue-600 via-cyan-500 to-blue-600" />
 
                         <div className="grid grid-cols-12">
-                          <div className="col-span-12 md:col-span-2 flex flex-col items-center justify-center gap-1 border-b md:border-b-0 md:border-r border-blue-300 dark:border-slate-800 bg-blue-100/50 dark:bg-transparent px-4 py-5">
-                            <span className="text-4xl font-bold text-slate-900 dark:text-white font-mono leading-none">{gestion}</span>
-                            <span className="text-[10px] text-slate-600 dark:text-slate-500 font-bold uppercase tracking-wider">Gestión</span>
+                          <div className="col-span-12 md:col-span-2 flex flex-col items-center justify-center gap-2 border-b md:border-b-0 md:border-r border-blue-300 dark:border-slate-800 bg-blue-100/50 dark:bg-transparent px-4 py-5">
+                            <span className="text-5xl md:text-4xl font-bold text-slate-900 dark:text-white font-mono leading-none">{gestion}</span>
+                            <span className="text-sm text-slate-600 dark:text-slate-500 font-bold uppercase tracking-wider">Gestión</span>
                             {doc.fecha_elaboracion && (
                               <div className="mt-2 pt-2 border-t border-blue-300 dark:border-slate-800 w-full flex flex-col items-center gap-0.5">
-                                <div className="flex items-center gap-1">
-                                  <Calendar size={11} className="text-slate-500 dark:text-slate-400" />
-                                  <span className="text-slate-700 dark:text-slate-300 text-xs font-semibold font-mono">{doc.fecha_elaboracion}</span>
+                                <div className="flex items-center gap-2">
+                                  <Calendar size={14} className="text-slate-500 dark:text-slate-400" />
+                                  <span className="text-slate-700 dark:text-slate-300 text-sm font-semibold font-mono">{doc.fecha_elaboracion}</span>
                                 </div>
-                                <span className="text-[10px] text-slate-600 dark:text-slate-500 font-bold uppercase tracking-wider">Elaboración</span>
+                                <span className="text-sm text-slate-600 dark:text-slate-500 font-bold uppercase tracking-wider">Elaboración</span>
                               </div>
                             )}
                           </div>
 
                           <div className="col-span-12 md:col-span-7 p-5 border-b md:border-b-0 md:border-r border-blue-300 dark:border-slate-800 bg-white/55 dark:bg-transparent">
                             <div className="flex flex-wrap items-center gap-2 mb-3">
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] bg-blue-500/10 text-blue-400 border border-blue-500/20 font-bold">
-                                <Building size={10} />Entidad: {entidad}
+                              <span className="inline-flex items-center gap-2 px-3 py-1 rounded-md text-sm bg-blue-500/10 text-blue-400 border border-blue-500/20 font-bold">
+                                <Building size={14} />Entidad: {entidad}
                               </span>
-                              <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold ${cfg.badge}`}>
-                                <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${cfg.dot}`} />
+                              <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-md text-sm font-bold ${cfg.badge}`}>
+                                <span className={`w-2 h-2 rounded-full animate-pulse ${cfg.dot}`} />
                                 {cfg.label}
                               </span>
                               {doc.ciclo_revision_actual > 0 && (
@@ -632,12 +727,12 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
 
                             <div className="mb-3 space-y-2">
                               <div className="min-w-0">
-                                <p className="text-[10px] text-slate-600 dark:text-slate-500 font-bold uppercase tracking-wider mb-1">Programa</p>
-                                <h3 className="text-base font-bold text-slate-900 dark:text-white leading-tight truncate" title={programa}>{programa || 'Sin programa'}</h3>
+                                <p className="text-sm text-slate-600 dark:text-slate-500 font-bold uppercase tracking-wider mb-1">Programa</p>
+                                <h3 className="text-lg md:text-base font-bold text-slate-900 dark:text-white leading-tight truncate" title={programa}>{programa || 'Sin programa'}</h3>
                               </div>
                               <div className="min-w-0">
-                                <p className="text-[10px] text-slate-600 dark:text-slate-500 font-bold uppercase tracking-wider mb-1">Unidad solicitante</p>
-                                <p className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400 text-xs truncate" title={unidad || ''}>
+                                <p className="text-sm text-slate-600 dark:text-slate-500 font-bold uppercase tracking-wider mb-1">Unidad solicitante</p>
+                                <p className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400 text-sm truncate" title={unidad || ''}>
                                   <Briefcase size={11} className="flex-shrink-0" />
                                   <span className="truncate">{unidad || 'No especificada'}</span>
                                 </p>
@@ -650,8 +745,8 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                                   <User size={13} className="text-blue-600 dark:text-slate-400" />
                                 </div>
                                 <div className="min-w-0">
-                                  <p className="text-[10px] text-slate-600 dark:text-slate-500 font-bold uppercase tracking-wider">Elaborado por</p>
-                                  <p className="text-slate-700 dark:text-slate-300 text-xs font-semibold truncate" title={elaboradoPor || ''}>{elaboradoPor || <span className="text-slate-500 dark:text-slate-600 italic font-normal">No asignado</span>}</p>
+                                  <p className="text-sm text-slate-600 dark:text-slate-500 font-bold uppercase tracking-wider">Elaborado por</p>
+                                  <p className="text-slate-700 dark:text-slate-300 text-sm font-semibold truncate" title={elaboradoPor || ''}>{elaboradoPor || <span className="text-slate-500 dark:text-slate-600 italic font-normal">No asignado</span>}</p>
                                 </div>
                               </div>
                               <div className="flex items-center gap-2">
@@ -659,8 +754,8 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                                   <ShieldCheck size={13} className="text-blue-600 dark:text-slate-400" />
                                 </div>
                                 <div className="min-w-0">
-                                  <p className="text-[10px] text-slate-600 dark:text-slate-500 font-bold uppercase tracking-wider">Director de carrera</p>
-                                  <p className="text-slate-700 dark:text-slate-300 text-xs font-semibold truncate" title={jefeUnidad || ''}>{jefeUnidad || <span className="text-slate-500 dark:text-slate-600 italic font-normal">No asignado</span>}</p>
+                                  <p className="text-sm text-slate-600 dark:text-slate-500 font-bold uppercase tracking-wider">Director de carrera</p>
+                                  <p className="text-slate-700 dark:text-slate-300 text-sm font-semibold truncate" title={jefeUnidad || ''}>{jefeUnidad || <span className="text-slate-500 dark:text-slate-600 italic font-normal">No asignado</span>}</p>
                                 </div>
                               </div>
                             </div>
@@ -706,9 +801,49 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                                   setRevisionDoc(doc);
                                   setShowRevisionModal(true);
                                 }}
-                                className="flex items-center justify-center gap-2 bg-sky-600 hover:bg-sky-500 text-white text-sm font-bold py-2 px-4 rounded-xl shadow transition-all w-full"
+                                className={actionButtonStyles.send}
                               >
-                                <SendHorizontal size={14} /> {estado === 'observado' ? 'Reenviar a revisión' : 'Enviar a revisión'}
+                                <span className={actionIconWrap}><SendHorizontal size={14} /></span>
+                                <span>{estado === 'observado' ? 'Reenviar a revisión' : 'Enviar a revisión'}</span>
+                              </button>
+                            )}
+
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleGenerarPdfDocumento(doc);
+                              }}
+                              className={actionButtonStyles.pdf}
+                            >
+                              <span className={actionIconWrap}><FileText size={14} /></span>
+                              <span>Generar PDF</span>
+                            </button>
+
+                            {canEdit && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingDoc(doc);
+                                  setShowNuevoModal(true);
+                                }}
+                                className={actionButtonStyles.edit}
+                              >
+                                <span className={actionIconWrap}><Edit size={14} /></span>
+                                <span>Editar</span>
+                              </button>
+                            )}
+
+                            {canEdit && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDelete(doc);
+                                }}
+                                disabled={deletingId === doc.id}
+                                className={`${actionButtonStyles.delete} disabled:cursor-not-allowed disabled:opacity-50`}
+                              >
+                                <span className={actionIconWrap}><Trash2 size={14} /></span>
+                                <span>{deletingId === doc.id ? 'Eliminando...' : 'Eliminar'}</span>
                               </button>
                             )}
 
@@ -747,52 +882,17 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                               </div>
                             )}
 
-                            {canEdit && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setEditingDoc(doc);
-                                  setShowNuevoModal(true);
-                                }}
-                                className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold py-2 px-4 rounded-xl shadow transition-all w-full"
-                              >
-                                <Edit size={14} /> Editar
-                              </button>
-                            )}
-
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setBitacoraDoc(doc);
                                 setShowBitacoraModal(true);
                               }}
-                              className="flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-bold py-2 px-4 rounded-xl shadow transition-all w-full"
+                              className={actionButtonStyles.bitacora}
                             >
-                              <History size={14} /> Bitacora
+                              <span className={actionIconWrap}><History size={14} /></span>
+                              <span>Bitacora</span>
                             </button>
-
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleGenerarPdfDocumento(doc);
-                              }}
-                              className="flex items-center justify-center gap-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-bold py-2 px-4 rounded-xl shadow transition-all w-full"
-                            >
-                              <FileText size={14} /> Generar PDF
-                            </button>
-
-                            {canEdit && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDelete(doc);
-                                }}
-                                disabled={deletingId === doc.id}
-                                className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-500 text-white text-sm font-bold py-2 px-4 rounded-xl shadow transition-all w-full disabled:opacity-50 disabled:cursor-not-allowed"
-                              >
-                                <Trash2 size={14} /> {deletingId === doc.id ? 'Eliminando...' : 'Eliminar'}
-                              </button>
-                            )}
 
                             {!canEdit && !canRespondThisDoc && (
                               <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/35 px-3 py-3 text-xs text-slate-500 dark:text-slate-400 flex items-start gap-2">

@@ -102,9 +102,9 @@ const Header = ({
           <IconButton 
             showIcon 
             icon={<FaFilePdf />} 
-            onClick={() => window.dispatchEvent(new CustomEvent('generate-pdf-documentos', { detail: {} }))} 
+            onClick={() => window.dispatchEvent(new CustomEvent('generate-general-report-poa', { detail: {} }))} 
             className={`${gradientButtonClasses()} mr-2`} 
-            title="Generar PDF"
+            title="Generar reporte general"
           >
             PDF
           </IconButton>
