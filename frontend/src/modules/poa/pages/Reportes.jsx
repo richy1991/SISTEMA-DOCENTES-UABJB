@@ -1,415 +1,357 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import {
-  Calendar,
-  Download,
-  Eye,
-  FileText,
-  Filter,
-  FolderOpen,
-  Printer,
-  Sparkles,
-  TrendingUp,
-} from 'lucide-react';
-import { API_BASE, descargarReporteGeneralPOA } from '../../../apis/poa.api';
+import { Calendar, Download, FileText, Sparkles, TrendingUp, Layers3 } from 'lucide-react';
+import { useOutletContext } from 'react-router-dom';
+import { API_BASE, getDocumentosPOAPorGestion } from '../../../apis/poa.api';
+import GestionSelectorModal from '../components/GestionSelectorModal';
+import FullscreenPDFViewer from '../../../components/FullscreenPDFViewer';
 
-const reportCards = [
-  {
-    id: 'general',
-    title: 'Reporte general POA',
-    description: 'Consolida todos los documentos de la gestión en un solo PDF con los formularios establecidos.',
-    status: 'Disponible ahora',
-    badgeClass: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20',
-    icon: FileText,
-    enabled: true,
-  },
-  {
-    id: 'seguimiento',
-    title: 'Seguimiento POA',
-    description: 'Panel de seguimiento de ejecución, cumplimiento y alertas por documento y actividad.',
-    status: 'Próximamente',
-    badgeClass: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20',
-    icon: TrendingUp,
-    enabled: false,
-  },
-  {
-    id: 'resumen',
-    title: 'Resumen por carrera',
-    description: 'Vista comparativa por unidad solicitante con indicadores clave y estado de documentos.',
-    status: 'En diseño',
-    badgeClass: 'bg-sky-500/10 text-sky-700 dark:text-sky-300 border border-sky-500/20',
-    icon: FolderOpen,
-    enabled: false,
-  },
-];
+const getProgramaLabel = (doc) => {
+  const programa = doc?.programa;
+  if (programa && typeof programa === 'object') {
+    return programa.nombre || programa.codigo || `Programa #${programa.id}`;
+  }
+  return String(programa || '').trim();
+};
 
-const filterSections = [
-  {
-    title: 'Gestión',
-    description: 'Define el año sobre el que trabajará todo el módulo.',
-    items: ['2026', '2025', '2024'],
-  },
-  {
-    title: 'Alcance',
-    description: 'Prepara el módulo para filtrar por unidad, estado o carrera.',
-    items: ['Todas las carreras', 'Solo mi carrera', 'Solo documentos aprobados'],
-  },
-  {
-    title: 'Formato',
-    description: 'Elige cómo quieres consumir el reporte disponible.',
-    items: ['Vista previa PDF', 'Descarga directa', 'Impresión'],
-  },
-];
+const getCareerIdFromUser = (user) => {
+  const value = user?.perfil?.carrera;
+  if (value === undefined || value === null || value === '') return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : String(value);
+};
+
+const matchesCareer = (doc, careerId) => {
+  if (careerId === null || careerId === undefined || careerId === '') return true;
+  const docCareer = doc?.unidad_solicitante_detalle?.id ?? doc?.unidad_solicitante?.id ?? doc?.unidad_solicitante;
+  if (docCareer === undefined || docCareer === null || docCareer === '') return false;
+  return String(docCareer) === String(careerId);
+};
 
 const Reportes = () => {
+  const outletContext = useOutletContext() || {};
+  const currentUser = outletContext.user || null;
   const currentYear = new Date().getFullYear();
+  const careerId = getCareerIdFromUser(currentUser);
+
   const [gestion, setGestion] = useState(String(currentYear));
-  const [selectedReport, setSelectedReport] = useState('general');
-  const [selectedScope, setSelectedScope] = useState('Todas las carreras');
-  const [selectedFormat, setSelectedFormat] = useState('Vista previa PDF');
-  const [blobUrl, setBlobUrl] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [showGestionModal, setShowGestionModal] = useState(false);
+  const [documents, setDocuments] = useState([]);
+  const [documentsLoading, setDocumentsLoading] = useState(false);
+  const [selectedDocumentoId, setSelectedDocumentoId] = useState('');
+  const [selectedSeguimientoId, setSelectedSeguimientoId] = useState('');
   const [error, setError] = useState(null);
-  const iframeRef = useRef(null);
+  const [showPdfPreviewModal, setShowPdfPreviewModal] = useState(false);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState('');
+  const [pdfPreviewTitle, setPdfPreviewTitle] = useState('Vista Previa PDF');
+  const [pdfDownloadFileName, setPdfDownloadFileName] = useState('reporte.pdf');
+  const [activeSection, setActiveSection] = useState('general');
 
   const gestionValida = /^[0-9]{4}$/.test(String(gestion).trim());
-  const reportCardSelected = reportCards.find((item) => item.id === selectedReport) || reportCards[0];
 
-  const clearBlob = () => {
-    setBlobUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return null;
-    });
-  };
+  
+
+  useEffect(() => {
+    const year = String(gestion).trim();
+    if (!gestionValida) {
+      setDocuments([]);
+      return;
+    }
+
+    let active = true;
+    setDocumentsLoading(true);
+    setError(null);
+
+    getDocumentosPOAPorGestion(Number(year))
+      .then((res) => {
+        if (!active) return;
+        const raw = Array.isArray(res.data) ? res.data : (res.data?.results || res.data?.documentos || []);
+        const list = raw.filter((item) => item && item.id && matchesCareer(item, careerId));
+        setDocuments(list);
+      })
+      .catch((err) => {
+        if (!active) return;
+        setDocuments([]);
+        setError(err?.response?.data?.detail || err?.message || 'No se pudieron cargar los documentos de la gestión.');
+      })
+      .finally(() => {
+        if (active) setDocumentsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [gestion, gestionValida, careerId]);
 
   useEffect(() => {
     return () => {
-      if (blobUrl) URL.revokeObjectURL(blobUrl);
+      setShowPdfPreviewModal(false);
+      setPdfPreviewUrl('');
     };
-  }, [blobUrl]);
+  }, []);
 
-  const buildGeneralPreview = async () => {
-    const year = String(gestion).trim();
+  const resumen = useMemo(() => {
+    const list = Array.isArray(documents) ? documents : [];
+    const programas = new Set(list.map((doc) => String(getProgramaLabel(doc)).trim()).filter(Boolean)).size;
+    return {
+      total: list.length,
+      programas,
+      gestion,
+    };
+  }, [documents, gestion]);
+
+  const handleGestionSuccess = ({ gestion: gestionSeleccionada, documentos: documentosSeleccionados }) => {
+    const nextGestion = String(gestionSeleccionada || new Date().getFullYear());
+    const rawDocs = Array.isArray(documentosSeleccionados) ? documentosSeleccionados : [];
+    const filteredDocs = rawDocs.filter((doc) => doc && doc.id && matchesCareer(doc, careerId));
+    setGestion(nextGestion);
+    setDocuments(filteredDocs);
+    setSelectedDocumentoId(filteredDocs[0]?.id ? String(filteredDocs[0].id) : '');
+    setSelectedSeguimientoId(filteredDocs[0]?.id ? String(filteredDocs[0].id) : '');
+    setError(null);
+    setShowGestionModal(false);
+    setActiveSection('general');
+  };
+
+  const handleCambiarGestion = () => {
+    setShowGestionModal(true);
+  };
+
+  const openPdfViewer = ({ url, title, fileName, section }) => {
+    setActiveSection(section);
+    setPdfPreviewUrl(url);
+    setPdfPreviewTitle(title);
+    setPdfDownloadFileName(fileName);
+    setShowPdfPreviewModal(true);
+  };
+
+  const openGeneralPreview = () => {
     if (!gestionValida) {
       toast.error('Ingrese una gestión válida de 4 dígitos.');
       return;
     }
 
-    if (selectedReport !== 'general') {
-      toast('Todavía no existe un generador para este tipo de reporte.', {
-        icon: 'ℹ️',
-      });
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    const toastId = toast.loading('Generando reporte general...');
-
-    try {
-      clearBlob();
-      const token = localStorage.getItem('access_token');
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
-      const response = await fetch(`${API_BASE}/api/reportes/generar-reporte-general/?gestion=${year}&view=true`, { headers });
-
-      if (!response.ok) {
-        if (response.status === 401) throw new Error('No autorizado. Su sesión puede haber expirado.');
-        if (response.status === 404) throw new Error('No existe reporte general para esta gestión.');
-        throw new Error('Error al generar el reporte general.');
-      }
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      setBlobUrl(url);
-      toast.success('Vista previa lista');
-    } catch (err) {
-      const message = err?.message || 'Error al generar el reporte general';
-      setError(message);
-      toast.error(message);
-    } finally {
-      toast.dismiss(toastId);
-      setLoading(false);
-    }
+    openPdfViewer({
+      section: 'general',
+      title: `Reporte general POA - Gestión ${gestion}`,
+      fileName: `reporte_documentos_${gestion}.pdf`,
+      url: `${API_BASE}/api/reportes/generar-reporte-general/?gestion=${gestion}`,
+    });
   };
 
-  const descargarDirecto = async () => {
-    const year = String(gestion).trim();
-    if (!gestionValida) {
-      toast.error('Ingrese una gestión válida de 4 dígitos.');
-      return;
-    }
-
-    if (selectedReport !== 'general') {
-      toast('Esta opción todavía no está implementada para el reporte seleccionado.', {
-        icon: 'ℹ️',
-      });
-      return;
-    }
-
-    setLoading(true);
-    const toastId = toast.loading('Generando PDF...');
-
-    try {
-      const res = await descargarReporteGeneralPOA(Number(year));
-      const fileUrl = window.URL.createObjectURL(new Blob([res.data]));
-      const a = document.createElement('a');
-      a.href = fileUrl;
-      a.download = `reporte_documentos_${year}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(fileUrl);
-      toast.success('Reporte descargado');
-    } catch (err) {
-      toast.error(err?.response?.data?.detail || err?.message || 'Error al descargar el reporte');
-    } finally {
-      toast.dismiss(toastId);
-      setLoading(false);
-    }
+  const openDocumentoPreview = (doc) => {
+    if (!doc?.id || !gestionValida) return;
+    const programa = getProgramaLabel(doc) || `Documento POA #${doc.id}`;
+    setSelectedDocumentoId(String(doc.id));
+    openPdfViewer({
+      section: 'documentos',
+      title: programa,
+      fileName: `documento_poa_${doc.id}_${gestion}.pdf`,
+      url: `${API_BASE}/api/poa/documentos_poa/${doc.id}/pdf-oficial/?gestion=${gestion}`,
+    });
   };
 
-  const handlePrint = () => {
-    const frame = iframeRef.current;
-    const win = frame?.contentWindow;
-    if (!win) {
-      toast.error('Primero genere una vista previa para poder imprimir.');
-      return;
-    }
-    win.focus();
-    win.print();
-  };
-
-  const handleChangeReport = (reportId) => {
-    setSelectedReport(reportId);
-    setError(null);
+  const openSeguimientoPreview = (doc) => {
+    if (!doc?.id || !gestionValida) return;
+    const programa = getProgramaLabel(doc) || `Documento POA #${doc.id}`;
+    setSelectedSeguimientoId(String(doc.id));
+    openPdfViewer({
+      section: 'seguimiento',
+      title: `Seguimiento - ${programa}`,
+      fileName: `seguimiento_poa_${doc.id}_${gestion}.pdf`,
+      url: `${API_BASE}/api/poa/documentos_poa/${doc.id}/pdf-oficial/?gestion=${gestion}`,
+    });
+    toast('Se abrió el documento asociado al seguimiento del programa seleccionado.', { icon: 'ℹ️' });
   };
 
   return (
-    <section className="w-full min-h-[calc(100vh-4rem)] px-3 md:px-6 py-4">
-      <div className="max-w-[1700px] mx-auto rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-2xl overflow-hidden">
-        <div className="px-5 md:px-7 py-5 border-b border-slate-200 dark:border-slate-800 bg-gradient-to-r from-sky-600 via-blue-600 to-indigo-700 text-white">
-          <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.22em] text-sky-50/90">
-                <Sparkles size={14} /> Hub de reportes
-              </div>
-              <h1 className="text-2xl md:text-3xl font-black mt-3">Reportes POA</h1>
-              <p className="mt-2 text-sm text-sky-50/90 max-w-4xl">
-                Centraliza aquí todos los reportes del módulo: filtro por gestión, selección del tipo de reporte, vista previa, impresión y descarga.
-                El seguimiento queda preparado como línea de trabajo para el siguiente desarrollo.
+    <section className="flex flex-col items-start justify-start flex-1 pb-6 px-3 md:px-6 py-4 w-full">
+      {showGestionModal && (
+        <GestionSelectorModal
+          currentUser={currentUser}
+          onClose={() => setShowGestionModal(false)}
+          onSuccess={handleGestionSuccess}
+        />
+      )}
+
+      <div className="w-full max-w-[1500px] mx-auto">
+        <div className="rounded-2xl border border-blue-200/80 dark:border-slate-800 bg-white/75 dark:bg-slate-900/55 backdrop-blur-sm p-4 md:p-5 shadow-sm">
+          <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5">
+            <div className="space-y-2">
+              <p className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.18em] font-bold text-blue-700 dark:text-sky-300">
+                <Sparkles size={14} /> Reportes POA
+              </p>
+              <h2 className="text-2xl md:text-4xl font-extrabold text-blue-900 dark:text-slate-100 leading-tight">
+                Descarga los reportes de tu carrera
+              </h2>
+              <p className="text-sm md:text-base text-slate-600 dark:text-slate-300 max-w-3xl leading-relaxed">
+                Esta vista organiza tres secciones claras para la gestión seleccionada: reporte general, documentos y seguimiento.
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-2 rounded-2xl border border-white/20 bg-white/15 backdrop-blur px-3 py-2">
-                <Calendar size={16} className="text-white flex-shrink-0" />
-                <input
-                  type="number"
-                  min="2000"
-                  max="2100"
-                  value={gestion}
-                  onChange={(e) => setGestion(e.target.value)}
-                  className="w-24 bg-transparent outline-none text-lg font-bold text-white placeholder:text-white/60"
-                  aria-label="Gestión para el reporte"
-                />
+            <div className="flex flex-wrap items-center gap-2 justify-start lg:justify-end">
+              <div className="rounded-2xl border border-white/15 bg-gradient-to-br from-blue-600 to-sky-700 text-white px-4 py-3 min-w-[190px] shadow-sm">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-sky-100/80 font-bold">Gestión activa</p>
+                <p className="text-xl font-black mt-1">{gestion}</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleCambiarGestion}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white shadow hover:bg-slate-800 transition"
+              >
+                <Calendar size={16} /> Cambiar gestión
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+        {documentsLoading && <div className="mt-4 text-blue-800 dark:text-slate-200">Cargando documentos...</div>}
+        {error && (
+          <div className="mt-4 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+            {String(error)}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 items-stretch">
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-gradient-to-br from-blue-50 via-sky-50 to-indigo-50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 p-4 shadow-sm h-full">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] uppercase font-bold tracking-wider text-blue-700 dark:text-sky-300">Sección general</p>
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white mt-1">PDF general</h3>
+              </div>
+              <div className="rounded-xl bg-blue-600 text-white p-3">
+                <Download size={18} />
+              </div>
+            </div>
+            <p className="mt-3 text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+              Descarga en un solo PDF todos los documentos de la gestión seleccionada correspondientes a la carrera del usuario.
+            </p>
+            <button
+              type="button"
+              onClick={openGeneralPreview}
+              className="mt-4 inline-flex items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 py-3 text-sm font-bold text-white shadow hover:bg-blue-600 transition"
+            >
+              <Download size={16} /> Descargar general
+            </button>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-gradient-to-br from-blue-50 via-cyan-50 to-sky-50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 p-4 shadow-sm h-full">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] uppercase font-bold tracking-wider text-blue-700 dark:text-sky-300">Sección documentos</p>
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white mt-1">Documentos de la gestión</h3>
+              </div>
+              <div className="rounded-xl bg-cyan-600 text-white p-3">
+                <FileText size={18} />
+              </div>
+            </div>
+            <p className="mt-3 text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+              Aquí se muestran todos los documentos de la gestión seleccionada. Cada tarjeta muestra el nombre del programa y permite descargar su PDF oficial.
+            </p>
+
+            <div className="mt-4 space-y-3">
+              <select
+                value={selectedDocumentoId}
+                onChange={(e) => setSelectedDocumentoId(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-950/60 px-4 py-3 text-sm font-semibold text-slate-800 dark:text-slate-100 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15"
+              >
+                <option value="">Selecciona un documento para descargar</option>
+                {documents.map((doc) => {
+                  const programa = getProgramaLabel(doc) || 'Sin programa';
+                  return (
+                    <option key={doc.id} value={String(doc.id)}>
+                      {programa}
+                    </option>
+                  );
+                })}
+              </select>
+
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-950/35 p-4 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                Selecciona un programa para abrir su PDF oficial. El nombre que aparece corresponde al documento de la gestión activa.
               </div>
 
               <button
                 type="button"
-                onClick={buildGeneralPreview}
-                disabled={loading}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-sky-700 shadow hover:bg-sky-50 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                onClick={() => {
+                  const doc = documents.find((item) => String(item.id) === String(selectedDocumentoId));
+                  if (!doc) {
+                    toast.error('Seleccione un documento de la lista.');
+                    return;
+                  }
+                  openDocumentoPreview(doc);
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-700 px-4 py-3 text-sm font-bold text-white shadow hover:bg-cyan-600 transition"
               >
-                <Eye size={16} /> {loading ? 'Cargando...' : 'Vista previa'}
+                <Download size={16} /> Descargar PDF del programa
               </button>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 p-4 shadow-sm h-full">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] uppercase font-bold tracking-wider text-amber-700 dark:text-amber-300">Sección seguimiento</p>
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white mt-1">Seguimiento por programa</h3>
+              </div>
+              <div className="rounded-xl bg-amber-600 text-white p-3">
+                <TrendingUp size={18} />
+              </div>
+            </div>
+            <p className="mt-3 text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+              En este apartado se descarga el documento de seguimiento del programa seleccionado dentro de la gestión activa.
+            </p>
+
+            <div className="mt-4 space-y-3">
+              <select
+                value={selectedSeguimientoId}
+                onChange={(e) => setSelectedSeguimientoId(e.target.value)}
+                className="w-full rounded-xl border border-amber-200 dark:border-slate-700 bg-white/90 dark:bg-slate-950/60 px-4 py-3 text-sm font-semibold text-slate-800 dark:text-slate-100 shadow-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/15"
+              >
+                <option value="">Selecciona un documento para seguimiento</option>
+                {documents.map((doc) => {
+                  const programa = getProgramaLabel(doc) || 'Sin programa';
+                  return (
+                    <option key={doc.id} value={String(doc.id)}>
+                      {programa}
+                    </option>
+                  );
+                })}
+              </select>
+
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-950/35 p-4 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                El seguimiento se organiza por programa. El desplegable muestra los nombres de los documentos disponibles para esta gestión.
+              </div>
+
               <button
                 type="button"
-                onClick={handlePrint}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900/90 px-4 py-2.5 text-sm font-bold text-white shadow hover:bg-slate-800 transition"
+                onClick={() => {
+                  const doc = documents.find((item) => String(item.id) === String(selectedSeguimientoId));
+                  if (!doc) {
+                    toast.error('Seleccione un documento para seguimiento.');
+                    return;
+                  }
+                  openSeguimientoPreview(doc);
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 py-3 text-sm font-bold text-white shadow hover:bg-amber-500 transition"
               >
-                <Printer size={16} /> Imprimir
-              </button>
-              <button
-                type="button"
-                onClick={descargarDirecto}
-                disabled={loading}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow hover:bg-emerald-500 transition disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                <Download size={16} /> Descargar
+                <TrendingUp size={16} /> Descargar seguimiento
               </button>
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-[340px_1fr] min-h-[calc(100vh-10rem)] bg-slate-50 dark:bg-slate-950">
-          <aside className="border-b xl:border-b-0 xl:border-r border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/40 p-5 space-y-5">
-            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/60 p-4 shadow-sm">
-              <div className="flex items-center gap-2 text-slate-900 dark:text-slate-100 font-bold">
-                <Filter size={16} /> Filtros del módulo
-              </div>
-              <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-                Estos filtros organizan el centro de reportes y dejan lista la estructura para nuevas salidas como seguimiento.
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              {filterSections.map((section) => (
-                <div key={section.title} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/60 p-4 shadow-sm">
-                  <p className="font-semibold text-slate-900 dark:text-slate-100">{section.title}</p>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{section.description}</p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {section.items.map((item) => {
-                      const active = section.title === 'Alcance' ? selectedScope === item : section.title === 'Formato' ? selectedFormat === item : String(gestion) === item;
-                      return (
-                        <button
-                          key={item}
-                          type="button"
-                          onClick={() => {
-                            if (section.title === 'Alcance') setSelectedScope(item);
-                            if (section.title === 'Formato') setSelectedFormat(item);
-                            if (section.title === 'Gestión') setGestion(item);
-                          }}
-                          className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${active ? 'bg-blue-600 text-white shadow' : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'}`}
-                        >
-                          {item}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="rounded-2xl border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/25 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
-              <strong>Nota:</strong> Seguimiento no está implementado todavía. Aquí ya queda reservado el espacio y la navegación para cuando exista el backend.
-            </div>
-
-            {error && (
-              <div className="rounded-2xl border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/25 px-4 py-3 text-sm text-red-700 dark:text-red-300">
-                {error}
-              </div>
-            )}
-          </aside>
-
-          <div className="p-3 md:p-4 space-y-4">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              {reportCards.map((card) => {
-                const Icon = card.icon;
-                const active = selectedReport === card.id;
-                return (
-                  <button
-                    key={card.id}
-                    type="button"
-                    onClick={() => handleChangeReport(card.id)}
-                    className={`text-left rounded-2xl border p-4 shadow-sm transition ${active ? 'border-blue-500 ring-2 ring-blue-500/20 bg-blue-50 dark:bg-slate-900/70' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/60 hover:border-slate-300 dark:hover:border-slate-700'}`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${active ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>
-                          <Icon size={20} />
-                        </div>
-                        <div>
-                          <p className="font-bold text-slate-900 dark:text-slate-100">{card.title}</p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{card.description}</p>
-                        </div>
-                      </div>
-                      <span className={`text-[11px] px-2 py-1 rounded-full font-semibold whitespace-nowrap ${card.badgeClass}`}>{card.status}</span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-4">
-              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/60 p-4 shadow-sm space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.18em] font-bold text-slate-500 dark:text-slate-400">Reporte activo</p>
-                    <h2 className="text-xl font-black text-slate-900 dark:text-slate-100 mt-1">{reportCardSelected.title}</h2>
-                  </div>
-                  <span className={`text-[11px] px-2 py-1 rounded-full font-semibold ${reportCardSelected.badgeClass}`}>{reportCardSelected.status}</span>
-                </div>
-
-                <p className="text-sm text-slate-600 dark:text-slate-400">{reportCardSelected.description}</p>
-
-                <div className="rounded-2xl bg-slate-50 dark:bg-slate-900/60 p-4 space-y-3">
-                  <div className="flex items-center justify-between gap-3 text-sm">
-                    <span className="text-slate-500 dark:text-slate-400">Gestión</span>
-                    <span className="font-bold text-slate-900 dark:text-slate-100">{gestionValida ? gestion : 'Inválida'}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3 text-sm">
-                    <span className="text-slate-500 dark:text-slate-400">Alcance</span>
-                    <span className="font-bold text-slate-900 dark:text-slate-100">{selectedScope}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3 text-sm">
-                    <span className="text-slate-500 dark:text-slate-400">Formato</span>
-                    <span className="font-bold text-slate-900 dark:text-slate-100">{selectedFormat}</span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-2">
-                  <button
-                    type="button"
-                    onClick={buildGeneralPreview}
-                    disabled={!gestionValida || loading || !reportCardSelected.enabled}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white shadow hover:bg-blue-500 transition disabled:opacity-60 disabled:cursor-not-allowed"
-                  >
-                    <Eye size={16} /> Abrir vista previa
-                  </button>
-                  <button
-                    type="button"
-                    onClick={descargarDirecto}
-                    disabled={!gestionValida || loading || !reportCardSelected.enabled}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow hover:bg-emerald-500 transition disabled:opacity-60 disabled:cursor-not-allowed"
-                  >
-                    <Download size={16} /> Descargar PDF
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handlePrint}
-                    disabled={!blobUrl}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white shadow hover:bg-slate-800 transition disabled:opacity-60 disabled:cursor-not-allowed"
-                  >
-                    <Printer size={16} /> Imprimir
-                  </button>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/60 p-3 md:p-4 shadow-sm min-h-[65vh]">
-                {!showViewer && !blobUrl && !loading && (
-                  <div className="h-full min-h-[60vh] rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 flex items-center justify-center">
-                    <div className="max-w-xl text-center text-slate-500 dark:text-slate-400 px-6">
-                      <div className="mx-auto w-20 h-20 rounded-2xl bg-slate-200 dark:bg-slate-800 flex items-center justify-center mb-4">
-                        <Eye size={32} className="text-slate-500 dark:text-slate-400" />
-                      </div>
-                      <p className="text-lg font-semibold text-slate-700 dark:text-slate-200">Aquí aparecerá la vista previa del reporte seleccionado</p>
-                      <p className="mt-2 text-sm">El reporte general ya está disponible. Los demás tipos quedan organizados para que el módulo pueda crecer sin rehacer la pantalla.</p>
-                    </div>
-                  </div>
-                )}
-
-                {loading && (
-                  <div className="h-full min-h-[60vh] rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-blue-600 mx-auto mb-4" />
-                      <p className="text-slate-600 dark:text-slate-400">Generando vista previa...</p>
-                    </div>
-                  </div>
-                )}
-
-                {blobUrl && !loading && (
-                  <iframe
-                    ref={iframeRef}
-                    src={`${blobUrl}#view=FitH&zoom=page-width`}
-                    className="w-full h-[75vh] rounded-2xl bg-white"
-                    title="Vista Previa del Reporte POA"
-                    style={{ border: 'none' }}
-                  />
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+        <FullscreenPDFViewer
+          isOpen={showPdfPreviewModal}
+          onClose={() => {
+            setShowPdfPreviewModal(false);
+            setPdfPreviewUrl('');
+          }}
+          pdfUrl={pdfPreviewUrl}
+          downloadFileName={pdfDownloadFileName}
+          showPrint={true}
+          title={pdfPreviewTitle}
+        />
       </div>
     </section>
   );

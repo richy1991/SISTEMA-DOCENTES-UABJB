@@ -19,6 +19,8 @@ from reportlab.platypus import (
 class DocumentoPOAPDFGenerator:
     """Generador PDF POA: Formulario 1, 2 y 3 en ese orden."""
 
+    DEFAULT_ENTIDAD = 'UABJB'
+
     @staticmethod
     def _texto(valor, default=''):
         if valor is None:
@@ -32,6 +34,17 @@ class DocumentoPOAPDFGenerator:
             return f"{float(valor):,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
         except Exception:
             return '0,00'
+
+    @staticmethod
+    def _unidad_solicitante_texto(documento):
+        unidad = getattr(documento, 'unidad_solicitante', None)
+        if unidad is None:
+            return ''
+        if hasattr(unidad, 'nombre') and getattr(unidad, 'nombre', ''):
+            return str(unidad.nombre).strip()
+        if hasattr(unidad, 'codigo') and getattr(unidad, 'codigo', ''):
+            return str(unidad.codigo).strip()
+        return DocumentoPOAPDFGenerator._texto(unidad)
 
     @staticmethod
     def _styles():
@@ -100,10 +113,10 @@ class DocumentoPOAPDFGenerator:
             col_widths = [160, 565]
 
         data = [
-            [Paragraph('<b>ENTIDAD</b>', styles['cell_bold']), Paragraph('UAB', styles['cell'])],
+            [Paragraph('<b>ENTIDAD</b>', styles['cell_bold']), Paragraph(DocumentoPOAPDFGenerator.DEFAULT_ENTIDAD, styles['cell'])],
             [Paragraph('<b>GESTIÓN</b>', styles['cell_bold']), Paragraph(DocumentoPOAPDFGenerator._texto(documento.gestion), styles['cell'])],
             [Paragraph('<b>PROGRAMA</b>', styles['cell_bold']), Paragraph(DocumentoPOAPDFGenerator._texto(documento.programa), styles['cell'])],
-            [Paragraph('<b>UNIDAD SOLICITANTE</b>', styles['cell_bold']), Paragraph(DocumentoPOAPDFGenerator._texto(documento.unidad_solicitante), styles['cell'])],
+            [Paragraph('<b>UNIDAD SOLICITANTE</b>', styles['cell_bold']), Paragraph(DocumentoPOAPDFGenerator._unidad_solicitante_texto(documento), styles['cell'])],
             [Paragraph('<b>OBJETIVO DE GESTIÓN INSTITUCIONAL</b>', styles['cell_bold']), Paragraph(DocumentoPOAPDFGenerator._texto(documento.objetivo_gestion_institucional), styles['cell'])],
         ]
         t = Table(data, colWidths=col_widths, repeatRows=0)

@@ -443,7 +443,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
         {showModal && <GestionSelectorModal onClose={() => setShowModal(false)} onSuccess={handleSuccess} />}
         {showNuevoModal && (
           <NuevoDocumentoModal
-            currentUser={currentUser}
+            currentUser={outletContext?.user || outletContext?.currentUser || null}
             onClose={closeNuevo}
             initialGestion={gestionState || location?.state?.gestion || new Date().getFullYear()}
             document={editingDoc}
