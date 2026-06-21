@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
+
 import { createPortal } from 'react-dom';
 import toast from 'react-hot-toast';
 import { DEFAULT_ENTIDAD } from '../config/defaults';
@@ -163,6 +164,27 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
   };
 
   const hasGestionSelected = Boolean(gestionState || location?.state?.gestion);
+
+  // Forzar selección de gestión al entrar a DocumentosPOA: abrir modal SOLO si la gestión no viene en el estado.
+  // Si el usuario selecciona una vez, el modal debe cerrarse y NO volver a abrirse por efectos.
+  // Si no hay gestión seleccionada, el modal se fuerza a abrir al render.
+  // (No re-abrimos el modal por efectos para evitar que “se quede abierto” al seleccionar.)
+  useEffect(() => {
+    // Abrir modal al entrar si no hay gestión.
+    // Para evitar que se “reabra” tras seleccionar, verificamos también que showModal no esté abierto.
+    // Además, si ya existe un valor en location.state, no forzamos.
+    const gestionEnEstado = Boolean(location?.state?.gestion);
+    if (!gestionEnEstado && !hasGestionSelected && !loading && !showModal) {
+      setShowModal(true);
+    }
+  }, [hasGestionSelected, loading, showModal, location?.state?.gestion]);
+
+
+
+
+
+
+
 
   const openNuevo = () => {
     setEditingDoc(null);
