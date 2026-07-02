@@ -31,7 +31,7 @@ from .serializers import (
     EvidenciaSerializer,
     EvidenciaArchivoSerializer,
 )
-from catalogos.models import OperacionCatalogo
+from catalogos.models import IndicadorCatalogo
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.conf import settings
@@ -1253,8 +1253,7 @@ class ActividadViewSet(viewsets.ModelViewSet):
             if catalogo_text:
                 actividad.indicador_descripcion = catalogo_text
             else:
-                catalogo = get_object_or_404(OperacionCatalogo, id=catalogo_id)
-                # Si se provee ID, guardamos la descripción del catálogo (campo 'indicador')
+                catalogo = get_object_or_404(IndicadorCatalogo, id=catalogo_id)
                 actividad.indicador_descripcion = catalogo.indicador
             actividad.save()
             serializer = self.get_serializer(actividad)
@@ -1350,13 +1349,13 @@ class ActividadViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def indicadores_por_direccion(self, request):
-        direccion_id = request.query_params.get('direccion_id')
-        if not direccion_id:
-            return Response({'error': 'Debe proporcionar el ID de la dirección'}, status=status.HTTP_400_BAD_REQUEST)
+        search = (request.query_params.get('q') or request.query_params.get('search') or '').strip()
         try:
-            indicadores = OperacionCatalogo.objects.filter(direccion_id=direccion_id).select_related('direccion')
-            from catalogos.api.serializers import OperacionCatalogoSerializer
-            serializer = OperacionCatalogoSerializer(indicadores, many=True)
+            indicadores = IndicadorCatalogo.objects.all().order_by('indicador')
+            if search:
+                indicadores = indicadores.filter(indicador__icontains=search)
+            from catalogos.api.serializers import IndicadorCatalogoSerializer
+            serializer = IndicadorCatalogoSerializer(indicadores, many=True)
             return Response(serializer.data)
         except Exception as e:
             return Response({'error': f'Error al obtener indicadores: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
@@ -1373,9 +1372,7 @@ class ActividadViewSet(viewsets.ModelViewSet):
             if indicador_text:
                 actividad.indicador_descripcion = indicador_text
             else:
-                indicador = get_object_or_404(OperacionCatalogo, id=indicador_id)
-                # como compatibilidad, guardamos la descripción del indicador
-                # Ya no validamos dirección porque unidad_solicitante es texto libre
+                indicador = get_object_or_404(IndicadorCatalogo, id=indicador_id)
                 actividad.indicador_descripcion = indicador.indicador
             actividad.save()
             serializer = self.get_serializer(actividad)

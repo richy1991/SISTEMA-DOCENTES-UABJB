@@ -397,22 +397,23 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
     ? 'Aquí se concentran los documentos enviados a revisión u observados. Cuando un documento queda aprobado, deja de mostrarse en esta página.'
     : 'Seleccione una gestión para ver y administrar sus documentos.';
 
+  const summaryCardBase = 'poa-summary-stat rounded-lg p-3 border shadow-sm bg-white/85 dark:bg-slate-900/55';
   const statTone = isDark
     ? {
-        total: 'bg-blue-950/35 border-blue-500/20 text-blue-50 ring-1 ring-blue-400/10',
-        revision: 'bg-sky-950/35 border-sky-500/20 text-sky-50 ring-1 ring-sky-400/10',
-        observado: 'bg-orange-950/35 border-orange-500/20 text-orange-50 ring-1 ring-orange-400/10',
-        elaboracion: 'bg-amber-950/35 border-amber-500/20 text-amber-50 ring-1 ring-amber-400/10',
-        aprobado: 'bg-emerald-950/35 border-emerald-500/20 text-emerald-50 ring-1 ring-emerald-400/10',
-        ejecucion: 'bg-violet-950/35 border-violet-500/20 text-violet-50 ring-1 ring-violet-400/10',
+        total: 'border-blue-500/30 text-blue-100',
+        revision: 'border-sky-500/30 text-sky-100',
+        observado: 'border-orange-500/30 text-orange-100',
+        elaboracion: 'border-amber-500/30 text-amber-100',
+        aprobado: 'border-emerald-500/30 text-emerald-100',
+        ejecucion: 'border-violet-500/30 text-violet-100',
       }
     : {
-        total: 'bg-slate-100 border-slate-300 text-slate-800 ring-1 ring-slate-200',
-        revision: 'bg-sky-100 border-sky-200 text-sky-900 ring-1 ring-sky-100',
-        observado: 'bg-orange-100 border-orange-200 text-orange-900 ring-1 ring-orange-100',
-        elaboracion: 'bg-amber-100 border-amber-200 text-amber-900 ring-1 ring-amber-100',
-        aprobado: 'bg-emerald-100 border-emerald-200 text-emerald-900 ring-1 ring-emerald-100',
-        ejecucion: 'bg-violet-100 border-violet-200 text-violet-900 ring-1 ring-violet-100',
+        total: 'border-blue-200 text-blue-700',
+        revision: 'border-sky-200 text-sky-700',
+        observado: 'border-orange-200 text-orange-700',
+        elaboracion: 'border-amber-200 text-amber-700',
+        aprobado: 'border-emerald-200 text-emerald-700',
+        ejecucion: 'border-violet-200 text-violet-700',
       };
 
   const statTextTone = isDark
@@ -535,7 +536,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                   </div>
 
                   <div className="p-5">
-                    <div className="rounded-xl border border-indigo-200 dark:border-slate-700 bg-indigo-50/70 dark:bg-slate-800/45 px-4 py-4 mb-4">
+                    <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 px-4 py-4 mb-4 dark:border-slate-700 dark:bg-slate-800/45">
                       <p className="text-sm uppercase tracking-wider font-bold text-indigo-700 dark:text-indigo-300">Este documento se enviará al Director de Carrera</p>
                       <p className="text-base text-slate-800 dark:text-slate-100 mt-2 leading-relaxed">{getPersonaLabel(revisionDoc?.jefe_unidad || revisionDoc?.jefe_unidad_nombre || revisionDoc?.jefe_unidad_detalle, 'Debe asignar Director de Carrera en el documento')}</p>
                     </div>
@@ -616,7 +617,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
         )}
 
         {!hasGestionSelected && !loading && (
-          <div className="rounded-xl border border-blue-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 p-6 shadow-sm w-full">
+          <div className="rounded-xl border border-blue-200 bg-white/85 p-6 shadow-sm w-full dark:border-slate-800 dark:bg-slate-950/40">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
                 <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">{boardTitle}</h3>
@@ -652,29 +653,29 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
 
             <div className="w-full mb-4">
               <div className={`grid gap-3 ${isRevisionBoard ? 'grid-cols-1 md:grid-cols-3' : 'grid-cols-2 md:grid-cols-6'}`}>
-                <div className={`poa-summary-stat rounded-lg p-3 border shadow-sm ${statTone.total}`}>
+                <div className={`${summaryCardBase} ${statTone.total}`}>
                   <p className={`poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold ${statTextTone.label}`} style={statTextColor.label}>Total</p>
                   <p className={`poa-summary-stat-value text-2xl font-bold ${statTextTone.value}`} style={statTextColor.value}>{filteredResumen.total}</p>
                 </div>
-                <div className={`poa-summary-stat rounded-lg p-3 border shadow-sm ${statTone.revision}`}>
+                <div className={`${summaryCardBase} ${statTone.revision}`}>
                   <p className={`poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold ${statTextTone.label}`} style={statTextColor.label}>En revisión</p>
                   <p className={`poa-summary-stat-value text-2xl font-bold ${statTextTone.value}`} style={statTextColor.value}>{filteredResumen.revision}</p>
                 </div>
-                <div className={`poa-summary-stat rounded-lg p-3 border shadow-sm ${statTone.observado}`}>
+                <div className={`${summaryCardBase} ${statTone.observado}`}>
                   <p className={`poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold ${statTextTone.label}`} style={statTextColor.label}>Observados</p>
                   <p className={`poa-summary-stat-value text-2xl font-bold ${statTextTone.value}`} style={statTextColor.value}>{filteredResumen.observado}</p>
                 </div>
                 {!isRevisionBoard && (
                   <>
-                    <div className={`poa-summary-stat rounded-lg p-3 border shadow-sm ${statTone.elaboracion}`}>
+                    <div className={`${summaryCardBase} ${statTone.elaboracion}`}>
                       <p className={`poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold ${statTextTone.label}`} style={statTextColor.label}>En elaboración</p>
                       <p className={`poa-summary-stat-value text-2xl font-bold ${statTextTone.value}`} style={statTextColor.value}>{filteredResumen.elaboracion}</p>
                     </div>
-                    <div className={`poa-summary-stat rounded-lg p-3 border shadow-sm ${statTone.aprobado}`}>
+                    <div className={`${summaryCardBase} ${statTone.aprobado}`}>
                       <p className={`poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold ${statTextTone.label}`} style={statTextColor.label}>Aprobados</p>
                       <p className={`poa-summary-stat-value text-2xl font-bold ${statTextTone.value}`} style={statTextColor.value}>{filteredResumen.aprobado}</p>
                     </div>
-                    <div className={`poa-summary-stat rounded-lg p-3 border shadow-sm ${statTone.ejecucion}`}>
+                    <div className={`${summaryCardBase} ${statTone.ejecucion}`}>
                       <p className={`poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold ${statTextTone.label}`} style={statTextColor.label}>En ejecución</p>
                       <p className={`poa-summary-stat-value text-2xl font-bold ${statTextTone.value}`} style={statTextColor.value}>{filteredResumen.ejecucion}</p>
                     </div>
@@ -763,7 +764,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
 
                             <div className="border-y border-blue-300 dark:border-slate-800 py-3 grid grid-cols-2 gap-3">
                               <div className="flex items-center gap-2">
-                                <div className="w-7 h-7 bg-blue-100 dark:bg-slate-800 rounded-lg border border-blue-200 dark:border-slate-700 flex items-center justify-center flex-shrink-0">
+                                <div className="w-7 h-7 bg-blue-100 rounded-lg border border-blue-200 flex items-center justify-center flex-shrink-0 dark:bg-slate-800 dark:border-slate-700">
                                   <User size={13} className="text-blue-600 dark:text-slate-400" />
                                 </div>
                                 <div className="min-w-0">
@@ -772,7 +773,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                                 </div>
                               </div>
                               <div className="flex items-center gap-2">
-                                <div className="w-7 h-7 bg-blue-100 dark:bg-slate-800 rounded-lg border border-blue-200 dark:border-slate-700 flex items-center justify-center flex-shrink-0">
+                                <div className="w-7 h-7 bg-blue-100 rounded-lg border border-blue-200 flex items-center justify-center flex-shrink-0 dark:bg-slate-800 dark:border-slate-700">
                                   <ShieldCheck size={13} className="text-blue-600 dark:text-slate-400" />
                                 </div>
                                 <div className="min-w-0">
@@ -783,7 +784,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                             </div>
 
                             {objetivo && (
-                              <div className="mt-3 bg-blue-100/70 dark:bg-slate-950/50 border border-blue-300 dark:border-slate-800 rounded-lg p-3 flex gap-2 items-start">
+                              <div className="mt-3 bg-blue-100/70 border border-blue-300 rounded-lg p-3 flex gap-2 items-start dark:bg-slate-950/50 dark:border-slate-800">
                                 <Target size={13} className="text-blue-400 mt-0.5 flex-shrink-0" />
                                 <div>
                                   <p className="text-[10px] text-slate-600 dark:text-slate-500 font-bold uppercase tracking-wider mb-0.5">Objetivo institucional</p>
@@ -870,7 +871,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                             )}
 
                             {canRespondThisDoc && (
-                              <div className="rounded-lg border border-emerald-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/35 p-3" onClick={(e) => e.stopPropagation()}>
+                              <div className="rounded-lg border border-emerald-200 bg-white/80 p-3 dark:border-slate-800 dark:bg-slate-950/35" onClick={(e) => e.stopPropagation()}>
                                 <p className="text-[10px] uppercase tracking-wider font-bold text-emerald-700 dark:text-emerald-300 mb-1">Revisión de Dirección</p>
                                 <p className="text-xs text-slate-500 dark:text-slate-400">Como director del sistema principal puede aprobar u observar este documento.</p>
                                 <textarea
@@ -917,7 +918,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                             </button>
 
                             {!canEdit && !canRespondThisDoc && (
-                              <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/35 px-3 py-3 text-xs text-slate-500 dark:text-slate-400 flex items-start gap-2">
+                              <div className="rounded-lg border border-slate-200 bg-white/80 px-3 py-3 text-xs text-slate-500 flex items-start gap-2 dark:border-slate-800 dark:bg-slate-950/35 dark:text-slate-400">
                                 <Clock3 size={14} className="mt-0.5 flex-shrink-0" />
                                 <span>Vista de solo lectura para este documento.</span>
                               </div>
@@ -929,7 +930,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                   );
                 })
               ) : (
-                <div className="col-span-full rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-white/70 dark:bg-slate-950/30 px-5 py-8 text-center text-gray-500 dark:text-slate-400">
+                <div className="col-span-full rounded-xl border border-dashed border-slate-300 bg-white/70 px-5 py-8 text-center text-gray-500 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-400">
                   {isRevisionBoard
                     ? 'No hay documentos en revisión u observados para la gestión seleccionada.'
                     : 'No hay documentos para mostrar.'}

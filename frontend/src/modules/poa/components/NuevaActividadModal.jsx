@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { createActividad, updateActividad, searchOperacionesCatalogo } from '../../../apis/poa.api';
+import { createActividad, updateActividad, searchIndicadoresCatalogo } from '../../../apis/poa.api';
 import IconButton from './IconButton';
 import { FaTimes, FaSave } from 'react-icons/fa';
 import { Input, Textarea, Select, Modal } from './base';
@@ -20,8 +20,6 @@ const NuevaActividadModal = ({ onClose, onCreated, onUpdated, objetivoId, activi
   const [indicadorLineaBase, setIndicadorLineaBase] = useState('');
   const [indicadorMeta, setIndicadorMeta] = useState('');
   const [estado, setEstado] = useState('programado');
-  const [operaciones, setOperaciones] = useState([]);
-  const [actividadCatalogoId, setActividadCatalogoId] = useState('');
   const [indicadorQuery, setIndicadorQuery] = useState('');
   const [indicadorSuggestions, setIndicadorSuggestions] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -43,10 +41,7 @@ const NuevaActividadModal = ({ onClose, onCreated, onUpdated, objetivoId, activi
 
   const indicadorLabel = useCallback((item) => {
     if (!item) return '';
-    const indicadorField = typeof item.indicador === 'string'
-      ? item.indicador
-      : (item.indicador?.nombre || item.indicador?.descripcion);
-    return indicadorField || item.nombre || item.descripcion || item.label || item.titulo || `#${item.id}`;
+    return String(item.indicador || item.nombre || item.descripcion || item.label || item.titulo || `#${item.id}`).trim();
   }, []);
 
   useEffect(() => {
@@ -103,7 +98,6 @@ const NuevaActividadModal = ({ onClose, onCreated, onUpdated, objetivoId, activi
       if (foundLB !== '') setIndicadorLineaBase(String(foundLB));
       if (foundMeta !== '') setIndicadorMeta(String(foundMeta));
 
-      if (actividad.catalogo_operacion_id) setActividadCatalogoId(String(actividad.catalogo_operacion_id));
     } catch (e) {
       // silencioso
     }
@@ -142,8 +136,6 @@ const NuevaActividadModal = ({ onClose, onCreated, onUpdated, objetivoId, activi
       if (indicadorUnidad) payload.indicador_unidad = indicadorUnidad;
       if (indicadorLineaBase !== '') payload.indicador_linea_base = Number(indicadorLineaBase);
       if (indicadorMeta !== '') payload.indicador_meta = Number(indicadorMeta);
-      if (actividadCatalogoId) payload.catalogo_operacion_id = Number(actividadCatalogoId);
-
       let res;
       if (actividad && actividad.id) {
         res = await updateActividad(actividad.id, payload);
@@ -165,22 +157,6 @@ const NuevaActividadModal = ({ onClose, onCreated, onUpdated, objetivoId, activi
   };
 
   useEffect(() => {
-    let mounted = true;
-    // Obtener operaciones del catálogo sin filtro obligatorio por dirección
-    // searchOperacionesCatalogo usa /api/catalogos/operaciones-catalogo/ que no requiere parámetros
-    searchOperacionesCatalogo('')
-      .then(r => {
-        if (!mounted) return;
-        const list = Array.isArray(r.data) ? r.data : (r.data.results || []);
-        const defaults = (list || []).slice(0, 2);
-        setOperaciones(defaults);
-        if (defaults.length > 0) setActividadCatalogoId(String(defaults[0].id));
-      })
-      .catch(() => { /* silencioso */ });
-    return () => { mounted = false; };
-  }, []);
-
-  useEffect(() => {
     if (skipNextSearchRef.current) {
       skipNextSearchRef.current = false;
       return;
@@ -190,13 +166,11 @@ const NuevaActividadModal = ({ onClose, onCreated, onUpdated, objetivoId, activi
       return;
     }
     let mounted = true;
-    searchOperacionesCatalogo(indicadorQuery)
+    searchIndicadoresCatalogo(indicadorQuery)
       .then(r => {
         if (!mounted) return;
         const list = Array.isArray(r.data) ? r.data : (r.data.results || []);
-        const normalizedQuery = String(indicadorQuery).trim().toLowerCase();
-        const filtered = (list || []).filter(item => indicadorLabel(item).toLowerCase().includes(normalizedQuery));
-        setIndicadorSuggestions(filtered);
+        setIndicadorSuggestions(list || []);
       })
       .catch(() => setIndicadorSuggestions([]));
     return () => { mounted = false; };

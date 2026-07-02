@@ -71,22 +71,22 @@ const FullscreenPDFViewer = ({ isOpen, onClose, pdfUrl, downloadFileName = 'docu
       <div className="absolute inset-0 bg-black/70" onClick={onClose} />
 
       <div className="relative w-full h-full max-w-none bg-transparent flex flex-col">
-        <div className="flex items-center justify-between px-4 py-3 z-10">
+        <div className="flex items-center justify-between px-4 py-3 z-10 bg-slate-950/55 backdrop-blur-sm border-b border-white/10">
           <div className="text-white">
             <h4 className="text-lg font-bold">{title}</h4>
           </div>
           <div className="flex items-center gap-2">
             {showPrint && (
-              <button onClick={handlePrint} className="px-3 py-2 rounded-md bg-white/10 text-white hover:bg-white/20">
+              <button onClick={handlePrint} className="px-3 py-2 rounded-md bg-emerald-500 text-white font-semibold shadow-lg shadow-emerald-500/25 hover:bg-emerald-400 hover:shadow-emerald-500/40 transition-colors">
                 Imprimir
               </button>
             )}
             {blobUrl && (
-              <a href={blobUrl} download={downloadFileName} className="px-3 py-2 rounded-md bg-white/10 text-white hover:bg-white/20">
+              <a href={blobUrl} download={downloadFileName} className="px-3 py-2 rounded-md bg-amber-500 text-slate-950 font-semibold shadow-lg shadow-amber-500/25 hover:bg-amber-400 hover:shadow-amber-500/40 transition-colors">
                 Descargar
               </a>
             )}
-            <button onClick={onClose} className="px-3 py-2 rounded-md bg-white/10 text-white hover:bg-white/20">Cerrar</button>
+            <button onClick={onClose} className="px-3 py-2 rounded-md bg-rose-500 text-white font-semibold shadow-lg shadow-rose-500/25 hover:bg-rose-400 hover:shadow-rose-500/40 transition-colors">Cerrar</button>
           </div>
         </div>
 

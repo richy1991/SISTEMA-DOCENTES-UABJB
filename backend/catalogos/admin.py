@@ -1,5 +1,5 @@
 from django.contrib import admin
-from catalogos.models import ItemCatalogo, OperacionCatalogo
+from catalogos.models import ItemCatalogo, OperacionCatalogo, IndicadorCatalogo
 
 @admin.register(ItemCatalogo)
 class ItemCatalogoAdmin(admin.ModelAdmin):
@@ -12,6 +12,12 @@ class OperacionCatalogoAdmin(admin.ModelAdmin):
 	list_display = ("direccion", "servicio", "proceso", "operacion")
 	search_fields = ("servicio", "proceso", "operacion")
 	list_filter = ("direccion",)
+
+
+@admin.register(IndicadorCatalogo)
+class IndicadorCatalogoAdmin(admin.ModelAdmin):
+	list_display = ("indicador",)
+	search_fields = ("indicador",)
 
 
 

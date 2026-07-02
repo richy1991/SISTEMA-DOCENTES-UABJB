@@ -175,7 +175,7 @@ const Reportes = () => {
       )}
 
       <div className="w-full max-w-[1500px] mx-auto">
-        <div className="rounded-2xl border border-blue-200/80 dark:border-slate-800 bg-white/75 dark:bg-slate-900/55 backdrop-blur-sm p-4 md:p-5 shadow-sm">
+        <div className="rounded-2xl border border-blue-200/80 bg-white/75 backdrop-blur-sm p-4 md:p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/55">
           <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5">
             <div className="space-y-2">
               <p className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.18em] font-bold text-blue-700 dark:text-sky-300">
@@ -214,7 +214,7 @@ const Reportes = () => {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 items-stretch">
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-gradient-to-br from-blue-50 via-sky-50 to-indigo-50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 p-4 shadow-sm h-full">
+          <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-blue-50 via-sky-50 to-indigo-50 p-4 shadow-sm h-full dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-[10px] uppercase font-bold tracking-wider text-blue-700 dark:text-sky-300">Sección general</p>
@@ -236,7 +236,7 @@ const Reportes = () => {
             </button>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-gradient-to-br from-blue-50 via-cyan-50 to-sky-50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 p-4 shadow-sm h-full">
+          <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-blue-50 via-cyan-50 to-sky-50 p-4 shadow-sm h-full dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-[10px] uppercase font-bold tracking-wider text-blue-700 dark:text-sky-300">Sección documentos</p>
@@ -267,7 +267,7 @@ const Reportes = () => {
                 })}
               </select>
 
-              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-950/35 p-4 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+              <div className="rounded-xl border border-slate-200 bg-white/80 p-4 text-sm text-slate-600 leading-relaxed dark:border-slate-700 dark:bg-slate-950/35 dark:text-slate-300">
                 Selecciona un programa para abrir su PDF oficial. El nombre que aparece corresponde al documento de la gestión activa.
               </div>
 
@@ -319,7 +319,7 @@ const Reportes = () => {
                 })}
               </select>
 
-              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-950/35 p-4 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+              <div className="rounded-xl border border-slate-200 bg-white/80 p-4 text-sm text-slate-600 leading-relaxed dark:border-slate-700 dark:bg-slate-950/35 dark:text-slate-300">
                 El seguimiento se organiza por programa. El desplegable muestra los nombres de los documentos disponibles para esta gestión.
               </div>
 

@@ -30,3 +30,13 @@ class OperacionCatalogo(models.Model):
 
     def __str__(self):
         return self.operacion
+
+
+class IndicadorCatalogo(models.Model):
+    indicador = models.CharField(max_length=500, unique=True, db_index=True)
+
+    class Meta:
+        ordering = ['indicador']
+
+    def __str__(self):
+        return self.indicador

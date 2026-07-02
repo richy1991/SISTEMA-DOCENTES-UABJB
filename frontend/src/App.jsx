@@ -18,6 +18,7 @@ import EvidenciaPage from './modules/poa/pages/EvidenciaPage';
 import ObjetivosEspecificosPage from './modules/poa/pages/ObjetivosEspecificosPage';
 import CatalogoItems from './modules/poa/pages/CatalogoItems';
 import CatalogosMenu from './modules/poa/pages/CatalogosMenu';
+import IndicadoresPage from './modules/poa/pages/IndicadoresPage';
 import Reportes from './modules/poa/pages/Reportes';
 import PresupuestosPage from './modules/poa/pages/PresupuestosPage';
 import Login from './components/Login';
@@ -358,10 +359,10 @@ function App() {
               <Route path="objetivos-especificos/:documentId" element={<AnimatedRoute><ObjetivosEspecificosPage /></AnimatedRoute>} />
               <Route path="catalogos" element={<AnimatedRoute><CatalogosMenu /></AnimatedRoute>} />
               <Route path="catalogos/items" element={<AnimatedRoute><CatalogoItems /></AnimatedRoute>} />
-              <Route path="catalogos/indicadores" element={<AnimatedRoute><DireccionesPage /></AnimatedRoute>} />
+              <Route path="catalogos/indicadores" element={<AnimatedRoute><IndicadoresPage /></AnimatedRoute>} />
               <Route path="catalogos-menu" element={<AnimatedRoute><CatalogosMenu /></AnimatedRoute>} />
               <Route path="catalogo-items" element={<AnimatedRoute><CatalogoItems /></AnimatedRoute>} />
-              <Route path="indicadores" element={<AnimatedRoute><DireccionesPage /></AnimatedRoute>} />
+              <Route path="indicadores" element={<AnimatedRoute><IndicadoresPage /></AnimatedRoute>} />
               <Route path="reportes" element={<AnimatedRoute><Reportes /></AnimatedRoute>} />
               <Route path="presupuestos" element={<AnimatedRoute><PresupuestosPage /></AnimatedRoute>} />
             </Route>

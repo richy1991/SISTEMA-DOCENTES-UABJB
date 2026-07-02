@@ -274,10 +274,7 @@ const Sidebar = ({ theme, showGestionModal, setShowGestionModal, sidebarExpanded
                   key={item.name}
                   to={item.path}
                   className={({ isActive }) => `${navItemBase} ${isActive ? `${themeConfig.navActiveBg} ${themeConfig.navActiveBorder} ${themeConfig.navActiveText} ${navActiveShadow}` : `${navTextClass} ${themeConfig.navItemHover}`}`}
-                  onClick={() => {
-                    setShowGestionModal(true);
-                    handleMenuClick();
-                  }}
+                  onClick={handleMenuClick}
                   title={item.name}
                 >
                   <span className={`text-xl ${navIconClass}`}>{item.icon}</span>
