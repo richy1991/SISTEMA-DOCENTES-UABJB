@@ -394,6 +394,23 @@ body {
   color: #94a3b8 !important;
 }
 
+/* Tarjetas de resumen POA: prioridad alta para evitar herencia de utilidades globales */
+.poa-app .poa-summary-stat-label {
+  color: #0369a1 !important; /* sky-700 */
+}
+
+.poa-app .poa-summary-stat-value {
+  color: #072454 !important; /* deeper blue for numbers */
+}
+
+.dark .poa-app .poa-summary-stat-label {
+  color: #cbd5e1 !important;
+}
+
+.dark .poa-app .poa-summary-stat-value {
+  color: #f8fafc !important;
+}
+
 /* Bordes en modo oscuro (solo módulo POA) */
 .dark .poa-app .border-gray-200,
 .dark .poa-app .border-gray-300 {
@@ -414,6 +431,162 @@ body {
 .dark .poa-app .border-l,
 .dark .poa-app .border-r {
   border-color: rgba(148, 163, 184, 0.15) !important;
+}
+
+/* Botones, tablas y gradientes del módulo POA en modo oscuro */
+.dark .poa-app :is(.bg-blue-500, .bg-blue-600, .bg-blue-700) {
+  background-color: #1d4ed8 !important;
+}
+
+.dark .poa-app :is(.bg-sky-500, .bg-sky-600, .bg-sky-700) {
+  background-color: #0369a1 !important;
+}
+
+.dark .poa-app :is(.bg-cyan-500, .bg-cyan-600, .bg-cyan-700) {
+  background-color: #0e7490 !important;
+}
+
+.dark .poa-app :is(.bg-emerald-500, .bg-emerald-600, .bg-emerald-700) {
+  background-color: #047857 !important;
+}
+
+.dark .poa-app :is(.bg-amber-500, .bg-amber-600) {
+  background-color: #b45309 !important;
+}
+
+.dark .poa-app :is(.bg-orange-500, .bg-orange-600) {
+  background-color: #c2410c !important;
+}
+
+.dark .poa-app :is(.bg-indigo-500, .bg-indigo-600) {
+  background-color: #4338ca !important;
+}
+
+.dark .poa-app :is(.bg-violet-500, .bg-violet-600) {
+  background-color: #5b21b6 !important;
+}
+
+.dark .poa-app :is(.bg-purple-500, .bg-purple-600) {
+  background-color: #7c3aed !important;
+}
+
+.dark .poa-app :is(.bg-fuchsia-500, .bg-fuchsia-600) {
+  background-color: #a21caf !important;
+}
+
+.dark .poa-app :is(.bg-red-500, .bg-red-600, .bg-red-700) {
+  background-color: #b91c1c !important;
+}
+
+.dark .poa-app :is(.from-blue-400, .from-blue-500, .from-blue-600, .from-blue-700) {
+  --tw-gradient-from: rgba(29, 78, 216, 0.86) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+
+.dark .poa-app :is(.to-blue-500, .to-blue-600, .to-blue-700) {
+  --tw-gradient-to: rgba(30, 64, 175, 0.96) !important;
+}
+
+.dark .poa-app :is(.from-sky-400, .from-sky-500, .from-sky-600, .from-sky-700) {
+  --tw-gradient-from: rgba(3, 105, 161, 0.86) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+
+.dark .poa-app :is(.to-sky-500, .to-sky-600, .to-sky-700) {
+  --tw-gradient-to: rgba(2, 132, 199, 0.96) !important;
+}
+
+.dark .poa-app :is(.from-cyan-400, .from-cyan-500, .from-cyan-600, .from-cyan-700) {
+  --tw-gradient-from: rgba(14, 116, 144, 0.86) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+
+.dark .poa-app :is(.to-cyan-500, .to-cyan-600, .to-cyan-700) {
+  --tw-gradient-to: rgba(8, 145, 178, 0.96) !important;
+}
+
+.dark .poa-app :is(.from-emerald-400, .from-emerald-500, .from-emerald-600, .from-emerald-700) {
+  --tw-gradient-from: rgba(4, 120, 87, 0.88) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+
+.dark .poa-app :is(.to-emerald-500, .to-emerald-600, .to-emerald-700) {
+  --tw-gradient-to: rgba(16, 185, 129, 0.94) !important;
+}
+
+.dark .poa-app :is(.from-amber-400, .from-amber-500, .from-amber-600) {
+  --tw-gradient-from: rgba(180, 83, 9, 0.88) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+
+.dark .poa-app :is(.to-amber-500, .to-amber-600) {
+  --tw-gradient-to: rgba(217, 119, 6, 0.94) !important;
+}
+
+.dark .poa-app :is(.from-orange-400, .from-orange-500, .from-orange-600) {
+  --tw-gradient-from: rgba(194, 65, 12, 0.88) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+
+.dark .poa-app :is(.to-orange-500, .to-orange-600) {
+  --tw-gradient-to: rgba(234, 88, 12, 0.94) !important;
+}
+
+.dark .poa-app :is(.from-indigo-400, .from-indigo-500, .from-indigo-600) {
+  --tw-gradient-from: rgba(67, 56, 202, 0.86) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+
+.dark .poa-app :is(.to-indigo-500, .to-indigo-600) {
+  --tw-gradient-to: rgba(79, 70, 229, 0.94) !important;
+}
+
+.dark .poa-app :is(.from-violet-400, .from-violet-500, .from-violet-600) {
+  --tw-gradient-from: rgba(91, 33, 182, 0.86) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+
+.dark .poa-app :is(.to-violet-500, .to-violet-600) {
+  --tw-gradient-to: rgba(124, 58, 237, 0.94) !important;
+}
+
+.dark .poa-app :is(.from-purple-400, .from-purple-500, .from-purple-600) {
+  --tw-gradient-from: rgba(124, 58, 237, 0.86) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+
+.dark .poa-app :is(.to-purple-500, .to-purple-600) {
+  --tw-gradient-to: rgba(168, 85, 247, 0.94) !important;
+}
+
+.dark .poa-app :is(.from-fuchsia-400, .from-fuchsia-500, .from-fuchsia-600) {
+  --tw-gradient-from: rgba(162, 28, 175, 0.86) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+
+.dark .poa-app :is(.to-fuchsia-500, .to-fuchsia-600) {
+  --tw-gradient-to: rgba(217, 70, 239, 0.94) !important;
+}
+
+.dark .poa-app :is(.from-red-400, .from-red-500, .from-red-600) {
+  --tw-gradient-from: rgba(185, 28, 28, 0.88) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+
+.dark .poa-app :is(.to-red-500, .to-red-600) {
+  --tw-gradient-to: rgba(220, 38, 38, 0.94) !important;
+}
+
+.dark .poa-app table {
+  color: #e2e8f0;
+}
+
+.dark .poa-app th {
+  color: #f8fafc;
+}
+
+.dark .poa-app td {
+  color: inherit;
 }
 
 /* Inputs y formularios en modo oscuro (solo módulo POA) */

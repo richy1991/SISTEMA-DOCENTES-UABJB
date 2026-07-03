@@ -13,13 +13,14 @@ from django.db import transaction
 from django.db.models import Q
 from django.http import HttpResponse
 
-from catalogos.models import ItemCatalogo, OperacionCatalogo, Direccion
+from catalogos.models import ItemCatalogo, OperacionCatalogo, Direccion, IndicadorCatalogo
 from poa_document.models import UsuarioPOA
 from catalogos.api.serializers import (
     ItemCatalogoSerializer,
     OperacionCatalogoSerializer,
     DireccionSerializer,
     PartidaCatalogoSerializer,
+    IndicadorCatalogoSerializer,
 )
 
 
@@ -454,5 +455,90 @@ class OperacionCatalogoReadOnlyViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = OperacionCatalogo.objects.select_related('direccion').all()
     serializer_class = OperacionCatalogoSerializer
     permission_classes = [AllowAny]
+
+
+class IndicadorCatalogoViewSet(viewsets.ModelViewSet):
+    serializer_class = IndicadorCatalogoSerializer
+    permission_classes = [AllowAny]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get_queryset(self):
+        qs = IndicadorCatalogo.objects.all()
+        search = (self.request.query_params.get('q') or self.request.query_params.get('search') or '').strip()
+        if search:
+            qs = qs.filter(indicador__icontains=search)
+        return qs.order_by('indicador')
+
+    @action(detail=False, methods=['get', 'post'], url_path='importar-excel')
+    def importar_excel(self, request):
+        if request.method == 'GET':
+            return Response(
+                {
+                    'detail': 'Importa un archivo Excel con indicadores.',
+                    'uso': 'Envíe POST multipart/form-data con el archivo en el campo "archivo".',
+                    'formato_sugerido': 'Un indicador por fila en la primera columna.',
+                },
+                status=200,
+            )
+
+        archivo = request.FILES.get('archivo')
+        if not archivo:
+            return Response({'detail': 'Debe adjuntar un archivo Excel en el campo "archivo".'}, status=400)
+
+        dry_run = str(request.data.get('dry_run', 'false')).strip().lower() in {'1', 'true', 'si', 'yes'}
+
+        try:
+            workbook = load_workbook(filename=archivo, data_only=True, read_only=True)
+            sheet = workbook.active
+            indicadores_detectados = []
+            for row in sheet.iter_rows(min_row=1, max_col=1, values_only=True):
+                if row[0]:
+                    indicador = str(row[0]).strip()
+                    if indicador:
+                        indicadores_detectados.append(indicador)
+        except Exception as exc:
+            return Response({'detail': f'No se pudo leer el archivo Excel: {str(exc)}'}, status=400)
+
+        if not indicadores_detectados:
+            return Response(
+                {
+                    'detail': 'No se encontraron indicadores en el archivo Excel.',
+                    'sugerencia': 'Asegúrese de que los indicadores estén en la primera columna.',
+                },
+                status=400,
+            )
+
+        existentes = set(
+            IndicadorCatalogo.objects.filter(indicador__in=indicadores_detectados).values_list('indicador', flat=True)
+        )
+        nuevos = [IndicadorCatalogo(indicador=text) for text in indicadores_detectados if text not in existentes]
+
+        if not dry_run and nuevos:
+            with transaction.atomic():
+                IndicadorCatalogo.objects.bulk_create(nuevos, ignore_conflicts=True)
+
+        return Response(
+            {
+                'detail': 'Archivo Excel procesado correctamente.',
+                'dry_run': dry_run,
+                'indicadores_detectados': len(indicadores_detectados),
+                'indicadores_existentes': len(existentes),
+                'indicadores_creados': 0 if dry_run else len(nuevos),
+                'preview': indicadores_detectados[:50],
+            },
+            status=201 if not dry_run else 200,
+        )
+
+
+class IndicadorCatalogoReadOnlyViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = IndicadorCatalogoSerializer
+    permission_classes = [AllowAny]
+
+    def get_queryset(self):
+        qs = IndicadorCatalogo.objects.all()
+        search = (self.request.query_params.get('q') or self.request.query_params.get('search') or '').strip()
+        if search:
+            qs = qs.filter(indicador__icontains=search)
+        return qs.order_by('indicador')
 
 

@@ -291,6 +291,15 @@ export const deleteCatalogoOperacion = (id) => api.delete(`/api/catalogos/operac
 export const searchCatalogoOperaciones = (q, extraParams = {}) => api.get('/api/catalogos/operaciones/', { params: { search: q, ...extraParams } });
 export const searchOperacionesCatalogo = (q) => api.get('/api/catalogos/operaciones-catalogo/', { params: { search: q } });
 
+// Indicadores planos para POA (catálogo nuevo de una sola columna)
+export const getIndicadoresCatalogo = (params) => api.get('/api/catalogos/indicadores/', { params });
+export const getIndicadorCatalogoPorId = (id) => api.get(`/api/catalogos/indicadores/${id}/`);
+export const createIndicadorCatalogo = (payload) => api.post('/api/catalogos/indicadores/', payload);
+export const updateIndicadorCatalogo = (id, payload) => api.patch(`/api/catalogos/indicadores/${id}/`, payload);
+export const deleteIndicadorCatalogo = (id) => api.delete(`/api/catalogos/indicadores/${id}/`);
+export const importarIndicadoresPdf = (formData) => api.post('/api/catalogos/indicadores/importar-pdf/', formData);
+export const searchIndicadoresCatalogo = (q) => api.get('/api/catalogos/indicadores-catalogo/', { params: { search: q } });
+
 // Obtener operaciones filtradas por dirección (si el backend soporta ?direccion_id=)
 export const getOperacionesPorDireccion = (direccion_id) => {
 	if (direccion_id === undefined || direccion_id === null || Number.isNaN(Number(direccion_id))) {

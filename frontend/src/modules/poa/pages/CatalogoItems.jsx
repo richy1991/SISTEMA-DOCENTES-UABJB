@@ -410,7 +410,7 @@ const CatalogoItems = () => {
 				onConfirm={confirmarEliminarItem}
 				onCancel={() => setDeleteDialogItem(null)}
 			/>
-			<div className="catalogo-card w-full p-6 rounded shadow border border-slate-200 bg-white/90 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+			<div className="catalogo-card w-full p-6 rounded shadow border border-slate-200 bg-white/90 text-slate-900 dark:border-slate-700 dark:bg-slate-900/55 dark:text-slate-100">
 			{!canEdit && (
 				<div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
 					Modo solo lectura: puedes ver y descargar el catálogo. Solo el encargado de elavorar el POA puede crear o modificar items.
@@ -418,10 +418,10 @@ const CatalogoItems = () => {
 			)}
 			<div
 				ref={stickyControlsRef}
-				className="sticky z-30 mb-4 rounded-lg p-3 shadow-sm border border-sky-200 bg-sky-50/95 backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/95"
+				className="sticky z-30 mb-4 rounded-lg p-3 shadow-sm border border-sky-200 bg-sky-50/95 backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/55"
 				style={{ top: `${stickyTop}px` }}
 			>
-				<div className="mb-3 rounded-lg p-3 border border-sky-200 bg-white/80 dark:border-slate-700 dark:bg-slate-800">
+					<div className="mb-3 rounded-lg p-3 border border-sky-200 bg-white/80 dark:border-slate-700 dark:bg-slate-900/55">
 					<div className="text-sm font-semibold text-slate-700 mb-2 dark:text-slate-200">Ingresa un término de búsqueda: (DETALLE, PARTIDA)</div>
 					<div className="flex flex-wrap items-center gap-2">
 						<input

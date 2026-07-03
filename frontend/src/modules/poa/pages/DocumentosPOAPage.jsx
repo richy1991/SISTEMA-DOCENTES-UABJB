@@ -1,4 +1,5 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
+
 import { createPortal } from 'react-dom';
 import toast from 'react-hot-toast';
 import { DEFAULT_ENTIDAD } from '../config/defaults';
@@ -35,11 +36,11 @@ import {
 } from '../../../apis/poa.api';
 
 const ESTADO_CONFIG = {
-  elaboracion: { label: 'En elaboraci├│n', dot: 'bg-amber-400', badge: 'bg-amber-500/10 text-amber-400 border border-amber-500/20' },
-  revision: { label: 'En revisi├│n', dot: 'bg-sky-400', badge: 'bg-sky-500/10 text-sky-400 border border-sky-500/20' },
+  elaboracion: { label: 'En elaboración', dot: 'bg-amber-400', badge: 'bg-amber-500/10 text-amber-400 border border-amber-500/20' },
+  revision: { label: 'En revisión', dot: 'bg-sky-400', badge: 'bg-sky-500/10 text-sky-400 border border-sky-500/20' },
   observado: { label: 'Observado', dot: 'bg-orange-400', badge: 'bg-orange-500/10 text-orange-400 border border-orange-500/20' },
   aprobado: { label: 'Aprobado', dot: 'bg-emerald-400', badge: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' },
-  ejecucion: { label: 'En ejecuci├│n', dot: 'bg-violet-400', badge: 'bg-violet-500/10 text-violet-400 border border-violet-500/20' },
+  ejecucion: { label: 'En ejecución', dot: 'bg-violet-400', badge: 'bg-violet-500/10 text-violet-400 border border-violet-500/20' },
 };
 
 const formatDateTime = (value) => {
@@ -164,6 +165,27 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
 
   const hasGestionSelected = Boolean(gestionState || location?.state?.gestion);
 
+  // Forzar selección de gestión al entrar a DocumentosPOA: abrir modal SOLO si la gestión no viene en el estado.
+  // Si el usuario selecciona una vez, el modal debe cerrarse y NO volver a abrirse por efectos.
+  // Si no hay gestión seleccionada, el modal se fuerza a abrir al render.
+  // (No re-abrimos el modal por efectos para evitar que “se quede abierto” al seleccionar.)
+  useEffect(() => {
+    // Abrir modal al entrar si no hay gestión.
+    // Para evitar que se “reabra” tras seleccionar, verificamos también que showModal no esté abierto.
+    // Además, si ya existe un valor en location.state, no forzamos.
+    const gestionEnEstado = Boolean(location?.state?.gestion);
+    if (!gestionEnEstado && !hasGestionSelected && !loading && !showModal) {
+      setShowModal(true);
+    }
+  }, [hasGestionSelected, loading, showModal, location?.state?.gestion]);
+
+
+
+
+
+
+
+
   const openNuevo = () => {
     setEditingDoc(null);
     setShowNuevoModal(true);
@@ -185,7 +207,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
   const handleUpdated = (updated) => {
     setDocs((prev) => (prev || []).map((doc) => (Number(doc.id) === Number(updated.id) ? updated : doc)));
     closeNuevo();
-    toast.success('Edici├│n guardada');
+    toast.success('Edición guardada');
   };
 
   const handleSuccess = ({ gestion, documentos }) => {
@@ -226,7 +248,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
     const handler = async () => {
       const gestion = gestionState || location?.state?.gestion;
       if (!gestion) {
-        toast.error('Seleccione una gesti├│n antes de generar el reporte.');
+        toast.error('Seleccione una gestión antes de generar el reporte.');
         return;
       }
       setShowGeneralReportViewer(true);
@@ -255,7 +277,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
 
     const gestion = gestionState || location?.state?.gestion || doc?.gestion || '';
     if (!gestion) {
-      toast.error('No se pudo eliminar: falta la gesti├│n del documento.');
+      toast.error('No se pudo eliminar: falta la gestión del documento.');
       return;
     }
 
@@ -283,7 +305,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
   const handleGenerarPdfDocumento = async (doc) => {
     const gestion = getGestionNumberForDoc(doc);
     if (!gestion) {
-      toast.error('No se pudo generar PDF: falta la gesti├│n del documento.');
+      toast.error('No se pudo generar PDF: falta la gestión del documento.');
       return;
     }
 
@@ -298,7 +320,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
   const handleCambioEstado = async (doc, nuevoEstado) => {
     const gestion = getGestionNumberForDoc(doc);
     if (!gestion) {
-      toast.error('No se pudo actualizar el documento: falta la gesti├│n.');
+      toast.error('No se pudo actualizar el documento: falta la gestión.');
       return;
     }
 
@@ -307,7 +329,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
     try {
       let res;
       if (nuevoEstado === 'revision') {
-        if (!canEdit) throw new Error('No tiene permisos para enviar a revisi├│n.');
+        if (!canEdit) throw new Error('No tiene permisos para enviar a revisión.');
         res = await enviarRevisionDocumentoPOA(doc.id, Number(gestion));
       } else if (nuevoEstado === 'aprobado') {
         if (!canReview) throw new Error('No tiene permisos para aprobar documentos.');
@@ -317,16 +339,16 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
         if (!reviewNote) throw new Error('Debe registrar observaciones antes de marcar el documento como observado.');
         res = await observarDocumentoPOA(doc.id, Number(gestion), reviewNote);
       } else {
-        throw new Error('Transici├│n de estado no soportada.');
+        throw new Error('Transición de estado no soportada.');
       }
 
       const updatedDoc = res?.data || {};
       setDocs((prev) => (prev || []).map((item) => (Number(item.id) === Number(doc.id) ? { ...item, ...updatedDoc } : item)));
       setReviewNotesByDoc((prev) => ({ ...prev, [doc.id]: '' }));
 
-      if (nuevoEstado === 'revision') toast.success('Documento enviado a revisi├│n.');
+      if (nuevoEstado === 'revision') toast.success('Documento enviado a revisión.');
       if (nuevoEstado === 'aprobado') toast.success('Documento aprobado correctamente.');
-      if (nuevoEstado === 'observado') toast.success('Observaci├│n registrada correctamente.');
+      if (nuevoEstado === 'observado') toast.success('Observación registrada correctamente.');
     } catch (err) {
       const responseData = err?.response?.data;
       const detail = responseData?.detail || responseData?.jefe_unidad?.[0] || responseData?.observaciones?.[0] || err?.message || 'Error al actualizar el documento';
@@ -370,27 +392,28 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
     }, { total: 0, elaboracion: 0, revision: 0, observado: 0, aprobado: 0, ejecucion: 0, otro: 0 })
   ), [filteredDocs]);
 
-  const boardTitle = isRevisionBoard ? 'Documentos en revisi├│n y observados' : 'Documentos POA';
+  const boardTitle = isRevisionBoard ? 'Documentos en revisión y observados' : 'Documentos POA';
   const boardDescription = isRevisionBoard
-    ? 'Aqu├¡ se concentran los documentos enviados a revisi├│n u observados. Cuando un documento queda aprobado, deja de mostrarse en esta p├ígina.'
-    : 'Seleccione una gesti├│n para ver y administrar sus documentos.';
+    ? 'Aquí se concentran los documentos enviados a revisión u observados. Cuando un documento queda aprobado, deja de mostrarse en esta página.'
+    : 'Seleccione una gestión para ver y administrar sus documentos.';
 
+  const summaryCardBase = 'poa-summary-stat rounded-lg p-3 border shadow-sm bg-white/85 dark:bg-slate-900/55';
   const statTone = isDark
     ? {
-        total: 'bg-blue-950/35 border-blue-500/20 text-blue-50 ring-1 ring-blue-400/10',
-        revision: 'bg-sky-950/35 border-sky-500/20 text-sky-50 ring-1 ring-sky-400/10',
-        observado: 'bg-orange-950/35 border-orange-500/20 text-orange-50 ring-1 ring-orange-400/10',
-        elaboracion: 'bg-amber-950/35 border-amber-500/20 text-amber-50 ring-1 ring-amber-400/10',
-        aprobado: 'bg-emerald-950/35 border-emerald-500/20 text-emerald-50 ring-1 ring-emerald-400/10',
-        ejecucion: 'bg-violet-950/35 border-violet-500/20 text-violet-50 ring-1 ring-violet-400/10',
+        total: 'border-blue-500/30 text-blue-100',
+        revision: 'border-sky-500/30 text-sky-100',
+        observado: 'border-orange-500/30 text-orange-100',
+        elaboracion: 'border-amber-500/30 text-amber-100',
+        aprobado: 'border-emerald-500/30 text-emerald-100',
+        ejecucion: 'border-violet-500/30 text-violet-100',
       }
     : {
-        total: 'bg-slate-100 border-slate-300 text-slate-800 ring-1 ring-slate-200',
-        revision: 'bg-sky-100 border-sky-200 text-sky-900 ring-1 ring-sky-100',
-        observado: 'bg-orange-100 border-orange-200 text-orange-900 ring-1 ring-orange-100',
-        elaboracion: 'bg-amber-100 border-amber-200 text-amber-900 ring-1 ring-amber-100',
-        aprobado: 'bg-emerald-100 border-emerald-200 text-emerald-900 ring-1 ring-emerald-100',
-        ejecucion: 'bg-violet-100 border-violet-200 text-violet-900 ring-1 ring-violet-100',
+        total: 'border-blue-200 text-blue-700',
+        revision: 'border-sky-200 text-sky-700',
+        observado: 'border-orange-200 text-orange-700',
+        elaboracion: 'border-amber-200 text-amber-700',
+        aprobado: 'border-emerald-200 text-emerald-700',
+        ejecucion: 'border-violet-200 text-violet-700',
       };
 
   const statTextTone = isDark
@@ -478,7 +501,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
           open={Boolean(deleteDialogDoc)}
           type="danger"
           title="Eliminar documento POA"
-          message={deleteDialogDoc?.doc ? `┬┐Confirma que desea eliminar este documento?\n${deleteDialogDoc.doc.programa || `Documento #${deleteDialogDoc.doc.id}`}` : ''}
+          message={deleteDialogDoc?.doc ? `¿Confirma que desea eliminar este documento?\n${deleteDialogDoc.doc.programa || `Documento #${deleteDialogDoc.doc.id}`}` : ''}
           confirmText={deletingId === deleteDialogDoc?.doc?.id ? 'Eliminando...' : 'Eliminar'}
           cancelText="Cancelar"
           confirmDisabled={deletingId === deleteDialogDoc?.doc?.id}
@@ -497,7 +520,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                 >
                   <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/70 flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-xs uppercase tracking-wider font-bold text-sky-700 dark:text-sky-300">Enviar a revisi├│n</p>
+                      <p className="text-xs uppercase tracking-wider font-bold text-sky-700 dark:text-sky-300">Enviar a revisión</p>
                       <h4 className="text-lg font-bold text-slate-900 dark:text-slate-100 truncate" title={revisionDoc.programa || ''}>
                         {revisionDoc.programa || `Documento #${revisionDoc.id}`}
                       </h4>
@@ -508,19 +531,19 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                       className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-300 dark:border-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-white hover:border-slate-400 dark:hover:border-slate-500 transition"
                       aria-label="Cerrar"
                     >
-                      ├ù
+                      ×
                     </button>
                   </div>
 
                   <div className="p-5">
-                    <div className="rounded-xl border border-indigo-200 dark:border-slate-700 bg-indigo-50/70 dark:bg-slate-800/45 px-4 py-4 mb-4">
-                      <p className="text-sm uppercase tracking-wider font-bold text-indigo-700 dark:text-indigo-300">Este documento se enviar├í al Director de Carrera</p>
+                    <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 px-4 py-4 mb-4 dark:border-slate-700 dark:bg-slate-800/45">
+                      <p className="text-sm uppercase tracking-wider font-bold text-indigo-700 dark:text-indigo-300">Este documento se enviará al Director de Carrera</p>
                       <p className="text-base text-slate-800 dark:text-slate-100 mt-2 leading-relaxed">{getPersonaLabel(revisionDoc?.jefe_unidad || revisionDoc?.jefe_unidad_nombre || revisionDoc?.jefe_unidad_detalle, 'Debe asignar Director de Carrera en el documento')}</p>
                     </div>
 
                     <div className="rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/70 dark:bg-amber-950/25 px-4 py-4 mb-4">
                       <p className="text-sm font-semibold text-amber-800 dark:text-amber-200 leading-relaxed">
-                        Nota: Una vez enviado a revisi├│n, el documento cambiar├í de estado a "En Revisi├│n" y quedar├í bloqueado para edici├│n hasta que el Director de Carrera emita su resoluci├│n (aprobaci├│n u observaci├│n).
+                        Nota: Una vez enviado a revisión, el documento cambiará de estado a "En Revisión" y quedará bloqueado para edición hasta que el Director de Carrera emita su resolución (aprobación u observación).
                       </p>
                     </div>
 
@@ -550,7 +573,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                               disabled={updatingEstadoId === revisionDoc.id || !canSubmit}
                               className="flex items-center justify-center gap-2 bg-sky-600 hover:bg-sky-500 text-white text-base font-bold py-3 px-4 rounded-xl shadow transition-all w-full disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              <SendHorizontal size={14} /> {updatingEstadoId === revisionDoc.id ? 'Enviando...' : (revisionDoc.estado === 'observado' ? 'Reenviar a revisi├│n' : 'Enviar a revisi├│n')}
+                              <SendHorizontal size={14} /> {updatingEstadoId === revisionDoc.id ? 'Enviando...' : (revisionDoc.estado === 'observado' ? 'Reenviar a revisión' : 'Enviar a revisión')}
                             </button>
                           </div>
                           {!canSubmit && (
@@ -594,7 +617,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
         )}
 
         {!hasGestionSelected && !loading && (
-          <div className="rounded-xl border border-blue-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 p-6 shadow-sm w-full">
+          <div className="rounded-xl border border-blue-200 bg-white/85 p-6 shadow-sm w-full dark:border-slate-800 dark:bg-slate-950/40">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
                 <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">{boardTitle}</h3>
@@ -604,7 +627,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                 onClick={() => setShowModal(true)}
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow hover:bg-blue-500 transition"
               >
-                <Calendar size={16} /> Seleccionar gesti├│n
+                <Calendar size={16} /> Seleccionar gestión
               </button>
             </div>
           </div>
@@ -618,42 +641,42 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
               <div>
                 <h3 className="text-2xl font-bold text-blue-900 dark:text-slate-100">{boardTitle}</h3>
-                <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">Gesti├│n: {gestionState || location?.state?.gestion}</p>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">Gestión: {gestionState || location?.state?.gestion}</p>
               </div>
               <button
                 onClick={() => setShowModal(true)}
                 className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-300 dark:border-slate-700 px-4 py-2 text-sm font-semibold text-blue-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-900 transition"
               >
-                <Calendar size={16} /> Cambiar gesti├│n
+                <Calendar size={16} /> Cambiar gestión
               </button>
             </div>
 
             <div className="w-full mb-4">
               <div className={`grid gap-3 ${isRevisionBoard ? 'grid-cols-1 md:grid-cols-3' : 'grid-cols-2 md:grid-cols-6'}`}>
-                <div className={`poa-summary-stat rounded-lg p-3 border shadow-sm ${statTone.total}`}>
+                <div className={`${summaryCardBase} ${statTone.total}`}>
                   <p className={`poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold ${statTextTone.label}`} style={statTextColor.label}>Total</p>
                   <p className={`poa-summary-stat-value text-2xl font-bold ${statTextTone.value}`} style={statTextColor.value}>{filteredResumen.total}</p>
                 </div>
-                <div className={`poa-summary-stat rounded-lg p-3 border shadow-sm ${statTone.revision}`}>
-                  <p className={`poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold ${statTextTone.label}`} style={statTextColor.label}>En revisi├│n</p>
+                <div className={`${summaryCardBase} ${statTone.revision}`}>
+                  <p className={`poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold ${statTextTone.label}`} style={statTextColor.label}>En revisión</p>
                   <p className={`poa-summary-stat-value text-2xl font-bold ${statTextTone.value}`} style={statTextColor.value}>{filteredResumen.revision}</p>
                 </div>
-                <div className={`poa-summary-stat rounded-lg p-3 border shadow-sm ${statTone.observado}`}>
+                <div className={`${summaryCardBase} ${statTone.observado}`}>
                   <p className={`poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold ${statTextTone.label}`} style={statTextColor.label}>Observados</p>
                   <p className={`poa-summary-stat-value text-2xl font-bold ${statTextTone.value}`} style={statTextColor.value}>{filteredResumen.observado}</p>
                 </div>
                 {!isRevisionBoard && (
                   <>
-                    <div className={`poa-summary-stat rounded-lg p-3 border shadow-sm ${statTone.elaboracion}`}>
-                      <p className={`poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold ${statTextTone.label}`} style={statTextColor.label}>En elaboraci├│n</p>
+                    <div className={`${summaryCardBase} ${statTone.elaboracion}`}>
+                      <p className={`poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold ${statTextTone.label}`} style={statTextColor.label}>En elaboración</p>
                       <p className={`poa-summary-stat-value text-2xl font-bold ${statTextTone.value}`} style={statTextColor.value}>{filteredResumen.elaboracion}</p>
                     </div>
-                    <div className={`poa-summary-stat rounded-lg p-3 border shadow-sm ${statTone.aprobado}`}>
+                    <div className={`${summaryCardBase} ${statTone.aprobado}`}>
                       <p className={`poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold ${statTextTone.label}`} style={statTextColor.label}>Aprobados</p>
                       <p className={`poa-summary-stat-value text-2xl font-bold ${statTextTone.value}`} style={statTextColor.value}>{filteredResumen.aprobado}</p>
                     </div>
-                    <div className={`poa-summary-stat rounded-lg p-3 border shadow-sm ${statTone.ejecucion}`}>
-                      <p className={`poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold ${statTextTone.label}`} style={statTextColor.label}>En ejecuci├│n</p>
+                    <div className={`${summaryCardBase} ${statTone.ejecucion}`}>
+                      <p className={`poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold ${statTextTone.label}`} style={statTextColor.label}>En ejecución</p>
                       <p className={`poa-summary-stat-value text-2xl font-bold ${statTextTone.value}`} style={statTextColor.value}>{filteredResumen.ejecucion}</p>
                     </div>
                   </>
@@ -697,14 +720,14 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                         <div className="grid grid-cols-12">
                           <div className="col-span-12 md:col-span-2 flex flex-col items-center justify-center gap-2 border-b md:border-b-0 md:border-r border-blue-300 dark:border-slate-800 bg-blue-100/50 dark:bg-transparent px-4 py-5">
                             <span className="text-5xl md:text-4xl font-bold text-slate-900 dark:text-white font-mono leading-none">{gestion}</span>
-                            <span className="text-sm text-slate-600 dark:text-slate-500 font-bold uppercase tracking-wider">Gesti├│n</span>
+                            <span className="text-sm text-slate-600 dark:text-slate-500 font-bold uppercase tracking-wider">Gestión</span>
                             {doc.fecha_elaboracion && (
                               <div className="mt-2 pt-2 border-t border-blue-300 dark:border-slate-800 w-full flex flex-col items-center gap-0.5">
                                 <div className="flex items-center gap-2">
                                   <Calendar size={14} className="text-slate-500 dark:text-slate-400" />
                                   <span className="text-slate-700 dark:text-slate-300 text-sm font-semibold font-mono">{doc.fecha_elaboracion}</span>
                                 </div>
-                                <span className="text-sm text-slate-600 dark:text-slate-500 font-bold uppercase tracking-wider">Elaboraci├│n</span>
+                                <span className="text-sm text-slate-600 dark:text-slate-500 font-bold uppercase tracking-wider">Elaboración</span>
                               </div>
                             )}
                           </div>
@@ -741,7 +764,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
 
                             <div className="border-y border-blue-300 dark:border-slate-800 py-3 grid grid-cols-2 gap-3">
                               <div className="flex items-center gap-2">
-                                <div className="w-7 h-7 bg-blue-100 dark:bg-slate-800 rounded-lg border border-blue-200 dark:border-slate-700 flex items-center justify-center flex-shrink-0">
+                                <div className="w-7 h-7 bg-blue-100 rounded-lg border border-blue-200 flex items-center justify-center flex-shrink-0 dark:bg-slate-800 dark:border-slate-700">
                                   <User size={13} className="text-blue-600 dark:text-slate-400" />
                                 </div>
                                 <div className="min-w-0">
@@ -750,7 +773,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                                 </div>
                               </div>
                               <div className="flex items-center gap-2">
-                                <div className="w-7 h-7 bg-blue-100 dark:bg-slate-800 rounded-lg border border-blue-200 dark:border-slate-700 flex items-center justify-center flex-shrink-0">
+                                <div className="w-7 h-7 bg-blue-100 rounded-lg border border-blue-200 flex items-center justify-center flex-shrink-0 dark:bg-slate-800 dark:border-slate-700">
                                   <ShieldCheck size={13} className="text-blue-600 dark:text-slate-400" />
                                 </div>
                                 <div className="min-w-0">
@@ -761,7 +784,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                             </div>
 
                             {objetivo && (
-                              <div className="mt-3 bg-blue-100/70 dark:bg-slate-950/50 border border-blue-300 dark:border-slate-800 rounded-lg p-3 flex gap-2 items-start">
+                              <div className="mt-3 bg-blue-100/70 border border-blue-300 rounded-lg p-3 flex gap-2 items-start dark:bg-slate-950/50 dark:border-slate-800">
                                 <Target size={13} className="text-blue-400 mt-0.5 flex-shrink-0" />
                                 <div>
                                   <p className="text-[10px] text-slate-600 dark:text-slate-500 font-bold uppercase tracking-wider mb-0.5">Objetivo institucional</p>
@@ -786,7 +809,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                                   <p className="text-orange-900 dark:text-orange-200 text-xs leading-relaxed whitespace-pre-line">{observaciones}</p>
                                 )}
                                 <p className="mt-2 text-[10px] text-orange-700/90 dark:text-orange-300/90">
-                                  Use este checklist como gu├¡a de correcci├│n para el elaborador.
+                                  Use este checklist como guía de corrección para el elaborador.
                                 </p>
                               </div>
                             )}
@@ -804,7 +827,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                                 className={actionButtonStyles.send}
                               >
                                 <span className={actionIconWrap}><SendHorizontal size={14} /></span>
-                                <span>{estado === 'observado' ? 'Reenviar a revisi├│n' : 'Enviar a revisi├│n'}</span>
+                                <span>{estado === 'observado' ? 'Reenviar a revisión' : 'Enviar a revisión'}</span>
                               </button>
                             )}
 
@@ -848,13 +871,13 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                             )}
 
                             {canRespondThisDoc && (
-                              <div className="rounded-lg border border-emerald-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/35 p-3" onClick={(e) => e.stopPropagation()}>
-                                <p className="text-[10px] uppercase tracking-wider font-bold text-emerald-700 dark:text-emerald-300 mb-1">Revisi├│n de Direcci├│n</p>
+                              <div className="rounded-lg border border-emerald-200 bg-white/80 p-3 dark:border-slate-800 dark:bg-slate-950/35" onClick={(e) => e.stopPropagation()}>
+                                <p className="text-[10px] uppercase tracking-wider font-bold text-emerald-700 dark:text-emerald-300 mb-1">Revisión de Dirección</p>
                                 <p className="text-xs text-slate-500 dark:text-slate-400">Como director del sistema principal puede aprobar u observar este documento.</p>
                                 <textarea
                                   value={note}
                                   onChange={(e) => handleNoteChange(doc.id, e.target.value)}
-                                  placeholder="Escriba observaciones o comentario de aprobaci├│n..."
+                                  placeholder="Escriba observaciones o comentario de aprobación..."
                                   className="mt-3 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-700 dark:text-slate-100 min-h-[92px] resize-y"
                                 />
                                 <div className="mt-3 grid grid-cols-1 gap-2">
@@ -866,7 +889,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                                     disabled={updatingEstadoId === doc.id}
                                     className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold py-2 px-4 rounded-xl shadow transition-all w-full disabled:opacity-50 disabled:cursor-not-allowed"
                                   >
-                                    <CheckCircle2 size={14} /> {updatingEstadoId === doc.id ? 'Guardando...' : 'Aprobar revisi├│n'}
+                                    <CheckCircle2 size={14} /> {updatingEstadoId === doc.id ? 'Guardando...' : 'Aprobar revisión'}
                                   </button>
                                   <button
                                     onClick={(e) => {
@@ -876,7 +899,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                                     disabled={updatingEstadoId === doc.id}
                                     className="flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-500 text-white text-sm font-bold py-2 px-4 rounded-xl shadow transition-all w-full disabled:opacity-50 disabled:cursor-not-allowed"
                                   >
-                                    <AlertCircle size={14} /> {updatingEstadoId === doc.id ? 'Guardando...' : 'Observar revisi├│n'}
+                                    <AlertCircle size={14} /> {updatingEstadoId === doc.id ? 'Guardando...' : 'Observar revisión'}
                                   </button>
                                 </div>
                               </div>
@@ -895,7 +918,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                             </button>
 
                             {!canEdit && !canRespondThisDoc && (
-                              <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/35 px-3 py-3 text-xs text-slate-500 dark:text-slate-400 flex items-start gap-2">
+                              <div className="rounded-lg border border-slate-200 bg-white/80 px-3 py-3 text-xs text-slate-500 flex items-start gap-2 dark:border-slate-800 dark:bg-slate-950/35 dark:text-slate-400">
                                 <Clock3 size={14} className="mt-0.5 flex-shrink-0" />
                                 <span>Vista de solo lectura para este documento.</span>
                               </div>
@@ -907,9 +930,9 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                   );
                 })
               ) : (
-                <div className="col-span-full rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-white/70 dark:bg-slate-950/30 px-5 py-8 text-center text-gray-500 dark:text-slate-400">
+                <div className="col-span-full rounded-xl border border-dashed border-slate-300 bg-white/70 px-5 py-8 text-center text-gray-500 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-400">
                   {isRevisionBoard
-                    ? 'No hay documentos en revisi├│n u observados para la gesti├│n seleccionada.'
+                    ? 'No hay documentos en revisión u observados para la gestión seleccionada.'
                     : 'No hay documentos para mostrar.'}
                 </div>
               )}

@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Calendar, Download, FileText, Sparkles, TrendingUp, Layers3 } from 'lucide-react';
 import { useOutletContext } from 'react-router-dom';
@@ -72,7 +72,7 @@ const Reportes = () => {
       .catch((err) => {
         if (!active) return;
         setDocuments([]);
-        setError(err?.response?.data?.detail || err?.message || 'No se pudieron cargar los documentos de la gesti├│n.');
+        setError(err?.response?.data?.detail || err?.message || 'No se pudieron cargar los documentos de la gestión.');
       })
       .finally(() => {
         if (active) setDocumentsLoading(false);
@@ -127,13 +127,13 @@ const Reportes = () => {
 
   const openGeneralPreview = () => {
     if (!gestionValida) {
-      toast.error('Ingrese una gesti├│n v├ílida de 4 d├¡gitos.');
+      toast.error('Ingrese una gestión válida de 4 dígitos.');
       return;
     }
 
     openPdfViewer({
       section: 'general',
-      title: `Reporte general POA - Gesti├│n ${gestion}`,
+      title: `Reporte general POA - Gestión ${gestion}`,
       fileName: `reporte_documentos_${gestion}.pdf`,
       url: `${API_BASE}/api/reportes/generar-reporte-general/?gestion=${gestion}`,
     });
@@ -161,7 +161,7 @@ const Reportes = () => {
       fileName: `seguimiento_poa_${doc.id}_${gestion}.pdf`,
       url: `${API_BASE}/api/poa/documentos_poa/${doc.id}/pdf-oficial/?gestion=${gestion}`,
     });
-    toast('Se abri├│ el documento asociado al seguimiento del programa seleccionado.', { icon: 'Ôä╣´©Å' });
+    toast('Se abrió el documento asociado al seguimiento del programa seleccionado.', { icon: 'ℹ️' });
   };
 
   return (
@@ -175,7 +175,7 @@ const Reportes = () => {
       )}
 
       <div className="w-full max-w-[1500px] mx-auto">
-        <div className="rounded-2xl border border-blue-200/80 dark:border-slate-800 bg-white/75 dark:bg-slate-900/55 backdrop-blur-sm p-4 md:p-5 shadow-sm">
+        <div className="rounded-2xl border border-blue-200/80 bg-white/75 backdrop-blur-sm p-4 md:p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/55">
           <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5">
             <div className="space-y-2">
               <p className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.18em] font-bold text-blue-700 dark:text-sky-300">
@@ -185,13 +185,13 @@ const Reportes = () => {
                 Descarga los reportes de tu carrera
               </h2>
               <p className="text-sm md:text-base text-slate-600 dark:text-slate-300 max-w-3xl leading-relaxed">
-                Esta vista organiza tres secciones claras para la gesti├│n seleccionada: reporte general, documentos y seguimiento.
+                Esta vista organiza tres secciones claras para la gestión seleccionada: reporte general, documentos y seguimiento.
               </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-2 justify-start lg:justify-end">
               <div className="rounded-2xl border border-white/15 bg-gradient-to-br from-blue-600 to-sky-700 text-white px-4 py-3 min-w-[190px] shadow-sm">
-                <p className="text-[10px] uppercase tracking-[0.18em] text-sky-100/80 font-bold">Gesti├│n activa</p>
+                <p className="text-[10px] uppercase tracking-[0.18em] text-sky-100/80 font-bold">Gestión activa</p>
                 <p className="text-xl font-black mt-1">{gestion}</p>
               </div>
               <button
@@ -199,7 +199,7 @@ const Reportes = () => {
                 onClick={handleCambiarGestion}
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white shadow hover:bg-slate-800 transition"
               >
-                <Calendar size={16} /> Cambiar gesti├│n
+                <Calendar size={16} /> Cambiar gestión
               </button>
             </div>
           </div>
@@ -214,10 +214,10 @@ const Reportes = () => {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 items-stretch">
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-gradient-to-br from-blue-50 via-sky-50 to-indigo-50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 p-4 shadow-sm h-full">
+          <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-blue-50 via-sky-50 to-indigo-50 p-4 shadow-sm h-full dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-[10px] uppercase font-bold tracking-wider text-blue-700 dark:text-sky-300">Secci├│n general</p>
+                <p className="text-[10px] uppercase font-bold tracking-wider text-blue-700 dark:text-sky-300">Sección general</p>
                 <h3 className="text-xl font-bold text-slate-900 dark:text-white mt-1">PDF general</h3>
               </div>
               <div className="rounded-xl bg-blue-600 text-white p-3">
@@ -225,7 +225,7 @@ const Reportes = () => {
               </div>
             </div>
             <p className="mt-3 text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-              Descarga en un solo PDF todos los documentos de la gesti├│n seleccionada correspondientes a la carrera del usuario.
+              Descarga en un solo PDF todos los documentos de la gestión seleccionada correspondientes a la carrera del usuario.
             </p>
             <button
               type="button"
@@ -236,18 +236,18 @@ const Reportes = () => {
             </button>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-gradient-to-br from-blue-50 via-cyan-50 to-sky-50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 p-4 shadow-sm h-full">
+          <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-blue-50 via-cyan-50 to-sky-50 p-4 shadow-sm h-full dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-[10px] uppercase font-bold tracking-wider text-blue-700 dark:text-sky-300">Secci├│n documentos</p>
-                <h3 className="text-xl font-bold text-slate-900 dark:text-white mt-1">Documentos de la gesti├│n</h3>
+                <p className="text-[10px] uppercase font-bold tracking-wider text-blue-700 dark:text-sky-300">Sección documentos</p>
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white mt-1">Documentos de la gestión</h3>
               </div>
               <div className="rounded-xl bg-cyan-600 text-white p-3">
                 <FileText size={18} />
               </div>
             </div>
             <p className="mt-3 text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-              Aqu├¡ se muestran todos los documentos de la gesti├│n seleccionada. Cada tarjeta muestra el nombre del programa y permite descargar su PDF oficial.
+              Aquí se muestran todos los documentos de la gestión seleccionada. Cada tarjeta muestra el nombre del programa y permite descargar su PDF oficial.
             </p>
 
             <div className="mt-4 space-y-3">
@@ -267,8 +267,8 @@ const Reportes = () => {
                 })}
               </select>
 
-              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-950/35 p-4 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-                Selecciona un programa para abrir su PDF oficial. El nombre que aparece corresponde al documento de la gesti├│n activa.
+              <div className="rounded-xl border border-slate-200 bg-white/80 p-4 text-sm text-slate-600 leading-relaxed dark:border-slate-700 dark:bg-slate-950/35 dark:text-slate-300">
+                Selecciona un programa para abrir su PDF oficial. El nombre que aparece corresponde al documento de la gestión activa.
               </div>
 
               <button
@@ -291,7 +291,7 @@ const Reportes = () => {
           <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 p-4 shadow-sm h-full">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-[10px] uppercase font-bold tracking-wider text-amber-700 dark:text-amber-300">Secci├│n seguimiento</p>
+                <p className="text-[10px] uppercase font-bold tracking-wider text-amber-700 dark:text-amber-300">Sección seguimiento</p>
                 <h3 className="text-xl font-bold text-slate-900 dark:text-white mt-1">Seguimiento por programa</h3>
               </div>
               <div className="rounded-xl bg-amber-600 text-white p-3">
@@ -299,7 +299,7 @@ const Reportes = () => {
               </div>
             </div>
             <p className="mt-3 text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-              En este apartado se descarga el documento de seguimiento del programa seleccionado dentro de la gesti├│n activa.
+              En este apartado se descarga el documento de seguimiento del programa seleccionado dentro de la gestión activa.
             </p>
 
             <div className="mt-4 space-y-3">
@@ -319,8 +319,8 @@ const Reportes = () => {
                 })}
               </select>
 
-              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-950/35 p-4 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-                El seguimiento se organiza por programa. El desplegable muestra los nombres de los documentos disponibles para esta gesti├│n.
+              <div className="rounded-xl border border-slate-200 bg-white/80 p-4 text-sm text-slate-600 leading-relaxed dark:border-slate-700 dark:bg-slate-950/35 dark:text-slate-300">
+                El seguimiento se organiza por programa. El desplegable muestra los nombres de los documentos disponibles para esta gestión.
               </div>
 
               <button

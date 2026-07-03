@@ -1,486 +1,313 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
-import { getAllDirecciones, deleteDireccion, getOperacionesPorDireccion, deleteCatalogoOperacion, createCatalogoOperacion } from '../../../apis/poa.api';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { FaEdit, FaPlus, FaSearch, FaTrash } from 'react-icons/fa';
 import toast from 'react-hot-toast';
-import NuevaDireccionModal from '../components/NuevaDireccionModal';
-import IconButton from '../components/IconButton';
-import { FaEdit, FaTrash } from 'react-icons/fa';
-
-const getDirectionToneClass = (name = '') => {
-  const text = String(name).toLowerCase();
-  if (text.includes('internacional')) return 'border-sky-200 bg-sky-50/80 dark:border-sky-700/40 dark:bg-sky-950/20';
-  if (text.includes('planific')) return 'border-amber-200 bg-amber-50/80 dark:border-amber-700/40 dark:bg-amber-950/20';
-  if (text.includes('carrera') || text.includes('decanato')) return 'border-emerald-200 bg-emerald-50/80 dark:border-emerald-700/40 dark:bg-emerald-950/20';
-  if (text.includes('distancia')) return 'border-violet-200 bg-violet-50/80 dark:border-violet-700/40 dark:bg-violet-950/20';
-  return 'border-slate-200 bg-white/90 dark:border-slate-700 dark:bg-slate-900/90';
-};
+import {
+  createIndicadorCatalogo,
+  deleteIndicadorCatalogo,
+  getIndicadoresCatalogo,
+  importarIndicadoresPdf,
+  updateIndicadorCatalogo,
+} from '../../../apis/poa.api';
 
 const IndicadoresPage = () => {
-  const [direcciones, setDirecciones] = useState([]);
+  const inputRef = useRef(null);
+  const pdfInputRef = useRef(null);
+  const [indicadores, setIndicadores] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
+  const [importingPdf, setImportingPdf] = useState(false);
   const [error, setError] = useState(null);
-  const [query, setQuery] = useState('');
-  const [debouncedQuery, setDebouncedQuery] = useState('');
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState(null);
-  const [selectedDireccion, setSelectedDireccion] = useState(null);
-  const [operaciones, setOperaciones] = useState([]);
-  const [opsQuery, setOpsQuery] = useState('');
-  const [selectedOperacion, setSelectedOperacion] = useState(null);
-  const [opsLoading, setOpsLoading] = useState(false);
-  const [opsError, setOpsError] = useState(null);
-  const [savingManual, setSavingManual] = useState(false);
-  const [manualForm, setManualForm] = useState({
-    direccion_id: '',
-    servicio: '',
-    proceso: '',
-    operacion: '',
-    producto_intermedio: '',
-    indicador: '',
-  });
-  const [directionCounts, setDirectionCounts] = useState({});
-  const [countsLoading, setCountsLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  const [indicador, setIndicador] = useState('');
+  const [editingId, setEditingId] = useState(null);
 
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query), 350);
-    return () => clearTimeout(t);
-  }, [query]);
+    const timer = setTimeout(() => setDebouncedSearchQuery(searchQuery), 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   useEffect(() => {
     let mounted = true;
-    const load = async () => {
+
+    const loadIndicadores = async () => {
       setLoading(true);
       setError(null);
       try {
-        const res = await getAllDirecciones();
+        const params = debouncedSearchQuery.trim() ? { search: debouncedSearchQuery.trim() } : undefined;
+        const res = await getIndicadoresCatalogo(params);
         if (!mounted) return;
-        const list = Array.isArray(res?.data) ? res.data : [];
-        setDirecciones(list);
+        const list = Array.isArray(res?.data) ? res.data : (res?.data?.results || []);
+        setIndicadores(list || []);
       } catch (err) {
-        console.error(err);
-        setError(err?.response?.data?.detail || err.message || 'Error al obtener direcciones');
+        if (!mounted) return;
+        setIndicadores([]);
+        setError(err?.response?.data?.detail || err?.message || 'No se pudieron cargar los indicadores.');
       } finally {
         if (mounted) setLoading(false);
       }
     };
-    load();
-    return () => { mounted = false; };
-  }, []);
 
-  useEffect(() => {
-    let mounted = true;
-    const loadCounts = async () => {
-      if (!Array.isArray(direcciones) || direcciones.length === 0) {
-        setDirectionCounts({});
-        return;
-      }
-      setCountsLoading(true);
-      try {
-        const pairs = await Promise.all(
-          direcciones.map(async (dir) => {
-            try {
-              const res = await getOperacionesPorDireccion(dir.id);
-              const list = Array.isArray(res?.data) ? res.data : [];
-              return [dir.id, list.length];
-            } catch (err) {
-              return [dir.id, 0];
-            }
-          })
-        );
-        if (!mounted) return;
-        setDirectionCounts(Object.fromEntries(pairs));
-      } finally {
-        if (mounted) setCountsLoading(false);
-      }
+    loadIndicadores();
+
+    return () => {
+      mounted = false;
     };
-    loadCounts();
-    return () => { mounted = false; };
-  }, [direcciones]);
+  }, [debouncedSearchQuery]);
 
-  const filtered = useMemo(() => {
-    const q = String(debouncedQuery || '').trim().toLowerCase();
-    if (!q) return direcciones;
-    return direcciones.filter((d) => {
-      const s = `${d?.nombre || ''} ${d?.descripcion || ''} ${d?.direccion || ''}`.toLowerCase();
-      return s.includes(q);
-    });
-  }, [direcciones, debouncedQuery]);
+  const totalIndicadores = useMemo(() => indicadores.length, [indicadores]);
 
-  const filteredOperaciones = useMemo(() => {
-    const q = String(opsQuery || '').trim().toLowerCase();
-    if (!q) return operaciones;
-    return operaciones.filter((op) => {
-      const text = [op?.servicio, op?.proceso, op?.operacion, op?.producto_intermedio, op?.indicador].filter(Boolean).join(' ').toLowerCase();
-      return text.includes(q);
-    });
-  }, [operaciones, opsQuery]);
-
-  const handleCreated = (nueva) => {
-    if (!nueva) return;
-    setDirecciones((prev) => [nueva, ...prev]);
-    setModalOpen(false);
-    toast.success('Direccion creada');
+  const refreshIndicadores = async (queryValue = debouncedSearchQuery) => {
+    const trimmed = String(queryValue || '').trim();
+    const params = trimmed ? { search: trimmed } : undefined;
+    const res = await getIndicadoresCatalogo(params);
+    const list = Array.isArray(res?.data) ? res.data : (res?.data?.results || []);
+    setIndicadores(list || []);
+    return list || [];
   };
 
-  const handleUpdated = (updated) => {
-    if (!updated) return;
-    setDirecciones((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
-    setModalOpen(false);
-    toast.success('Direccion actualizada');
+  const resetForm = () => {
+    setEditingId(null);
+    setIndicador('');
+    requestAnimationFrame(() => inputRef.current?.focus());
   };
 
-  const openEdit = (e, dir) => {
-    if (e && e.stopPropagation) e.stopPropagation();
-    setEditing(dir);
-    setModalOpen(true);
-  };
-
-  const handleDelete = async (e, id) => {
-    if (e && e.stopPropagation) e.stopPropagation();
-    if (!confirm('Eliminar direccion?')) return;
-    try {
-      await deleteDireccion(id);
-      setDirecciones((prev) => prev.filter((d) => d.id !== id));
-      toast.success('Direccion eliminada');
-      if (selectedDireccion && selectedDireccion.id === id) {
-        setSelectedDireccion(null);
-        setOperaciones([]);
-      }
-    } catch (err) {
-      console.error('Error eliminando direccion:', err);
-      toast.error(err?.response?.data?.detail || 'Error al eliminar direccion');
-    }
-  };
-
-  const handleManualChange = (field, value) => {
-    setManualForm((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const handleManualSubmit = async (e) => {
-    e.preventDefault();
-
-    const payload = {
-      direccion_id: Number(manualForm.direccion_id),
-      servicio: String(manualForm.servicio || '').trim(),
-      proceso: String(manualForm.proceso || '').trim(),
-      operacion: String(manualForm.operacion || '').trim(),
-      producto_intermedio: String(manualForm.producto_intermedio || '').trim(),
-      indicador: String(manualForm.indicador || '').trim(),
-    };
-
-    if (!payload.direccion_id || Number.isNaN(payload.direccion_id)) {
-      toast.error('Selecciona una direccion.');
-      return;
-    }
-    if (!payload.servicio || !payload.proceso || !payload.operacion || !payload.indicador) {
-      toast.error('Completa direccion, servicio, proceso, operacion e indicador.');
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    const value = String(indicador || '').trim();
+    if (!value) {
+      toast.error('Escribe un indicador.');
       return;
     }
 
-    setSavingManual(true);
+    setSaving(true);
     try {
-      const res = await createCatalogoOperacion(payload);
-      const nueva = res?.data;
-      toast.success('Indicador registrado correctamente.');
-
-      setManualForm((prev) => ({
-        ...prev,
-        indicador: '',
-      }));
-
-      setDirectionCounts((prev) => ({
-        ...prev,
-        [payload.direccion_id]: Math.max(0, Number(prev?.[payload.direccion_id] || 0) + 1),
-      }));
-
-      if (selectedDireccion?.id === payload.direccion_id && nueva) {
-        setOperaciones((prev) => [nueva, ...prev]);
+      const payload = { indicador: value };
+      if (editingId) {
+        const res = await updateIndicadorCatalogo(editingId, payload);
+        const updated = res?.data || { id: editingId, indicador: value };
+        setIndicadores((prev) => prev.map((item) => (Number(item.id) === Number(editingId) ? updated : item)));
+        toast.success('Indicador actualizado.');
+      } else {
+        const res = await createIndicadorCatalogo(payload);
+        const created = res?.data || { indicador: value };
+        setIndicadores((prev) => [created, ...prev]);
+        toast.success('Indicador agregado.');
       }
-      try { window.dispatchEvent(new CustomEvent('operacion-creada')); } catch (err) { }
+      resetForm();
     } catch (err) {
-      console.error('Error creando indicador manual:', err);
-      toast.error(err?.response?.data?.detail || 'No se pudo registrar el indicador.');
+      toast.error(err?.response?.data?.indicador?.[0] || err?.response?.data?.detail || err?.message || 'No se pudo guardar el indicador.');
     } finally {
-      setSavingManual(false);
+      setSaving(false);
     }
   };
 
-  const onCardClick = (dir) => {
-    if (selectedDireccion && selectedDireccion.id === dir.id) {
-      setSelectedDireccion(null);
-      setOperaciones([]);
-      setOpsError(null);
-      setSelectedOperacion(null);
-      try { window.dispatchEvent(new CustomEvent('direccion-selected', { detail: null })); } catch (e) { }
-      try { window.dispatchEvent(new CustomEvent('operacion-selected', { detail: null })); } catch (e) { }
+  const handlePdfImport = async (event) => {
+    const file = event.target.files?.[0] || null;
+    event.target.value = '';
+
+    if (!file) return;
+
+    const name = String(file.name || '').toLowerCase();
+    const type = String(file.type || '').toLowerCase();
+    if (!name.endsWith('.pdf') && type !== 'application/pdf') {
+      toast.error('Selecciona un archivo PDF.');
       return;
     }
-    fetchOperaciones(dir);
-  };
 
-  const fetchOperaciones = async (dir) => {
-    if (!dir || dir.id === undefined || dir.id === null) return;
-    setSelectedDireccion(dir);
-    setOpsQuery('');
-    setSelectedOperacion(null);
-    try { window.dispatchEvent(new CustomEvent('operacion-selected', { detail: null })); } catch (e) { }
-    try { window.dispatchEvent(new CustomEvent('direccion-selected', { detail: dir })); } catch (e) { }
-    setOpsLoading(true);
-    setOpsError(null);
+    setImportingPdf(true);
     try {
-      const res = await getOperacionesPorDireccion(dir.id);
-      setOperaciones(Array.isArray(res?.data) ? res.data : []);
+      const formData = new FormData();
+      formData.append('archivo', file);
+      const res = await importarIndicadoresPdf(formData);
+      const creados = Number(res?.data?.indicadores_creados || 0);
+      await refreshIndicadores(searchQuery);
+      toast.success(creados > 0 ? `Se importaron ${creados} indicadores.` : 'El PDF ya estaba reflejado en el catálogo.');
     } catch (err) {
-      console.error(err);
-      setOpsError(err?.response?.data?.detail || err.message || 'Error al obtener operaciones');
-      setOperaciones([]);
+      toast.error(err?.response?.data?.detail || err?.response?.data?.sugerencia || err?.message || 'No se pudo importar el PDF.');
     } finally {
-      setOpsLoading(false);
+      setImportingPdf(false);
     }
   };
 
-  useEffect(() => {
-    const h = () => {
-      if (selectedDireccion) fetchOperaciones(selectedDireccion);
-    };
-    window.addEventListener('operacion-creada', h);
-    return () => window.removeEventListener('operacion-creada', h);
-  }, [selectedDireccion]);
+  const handleEdit = (item) => {
+    setEditingId(item.id);
+    setIndicador(item.indicador || '');
+    requestAnimationFrame(() => inputRef.current?.focus());
+  };
 
-  useEffect(() => {
-    const h = async (e) => {
-      const op = e?.detail ?? null;
-      if (!op || !op.id) return;
-      try {
-        await deleteCatalogoOperacion(op.id);
-        toast.success('Operacion eliminada');
-        if (selectedDireccion) fetchOperaciones(selectedDireccion);
-      } catch (err) {
-        console.error('Error eliminando operacion:', err);
-        toast.error(err?.response?.data?.detail || 'Error al eliminar operacion');
-      }
-    };
-    window.addEventListener('delete-operacion', h);
-    return () => window.removeEventListener('delete-operacion', h);
-  }, [selectedDireccion]);
+  const handleDelete = async (item) => {
+    if (!item?.id) return;
+    if (!window.confirm(`Eliminar indicador "${item.indicador || ''}"?`)) return;
 
-  useEffect(() => {
-    const onDirCleared = (e) => {
-      const d = e?.detail ?? null;
-      if (!d) {
-        setSelectedOperacion(null);
-        try { window.dispatchEvent(new CustomEvent('operacion-selected', { detail: null })); } catch (err) { }
-      }
-    };
-    window.addEventListener('direccion-selected', onDirCleared);
-    return () => window.removeEventListener('direccion-selected', onDirCleared);
-  }, []);
+    setDeletingId(item.id);
+    try {
+      await deleteIndicadorCatalogo(item.id);
+      setIndicadores((prev) => prev.filter((current) => Number(current.id) !== Number(item.id)));
+      toast.success('Indicador eliminado.');
+      if (Number(editingId) === Number(item.id)) resetForm();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'No se pudo eliminar el indicador.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
-  useEffect(() => {
-    const h = (e) => {
-      const page = e?.detail?.page ?? null;
-      if (page === 'direcciones') {
-        setEditing(null);
-        setModalOpen(true);
-      }
-    };
-    window.addEventListener('open-new', h);
-    return () => window.removeEventListener('open-new', h);
-  }, []);
+  const hasResults = indicadores.length > 0;
 
   return (
-    <div className=" w-full max-w-screen-xl mx-auto">
-      <div className="mb-4 rounded-lg border border-slate-200 bg-white/90 p-4 shadow dark:border-slate-700 dark:bg-slate-900/90">
-        <div className="mb-3">
-          <div className="text-lg font-semibold text-slate-900 dark:text-slate-100">Registro manual de indicadores</div>
-          <div className="text-sm text-slate-600 dark:text-slate-300">Ingresa un indicador por vez. El sistema mantiene el contexto para repetir servicio, proceso y operacion para cada indicador.</div>
+    <section className="flex flex-col items-start justify-start flex-1 pb-6 px-3 md:px-6 py-4 w-full">
+      <div className="w-full max-w-[1200px] mx-auto space-y-4">
+        <div className="rounded-2xl border border-blue-200/80 bg-white/75 backdrop-blur-sm p-4 md:p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/55">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="space-y-2">
+              <p className="text-xs uppercase tracking-[0.18em] font-bold text-blue-700 dark:text-sky-300">Catálogo POA</p>
+              <h2 className="text-2xl md:text-4xl font-extrabold text-blue-900 dark:text-slate-100 leading-tight">Catálogo de indicadores</h2>
+              <p className="text-sm md:text-base text-slate-600 dark:text-slate-300 max-w-3xl leading-relaxed">
+                Este catálogo almacena una sola lista de indicadores. Las actividades los usan como sugerencias al momento de crear o editar.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-blue-200 bg-white/85 px-4 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-900/60 min-w-[190px]">
+              <p className="text-[10px] uppercase tracking-[0.18em] text-blue-700 dark:text-sky-300 font-bold">Indicadores cargados</p>
+              <p className="text-3xl font-black mt-1 text-slate-900 dark:text-white">{totalIndicadores}</p>
+            </div>
+          </div>
         </div>
-        <form onSubmit={handleManualSubmit} className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <select
-            value={manualForm.direccion_id}
-            onChange={(e) => handleManualChange('direccion_id', e.target.value)}
-            className="rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-            required
-          >
-            <option value="">Seleccionar direccion</option>
-            {direcciones.map((dir) => (
-              <option key={dir.id} value={dir.id}>{dir.nombre || dir.direccion || `Direccion ${dir.id}`}</option>
-            ))}
-          </select>
-          <input
-            type="text"
-            value={manualForm.servicio}
-            onChange={(e) => handleManualChange('servicio', e.target.value)}
-            placeholder="Servicio"
-            className="rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-            required
-          />
-          <input
-            type="text"
-            value={manualForm.proceso}
-            onChange={(e) => handleManualChange('proceso', e.target.value)}
-            placeholder="Proceso"
-            className="rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-            required
-          />
-          <input
-            type="text"
-            value={manualForm.operacion}
-            onChange={(e) => handleManualChange('operacion', e.target.value)}
-            placeholder="Operacion"
-            className="rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-            required
-          />
-          <input
-            type="text"
-            value={manualForm.producto_intermedio}
-            onChange={(e) => handleManualChange('producto_intermedio', e.target.value)}
-            placeholder="Producto intermedio (opcional)"
-            className="rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-          />
-          <input
-            type="text"
-            value={manualForm.indicador}
-            onChange={(e) => handleManualChange('indicador', e.target.value)}
-            placeholder="Indicador"
-            className="rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-            required
-          />
-          <div className="xl:col-span-3 flex justify-end">
-            <button
-              type="submit"
-              disabled={savingManual}
-              className="btn-futuristic rounded px-4 py-2 font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {savingManual ? 'Guardando...' : 'Guardar indicador'}
-            </button>
-          </div>
-        </form>
-      </div>
 
-      <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50/70 px-4 py-3 text-sm text-amber-800 dark:border-amber-800/50 dark:bg-amber-950/20 dark:text-amber-200">
-        Se deshabilito la carga directa por archivo. El registro del catalogo de indicadores ahora es manual, uno por uno, desde este formulario.
-      </div>
-
-      {loading && <div>Cargando direcciones...</div>}
-      {error && <div className="text-red-600">{error}</div>}
-
-      {!loading && !error && (
-        <div className="flex flex-col gap-3">
-          <div className="mb-1">
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar direccion..."
-              className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-            />
-          </div>
-          {Array.isArray(filtered) && filtered.length > 0 ? (
-            filtered.map((dir) => {
-              const isExpanded = selectedDireccion && selectedDireccion.id === dir.id;
-              const count = directionCounts?.[dir.id];
-              return (
-                <div
-                  key={dir.id}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onCardClick(dir); }}
-                  onClick={() => onCardClick(dir)}
-                  className={`rounded-lg p-4 border transition-shadow duration-200 cursor-pointer ${getDirectionToneClass(dir.nombre || dir.descripcion || dir.direccion || '')} ${isExpanded ? 'shadow-xl ring-2 ring-blue-200' : 'hover:scale-[1.01] hover:-translate-y-0.5 hover:shadow-xl'}`}
-                >
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex-1">
-                      <div className="font-semibold text-blue-800">{dir.nombre || dir.descripcion || dir.direccion || ' - '}</div>
-                      <div className="text-xs text-slate-500 mt-1">
-                        {countsLoading && !isExpanded ? 'Contando indicadores...' : isExpanded ? `${operaciones.length} indicadores cargados` : `${typeof count === 'number' ? count : 0} indicadores`}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 ml-4">
-                      <IconButton icon={<FaEdit />} onClick={(e) => openEdit(e, dir)} className="bg-[#f59e0b] text-white rounded shadow hover:bg-[#d97706] p-2" title="Editar" />
-                      <IconButton icon={<FaTrash />} onClick={(e) => handleDelete(e, dir.id)} className="bg-[#ef4444] text-white rounded shadow hover:bg-[#dc2626] p-2" title="Eliminar" />
-                    </div>
-                  </div>
-
-                  {isExpanded && (
-                    <div className="mt-4 pt-4 border-t border-slate-200">
-                      <div className="mb-3">
-                        <input
-                          type="text"
-                          value={opsQuery}
-                          onChange={(e) => setOpsQuery(e.target.value)}
-                          placeholder="Buscar en este bloque..."
-                          className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-                        />
-                      </div>
-                      {opsLoading ? (
-                        <div>Cargando indicadores...</div>
-                      ) : opsError ? (
-                        <div className="text-red-600">{opsError}</div>
-                      ) : filteredOperaciones && filteredOperaciones.length > 0 ? (
-                        <div className="overflow-x-auto no-scrollbar">
-                          <table className="min-w-full border-collapse leading-6">
-                            <thead>
-                              <tr className="bg-gray-100">
-                                <th className="p-3 w-80 border">Servicios</th>
-                                <th className="p-3 w-80 border">Procesos</th>
-                                <th className="p-3 w-96 border">Operaciones</th>
-                                <th className="p-3 w-80 border">Productos Intermedios</th>
-                                <th className="p-3 w-96 border">Indicador</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {filteredOperaciones.map((op) => {
-                                const isSelected = selectedOperacion && selectedOperacion.id === op.id;
-                                return (
-                                  <tr
-                                    key={op.id}
-                                    className={`border-b hover:cursor-pointer ${isSelected ? 'bg-blue-200 border-l-4 border-blue-900' : ''}`}
-                                    onClick={() => {
-                                      if (selectedOperacion && selectedOperacion.id === op.id) {
-                                        setSelectedOperacion(null);
-                                        try { window.dispatchEvent(new CustomEvent('operacion-selected', { detail: null })); } catch (e) { }
-                                      } else {
-                                        setSelectedOperacion(op);
-                                        try { window.dispatchEvent(new CustomEvent('operacion-selected', { detail: op })); } catch (e) { }
-                                      }
-                                    }}
-                                  >
-                                    <td className={`p-3 align-top ${isSelected ? 'text-white' : ''}`}>{op.servicio || op.unidad || <span className="text-gray-400">Sin datos</span>}</td>
-                                    <td className={`p-3 align-top ${isSelected ? 'text-white' : ''}`}>{op.proceso || op.proceso_nombre || <span className="text-gray-400">Sin datos</span>}</td>
-                                    <td className={`p-3 align-top font-medium ${isSelected ? 'text-white' : ''}`}>{op.nombre || op.operacion || op.operaciones || op.descripcion || op.codigo || <span className="text-gray-400">Sin datos</span>}</td>
-                                    <td className={`p-3 align-top ${isSelected ? 'text-white' : ''}`}>{op.producto_intermedio || op.producto || <span className="text-gray-400">Sin datos</span>}</td>
-                                    <td className={`p-3 align-top ${isSelected ? 'text-white' : ''}`}>{op.indicador || op.indicador_nombre || <span className="text-gray-400">Sin datos</span>}</td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      ) : (
-                        <div className="text-gray-500">
-                          {operaciones.length > 0 ? 'No hay resultados para la busqueda actual.' : 'No hay indicadores para esta direccion.'}
-                        </div>
-                      )}
-                    </div>
+        <div className="rounded-2xl border border-slate-200 bg-white/85 p-4 md:p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900/55">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="flex-1 min-w-0">
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">
+                {editingId ? 'Editar indicador' : 'Nuevo indicador'}
+              </label>
+              <form onSubmit={handleSubmit} className="flex flex-col md:flex-row gap-3">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={indicador}
+                  onChange={(e) => setIndicador(e.target.value)}
+                  placeholder="Escribe un indicador..."
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-100"
+                  autoComplete="off"
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white shadow hover:bg-blue-500 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    <FaPlus />
+                    {saving ? 'Guardando...' : (editingId ? 'Actualizar' : 'Agregar')}
+                  </button>
+                  {editingId && (
+                    <button
+                      type="button"
+                      onClick={resetForm}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                    >
+                      Cancelar
+                    </button>
                   )}
                 </div>
-              );
-            })
-          ) : (
-            <div className="py-6 text-center text-gray-500">No hay direcciones que coincidan.</div>
-          )}
-        </div>
-      )}
+              </form>
+            </div>
 
-      {modalOpen && (
-        <NuevaDireccionModal
-          onClose={() => { setModalOpen(false); setEditing(null); }}
-          direccion={editing}
-          onCreated={handleCreated}
-          onUpdated={handleUpdated}
-        />
-      )}
-    </div>
+            <div className="w-full lg:w-80">
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">Buscar indicador</label>
+              <div className="relative">
+                <FaSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Filtra la lista..."
+                  className="w-full rounded-xl border border-slate-300 bg-white pl-10 pr-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-100"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-white/75 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-950/30">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Importar desde PDF</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Sube un PDF con texto extraíble. Se guardará una lista de indicadores, uno por línea, sin duplicados.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                ref={pdfInputRef}
+                type="file"
+                accept="application/pdf"
+                className="hidden"
+                onChange={handlePdfImport}
+              />
+              <button
+                type="button"
+                onClick={() => pdfInputRef.current?.click()}
+                disabled={importingPdf}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white shadow hover:bg-emerald-500 transition disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {importingPdf ? 'Importando...' : 'Subir PDF'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {loading && <div className="text-blue-800 dark:text-slate-200">Cargando indicadores...</div>}
+        {error && <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">{String(error)}</div>}
+
+        {!loading && !error && (
+          hasResults ? (
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900/55">
+              <table className="w-full border-collapse text-sm">
+                <thead className="bg-slate-50 dark:bg-slate-900/70">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-600 dark:text-slate-300">Indicador</th>
+                    <th className="px-4 py-3 text-right font-semibold text-slate-600 dark:text-slate-300">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {indicadores.map((item, index) => (
+                    <tr
+                      key={item.id || `${item.indicador}-${index}`}
+                      className="border-t border-slate-200 dark:border-slate-800 bg-white odd:bg-slate-50/70 dark:bg-slate-900/30 dark:odd:bg-slate-950/35"
+                    >
+                      <td className="px-4 py-3 text-slate-900 dark:text-slate-100 font-medium">{item.indicador}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleEdit(item)}
+                            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 transition"
+                          >
+                            <FaEdit /> Editar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(item)}
+                            disabled={deletingId === item.id}
+                            className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-500 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                          >
+                            <FaTrash /> {deletingId === item.id ? 'Eliminando...' : 'Eliminar'}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-white/75 px-5 py-8 text-center text-slate-500 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-400">
+              No hay indicadores que coincidan con la búsqueda.
+            </div>
+          )
+        )}
+      </div>
+    </section>
   );
 };
 

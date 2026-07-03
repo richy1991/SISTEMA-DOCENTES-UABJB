@@ -1,4 +1,4 @@
-from catalogos.models import ItemCatalogo, OperacionCatalogo, Direccion
+from catalogos.models import ItemCatalogo, OperacionCatalogo, Direccion, IndicadorCatalogo
 from rest_framework import serializers
 from django.db import transaction
 
@@ -44,4 +44,17 @@ class OperacionCatalogoSerializer(serializers.ModelSerializer):
     @transaction.atomic
     def update(self, instance, validated_data):
         return super().update(instance, validated_data)
+
+
+class IndicadorCatalogoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = IndicadorCatalogo
+        fields = ['id', 'indicador']
+        read_only_fields = ['id']
+
+    def validate_indicador(self, value):
+        text = str(value or '').strip()
+        if not text:
+            raise serializers.ValidationError('El indicador no puede estar vacío.')
+        return text
     

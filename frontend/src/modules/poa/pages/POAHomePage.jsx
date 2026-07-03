@@ -146,7 +146,7 @@ const POAHomePage = () => {
         transition={{ duration: 0.35, ease: 'easeOut' }}
         className="w-full max-w-[1500px] mx-auto"
       >
-        <div className="rounded-2xl border border-blue-200/80 dark:border-slate-800 bg-white/70 dark:bg-slate-900/55 backdrop-blur-sm p-4 md:p-5 shadow-sm">
+        <div className="rounded-2xl border border-blue-200/80 bg-white/70 backdrop-blur-sm p-4 md:p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/55">
           <h2 className="text-2xl md:text-4xl font-extrabold text-blue-900 dark:text-slate-100 leading-tight">
             Dashboard de Documentos POA
           </h2>
@@ -207,7 +207,7 @@ const POAHomePage = () => {
                 <motion.div
                   key={it.label}
                   variants={itemVariants}
-                  className="rounded-xl border border-blue-200 dark:border-slate-700 bg-white/85 dark:bg-slate-900/60 px-3 py-3 shadow-sm"
+                  className="rounded-xl border border-blue-200 bg-white/85 px-3 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-900/60"
                 >
                   <div className="flex items-center justify-between">
                     <p className="text-[11px] uppercase tracking-wider text-slate-600 dark:text-slate-400 font-bold">{it.label}</p>
@@ -279,7 +279,7 @@ const POAHomePage = () => {
                             </div>
                           </div>
 
-                          <div className="mt-2 bg-blue-100/70 dark:bg-slate-950/50 border border-blue-300 dark:border-slate-800 rounded-lg p-3 flex gap-2 items-start">
+                          <div className="mt-2 bg-blue-100/70 border border-blue-300 rounded-lg p-3 flex gap-2 items-start dark:bg-slate-950/50 dark:border-slate-800">
                             <FaBullseye size={13} className="text-blue-500 mt-0.5 flex-shrink-0" />
                             <div>
                               <p className="text-[10px] text-slate-600 dark:text-slate-500 font-bold uppercase tracking-wider mb-0.5">Objetivo institucional</p>
@@ -297,7 +297,7 @@ const POAHomePage = () => {
                   );
                 })
               ) : (
-                <div className="col-span-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white/75 dark:bg-slate-900/60 px-4 py-6 text-center text-slate-500 dark:text-slate-300">
+                <div className="col-span-full rounded-xl border border-slate-200 bg-white/75 px-4 py-6 text-center text-slate-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
                   No hay documentos para mostrar en esta gestion.
                 </div>
               )}

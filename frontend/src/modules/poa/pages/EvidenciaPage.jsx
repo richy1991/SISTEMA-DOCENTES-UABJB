@@ -1,13 +1,19 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
 import { getEvidenciasPorActividad, crearEvidencia, updateEvidencia, deleteEvidencia, getActividadPorId } from '../../../apis/poa.api';
 import toast from 'react-hot-toast';
 import { FaArrowLeft, FaEdit, FaTrash, FaChevronLeft, FaChevronRight, FaLink, FaFileDownload } from 'react-icons/fa';
 import Dialog from '../components/base/Dialog';
+import { useTheme } from '../../../useTheme';
 
 const EvidenciaPage = () => {
   const { actividadId } = useParams();
   const navigate = useNavigate();
+  const { effectiveTheme } = useTheme();
+  const outletContext = useOutletContext() || {};
+  const poaPermissions = outletContext.poaPermissions || {};
+  const canEdit = !!poaPermissions.canEdit;
+  const isDark = effectiveTheme === 'dark';
   const [evidencia, setEvidencia] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actividad, setActividad] = useState(null);
@@ -33,6 +39,11 @@ const EvidenciaPage = () => {
   const poaTextAreaClass = `${poaFieldClass} resize-none`;
   const poaCancelButtonClass = 'min-w-[88px] rounded-xl px-3 py-2 text-xs sm:px-4 sm:py-2.5 sm:text-sm font-bold transition-colors border border-slate-300 bg-slate-100 text-slate-700 shadow-sm hover:bg-slate-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600';
   const poaSaveButtonClass = 'min-w-[88px] rounded-xl px-3 py-2 text-xs sm:px-4 sm:py-2.5 sm:text-sm font-bold transition-colors border border-emerald-500/60 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md hover:brightness-105';
+  const pageCardClass = 'border border-slate-200 bg-white/80 shadow-xl dark:border-slate-700 dark:bg-slate-900/55';
+  const infoCardClass = 'rounded-2xl border border-slate-200 bg-white/80 p-4 sm:p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900/55';
+  const mediaCardClass = 'overflow-hidden rounded-2xl border border-slate-200 bg-white/80 shadow-lg dark:border-slate-700 dark:bg-slate-900/55';
+  const chipCardClass = 'rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300';
+  const hasVisibleActions = canEdit;
   const handleFormChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
@@ -205,6 +216,22 @@ const EvidenciaPage = () => {
     navigate(-1);
   };
 
+  const handleStartEdit = () => {
+    if (!canEdit) {
+      toast.error('No tiene permisos para editar evidencias.');
+      return;
+    }
+    setEditMode(true);
+  };
+
+  const handleOpenDeleteDialog = () => {
+    if (!canEdit) {
+      toast.error('No tiene permisos para eliminar evidencias.');
+      return;
+    }
+    setShowDeleteDialog(true);
+  };
+
   const handleDelete = async () => {
     if (!evidencia) return;
 
@@ -233,6 +260,10 @@ const EvidenciaPage = () => {
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!actividadId) return;
+    if (!canEdit) {
+      toast.error('No tiene permisos para guardar evidencias.');
+      return;
+    }
     const isEditingExisting = Boolean(editMode && evidencia?.id);
 
     if (!formData.resultados_logrados.trim()) {
@@ -331,7 +362,7 @@ const EvidenciaPage = () => {
 
       {/* Actividad Context Card */}
       {actividad && (
-        <div className="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 border-l-4 border-blue-500 p-3 rounded-r-lg">
+        <div className="bg-gradient-to-r from-blue-50 to-blue-100 border-l-4 border-blue-500 p-3 rounded-r-lg dark:from-slate-900/35 dark:to-slate-900/55">
           <div className="text-xs text-gray-600 dark:text-gray-400">Actividad:</div>
           <div className="text-base font-semibold text-blue-900 dark:text-blue-200">{actividad.codigo} - {actividad.nombre}</div>
         </div>
@@ -341,23 +372,25 @@ const EvidenciaPage = () => {
       {!evidencia && !editMode ? (
         <div className="flex justify-center">
           <div className="w-full max-w-xl">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 text-center">
-              <h2 className="text-2xl font-bold mb-2 text-gray-900 dark:text-white">Sin evidencia registrada</h2>
-              <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">Aún no tiene cargada la evidencia.</p>
-              <div className="mb-4 text-sm text-gray-700 dark:text-gray-300">
+            <div className="rounded-2xl p-6 text-center bg-white/80 border border-slate-200 shadow-lg dark:bg-slate-900/55 dark:border-slate-700">
+              <h2 className="text-2xl font-bold mb-2 text-slate-900 dark:text-white">Sin evidencia registrada</h2>
+              <p className="mb-4 text-sm text-slate-600 dark:text-slate-400">Aún no tiene cargada la evidencia.</p>
+              <div className="mb-4 text-sm text-slate-700 dark:text-slate-300">
                 Al cargar evidencia, la actividad se marcará como <span className="font-semibold">completada</span> para incluirla en el reporte final de evidencias.
               </div>
-              <div className="flex justify-center">
-                <button type="button" onClick={() => setEditMode(true)} className="px-4 py-2 rounded-md bg-gradient-to-r from-green-500 to-emerald-600 text-white">Cargar evidencia</button>
-              </div>
+              {canEdit && (
+                <div className="flex justify-center">
+                  <button type="button" onClick={handleStartEdit} className="px-4 py-2 rounded-md bg-gradient-to-r from-green-500 to-emerald-600 text-white">Cargar evidencia</button>
+                </div>
+              )}
             </div>
           </div>
         </div>
       ) : showForm && (
         <div className="flex justify-center">
           <div className="w-full max-w-5xl">
-            <form onSubmit={handleSubmit} className="bg-gradient-to-br from-slate-50 via-blue-50 to-cyan-50 dark:bg-gray-800 border border-slate-200 dark:border-gray-700 rounded-2xl shadow-lg p-4 sm:p-6" onPaste={onPaste}>
-              <h2 className="text-xl sm:text-2xl font-bold mb-4 text-gray-900 dark:text-white">{isEditingExisting ? 'Editar Evidencia' : 'Registrar Evidencia'}</h2>
+            <form onSubmit={handleSubmit} className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 via-blue-50 to-cyan-50 p-4 sm:p-6 shadow-lg dark:border-slate-700 dark:bg-slate-900/55" onPaste={onPaste}>
+              <h2 className="text-xl sm:text-2xl font-bold mb-4 text-slate-900 dark:text-white">{isEditingExisting ? 'Editar Evidencia' : 'Registrar Evidencia'}</h2>
 
               <div className="grid gap-8 xl:grid-cols-[minmax(0,1.15fr)_minmax(380px,0.85fr)] items-start">
                 <div className="space-y-4 min-w-0">
@@ -577,44 +610,48 @@ const EvidenciaPage = () => {
 
       {/* Evidencia Display (si existe y no en editMode) */}
       {evidencia && !editMode && (
-        <div className="overflow-hidden rounded-3xl border border-slate-700/60 bg-slate-950/70 shadow-2xl">
-          <div className="border-b border-emerald-500/20 bg-gradient-to-r from-emerald-500/20 via-teal-500/10 to-cyan-500/10 px-5 py-4">
+        <div className={`overflow-hidden rounded-3xl ${pageCardClass}`}>
+          <div className="border-b border-emerald-200 bg-gradient-to-r from-emerald-50 via-teal-50 to-cyan-50 px-5 py-4 dark:border-emerald-500/20 dark:from-emerald-500/20 dark:via-teal-500/10 dark:to-cyan-500/10">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex items-start gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/20 text-2xl">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-100 text-2xl dark:bg-emerald-500/20">
                   ✅
                 </div>
                 <div className="min-w-0">
-                  <h3 className="text-lg sm:text-xl font-bold text-white">Evidencia registrada</h3>
-                  <p className="mt-1 text-sm text-slate-300 truncate">
+                  <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white">Evidencia registrada</h3>
+                  <p className="mt-1 text-sm truncate text-slate-600 dark:text-slate-300">
                     {actividad?.codigo} - {actividad?.nombre}
                   </p>
                 </div>
-                <div className="flex sm:hidden items-center gap-2 ml-3">
-                  <button onClick={() => setEditMode(true)} className="p-2 rounded-md bg-blue-500 text-white">
-                    <FaEdit size={14} />
+                {canEdit && (
+                  <div className="flex sm:hidden items-center gap-2 ml-3">
+                    <button onClick={handleStartEdit} className="p-2 rounded-md bg-blue-500 text-white">
+                      <FaEdit size={14} />
+                    </button>
+                    <button onClick={handleOpenDeleteDialog} className="p-2 rounded-md bg-red-500 text-white">
+                      <FaTrash size={14} />
+                    </button>
+                  </div>
+                )}
+              </div>
+              {canEdit && (
+                <div className="hidden sm:flex flex-wrap gap-2">
+                  <button
+                    onClick={handleStartEdit}
+                    className="flex items-center gap-1 rounded-lg bg-blue-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-600"
+                  >
+                    <FaEdit size={15} />
+                    Editar
                   </button>
-                  <button onClick={() => setShowDeleteDialog(true)} className="p-2 rounded-md bg-red-500 text-white">
-                    <FaTrash size={14} />
+                  <button
+                    onClick={handleOpenDeleteDialog}
+                    className="flex items-center gap-1 rounded-lg bg-red-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-red-600"
+                  >
+                    <FaTrash size={15} />
+                    Eliminar
                   </button>
                 </div>
-              </div>
-              <div className="hidden sm:flex flex-wrap gap-2">
-                <button
-                  onClick={() => setEditMode(true)}
-                  className="flex items-center gap-1 rounded-lg bg-blue-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-600"
-                >
-                  <FaEdit size={15} />
-                  Editar
-                </button>
-                <button
-                  onClick={() => setShowDeleteDialog(true)}
-                  className="flex items-center gap-1 rounded-lg bg-red-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-red-600"
-                >
-                  <FaTrash size={15} />
-                  Eliminar
-                </button>
-              </div>
+              )}
             </div>
           </div>
 
@@ -622,22 +659,22 @@ const EvidenciaPage = () => {
             <div className="grid gap-6 xl:grid-cols-[minmax(0,1.12fr)_minmax(360px,0.88fr)]">
               <div className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="rounded-2xl border border-blue-500/20 bg-gradient-to-br from-blue-500/10 to-blue-950/40 p-4">
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-blue-300">Programado</div>
-                    <div className="mt-2 text-3xl sm:text-4xl font-bold text-blue-100 leading-none">{evidencia.programado}</div>
-                    <div className="mt-1 text-xs text-blue-200/80">planificada</div>
+                  <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-blue-100 p-4 dark:border-blue-500/20 dark:from-blue-500/10 dark:to-blue-950/40">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">Programado</div>
+                    <div className="mt-2 text-3xl sm:text-4xl font-bold leading-none text-blue-900 dark:text-blue-100">{evidencia.programado}</div>
+                    <div className="mt-1 text-xs text-blue-700/80 dark:text-blue-200/80">planificada</div>
                   </div>
 
-                  <div className="rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 to-emerald-950/40 p-4">
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-300">Ejecutado</div>
-                    <div className="mt-2 text-3xl sm:text-4xl font-bold text-emerald-100 leading-none">{evidencia.ejecutado}</div>
-                    <div className="mt-1 text-xs text-emerald-200/80">completada</div>
+                  <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-emerald-100 p-4 dark:border-emerald-500/20 dark:from-emerald-500/10 dark:to-emerald-950/40">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Ejecutado</div>
+                    <div className="mt-2 text-3xl sm:text-4xl font-bold leading-none text-emerald-900 dark:text-emerald-100">{evidencia.ejecutado}</div>
+                    <div className="mt-1 text-xs text-emerald-700/80 dark:text-emerald-200/80">completada</div>
                   </div>
 
-                  <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/10 to-purple-950/40 p-4">
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-purple-300">Cumplimiento</div>
-                    <div className="mt-2 text-3xl sm:text-4xl font-bold text-purple-100 leading-none">{evidencia.grado_cumplimiento}%</div>
-                    <div className="mt-3 h-1.5 sm:h-2 overflow-hidden rounded-full bg-white/10">
+                  <div className="rounded-2xl border border-purple-200 bg-gradient-to-br from-purple-50 to-purple-100 p-4 dark:border-purple-500/20 dark:from-purple-500/10 dark:to-purple-950/40">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-purple-700 dark:text-purple-300">Cumplimiento</div>
+                    <div className="mt-2 text-3xl sm:text-4xl font-bold leading-none text-purple-900 dark:text-purple-100">{evidencia.grado_cumplimiento}%</div>
+                    <div className="mt-3 h-1.5 sm:h-2 overflow-hidden rounded-full bg-purple-200 dark:bg-white/10">
                       <div
                         className="h-full rounded-full bg-gradient-to-r from-purple-400 to-fuchsia-500"
                         style={{ width: `${Math.min(evidencia.grado_cumplimiento, 100)}%` }}
@@ -646,12 +683,12 @@ const EvidenciaPage = () => {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-slate-700/70 bg-slate-900/60 p-4 sm:p-5 shadow-inner">
-                  <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-100">
+                <div className={infoCardClass}>
+                  <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
                     <span className="text-lg">📝</span>
                     Resultados logrados
                   </div>
-                  <p className="whitespace-pre-wrap break-words text-sm sm:text-base leading-6 sm:leading-7 text-slate-200">
+                  <p className="whitespace-pre-wrap break-words text-sm sm:text-base leading-6 sm:leading-7 text-slate-700 dark:text-slate-200">
                     {evidencia.resultados_logrados}
                   </p>
                 </div>
@@ -660,8 +697,8 @@ const EvidenciaPage = () => {
                 {/* Medios de verificación para pantallas pequeñas: aparece debajo de resultados */}
                 {links.length > 0 && (
                   <div className="mt-4 block">
-                    <div className="rounded-2xl border border-sky-500/20 bg-slate-900/60 p-4 shadow-lg">
-                      <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-100">
+                    <div className={mediaCardClass}>
+                      <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
                         <FaLink size={16} className="text-sky-300" />
                         Medios de verificación ({links.length})
                       </h4>
@@ -672,14 +709,14 @@ const EvidenciaPage = () => {
                             href={link.url}
                             target="_blank"
                             rel="noreferrer"
-                            className="flex items-center gap-3 rounded-xl border border-slate-700 bg-slate-950/40 px-3 py-3 transition hover:border-sky-500/40 hover:bg-slate-950/70"
+                            className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 transition hover:border-sky-300 hover:bg-sky-50 dark:border-slate-700 dark:bg-slate-950/40 dark:hover:border-sky-500/40 dark:hover:bg-slate-950/70"
                           >
                             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sky-500/15 text-sky-300">
                               🔗
                             </div>
                             <div className="min-w-0 flex-1">
-                              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Enlace {idx + 1}</div>
-                              <div className="truncate text-sm text-sky-300">{new URL(link.url).hostname || link.url}</div>
+                              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Enlace {idx + 1}</div>
+                              <div className="truncate text-sm text-sky-700 dark:text-sky-300">{new URL(link.url).hostname || link.url}</div>
                             </div>
                             <FaFileDownload size={13} className="shrink-0 text-sky-300/80" />
                           </a>
@@ -688,11 +725,11 @@ const EvidenciaPage = () => {
                     </div>
                   </div>
                 )}
-                                <div className="flex flex-col gap-3 rounded-2xl border border-slate-700/70 bg-slate-900/40 px-4 py-3 text-sm text-slate-300 sm:flex-row sm:items-center sm:justify-between">
+                <div className={chipCardClass + ' flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'}>
                   <div>
-                    📅 Registrada: <span className="font-semibold text-slate-100">{new Date(evidencia.creado_en).toLocaleString()}</span>
+                    📅 Registrada: <span className="font-semibold text-slate-900 dark:text-slate-100">{new Date(evidencia.creado_en).toLocaleString()}</span>
                   </div>
-                  <div className="inline-flex w-fit items-center rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-300">
+                  <div className="inline-flex w-fit items-center rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
                     Estado: Completada
                   </div>
                 </div>
@@ -700,21 +737,21 @@ const EvidenciaPage = () => {
 
               <div className="space-y-6 xl:sticky xl:top-4 xl:self-start">
                 {imagenes.length > 0 ? (
-                  <div className="overflow-hidden rounded-2xl border border-cyan-500/20 bg-slate-900/60 shadow-lg">
-                    <div className="flex items-center justify-between border-b border-cyan-500/10 px-4 py-3">
-                      <h4 className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+                  <div className={mediaCardClass}>
+                    <div className="flex items-center justify-between border-b border-cyan-200 px-4 py-3 dark:border-cyan-500/10">
+                      <h4 className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
                         <span className="text-lg">🖼️</span>
                         Evidencia visual
                       </h4>
                       {imagenes.length > 1 && (
-                        <div className="text-xs font-semibold text-slate-400">
+                        <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                           {carouselIndex + 1} / {imagenes.length}
                         </div>
                       )}
                     </div>
 
                     <div className="p-3">
-                      <div className="group relative flex h-[clamp(12rem,26vw,20rem)] sm:h-[clamp(14rem,28vw,22rem)] items-center justify-center overflow-hidden rounded-xl bg-slate-950/40 p-2">
+                      <div className="group relative flex h-[clamp(12rem,26vw,20rem)] sm:h-[clamp(14rem,28vw,22rem)] items-center justify-center overflow-hidden rounded-xl bg-slate-50 p-2 dark:bg-slate-950/40">
                         <img
                           src={imagenes[carouselIndex].archivo_url}
                           alt={`Evidencia ${carouselIndex + 1}`}
@@ -764,7 +801,7 @@ const EvidenciaPage = () => {
                     </div>
                   </div>
                 ) : (
-                  <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-5 text-sm text-slate-400">
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-400">
                     No hay imágenes cargadas para esta evidencia.
                   </div>
                 )}

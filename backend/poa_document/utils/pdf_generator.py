@@ -1,4 +1,4 @@
-﻿from io import BytesIO
+from io import BytesIO
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import landscape, letter
@@ -114,10 +114,10 @@ class DocumentoPOAPDFGenerator:
 
         data = [
             [Paragraph('<b>ENTIDAD</b>', styles['cell_bold']), Paragraph(DocumentoPOAPDFGenerator.DEFAULT_ENTIDAD, styles['cell'])],
-            [Paragraph('<b>GESTI├ôN</b>', styles['cell_bold']), Paragraph(DocumentoPOAPDFGenerator._texto(documento.gestion), styles['cell'])],
+            [Paragraph('<b>GESTIÓN</b>', styles['cell_bold']), Paragraph(DocumentoPOAPDFGenerator._texto(documento.gestion), styles['cell'])],
             [Paragraph('<b>PROGRAMA</b>', styles['cell_bold']), Paragraph(DocumentoPOAPDFGenerator._texto(documento.programa), styles['cell'])],
             [Paragraph('<b>UNIDAD SOLICITANTE</b>', styles['cell_bold']), Paragraph(DocumentoPOAPDFGenerator._unidad_solicitante_texto(documento), styles['cell'])],
-            [Paragraph('<b>OBJETIVO DE GESTI├ôN INSTITUCIONAL</b>', styles['cell_bold']), Paragraph(DocumentoPOAPDFGenerator._texto(documento.objetivo_gestion_institucional), styles['cell'])],
+            [Paragraph('<b>OBJETIVO DE GESTIÓN INSTITUCIONAL</b>', styles['cell_bold']), Paragraph(DocumentoPOAPDFGenerator._texto(documento.objetivo_gestion_institucional), styles['cell'])],
         ]
         t = Table(data, colWidths=col_widths, repeatRows=0)
         t.setStyle(DocumentoPOAPDFGenerator._table_base_style())
@@ -134,7 +134,7 @@ class DocumentoPOAPDFGenerator:
         elaborado = DocumentoPOAPDFGenerator._texto(documento.elaborado_por, 'No asignado')
         fecha = DocumentoPOAPDFGenerator._texto(documento.fecha_elaboracion)
         data = [
-            [Paragraph('<b>Responsables de la informaci├│n</b>', styles['cell_bold']), '', ''],
+            [Paragraph('<b>Responsables de la información</b>', styles['cell_bold']), '', ''],
             [Paragraph('<b>JEFE DE UNIDAD</b>', styles['cell_bold']), Paragraph(jefe, styles['cell']), ''],
             [Paragraph('<b>ELABORADO POR</b>', styles['cell_bold']), Paragraph(elaborado, styles['cell']), Paragraph(f'Fecha: {fecha}', styles['cell'])],
         ]
@@ -165,8 +165,8 @@ class DocumentoPOAPDFGenerator:
     @staticmethod
     def _formulario_1(documento, styles):
         elems = [
-            Paragraph('PROGRAMACI├ôN DE OPERACIONES ANUAL', styles['title']),
-            Paragraph('OPERACIONES POR OBJETIVOS ESPEC├ìFICOS', styles['title']),
+            Paragraph('PROGRAMACIÓN DE OPERACIONES ANUAL', styles['title']),
+            Paragraph('OPERACIONES POR OBJETIVOS ESPECÍFICOS', styles['title']),
             Paragraph('Formulario Nro. 1', styles['subtitle']),
             DocumentoPOAPDFGenerator._header_table(documento, styles, orientation='landscape'),
             Spacer(1, 6),
@@ -255,7 +255,7 @@ class DocumentoPOAPDFGenerator:
     @staticmethod
     def _formulario_2(documento, styles):
         elems = [
-            Paragraph('PROGRAMACI├ôN DE OPERACIONES ANUAL', styles['title']),
+            Paragraph('PROGRAMACIÓN DE OPERACIONES ANUAL', styles['title']),
             Paragraph('OPERACIONES POR PARTIDAS PRESUPUESTARIAS', styles['title']),
             Spacer(1, 4),
             DocumentoPOAPDFGenerator._header_table(documento, styles, orientation='landscape'),
@@ -270,8 +270,8 @@ class DocumentoPOAPDFGenerator:
 
         data = [[
             Paragraph('<b>Partida / Detalle</b>', styles['cell_bold']),
-            Paragraph('<b>Funci├│n</b>', styles['cell_bold']),
-            Paragraph('<b>Inversi├│n</b>', styles['cell_bold']),
+            Paragraph('<b>Función</b>', styles['cell_bold']),
+            Paragraph('<b>Inversión</b>', styles['cell_bold']),
         ]]
 
         total_funcion = 0
@@ -314,12 +314,12 @@ class DocumentoPOAPDFGenerator:
 
     @staticmethod
     def _formulario_3_actividad(documento, actividad, detalles, styles):
-        titulo_actividad = 'Sin actividad espec├¡fica'
+        titulo_actividad = 'Sin actividad específica'
         if actividad is not None:
             titulo_actividad = f"{DocumentoPOAPDFGenerator._texto(actividad.codigo)} - {DocumentoPOAPDFGenerator._texto(actividad.nombre)}"
 
         elems = [
-            Paragraph('REQUERIMIENTO DE RECURSOS F├ìSICOS Y FINANCIEROS', styles['title']),
+            Paragraph('REQUERIMIENTO DE RECURSOS FÍSICOS Y FINANCIEROS', styles['title']),
             Paragraph('Formulario Nro. 3', styles['subtitle']),
             Paragraph(titulo_actividad, styles['cell_bold']),
             Spacer(1, 4),
@@ -330,7 +330,7 @@ class DocumentoPOAPDFGenerator:
         data = [[
             Paragraph('<b>Detalle</b>', styles['cell_bold']),
             Paragraph('<b>Unidad de medida</b>', styles['cell_bold']),
-            Paragraph('<b>Caracter├¡sticas</b>', styles['cell_bold']),
+            Paragraph('<b>Características</b>', styles['cell_bold']),
             Paragraph('<b>Partida Presupuestaria</b>', styles['cell_bold']),
             Paragraph('<b>Cantidad Requerida</b>', styles['cell_bold']),
             Paragraph('<b>Costo Bs.<br/>Unitario</b>', styles['cell_bold']),
@@ -339,7 +339,7 @@ class DocumentoPOAPDFGenerator:
         ]]
 
         if not detalles:
-            data.append([Paragraph('Sin requerimientos f├¡sicos/financieros registrados para esta actividad.', styles['cell'])] + [''] * 7)
+            data.append([Paragraph('Sin requerimientos físicos/financieros registrados para esta actividad.', styles['cell'])] + [''] * 7)
         else:
             for d in detalles:
                 data.append([
@@ -483,8 +483,8 @@ class DocumentoPOAPDFGenerator:
 
         if not documentos:
             story = [
-                Paragraph('PROGRAMACI├ôN DE OPERACIONES ANUAL', styles['title']),
-                Paragraph(f'No existen documentos POA para la gesti├│n {gestion or "seleccionada"}.', styles['subtitle']),
+                Paragraph('PROGRAMACIÓN DE OPERACIONES ANUAL', styles['title']),
+                Paragraph(f'No existen documentos POA para la gestión {gestion or "seleccionada"}.', styles['subtitle']),
             ]
             doc.build(story)
             buffer.seek(0)
