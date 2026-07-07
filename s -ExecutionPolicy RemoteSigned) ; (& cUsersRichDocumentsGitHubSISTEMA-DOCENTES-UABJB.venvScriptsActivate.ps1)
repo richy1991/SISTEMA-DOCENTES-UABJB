@@ -1,0 +1,46 @@
+[1mdiff --git a/frontend/src/modules/poa/components/AsignarAccesoPOAModal.jsx b/frontend/src/modules/poa/components/AsignarAccesoPOAModal.jsx[m
+[1mindex 9f04637..bf8c407 100644[m
+[1m--- a/frontend/src/modules/poa/components/AsignarAccesoPOAModal.jsx[m
+[1m+++ b/frontend/src/modules/poa/components/AsignarAccesoPOAModal.jsx[m
+[36m@@ -108,7 +108,11 @@[m [mconst AsignarAccesoPOAModal = ({ onClose, accesoToEdit, onCreated, onUpdated })[m
+         if (onUpdated) onUpdated(res?.data || res);[m
+       } else {[m
+         const res = await createUsuarioPOA(payload);[m
+[31m-        toast.success('Acceso asignado correctamente');[m
+[32m+[m[32m        if (res.status === 200) {[m
+[32m+[m[32m          toast.success('Elaborador reactivado correctamente');[m
+[32m+[m[32m        } else {[m
+[32m+[m[32m          toast.success('Acceso asignado correctamente');[m
+[32m+[m[32m        }[m
+         if (onCreated) onCreated(res?.data || res);[m
+       }[m
+       onClose?.();[m
+[36m@@ -116,10 +120,16 @@[m [mconst AsignarAccesoPOAModal = ({ onClose, accesoToEdit, onCreated, onUpdated })[m
+       const data = err?.response?.data;[m
+       const messages = formatApiErrors(data || err?.message || 'Error al guardar');[m
+       const nextFieldErrors = mapApiErrorsToFieldErrors(data);[m
+[31m-      setFieldErrors(nextFieldErrors);[m
+[31m-      setErrorMessages(messages);[m
+[31m-      toast.error(messages[0] || 'Error al guardar');[m
+[31m-      focusFirstError(nextFieldErrors);[m
+[32m+[m
+[32m+[m[32m      if (err?.response?.status === 400 && data?.detail) {[m
+[32m+[m[32m        toast.error(data.detail);[m
+[32m+[m[32m        setErrorMessages([data.detail]);[m
+[32m+[m[32m      } else {[m
+[32m+[m[32m        setFieldErrors(nextFieldErrors);[m
+[32m+[m[32m        setErrorMessages(messages);[m
+[32m+[m[32m        toast.error(messages[0] || 'Error al guardar');[m
+[32m+[m[32m        focusFirstError(nextFieldErrors);[m
+[32m+[m[32m      }[m
+     } finally {[m
+       setLoading(false);[m
+     }[m
+[36m@@ -160,6 +170,7 @@[m [mconst AsignarAccesoPOAModal = ({ onClose, accesoToEdit, onCreated, onUpdated })[m
+                 disabled={isEditor}[m
+                 placeholder="Buscar por nombre, usuario o correo..."[m
+                 className={`poa-input block w-full rounded-lg pl-9 pr-4 py-2.5 text-sm ${fieldErrors.user ? 'border-red-500 dark:border-red-500 focus:ring-red-500 dark:focus:ring-red-500' : ''}`}[m
+[32m+[m[32m                autocomplete="off"[m
+               />[m
+               {searching && ([m
+                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-blue-500 dark:text-sky-400">Buscando…</span>[m
