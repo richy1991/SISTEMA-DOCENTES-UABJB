@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { FaPlus, FaEdit, FaTrash, FaToggleOn, FaToggleOff, FaSearch, FaUserShield } from 'react-icons/fa';
+import { FaPlus, FaEdit, FaTrash, FaToggleOn, FaToggleOff, FaSearch, FaUserShield, FaUserCheck } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import { getUsuariosPOA, deleteUsuarioPOA, updateUsuarioPOA, ROL_POA_CHOICES } from '../../../apis/poa.api';
 import AsignarAccesoPOAModal from '../components/AsignarAccesoPOAModal';
@@ -59,10 +59,15 @@ export default function AccesosPOAPage() {
     }
     try {
       const res = await updateUsuarioPOA(acceso.id, { activo: !acceso.activo });
-      setAccesos(prev => prev.map(a => a.id === acceso.id ? { ...a, activo: res.data.activo } : a));
       toast.success(res.data.activo ? 'Acceso activado' : 'Acceso desactivado');
-    } catch {
-      toast.error('Error al actualizar el estado');
+      await fetchAccesos(); // Recargar la lista para reflejar todos los cambios
+    } catch (err) {
+        const data = err?.response?.data;
+        if (err?.response?.status === 400 && data?.detail) {
+            toast.error(data.detail);
+        } else {
+            toast.error('Error al actualizar el estado');
+        }
     }
   };
 
@@ -81,18 +86,32 @@ export default function AccesosPOAPage() {
     }
   };
 
-  // Filtros
-  const filtered = accesos.filter(a => {
-    const nombre = (a.nombre_display || a.user_detalle?.nombre_completo || a.docente_detalle?.nombre_completo || '').toLowerCase();
-    const username = (a.user_detalle?.username || '').toLowerCase();
-    const entidad = a.nombre_entidad?.toLowerCase() || '';
-    const matchSearch = !search || nombre.includes(search.toLowerCase()) || username.includes(search.toLowerCase()) || entidad.includes(search.toLowerCase());
-    const matchRol = filterRol === 'todos' || a.rol === filterRol;
-    return matchSearch && matchRol;
-  });
+  // Filtros y ordenamiento
+  const filteredAndSorted = accesos
+    .filter(a => {
+      const nombre = (a.nombre_display || a.user_detalle?.nombre_completo || a.docente_detalle?.nombre_completo || '').toLowerCase();
+      const username = (a.user_detalle?.username || '').toLowerCase();
+      const entidad = a.nombre_entidad?.toLowerCase() || '';
+      const matchSearch = !search || nombre.includes(search.toLowerCase()) || username.includes(search.toLowerCase()) || entidad.includes(search.toLowerCase());
+      const matchRol = filterRol === 'todos' || a.rol === filterRol;
+      return matchSearch && matchRol;
+    })
+    .sort((a, b) => {
+      // Prioridad 1: Activo siempre primero
+      if (a.activo && !b.activo) return -1;
+      if (!a.activo && b.activo) return 1;
+      // Prioridad 2: Orden alfabético por nombre
+      const nombreA = a.nombre_display || a.user_detalle?.nombre_completo || '';
+      const nombreB = b.nombre_display || b.user_detalle?.nombre_completo || '';
+      return nombreA.localeCompare(nombreB);
+    });
 
   // Agrupar por rol para el resumen
-  const counts = ROL_POA_CHOICES.map(r => ({
+  const elaboradorCount = accesos.filter(a => a.rol === 'elaborador' && a.activo).length;
+  const activeElaborador = accesos.find(a => a.rol === 'elaborador' && a.activo);
+
+  // Agrupar por rol para el resumen, excluyendo elaborador
+  const otherCounts = ROL_POA_CHOICES.filter(r => r.value !== 'elaborador').map(r => ({
     ...r,
     count: accesos.filter(a => a.rol === r.value && a.activo).length,
   }));
@@ -131,13 +150,43 @@ export default function AccesosPOAPage() {
 
       {/* Resumen por rol */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mb-6">
-        {counts.map(r => (
+        {/* Card para Elaborador */}
+        {elaboradorCount > 0 && activeElaborador ? (
+          <div
+       
+            className={`accesos-kpi rounded-xl border px-3 py-2.5 text-left transition-all text-xs font-semibold
+              ring-2 ring-blue-500 shadow-md hover:shadow-sm
+              ${ROL_COLOR.elaborador} ${ROL_DARK.elaborador}`}
+          >
+            <div className="text-lg font-bold flex items-center gap-2">
+              <FaUserCheck className="text-green-500" />
+              Elaborador Asignado
+            </div>
+            <div className="leading-tight mt-0.5 text-blue-900 dark:text-blue-200">
+              {activeElaborador.nombre_display || activeElaborador.user_detalle?.nombre_completo || 'N/A'}
+            </div>
+        
+          </div>
+        ) : (
+          <div className={`accesos-kpi rounded-xl border px-3 py-2.5 text-left text-xs font-semibold
+            ${ROL_COLOR.elaborador} ${ROL_DARK.elaborador}`}>
+            <div className="text-base font-bold text-blue-800 dark:text-blue-200">
+              ¡Atención!
+            </div>
+            <div className="leading-tight mt-0.5 text-blue-700 dark:text-blue-300">
+              Es importante asignar un usuario Elaborador POA para gestionar los documentos.
+            </div>
+
+          </div>
+        )}
+        {/* Otras cards de rol si las hubiera */}
+        {otherCounts.map(r => (
           <button
             key={r.value}
             onClick={() => setFilterRol(prev => prev === r.value ? 'todos' : r.value)}
             className={`accesos-kpi rounded-xl border px-3 py-2.5 text-left transition-all text-xs font-semibold
               ${filterRol === r.value ? 'ring-2 ring-blue-500 shadow-md' : 'hover:shadow-sm'}
-              ${ROL_COLOR[r.value]} ${ROL_DARK[r.value]}`}
+              ${ROL_COLOR[r.value] || 'bg-gray-100 text-gray-700 border-gray-200'} ${ROL_DARK[r.value] || 'dark:bg-slate-800/50 dark:text-slate-300 dark:border-slate-700'}`}
           >
             <div className="text-lg font-bold">{r.count}</div>
             <div className="leading-tight mt-0.5">{r.label}</div>
@@ -174,7 +223,7 @@ export default function AccesosPOAPage() {
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mr-3" />
           Cargando...
         </div>
-      ) : filtered.length === 0 ? (
+      ) : filteredAndSorted.length === 0 ? (
         <div className="text-center py-16 text-gray-400 dark:text-slate-400">
           <FaUserShield className="mx-auto text-4xl mb-3 opacity-30" />
           <p className="text-sm">
@@ -193,7 +242,7 @@ export default function AccesosPOAPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((a, idx) => (
+              {filteredAndSorted.map((a, idx) => (
                 <tr key={a.id} className={`border-t border-gray-100 dark:border-slate-700/70 ${idx % 2 === 0 ? 'bg-white dark:bg-slate-900/55' : 'bg-gray-50/50 dark:bg-slate-800/35'} hover:bg-blue-50/30 dark:hover:bg-sky-900/20 transition`}>
                   <td className="px-4 py-3 font-semibold text-gray-800 dark:text-slate-100">
                     <div>{a.nombre_display || a.user_detalle?.nombre_completo || a.docente_detalle?.nombre_completo || '—'}</div>
@@ -243,10 +292,14 @@ export default function AccesosPOAPage() {
         <AsignarAccesoPOAModal
           accesoToEdit={editTarget}
           onClose={() => { setShowModal(false); setEditTarget(null); }}
-          onCreated={(nuevo) => { setAccesos(prev => [nuevo, ...prev]); setShowModal(false); }}
-          onUpdated={(updated) => {
-            setAccesos(prev => prev.map(a => a.id === updated.id ? updated : a));
-            setShowModal(false); setEditTarget(null);
+          onCreated={() => {
+            fetchAccesos();
+            setShowModal(false);
+          }}
+          onUpdated={() => {
+            fetchAccesos();
+            setShowModal(false);
+            setEditTarget(null);
           }}
         />
       )}

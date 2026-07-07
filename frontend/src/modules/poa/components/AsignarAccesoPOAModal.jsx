@@ -108,7 +108,11 @@ const AsignarAccesoPOAModal = ({ onClose, accesoToEdit, onCreated, onUpdated }) 
         if (onUpdated) onUpdated(res?.data || res);
       } else {
         const res = await createUsuarioPOA(payload);
-        toast.success('Acceso asignado correctamente');
+        if (res.status === 200) {
+          toast.success('Elaborador reactivado correctamente');
+        } else {
+          toast.success('Acceso asignado correctamente');
+        }
         if (onCreated) onCreated(res?.data || res);
       }
       onClose?.();
@@ -116,10 +120,16 @@ const AsignarAccesoPOAModal = ({ onClose, accesoToEdit, onCreated, onUpdated }) 
       const data = err?.response?.data;
       const messages = formatApiErrors(data || err?.message || 'Error al guardar');
       const nextFieldErrors = mapApiErrorsToFieldErrors(data);
-      setFieldErrors(nextFieldErrors);
-      setErrorMessages(messages);
-      toast.error(messages[0] || 'Error al guardar');
-      focusFirstError(nextFieldErrors);
+
+      if (err?.response?.status === 400 && data?.detail) {
+        toast.error(data.detail);
+        setErrorMessages([data.detail]);
+      } else {
+        setFieldErrors(nextFieldErrors);
+        setErrorMessages(messages);
+        toast.error(messages[0] || 'Error al guardar');
+        focusFirstError(nextFieldErrors);
+      }
     } finally {
       setLoading(false);
     }
@@ -160,6 +170,7 @@ const AsignarAccesoPOAModal = ({ onClose, accesoToEdit, onCreated, onUpdated }) 
                 disabled={isEditor}
                 placeholder="Buscar por nombre, usuario o correo..."
                 className={`poa-input block w-full rounded-lg pl-9 pr-4 py-2.5 text-sm ${fieldErrors.user ? 'border-red-500 dark:border-red-500 focus:ring-red-500 dark:focus:ring-red-500' : ''}`}
+                autocomplete="off"
               />
               {searching && (
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-blue-500 dark:text-sky-400">Buscando…</span>

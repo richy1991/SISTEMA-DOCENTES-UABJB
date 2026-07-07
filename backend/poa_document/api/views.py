@@ -231,7 +231,38 @@ class UsuarioPOAViewSet(viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         _requerir_gestor_o_director(request)
-        return super().create(request, *args, **kwargs)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = serializer.validated_data.get('user')
+        rol = serializer.validated_data.get('rol')
+
+        if rol == 'elaborador':
+            existing_assignment = UsuarioPOA.objects.filter(user=user, rol=rol).first()
+
+            if existing_assignment and existing_assignment.activo:
+                nombre_usuario = user.get_full_name() or user.username
+                return Response(
+                    {'detail': f'El usuario {nombre_usuario} ya está asignado como {rol} del POA.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            with transaction.atomic():
+                # Desactivar todos los otros elaboradores activos
+                UsuarioPOA.objects.filter(rol='elaborador', activo=True).exclude(user=user).update(activo=False)
+
+                if existing_assignment: # significa que estaba inactivo
+                    existing_assignment.activo = True
+                    existing_assignment.save()
+                    serializer = self.get_serializer(existing_assignment)
+                    headers = self.get_success_headers(serializer.data)
+                    return Response(serializer.data, status=status.HTTP_200_OK, headers=headers)
+                else: # no existia
+                    instance = serializer.save()
+                    headers = self.get_success_headers(serializer.data)
+                    return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        else:
+            return super().create(request, *args, **kwargs)
 
     def update(self, request, *args, **kwargs):
         _requerir_gestor_o_director(request)
@@ -239,6 +270,16 @@ class UsuarioPOAViewSet(viewsets.ModelViewSet):
 
     def partial_update(self, request, *args, **kwargs):
         _requerir_gestor_o_director(request)
+        instance = self.get_object()
+        
+        # Si se está activando un elaborador
+        if instance.rol == 'elaborador' and request.data.get('activo') is True:
+            with transaction.atomic():
+                # Desactivar todos los demás elaboradores
+                UsuarioPOA.objects.filter(rol='elaborador', activo=True).exclude(pk=instance.pk).update(activo=False)
+                # Proceder con la activación del actual
+                return super().partial_update(request, *args, **kwargs)
+
         return super().partial_update(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):
