@@ -9,6 +9,79 @@ from decimal import Decimal
 from django.utils import timezone
     
 
+def _obtener_docente_para_validacion_fondo(bloques, docente_por_defecto=None):
+    if isinstance(docente_por_defecto, Docente):
+        return docente_por_defecto
+
+    for bloque in bloques:
+        if not isinstance(bloque, dict):
+            continue
+
+        docente_valor = bloque.get('docente')
+        if isinstance(docente_valor, Docente):
+            return docente_valor
+
+        if docente_valor not in [None, '']:
+            docente = Docente.objects.filter(pk=docente_valor).first()
+            if docente:
+                return docente
+
+    return None
+
+
+def _obtener_horas_vinculo_activo(docente, carrera):
+    if not docente or not carrera:
+        return Decimal('0')
+
+    vinculo = DocenteCarrera.objects.filter(docente=docente, carrera=carrera, activo=True).first()
+    return Decimal(str(vinculo.horas_semanales_maximas or 0)) if vinculo else Decimal('0')
+
+
+def _validar_fondo_tiempo_contractual_doble_rol(bloques, docente_por_defecto=None):
+    bloques_validos = []
+    for bloque in bloques:
+        if not isinstance(bloque, dict):
+            continue
+
+        rol = str(bloque.get('rol') or '').strip()
+        carrera = _resolver_carrera_asignacion(bloque.get('carrera'))
+        if rol and carrera:
+            bloques_validos.append((rol, carrera))
+
+    if not bloques_validos:
+        return
+
+    tiene_autoridad = any(rol in ROLES_AUTORIDAD_ASIGNACION for rol, _ in bloques_validos)
+    tiene_docencia = any(rol == 'docente' for rol, _ in bloques_validos)
+    if not (tiene_autoridad and tiene_docencia):
+        return
+
+    docente = _obtener_docente_para_validacion_fondo(bloques, docente_por_defecto=docente_por_defecto)
+    if not docente:
+        return
+
+    horas_consumidas = sum(
+        (_obtener_horas_vinculo_activo(docente, carrera) for _, carrera in bloques_validos),
+        Decimal('0'),
+    )
+
+    vinculos_activos = DocenteCarrera.objects.filter(docente=docente, activo=True)
+    if not vinculos_activos.exists():
+        return
+
+    horas_contractuales = max(
+        (Decimal(str(vinculo.horas_semanales_maximas or 0)) for vinculo in vinculos_activos),
+        default=Decimal('0'),
+    )
+
+    if horas_consumidas > horas_contractuales:
+        raise serializers.ValidationError({
+            'asignaciones': (
+                f'El docente excede su fondo de tiempo contractual '
+                f'({int(horas_consumidas)}/{int(horas_contractuales)} horas)'
+            )
+        })
+
 def validar_unicidad_cargo_por_carrera(carrera, rol, exclude_user_id=None):
     """
     Garantiza que solo exista un Director o Jefe de Estudios activo por carrera.
@@ -143,7 +216,7 @@ def _validar_limite_asignaciones_usuario(bloques):
 
 ROLES_AUTORIDAD_ASIGNACION = {'director', 'jefe_estudios'}
 MENSAJE_ASIGNACION_INVALIDA = 'Esta combinaci\u00f3n de roles no es v\u00e1lida seg\u00fan las reglas de asignaci\u00f3n del sistema'
-MENSAJE_CONFLICTO_AUTORIDAD = 'No se puede asignar dos roles de autoridad en la misma carrera'
+MENSAJE_CONFLICTO_AUTORIDAD = 'Un usuario no puede tener m\u00e1s de un cargo de gesti\u00f3n (Director o Jefe de Estudios).'
 MENSAJE_INCOMPATIBILIDAD_DEDICACION = 'Seg\u00fan normativa UABJB, los cargos de gesti\u00f3n (Director/Jefe) solo son compatibles con docencia a Tiempo Horario. No se permite dedicaci\u00f3n Tiempo Completo o Medio Tiempo.'
 
 
@@ -233,10 +306,11 @@ def _validar_reglas_asignaciones_usuario(bloques, docente_por_defecto=None):
         raise serializers.ValidationError({'asignaciones': MENSAJE_ASIGNACION_INVALIDA})
 
     autoridades = [item for item in asignaciones if item['rol'] in ROLES_AUTORIDAD_ASIGNACION]
-    docentes = [item for item in asignaciones if item['rol'] == 'docente']
 
-    carreras_autoridad = [item['carrera'].id for item in autoridades]
-    if len(set(carreras_autoridad)) != len(carreras_autoridad):
+    # Regla estricta: un usuario no puede tener más de UN cargo de gestión,
+    # sin importar la carrera (director + director, jefe_estudios + jefe_estudios,
+    # o director + jefe_estudios en cualquier combinación de carreras).
+    if len(autoridades) > 1:
         raise serializers.ValidationError({'asignaciones': MENSAJE_CONFLICTO_AUTORIDAD})
 
 
@@ -1643,6 +1717,10 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
 
         _validar_limite_asignaciones_usuario(bloques)
         _validar_reglas_asignaciones_usuario(bloques, docente_por_defecto=data.get('docente'))
+        _validar_fondo_tiempo_contractual_doble_rol(
+            bloques,
+            docente_por_defecto=data.get('docente'),
+        )
         
         # Identificar tipos de roles en el conjunto de asignaciones
         roles_totales = [data.get('rol')] + [a.get('rol') for a in asignaciones]
@@ -1721,13 +1799,34 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
             # El perfil se crea automáticamente con rol 'docente' via signal.
             # Ahora lo actualizamos con los datos correctos.
             docente_obj = None
-            if rol == 'docente':
-                if docente_data:
-                    docente_serializer = DocenteSerializer(data=docente_data)
+
+            # FIX DOBLE ROL: Resolver/crear el Docente si 'docente' está presente en
+            # CUALQUIER asignación (principal o secundaria en asignaciones_extra).
+            # Antes solo se evaluaba `rol == 'docente'`, lo que dejaba docente_obj=None
+            # cuando el docente venía como rol secundario (ej. iiisyp + docente),
+            # provocando que el perfil quedara sin vínculo y errores 500 posteriores.
+            datos_docente_resolucion = docente_data
+            docente_ref_resolucion = docente
+            if not datos_docente_resolucion and not docente_ref_resolucion:
+                for asignacion in asignaciones_extra:
+                    if str(asignacion.get('rol') or '').strip() != 'docente':
+                        continue
+                    docente_data_extra = asignacion.get('docente_data')
+                    if isinstance(docente_data_extra, dict) and docente_data_extra:
+                        datos_docente_resolucion = docente_data_extra
+                        break
+                    docente_ref_extra = asignacion.get('docente')
+                    if docente_ref_extra:
+                        docente_ref_resolucion = docente_ref_extra
+                        break
+
+            if tiene_rol_docente:
+                if datos_docente_resolucion:
+                    docente_serializer = DocenteSerializer(data=datos_docente_resolucion)
                     docente_serializer.is_valid(raise_exception=True)
                     docente_obj = docente_serializer.save()
-                elif docente:
-                    docente_obj = docente
+                elif docente_ref_resolucion:
+                    docente_obj = docente_ref_resolucion
 
                 if not ci and docente_obj:
                     ci_docente = (docente_obj.ci or '').strip()
@@ -1843,7 +1942,9 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
 
             # Mantener sincronizado el email del docente con el email del usuario
             # en el flujo de creación de cuentas de rol docente.
-            if rol == 'docente' and docente_obj:
+            # FIX DOBLE ROL: usar tiene_rol_docente para que también aplique cuando
+            # el docente viene como asignación secundaria (rol principal no-docente).
+            if tiene_rol_docente and docente_obj:
                 email_usuario = (validated_data.get('email') or '').strip()
                 if email_usuario and docente_obj.email != email_usuario:
                     docente_obj.email = email_usuario
@@ -1934,6 +2035,10 @@ class ActualizarUsuarioSerializer(serializers.ModelSerializer):
 
         _validar_limite_asignaciones_usuario(bloques)
         _validar_reglas_asignaciones_usuario(
+            bloques,
+            docente_por_defecto=data.get('docente') or (perfil_actual.docente if perfil_actual else None),
+        )
+        _validar_fondo_tiempo_contractual_doble_rol(
             bloques,
             docente_por_defecto=data.get('docente') or (perfil_actual.docente if perfil_actual else None),
         )

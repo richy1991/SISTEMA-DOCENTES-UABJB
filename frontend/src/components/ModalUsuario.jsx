@@ -121,6 +121,67 @@ const splitNombreCompleto = (nombreCompleto = '') => {
   };
 };
 
+const ROLES_AUTORIDAD_FONDO = new Set(['director', 'jefe_estudios']);
+
+const HORAS_POR_DEDICACION = {
+  tiempo_completo: 40,
+  medio_tiempo: 20,
+  horario_16: 4,
+  horario_24: 6,
+  horario_40: 10,
+  horario_48: 12,
+};
+
+const obtenerHorasVinculo = (vinculo) => {
+  const horasExplicitas = Number(vinculo?.horas_semanales_maximas);
+  if (Number.isFinite(horasExplicitas)) {
+    return horasExplicitas;
+  }
+
+  return HORAS_POR_DEDICACION[String(vinculo?.dedicacion || '')] || 0;
+};
+
+const calcularErrorFondoTiempo = ({ docenteId, asignaciones, docentes }) => {
+  if (!docenteId || !Array.isArray(asignaciones) || !Array.isArray(docentes)) {
+    return '';
+  }
+
+  const bloquesValidos = asignaciones
+    .map((bloque) => ({
+      rol: String(bloque?.rol || '').trim(),
+      carrera: String(bloque?.carrera || '').trim(),
+    }))
+    .filter((bloque) => bloque.rol && bloque.carrera);
+
+  const tieneAutoridad = bloquesValidos.some((bloque) => ROLES_AUTORIDAD_FONDO.has(bloque.rol));
+  const tieneDocencia = bloquesValidos.some((bloque) => bloque.rol === 'docente');
+
+  if (!tieneAutoridad || !tieneDocencia) {
+    return '';
+  }
+
+  const docente = docentes.find((item) => String(item?.id) === String(docenteId));
+  const vinculosActivos = Array.isArray(docente?.vinculos)
+    ? docente.vinculos.filter((vinculo) => vinculo?.activo !== false)
+    : [];
+
+  if (vinculosActivos.length === 0) {
+    return '';
+  }
+
+  const horasContractuales = Math.max(...vinculosActivos.map((vinculo) => obtenerHorasVinculo(vinculo)), 0);
+  const horasTotales = bloquesValidos.reduce((total, bloque) => {
+    const vinculoCarrera = vinculosActivos.find((vinculo) => String(vinculo?.carrera) === String(bloque.carrera));
+    return total + obtenerHorasVinculo(vinculoCarrera);
+  }, 0);
+
+  if (horasTotales > horasContractuales) {
+    return `El docente excede su fondo de tiempo contractual (${horasTotales}/${horasContractuales} horas)`;
+  }
+
+  return '';
+};
+
 const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, carreras, roles, sidebarCollapsed = false, hasSidebar = true, currentUser }) => {
   const [formData, setFormData] = useState({});
   const [asignacionesExtra, setAsignacionesExtra] = useState([]);
@@ -261,6 +322,14 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
     { rol: formData.rol || '', carrera: formData.carrera || '' },
     ...asignacionesExtra,
   ];
+  const docenteParaFondoTiempo = formData.rol === 'docente'
+    ? formData.docente
+    : (userToEdit?.perfil?.docente_id || '');
+  const errorFondoTiempo = calcularErrorFondoTiempo({
+    docenteId: docenteParaFondoTiempo,
+    asignaciones: asignacionesActivas,
+    docentes,
+  });
   const asignacionesError = Array.isArray(errors?.asignaciones)
     ? errors.asignaciones[0]
     : (typeof errors?.asignaciones === 'string' ? errors.asignaciones : null);
@@ -380,6 +449,16 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
       }
     }
 
+    if (errorFondoTiempo) {
+      setErrors((prev) => ({
+        ...prev,
+        asignaciones: [errorFondoTiempo],
+      }));
+      toast.error(errorFondoTiempo);
+      setLoading(false);
+      return;
+    }
+
     if (esUsuarioSistema && !ciNormalizado) {
       setErrors((prev) => ({
         ...prev,
@@ -496,14 +575,13 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
 
   return createPortal(
     <div
-      className="fixed top-0 right-0 bottom-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
-      style={{ left: hasSidebar ? (sidebarCollapsed ? '5rem' : '18rem') : '0' }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
     >
       <div className="flex max-h-[95vh] w-full max-w-4xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-slate-800">
         <div className="bg-[#2C4AAE] px-6 py-4 rounded-t-2xl dark:bg-[#1a3a8a]">
-          <div className="flex items-center justify-end">
-            <span className="text-2xl font-bold text-white">✓</span>
-          </div>
+          <h3 className="text-xl font-bold text-white">
+            Editar Usuario ✓
+          </h3>
         </div>
 
         <form id="user-form" onSubmit={handleSubmit} className="flex-1 overflow-visible">
@@ -593,6 +671,11 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
               {asignacionesError && (
                 <p className="md:col-span-2 -mt-2 text-xs font-semibold text-red-600 dark:text-red-400">
                   {asignacionesError}
+                </p>
+              )}
+              {errorFondoTiempo && (
+                <p className="md:col-span-2 -mt-2 text-sm font-semibold text-red-600 dark:text-red-400">
+                  {errorFondoTiempo}
                 </p>
               )}
 

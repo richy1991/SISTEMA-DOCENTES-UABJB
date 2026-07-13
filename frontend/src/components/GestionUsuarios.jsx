@@ -121,8 +121,15 @@ const TrashIcon = (props) => (
 );
 
 const ERROR_MOTION_CLASS = 'animate-field-error-pop';
-const MENSAJE_ASIGNACION_INVALIDA = 'Esta combinación de roles no es válida según las reglas de asignación del sistema';
-const MENSAJE_CONFLICTO_AUTORIDAD = 'No se puede asignar dos roles de autoridad en la misma carrera';
+// Mensajes descriptivos para validación en caliente (Normativa UABJB)
+const MENSAJE_DUPLICADO = 'Esta combinación de Rol y Carrera ya se encuentra asignada.';
+const MENSAJE_LIMITE_ASIGNACIONES = 'Un usuario no puede tener más de 2 asignaciones en el sistema (Normativa de Fondo de Tiempo).';
+const MENSAJE_AUTORIDAD_MULTIPLE = 'No se puede asignar un cargo de autoridad (Director/Jefe) en múltiples carreras.';
+const MENSAJE_CONFLICTO_AUTORIDAD = 'Conflicto de Autoridad: Un usuario no puede ser Director y Jefe de Estudios de la misma carrera.';
+const MENSAJE_AUTORIDAD_UNICA = 'Un usuario no puede tener más de un cargo de autoridad (Director o Jefe de Estudios) en el sistema (Normativa UABJB).';
+const MENSAJE_DOCENTE_OTRA_CARRERA = 'La carga docente de un cargo de autoridad debe pertenecer a su misma carrera (dedicación exclusiva UABJB).';
+const MENSAJE_CARRERA_PENDIENTE = 'Debe seleccionar una carrera para la asignación actual antes de agregar otra.';
+const ROLES_MANDO_UABJB = ['director', 'jefe_estudios'];
 
 const ROL_LABELS = {
   iiisyp: '🔬 Instituto de investigación',
@@ -774,6 +781,70 @@ const ToggleSwitch = ({ isActive, onChange, disabled = false }) => (
   </button>
 );
 
+// Componente compacto para seleccionar carrera (mismo estilo que SelectConDropdown de ListaDocentes)
+const CarreraSelectorCompacto = ({ value, onChange, options }) => {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    const handleOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    if (open) {
+      document.addEventListener('mousedown', handleOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [open]);
+
+  const selectedCarrera = options.find((c) => String(c.id) === String(value));
+  const displayLabel = selectedCarrera?.nombre || 'Seleccione...';
+
+  return (
+    <div ref={containerRef} className="relative">
+      <div className={`relative w-full rounded-xl border-2 shadow-sm ${value ? 'border-[#2C4AAE] bg-[#2C4AAE]/10' : 'border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700'}`}>
+        <button
+          type="button"
+          onClick={() => setOpen((prev) => !prev)}
+          className={`w-full text-left px-3 py-2 rounded-xl bg-transparent flex items-center justify-between gap-2 ${value ? 'text-[#2C4AAE] dark:text-blue-300' : 'text-slate-700 dark:text-white'}`}
+        >
+          <span className={`truncate text-xs font-semibold ${!value ? 'text-slate-400 dark:text-slate-500' : ''}`}>{displayLabel}</span>
+          <span className="flex items-center justify-center h-5 w-5 rounded-md bg-[#2C4AAE] ring-1 ring-[#2C4AAE]">
+            <svg className={`w-3 h-3 text-white transition-transform duration-200 ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+            </svg>
+          </span>
+        </button>
+      </div>
+
+      {open && (
+        <div className="absolute z-50 mt-1 w-full rounded-xl border-2 border-[#2C4AAE] bg-white dark:bg-slate-800 shadow-xl max-h-48 overflow-y-auto">
+          <div className="p-1.5">
+            {options.map((carrera) => (
+              <button
+                key={carrera.id}
+                type="button"
+                onClick={() => {
+                  onChange(String(carrera.id));
+                  setOpen(false);
+                }}
+                className={`w-full text-left px-3 py-1.5 text-xs rounded-lg transition-colors ${
+                  String(value) === String(carrera.id)
+                    ? 'bg-cyan-50 dark:bg-cyan-900/30 shadow-[inset_2px_0_0_0_#06b6d4] text-cyan-800 dark:text-cyan-200 font-semibold'
+                    : 'bg-transparent text-slate-700 dark:text-slate-200 hover:bg-[#2C4AAE] hover:text-white'
+                }`}
+              >
+                <span className="block truncate">{carrera.nombre}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // Dropdown simple estilo "Seleccione..."
 const SimpleDropdown = ({ label, value, onChange, options, placeholder = 'Carreras', clearOnToggle = false }) => {
   const [open, setOpen] = useState(false);
@@ -945,6 +1016,9 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
   const [bloquearCrearNuevoDocente, setBloquearCrearNuevoDocente] = useState(false);
   const [asignacionesExtra, setAsignacionesExtra] = useState([]);
   const [indiceAsignacionActiva, setIndiceAsignacionActiva] = useState(0);
+  const [selectedRoleLeft, setSelectedRoleLeft] = useState(null);
+  const [selectedRoleRight, setSelectedRoleRight] = useState(null);
+  const [expandedCarreraRoles, setExpandedCarreraRoles] = useState({});
   const rolDropdownRef = useRef(null);
   const carreraDropdownRef = useRef(null);
   const lastToastRef = useRef({});
@@ -973,9 +1047,47 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
       return next;
     });
   };
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
   const [errorPulse, setErrorPulse] = useState({});
+
+  // Pulse visual para el panel izquierdo (Roles disponibles)
+  // Debe declararse DESPUÉS de `errors` y `errorPulse` (temporal dead zone)
+  const [leftPanelPulsing, setLeftPanelPulsing] = useState(false);
+  useEffect(() => {
+    if (!errors?.rol) {
+      setLeftPanelPulsing(false);
+      return;
+    }
+    setLeftPanelPulsing(false);
+    const frameId = requestAnimationFrame(() => setLeftPanelPulsing(true));
+    const timeoutId = setTimeout(() => setLeftPanelPulsing(false), 260);
+    return () => {
+      cancelAnimationFrame(frameId);
+      clearTimeout(timeoutId);
+    };
+  }, [errors?.rol, errorPulse.rol]);
+
+  // Pulse visual para el panel derecho (Roles asignados) ante conflictos de combinación.
+  // Debe reaccionar a errores del panel derecho (no del izquierdo) y resaltar la fila conflictiva.
+  const [rightPanelPulse, setRightPanelPulse] = useState(0);
+  const [rightPanelPulsing, setRightPanelPulsing] = useState(false);
+  const [filaConflictoIndex, setFilaConflictoIndex] = useState(null);
+  useEffect(() => {
+    if (!errors?.asignaciones) {
+      setRightPanelPulsing(false);
+      return;
+    }
+    setRightPanelPulsing(false);
+    const frameId = requestAnimationFrame(() => setRightPanelPulsing(true));
+    const timeoutId = setTimeout(() => setRightPanelPulsing(false), 260);
+    return () => {
+      cancelAnimationFrame(frameId);
+      clearTimeout(timeoutId);
+    };
+  }, [errors?.asignaciones, rightPanelPulse]);
+
   const [addRoleButtonPulse, setAddRoleButtonPulse] = useState(0);
   const [isAddRoleButtonPulsing, setIsAddRoleButtonPulsing] = useState(false);
   const [showAddRoleTooltip, setShowAddRoleTooltip] = useState(false);
@@ -1127,7 +1239,13 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
 
   useEffect(() => {
     if (!isCreating) return;
-    if (formData.rol !== 'docente') return;
+    // REFACTOR: Auto-vincular docenteReciente cuando el rol 'docente' esté presente
+    // en CUALQUIER asignación (principal o secundaria), no solo cuando es rol principal.
+    const docenteEnPrincipal = String(formData.rol || '').trim() === 'docente';
+    const docenteEnSecundaria = asignacionesExtra.some(
+      (item) => String(item.rol || '').trim() === 'docente'
+    );
+    if (!docenteEnPrincipal && !docenteEnSecundaria) return;
     if (!docenteReciente?.id) return;
     if (formData.docente) return;
 
@@ -1137,7 +1255,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
       docente_data: null,
       carrera: prev.carrera || docenteReciente.carrera_id || '',
     }));
-  }, [isCreating, formData.rol, formData.docente, docenteReciente]);
+  }, [isCreating, formData.rol, formData.docente, docenteReciente, asignacionesExtra]);
 
   const cargarDatos = async () => {
     try {
@@ -1431,15 +1549,28 @@ const initialData = {
       delete next.asignaciones;
       return next;
     });
-    
+
+    // REFATOR: Preservar datos del docente si el rol 'docente' sigue activo
+    // en alguna asignación secundaria (asignacionesExtra). Esto permite al
+    // operador cambiar el orden de los roles (ej. pasar Docente de principal
+    // a secundario) sin perder la información del docente ya ingresada.
+    const docenteActivoEnSecundaria = asignacionesExtra.some(
+      (item) => String(item.rol || '').trim() === 'docente'
+    );
+    const newRolEsDocente = newRol === 'docente';
+    const conservarDatosDocente = newRolEsDocente || docenteActivoEnSecundaria;
+
     setFormData(prev => ({
       ...prev,
       rol: newRol,
       carrera: prev.carrera,
-      docente: newRol !== 'docente' ? '' : prev.docente,
-      docente_data: newRol !== 'docente' ? null : prev.docente_data,
+      docente: conservarDatosDocente ? prev.docente : '',
+      docente_data: conservarDatosDocente ? prev.docente_data : null,
     }));
-    if (newRol !== 'docente') {
+
+    // Solo desactivar la creación/vinculación de docente si el rol docente
+    // ya no está presente en NINGUNA asignación (ni principal ni secundaria).
+    if (!conservarDatosDocente) {
       setCrearNuevoDocente(false);
       setVinculacionRapidaDocente(false);
     }
@@ -1546,6 +1677,250 @@ const initialData = {
     setErrors((prev) => {
       const next = { ...prev };
       delete next.asignaciones;
+      return next;
+    });
+  };
+
+  // --- Transfer List de Roles y Carreras ---
+  const rolesAsignadosLista = [
+    { rol: formData.rol || '', carrera: formData.carrera || '' },
+    ...asignacionesExtra,
+  ].filter((item) => String(item.rol || '').trim());
+
+  // Flujo secuencial: si hay una asignación pendiente (sin carrera), bloquear nuevas.
+  // Evita acumular filas vacías que deforman el modal verticalmente.
+  const hayAsignacionPendiente = rolesAsignadosLista.some((item) => !String(item.carrera || '').trim());
+
+  const rolesAsignadosSet = new Set(rolesAsignadosLista.map((item) => item.rol));
+  // Catálogo maestro permanente: la tabla izquierda SIEMPRE muestra todos los roles.
+  // Esto permite reutilizar un mismo rol en distintas carreras (ej. Docente en Carrera A y B),
+  // indispensable para el doble rol y la asignación múltiple de un docente.
+  // Los roles ya asignados se marcan con un badge visual pero siguen siendo seleccionables.
+  const rolesDisponiblesLista = roles;
+
+  // ============================================================
+  // VALIDACIÓN EN CALIENTE — Reglas UABJB de Fondo de Tiempo
+  // ============================================================
+  // Centraliza las 4 reglas de negocio para que se evalúen EN EL MOMENTO
+  // en que se asigna una combinación (rol + carrera), no al final.
+  // Retorna { valida: true } o { valida: false, mensaje: '...' }
+  const validarAsignacionEnCaliente = (nuevoRol, nuevaCarrera, excluirIndex = -1) => {
+    const rolTrim = String(nuevoRol || '').trim();
+    const carreraTrim = String(nuevaCarrera || '').trim();
+
+    // No validar si la carrera aún no se ha seleccionado (la regla se aplica al asignar carrera)
+    if (!rolTrim || !carreraTrim) return { valida: true };
+
+    // Construir snapshot de todas las asignaciones actuales (excluyendo el index que se edita)
+    const todasAsignaciones = [];
+    if (excluirIndex !== 0 && String(formData.rol || '').trim()) {
+      todasAsignaciones.push({ rol: String(formData.rol).trim(), carrera: String(formData.carrera || '').trim() });
+    }
+    asignacionesExtra.forEach((item, i) => {
+      const idx = i + 1;
+      if (idx !== excluirIndex && String(item.rol || '').trim()) {
+        todasAsignaciones.push({ rol: String(item.rol).trim(), carrera: String(item.carrera || '').trim() });
+      }
+    });
+
+    // --- Regla 1: CONTROL DE DUPLICADOS IDÉNTICOS ---
+    const existeDuplicado = todasAsignaciones.some(
+      (item) => item.rol === rolTrim && item.carrera === carreraTrim
+    );
+    if (existeDuplicado) {
+      return { valida: false, mensaje: MENSAJE_DUPLICADO };
+    }
+
+    const esRolMando = ROLES_MANDO_UABJB.includes(rolTrim);
+
+    // --- Regla 3: EXCLUSIVIDAD DE AUTORIDAD ---
+    // No se puede tener un cargo de autoridad (Director/Jefe) en carreras DIFERENTES.
+    if (esRolMando) {
+      const autoridadEnOtraCarrera = todasAsignaciones.some(
+        (item) =>
+          ROLES_MANDO_UABJB.includes(item.rol) &&
+          item.carrera !== carreraTrim
+      );
+      if (autoridadEnOtraCarrera) {
+        return { valida: false, mensaje: MENSAJE_AUTORIDAD_MULTIPLE };
+      }
+    }
+
+    // --- Regla 4: CONFLICTO DE ROLES EN LA MISMA CARRERA ---
+    // No se puede ser Director Y Jefe de Estudios de la misma carrera simultáneamente.
+    if (esRolMando) {
+      const conflictoMismaCarrera = todasAsignaciones.some(
+        (item) =>
+          ROLES_MANDO_UABJB.includes(item.rol) &&
+          item.rol !== rolTrim &&
+          item.carrera === carreraTrim
+      );
+      if (conflictoMismaCarrera) {
+        return { valida: false, mensaje: MENSAJE_CONFLICTO_AUTORIDAD };
+      }
+    }
+
+    // --- Regla 5: DEDICACIÓN EXCLUSIVA (mando + docente en misma carrera) ---
+    // La carga docente de un rol de mando debe pertenecer obligatoriamente a su
+    // misma carrera asignada. No puede haber Docente en Carrera B si hay Director en Carrera A.
+    if (rolTrim === 'docente') {
+      const mandoEnOtraCarrera = todasAsignaciones.some(
+        (item) => ROLES_MANDO_UABJB.includes(item.rol) && item.carrera !== carreraTrim
+      );
+      if (mandoEnOtraCarrera) {
+        return { valida: false, mensaje: MENSAJE_DOCENTE_OTRA_CARRERA };
+      }
+    }
+    if (esRolMando) {
+      const docenteEnOtraCarrera = todasAsignaciones.some(
+        (item) => item.rol === 'docente' && item.carrera !== carreraTrim
+      );
+      if (docenteEnOtraCarrera) {
+        return { valida: false, mensaje: MENSAJE_DOCENTE_OTRA_CARRERA };
+      }
+    }
+
+    return { valida: true };
+  };
+
+  const moverRolDerecha = (rolValue) => {
+    if (vinculacionRapidaDocente || !rolValue) return;
+    setErrors((prev) => ({ ...prev, rol: null, carrera: null, asignaciones: null }));
+
+    // --- Flujo secuencial obligatorio ---
+    // No se permite pasar un nuevo rol si existe una asignación pendiente (sin carrera).
+    // Esto mantiene el modal compacto y obliga al operador a completar la carrera actual.
+    if (hayAsignacionPendiente) {
+      toast.error(MENSAJE_CARRERA_PENDIENTE, { className: 'toast-brinco' });
+      setErrors((prev) => ({ ...prev, rol: [MENSAJE_CARRERA_PENDIENTE] }));
+      pulseFieldErrors(['rol']);
+      setSelectedRoleLeft(null);
+      return;
+    }
+
+    // --- Candado estricto: UN SOLO cargo de autoridad por usuario ---
+    // La normativa UABJB prohíbe tener Director Y Jefe simultáneamente, incluso
+    // con carrera vacía. Se evalúa en el clic de la flecha →, frenando ANTES de
+    // insertar la fila. Esto evita acumular basura visual en la tabla derecha.
+    if (ROLES_MANDO_UABJB.includes(rolValue)) {
+      const yaTieneMando = rolesAsignadosLista.some((item) => ROLES_MANDO_UABJB.includes(item.rol));
+      if (yaTieneMando) {
+        toast.error(MENSAJE_AUTORIDAD_UNICA, { className: 'toast-brinco' });
+        setErrors((prev) => ({ ...prev, rol: [MENSAJE_AUTORIDAD_UNICA] }));
+        pulseFieldErrors(['rol']);
+        setSelectedRoleLeft(null);
+        return;
+      }
+    }
+
+    // --- Regla 2: LÍMITE DE ASIGNACIONES (Máximo 2) ---
+    const totalActual = (formData.rol ? 1 : 0) + asignacionesExtra.length;
+    if (totalActual >= MAX_ASIGNACIONES_TOTAL) {
+      toast.error(MENSAJE_LIMITE_ASIGNACIONES, { className: 'toast-brinco' });
+      setErrors((prev) => ({ ...prev, rol: [MENSAJE_LIMITE_ASIGNACIONES] }));
+      pulseFieldErrors(['rol']);
+      setSelectedRoleLeft(null);
+      return;
+    }
+
+    if (!formData.rol) {
+      setFormData((prev) => ({ ...prev, rol: rolValue, carrera: '' }));
+      setExpandedCarreraRoles((prev) => ({ ...prev, 0: true }));
+    } else if (asignacionesExtra.length === 0) {
+      setAsignacionesExtra([{ rol: rolValue, carrera: '' }]);
+      setExpandedCarreraRoles((prev) => ({ ...prev, 1: true }));
+    } else {
+      toast.error(MENSAJE_LIMITE_ASIGNACIONES, { className: 'toast-brinco' });
+      setErrors((prev) => ({ ...prev, rol: [MENSAJE_LIMITE_ASIGNACIONES] }));
+      pulseFieldErrors(['rol']);
+    }
+    setSelectedRoleLeft(null);
+  };
+
+  const moverRolIzquierda = (index) => {
+    if (vinculacionRapidaDocente) return;
+    setErrors((prev) => ({ ...prev, rol: null, carrera: null, asignaciones: null }));
+    if (index === 0) {
+      if (asignacionesExtra.length > 0) {
+        const extra = asignacionesExtra[0];
+        setFormData((prev) => ({ ...prev, rol: extra.rol, carrera: extra.carrera }));
+        setAsignacionesExtra([]);
+        setExpandedCarreraRoles((prev) => {
+          const next = {};
+          if (prev[1]) next[0] = true;
+          return next;
+        });
+      } else {
+        setFormData((prev) => ({
+          ...prev,
+          rol: '',
+          carrera: '',
+          docente: '',
+          docente_data: null,
+        }));
+        setExpandedCarreraRoles((prev) => {
+          const next = { ...prev };
+          delete next[0];
+          return next;
+        });
+      }
+    } else {
+      setAsignacionesExtra((prev) => prev.filter((_, i) => i !== index - 1));
+      setExpandedCarreraRoles((prev) => {
+        const next = { ...prev };
+        delete next[index];
+        return next;
+      });
+    }
+    setSelectedRoleRight(null);
+  };
+
+  const toggleExpandCarrera = (index) => {
+    setExpandedCarreraRoles((prev) => ({ ...prev, [index]: !prev[index] }));
+  };
+
+  const asignarCarreraARol = (index, carreraValue) => {
+    // Determinar el rol correspondiente a este índice
+    const rolObjetivo = index === 0
+      ? formData.rol
+      : (asignacionesExtra[index - 1]?.rol || '');
+
+    // --- Validación en caliente: reglas 1, 3 y 4 (UABJB) ---
+    // Se evalúa la combinación COMPLETA (rol + carrera) en el momento de asignar la carrera.
+    if (rolObjetivo && carreraValue) {
+      const resultado = validarAsignacionEnCaliente(rolObjetivo, carreraValue, index);
+      if (!resultado.valida) {
+        toast.error(resultado.mensaje, { className: 'toast-brinco' });
+        // Activar feedback visual en el panel derecho (Roles asignados):
+        // borde rojo + efecto rebote + resaltado de la fila conflictiva.
+        setFilaConflictoIndex(index);
+        setErrors((prev) => ({ ...prev, asignaciones: [resultado.mensaje] }));
+        setRightPanelPulse((p) => p + 1);
+        // Limpiar el marcador de fila conflictiva tras la animación
+        setTimeout(() => setFilaConflictoIndex(null), 260);
+        return;
+      }
+    }
+
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next.carrera;
+      delete next.asignaciones;
+      delete next.rol;
+      return next;
+    });
+    if (index === 0) {
+      setFormData((prev) => ({ ...prev, carrera: carreraValue }));
+    } else {
+      setAsignacionesExtra((prev) =>
+        prev.map((item, i) => (i === index - 1 ? { ...item, carrera: carreraValue } : item))
+      );
+    }
+
+    // Cerrar el dropdown de carrera inmediatamente tras la selección
+    setExpandedCarreraRoles((prev) => {
+      const next = { ...prev };
+      delete next[index];
       return next;
     });
   };
@@ -1662,25 +2037,28 @@ const initialData = {
     if (segundaAsignacion) {
       const mismaCombinacion = primeraAsignacion.rol === segundaAsignacion.rol && primeraAsignacion.carrera === segundaAsignacion.carrera;
       if (mismaCombinacion) {
-        pulseFieldErrors(['asignaciones']);
-        setErrors((prev) => ({
-          ...prev,
-          asignaciones: [MENSAJE_ASIGNACION_INVALIDA],
-        }));
-        showToastOnce(MENSAJE_ASIGNACION_INVALIDA);
+        // Safety net: la validación en caliente debería haber prevenido esto
+        toast.error(MENSAJE_DUPLICADO, { className: 'toast-brinco' });
         setIsSubmitting(false);
         return;
       }
 
       const mismaCarrera = primeraAsignacion.carrera === segundaAsignacion.carrera;
-      const ambasAutoridad = esRolMando(primeraAsignacion.rol) && esRolMando(segundaAsignacion.rol);
-      if (mismaCarrera && ambasAutoridad) {
-        pulseFieldErrors(['asignaciones']);
-        setErrors((prev) => ({
-          ...prev,
-          asignaciones: [MENSAJE_CONFLICTO_AUTORIDAD],
-        }));
-        showToastOnce(MENSAJE_CONFLICTO_AUTORIDAD);
+      const primeraMando = esRolMando(primeraAsignacion.rol);
+      const segundaMando = esRolMando(segundaAsignacion.rol);
+
+      // Safety net: DOS roles de mando (Director + Jefe) — prohibido por normativa UABJB
+      if (primeraMando && segundaMando) {
+        toast.error(MENSAJE_AUTORIDAD_UNICA, { className: 'toast-brinco' });
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Safety net: Dedicación exclusiva (docente + mando en carreras distintas)
+      const hayDocente = primeraAsignacion.rol === 'docente' || segundaAsignacion.rol === 'docente';
+      const hayMando = primeraMando || segundaMando;
+      if (hayDocente && hayMando && !mismaCarrera) {
+        toast.error(MENSAJE_DOCENTE_OTRA_CARRERA, { className: 'toast-brinco' });
         setIsSubmitting(false);
         return;
       }
@@ -1689,29 +2067,51 @@ const initialData = {
     const combinaciones = asignacionesSeleccionadas.map(combinacionKey);
     // Solo validar duplicados si hay más de una asignación
     if (asignacionesSeleccionadas.length > 1 && new Set(combinaciones).size !== combinaciones.length) {
-      setErrors((prev) => ({
-        ...prev,
-        asignaciones: [MENSAJE_ASIGNACION_INVALIDA],
-      }));
-      toast.error(MENSAJE_ASIGNACION_INVALIDA);
+      toast.error(MENSAJE_DUPLICADO, { className: 'toast-brinco' });
       setIsSubmitting(false);
       return;
     }
+
+    const rolPrincipal = String(formData.rol || '').trim();
+    const docenteSeleccionado = formData.docente || '';
+    const docenteDataCreacion = formData.docente_data || null;
 
     let payload = {
       username: formData.username,
       email: formData.email,
       first_name: formData.first_name,
       last_name: formData.last_name,
-      rol: formData.rol,
+      rol: rolPrincipal,
       password: formData.password,
       password_confirm: formData.password_confirm,
     };
 
-    payload.asignaciones = asignacionesExtra.map((item) => ({
-      rol: String(item.rol || '').trim(),
-      carrera: String(item.carrera || '').trim(),
-    }));
+    // Si el rol PRINCIPAL es docente, enviamos el docente/docente_data al nivel superior del payload
+    if (rolPrincipal === 'docente') {
+      if (docenteDataCreacion) {
+        payload.docente_data = docenteDataCreacion;
+      } else if (docenteSeleccionado) {
+        payload.docente = docenteSeleccionado;
+      }
+    }
+
+    // Mapear asignaciones extra INCLUYENDO docente/docente_data cuando la asignación secundaria sea de tipo docente.
+    // FIX: Antes se descartaban estos campos, lo que provocaba que el backend no resolviera el docente
+    // cuando venía como asignación secundaria (doble rol con rol principal no-docente).
+    payload.asignaciones = asignacionesExtra.map((item) => {
+      const asignacion = {
+        rol: String(item.rol || '').trim(),
+        carrera: String(item.carrera || '').trim(),
+      };
+      if (asignacion.rol === 'docente') {
+        if (docenteDataCreacion) {
+          asignacion.docente_data = docenteDataCreacion;
+        } else if (docenteSeleccionado) {
+          asignacion.docente = docenteSeleccionado;
+        }
+      }
+      return asignacion;
+    });
 
     payload.carrera = carreraNormalizada;
 
@@ -1759,7 +2159,11 @@ const initialData = {
         } else if (docenteMsg) {
           toast.error(docenteMsg);
         } else if (typeof apiErrors === 'string' && apiErrors.includes('<!DOCTYPE')) {
-          toast.error('Debe seleccionar un docente para vincular.');
+          // El backend devolvió HTML (error 500 de Django), no un ValidationError JSON.
+          // Ya no enmascaramos el error con un mensaje falso de "docente": informamos al
+          // operador que ocurrió un fallo del servidor y lo registramos en consola.
+          console.error('Error 500 del servidor (HTML en lugar de JSON):', err.response?.status, err.response?.statusText);
+          toast.error('Error interno del servidor. Revise la consola o contacte al administrador.');
         } else {
           toast.error(getBackendErrorMessage(apiErrors, 'Ocurrió un error inesperado al crear el usuario.'));
         }
@@ -1791,10 +2195,6 @@ const initialData = {
             ? errors.first_name
             : (typeof errors?.last_name === 'string' ? errors.last_name : null)))));
 
-  const asignacionesError = Array.isArray(errors?.asignaciones)
-    ? errors.asignaciones[0]
-    : (typeof errors?.asignaciones === 'string' ? errors.asignaciones : null);
-
   const obtenerRolLabel = (rolValue) => roles.find((item) => item.value === rolValue)?.label || rolValue || 'Sin rol';
   const obtenerCarreraLabel = (carreraValue) => carreras.find((item) => String(item.id) === String(carreraValue))?.nombre || 'Sin carrera';
 
@@ -1816,6 +2216,14 @@ const initialData = {
   const mostrarCarreraCreacion = Boolean(rolSeleccionCreacion) || indiceAsignacionActiva === 1;
   const mostrarNombreCompletoCreacion = true;
   const mostrarCiCreacion = true;
+
+  // REFACTOR: Detectar si el rol 'docente' está presente en CUALQUIER asignación
+  // (principal o secundaria). Esto unifica la captura de datos del docente para que
+  // se muestre y asocie correctamente sin importar si el docente es rol principal
+  // (formData) o secundario (asignacionesExtra). Permite reordenar roles sin perder
+  // la información del docente ya ingresada.
+  const hayRolDocenteEnAsignaciones = String(formData.rol || '').trim() === 'docente'
+    || asignacionesExtra.some((item) => String(item.rol || '').trim() === 'docente');
 
   if (loading) {
     return (
@@ -1873,12 +2281,12 @@ const initialData = {
         {/* MODAL DE CREACIÓN DE USUARIO */}
         {isCreating && createPortal((
           <div
-            className={`fixed top-0 right-0 bottom-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 ${crearNuevoDocente && formData.rol === 'docente' ? '!justify-center' : ''}`}
+            className={`fixed top-0 right-0 bottom-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 ${crearNuevoDocente && hayRolDocenteEnAsignaciones ? '!justify-center' : ''}`}
             style={{ left: hasSidebar ? (sidebarCollapsed ? '5rem' : '18rem') : '0' }}
           >
-            <div className={`flex items-center justify-center w-full h-full ${crearNuevoDocente && formData.rol === 'docente' ? 'gap-6' : ''}`}>
+            <div className={`flex items-center justify-center w-full h-full ${crearNuevoDocente && hayRolDocenteEnAsignaciones ? 'gap-6' : ''}`}>
               {/* Modal Usuario - mantiene su tamaño original */}
-              <div className={`bg-white dark:bg-slate-800 rounded-2xl shadow-2xl animate-fade-in transition-all duration-300 max-h-[90vh] flex flex-col ${crearNuevoDocente && formData.rol === 'docente' ? 'max-w-2xl w-full' : 'max-w-2xl w-full mx-4'}`}>
+              <div className={`bg-white dark:bg-slate-800 rounded-2xl shadow-2xl animate-fade-in transition-all duration-300 max-h-[90vh] flex flex-col ${crearNuevoDocente && hayRolDocenteEnAsignaciones ? 'max-w-5xl w-full' : 'max-w-5xl w-full mx-4'}`}>
                 {/* Header azul */}
                 <div className="bg-[#2C4AAE] dark:bg-[#1a3a8a] px-6 py-4 rounded-t-2xl">
                   <h2 className="text-xl font-bold text-white">
@@ -1905,113 +2313,144 @@ const initialData = {
                       <div />
                     )}
 
-                    {/* Fila 2: Rol (+) - Carrera o Email */}
-                    <div className="flex items-center gap-3">
-                      <div className="flex-1 min-w-0">
-                        <SelectConDropdown
-                          label="Rol"
-                          name="rol"
-                          value={indiceAsignacionActiva === 0 ? (formData.rol || '') : (asignacionesExtra[0]?.rol || '')}
-                          onChange={handleRolSeleccionActual}
-                          onInteract={() => setErrors((prev) => ({ ...prev, rol: null }))}
-                          options={roles.map(rol => ({ value: rol.value, label: rol.label }))}
-                          error={errors.rol}
-                          disabled={vinculacionRapidaDocente}
-                          required
-                          standardStyle
-                          selectedIndex={indiceAsignacionActiva === 0 ? 1 : 2}
-                          selectedIndexesByValue={rolSelectionMarkers}
-                          forwardedRef={rolDropdownRef}
-                          pulse={errorPulse.rol || 0}
-                        />
-                      </div>
-
-                      <div className="relative shrink-0 pt-[28px]">
-                        {showAddRoleTooltip && (
-                          <div className="absolute left-1/2 bottom-full z-20 -translate-x-1/2 translate-y-[14px]">
-                            <div className="relative rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-lg whitespace-nowrap dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">
-                              Asignar un solo rol
-                              <div className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-l-[7px] border-r-[7px] border-t-[8px] border-l-transparent border-r-transparent border-t-slate-300 dark:border-t-slate-600" />
-                              <div className="absolute left-1/2 top-[calc(100%-1px)] h-0 w-0 -translate-x-1/2 border-l-[7px] border-r-[7px] border-t-[8px] border-l-transparent border-r-transparent border-t-white dark:border-t-slate-800" />
-                            </div>
+                    {/* Transfer List de Roles y Carreras */}
+                    <div className="md:col-span-2">
+                      <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-stretch">
+                        {/* Panel izquierdo: Roles disponibles */}
+                        <div className={`rounded-2xl border-2 bg-white dark:bg-slate-800 flex flex-col transition-colors ${errors?.rol ? '!border-red-600 dark:!border-red-500' : 'border-slate-300 dark:border-slate-600'} ${leftPanelPulsing ? ERROR_MOTION_CLASS : ''}`}>
+                          <div className="px-3 py-2 border-b border-slate-300 dark:border-slate-600 rounded-t-2xl">
+                            <p className="text-xs font-bold text-slate-700 dark:text-slate-200 text-center uppercase tracking-wide">Roles disponibles</p>
                           </div>
-                        )}
-                        <button
-                          type="button"
-                          onMouseEnter={() => setShowAddRoleTooltip(true)}
-                          onMouseLeave={() => setShowAddRoleTooltip(false)}
-                          onFocus={() => setShowAddRoleTooltip(true)}
-                          onBlur={() => setShowAddRoleTooltip(false)}
-                          onClick={() => {
-                            if (!puedeAgregarAsignacion) {
-                              pulseFieldErrors(['rol', 'carrera']);
-                              triggerAddRoleButtonError();
-                              toast.error('No puedes asignar otro rol porque faltan completar Rol y Carrera.', { className: 'toast-brinco', position: 'top-right' });
-                              return;
-                            }
-                            agregarAsignacion();
-                          }}
-                          style={
-                            !puedeAgregarAsignacion && isAddRoleButtonPulsing
-                              ? { transition: 'none', transform: 'none' }
-                              : STATIC_CONTROL_STYLE
-                          }
-                          className={`h-[52px] w-16 rounded-2xl border-2 text-white font-black text-2xl leading-none shadow-sm flex items-center justify-center transition-none transform-none hover:shadow-none ${
-                            !puedeAgregarAsignacion && isAddRoleButtonPulsing
-                              ? `${ERROR_MOTION_CLASS} border-red-600 dark:border-red-500 bg-[#2C4AAE] dark:bg-[#2C4AAE]`
-                              : 'border-[#2C4AAE] bg-[#2C4AAE] dark:border-[#4f6fd6] dark:bg-[#2C4AAE]'
-                          }`}
-                          aria-label="Agregar segunda asignación"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Fila 2b: Carrera */}
-                    <div>
-                      <SelectConDropdown
-                        label="Carrera"
-                        name="carrera"
-                        value={indiceAsignacionActiva === 0 ? (formData.carrera || '') : (asignacionesExtra[0]?.carrera || '')}
-                        onChange={handleCarreraSeleccionActual}
-                        options={carreras.map(c => ({ value: c.id, label: c.nombre }))}
-                        error={errors.carrera}
-                        required
-                        standardStyle
-                        selectedIndex={indiceAsignacionActiva === 0 ? 1 : 2}
-                        selectedIndexesByValue={carreraSelectionMarkers}
-                        forwardedRef={carreraDropdownRef}
-                        pulse={errorPulse.carrera || 0}
-                      />
-                    </div>
-
-                    {asignacionesExtra.length > 0 && (
-                      <div className="md:col-span-2 animate-panel-asignacion overflow-hidden">
-                        <div className="rounded-xl border border-slate-300 dark:border-slate-600 px-4 py-3 bg-slate-50 dark:bg-slate-700/30">
-                          <div className="mb-2 flex items-center justify-between gap-3">
-                            <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">Panel de asignaciones activas</p>
-                            <button
-                              type="button"
-                              onClick={() => eliminarAsignacion(0)}
-                              className="h-9 px-3 rounded-xl border-2 border-red-500 text-red-600 dark:text-red-300 text-xs font-bold hover:bg-red-50 dark:hover:bg-red-900/20 shrink-0"
-                            >
-                              Quitar selección 2
-                            </button>
+                          <div className="flex-1 overflow-y-auto max-h-72 min-h-[180px]">
+                            {rolesDisponiblesLista.length === 0 ? (
+                              <p className="text-xs text-slate-400 dark:text-slate-500 text-center py-6 italic">No hay roles disponibles</p>
+                            ) : (
+                              rolesDisponiblesLista.map((rol) => {
+                                const yaAsignado = rolesAsignadosSet.has(rol.value);
+                                return (
+                                  <button
+                                    key={rol.value}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedRoleLeft(rol.value);
+                                      setErrors((prev) => prev?.rol ? { ...prev, rol: null } : prev);
+                                    }}
+                                    onDoubleClick={() => moverRolDerecha(rol.value)}
+                                    className={`w-full text-left px-3 py-2.5 text-sm transition-colors border-b border-slate-300 dark:border-slate-700 last:border-b-0 flex items-center justify-between gap-2 ${
+                                      selectedRoleLeft === rol.value
+                                        ? 'bg-[#2C4AAE] text-white font-semibold'
+                                        : 'text-slate-700 dark:text-slate-300 hover:bg-[#2C4AAE] hover:text-white'
+                                    }`}
+                                  >
+                                    <span>{rol.label}</span>
+                                    {yaAsignado && (
+                                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                        selectedRoleLeft === rol.value
+                                          ? 'bg-white/25 text-white'
+                                          : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                                      }`}>
+                                        ✓ Asignado
+                                      </span>
+                                    )}
+                                  </button>
+                                );
+                              })
+                            )}
                           </div>
-                          <div className="flex flex-col gap-2">
-                            {asignacionesActivas.map((item, index) => (
-                              <span
-                                key={`${item.rol || 'sin-rol'}-${item.carrera || 'sin-carrera'}-${index}`}
-                                className="inline-flex items-center gap-2 rounded-full border border-[#2C4AAE]/30 bg-[#2C4AAE]/10 px-3 py-1 text-xs font-semibold text-[#2C4AAE] dark:text-blue-300"
-                              >
-                                {`#${index + 1} ${obtenerRolLabel(item.rol)} - ${obtenerCarreraLabel(item.carrera)}`}
-                              </span>
-                            ))}
+                        </div>
+
+                        {/* Flechas centrales */}
+                        <div className="flex flex-col items-center justify-center gap-2 px-1">
+                          <button
+                            type="button"
+                            onClick={() => selectedRoleLeft && moverRolDerecha(selectedRoleLeft)}
+                            disabled={!selectedRoleLeft || vinculacionRapidaDocente || hayAsignacionPendiente || (rolesAsignadosLista.length >= 2)}
+                            className="w-10 h-10 rounded-full bg-[#2C4AAE] text-white font-bold text-lg shadow-md hover:bg-[#1a3a8a] disabled:opacity-30 disabled:cursor-not-allowed transition-all hover:scale-110 flex items-center justify-center"
+                            title={hayAsignacionPendiente ? 'Complete la carrera pendiente primero' : 'Asignar rol'}
+                          >
+                            →
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => selectedRoleRight !== null && moverRolIzquierda(selectedRoleRight)}
+                            disabled={selectedRoleRight === null || vinculacionRapidaDocente}
+                            className="w-10 h-10 rounded-full bg-[#2C4AAE] text-white font-bold text-lg shadow-md hover:bg-[#1a3a8a] disabled:opacity-30 disabled:cursor-not-allowed transition-all hover:scale-110 flex items-center justify-center"
+                            title="Quitar rol"
+                          >
+                            ←
+                          </button>
+                        </div>
+
+                        {/* Panel derecho: Roles asignados con menú extensible de Carrera */}
+                        <div className={`rounded-2xl border-2 bg-white dark:bg-slate-800 flex flex-col transition-colors ${(errors?.asignaciones || errors?.rol) ? '!border-red-600 dark:!border-red-500' : 'border-slate-300 dark:border-slate-600'} ${rightPanelPulsing ? ERROR_MOTION_CLASS : ''}`}>
+                          <div className="px-3 py-2 border-b border-slate-300 dark:border-slate-600 rounded-t-2xl">
+                            <p className="text-xs font-bold text-slate-700 dark:text-slate-200 text-center uppercase tracking-wide">Roles asignados</p>
+                          </div>
+                          <div className="flex-1 overflow-y-auto max-h-80 min-h-[180px]">
+                            {rolesAsignadosLista.length === 0 ? (
+                              <p className="text-xs text-slate-400 dark:text-slate-500 text-center py-6 italic">Use las flechas para asignar roles</p>
+                            ) : (
+                              rolesAsignadosLista.map((item, index) => (
+                                <div
+                                  key={`${item.rol}-${index}`}
+                                  className={`border-b border-slate-300 dark:border-slate-700 last:border-b-0 ${
+                                    filaConflictoIndex === index ? '!border-red-500' : ''
+                                  }`}
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedRoleRight(index)}
+                                    onDoubleClick={() => moverRolIzquierda(index)}
+                                    className={`w-full text-left px-3 py-2.5 text-sm transition-colors flex items-center justify-between ${
+                                      filaConflictoIndex === index
+                                        ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 font-semibold'
+                                        : selectedRoleRight === index
+                                          ? 'bg-[#2C4AAE] text-white font-semibold'
+                                          : 'text-slate-700 dark:text-slate-300 hover:bg-[#2C4AAE] hover:text-white'
+                                    }`}
+                                  >
+                                    <span>{obtenerRolLabel(item.rol)}</span>
+                                    <span
+                                      onClick={(e) => { e.stopPropagation(); toggleExpandCarrera(index); }}
+                                      className={`cursor-pointer font-bold text-xs px-2.5 py-1 rounded-lg truncate max-w-[45%] border-2 ${
+                                        item.carrera
+                                          ? 'bg-[#2C4AAE] text-white border-[#2C4AAE]'
+                                          : 'bg-red-50 text-red-600 border-red-500 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700'
+                                      }`}
+                                    >
+                                      {item.carrera
+                                        ? `${expandedCarreraRoles[index] ? '▼' : '▶'} ${obtenerCarreraLabel(item.carrera)}`
+                                        : (expandedCarreraRoles[index] ? '▼ Carrera' : '▶ Carrera')}
+                                    </span>
+                                  </button>
+                                  {expandedCarreraRoles[index] && (
+                                    <div className="px-3 py-2 animate-panel-asignacion">
+                                      <div className="flex justify-end">
+                                        <div className="w-[70%] max-w-[260px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm max-h-40 overflow-y-auto">
+                                          {carreras.map((carrera) => (
+                                            <button
+                                              key={carrera.id}
+                                              type="button"
+                                              onClick={() => asignarCarreraARol(index, String(carrera.id))}
+                                              className="w-full text-left px-3 py-1.5 text-xs border-b border-slate-300 dark:border-slate-700 last:border-b-0 text-slate-700 dark:text-slate-300 hover:bg-[#2C4AAE] hover:text-white transition-colors"
+                                            >
+                                              {carrera.nombre}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              ))
+                            )}
                           </div>
                         </div>
                       </div>
-                    )}
+                      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                        Catálogo permanente: puede reusar un rol en otra carrera (ej. Docente en 2 carreras distintas). Máximo 2 asignaciones. Expanda <span className="text-[#2C4AAE] dark:text-blue-400 font-bold">Carrera</span> para asignar.
+                      </p>
+                    </div>
 
                     {/* Fila 3: Email - Cargo profesional / CI */}
                     <InputField
@@ -2041,24 +2480,9 @@ const initialData = {
                       <div />
                     )}
 
-                    {/* Fila 4: Contraseña inicial (izquierda) - vacío */}
-                    <div>
-                      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Contraseña inicial</label>
-                      <div className="w-full px-4 py-3 rounded-xl border-2 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 font-mono font-semibold">
-                        {formData.username ? `${formData.username}UABJB` : 'usuarioUABJB'}
-                      </div>
-                      <p className="mt-1 text-xs text-[#2C4AAE] dark:text-slate-400">
-                        Se genera automáticamente con el usuario. Si el usuario está vacío, no se puede crear.
-                      </p>
-                    </div>
-                    <div />
-
-                    <AnimatedInlineMessage
-                      show={Boolean(asignacionesError)}
-                      message={asignacionesError || ''}
-                      wrapperClassName="md:col-span-2"
-                      messageClassName="text-xs text-red-600 dark:text-red-400"
-                    />
+                    {/* Los errores de asignaciones ahora se muestran exclusivamente
+                        como Toasts descriptivos en caliente (normativa UABJB),
+                        eliminando el mensaje estático del pie del formulario. */}
 
                   </div>
                 </div>
@@ -2279,35 +2703,30 @@ const initialData = {
                       </div>
                     </td>
                     <td className={`px-6 py-4 whitespace-nowrap text-center ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
-                      {puedeGestionarUsuarios() && (
-                        <div className="flex justify-center gap-3">
-                          <button
-                            onClick={() => abrirModalEditar(usuario)}
-                            className={`transition-all duration-200 hover:scale-110 ${
-                              filaInactiva
-                                ? 'bg-red-600 hover:bg-red-700 text-white border border-red-700 shadow-sm px-2 py-2 rounded-lg'
-                                : 'text-blue-500 hover:text-blue-400 dark:text-blue-400 dark:hover:text-blue-300'
-                            }`}
-                            title="Editar"
-                          >
-                            <FaEdit size={18} />
-                          </button>
-                          <button
-                            onClick={() => handleEliminar(usuario)}
-                            disabled={usuario.is_superuser}
-                            className={`transition-all duration-200 hover:scale-110 ${
-                              usuario.is_superuser
-                                ? 'text-slate-400 dark:text-slate-600 cursor-not-allowed'
-                                : filaInactiva
-                                ? 'bg-red-600 hover:bg-red-700 text-white border border-red-700 shadow-sm px-2 py-2 rounded-lg'
-                                : 'text-red-500 hover:text-red-400 dark:text-red-400 dark:hover:text-red-300'
-                            }`}
-                            title="Eliminar"
-                          >
-                            <FaTrash size={18} />
-                          </button>
-                        </div>
-                      )}
+                      {puedeGestionarUsuarios() && (() => {
+                        const blockedBtn = Boolean(usuario.is_superuser);
+                        const titleMsg = blockedBtn ? 'Acción deshabilitada: usuario protegido' : '';
+                        return (
+                          <div className="flex justify-center gap-3">
+                            <button
+                              onClick={() => !blockedBtn && abrirModalEditar(usuario)}
+                              disabled={blockedBtn}
+                              className={`text-blue-500 ${blockedBtn ? 'opacity-50 cursor-not-allowed' : 'hover:text-blue-400 dark:text-blue-400 dark:hover:text-blue-300'} transition-all duration-200 ${blockedBtn ? '' : 'hover:scale-110'}`}
+                              title={titleMsg || 'Editar'}
+                            >
+                              <FaEdit size={18} />
+                            </button>
+                            <button
+                              onClick={() => !blockedBtn && handleEliminar(usuario)}
+                              disabled={blockedBtn}
+                              className={`text-red-500 ${blockedBtn ? 'opacity-50 cursor-not-allowed' : 'hover:text-red-400 dark:text-red-400 dark:hover:text-red-300'} transition-all duration-200 ${blockedBtn ? '' : 'hover:scale-110'}`}
+                              title={titleMsg || 'Eliminar'}
+                            >
+                              <FaTrash size={18} />
+                            </button>
+                          </div>
+                        );
+                      })()}
                     </td>
                   </tr>
                     );
@@ -2325,8 +2744,11 @@ const initialData = {
         </div>
 
         {/* Modal de Confirmación de Toggle Estado */}
-        {showToggleModal && usuarioToToggle && (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+        {showToggleModal && usuarioToToggle && createPortal((
+          <div
+            className="fixed top-0 right-0 bottom-0 z-[70] flex items-center justify-center p-4"
+            style={{ left: hasSidebar ? (sidebarCollapsed ? '5rem' : '18rem') : '0' }}
+          >
             <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px]" onClick={() => setShowToggleModal(false)} />
             <div
               className={`relative w-full max-w-lg rounded-2xl border bg-slate-900 shadow-2xl overflow-hidden animate-slide-up ${
@@ -2383,11 +2805,14 @@ const initialData = {
               </div>
             </div>
           </div>
-        )}
+        ), document.body)}
 
         {/* Modal de Confirmación de Eliminación */}
-        {showDeleteModal && (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+        {showDeleteModal && createPortal((
+          <div
+            className="fixed top-0 right-0 bottom-0 z-[70] flex items-center justify-center p-4"
+            style={{ left: hasSidebar ? (sidebarCollapsed ? '5rem' : '18rem') : '0' }}
+          >
             <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px]" onClick={closeDeleteModal} />
             <div className="relative w-full max-w-lg rounded-2xl border border-red-600/80 dark:border-red-700/50 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden animate-slide-up" style={{ animationDuration: '160ms' }}>
               <div className="px-5 py-4 border-b border-red-400 dark:border-slate-700/70 bg-gradient-to-r from-red-400 via-red-200 to-red-50 dark:from-red-900/30 dark:via-slate-900 dark:to-slate-900">
@@ -2438,7 +2863,7 @@ const initialData = {
               </div>
             </div>
           </div>
-        )}
+        ), document.body)}
       </div>
     </div>
   );

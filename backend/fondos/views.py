@@ -32,7 +32,10 @@ from .serializers import (
     FondoTiempoDetalleSerializer, PresentarFondoSerializer,
     AprobarFondoSerializer, ObservarFondoSerializer,
     SaldoVacacionesGestionSerializer, DatosLaboralesSerializer,
-    CustomTokenObtainPairSerializer
+    CustomTokenObtainPairSerializer,
+    # Validadores estructurales de asignación (blindaje de reactivación, normativa UABJB)
+    validar_unicidad_cargo_por_carrera,
+    _validar_fondo_tiempo_contractual_doble_rol,
 )
 
 
@@ -2648,49 +2651,173 @@ class UsuarioViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], permission_classes=[IsFullAdmin])
     def toggle_activo(self, request, pk=None):
-        """Activar o desactivar usuario"""
+        """
+        Activar o desactivar usuario.
+
+        FLUJO DE REACTIVACIÓN (user inactivo -> activo):
+        Aplica blindaje estricto de normativa UABJB:
+          1. Unicidad de cargo de gestión (Director / Jefe de Estudios por carrera).
+          2. Fondo de tiempo contractual en combinaciones autoridad + docencia.
+        Si alguna validación falla, el estado NO se modifica y se retorna HTTP 400.
+        """
         user = self.get_object()
 
+        # Proteger al superusuario administrador
         if user.is_superuser:
             return Response(
                 {'error': 'No se puede desactivar al superusuario administrador'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        if not user.is_active and _usuario_docente_sin_vinculo(user):
-            return Response(
-                {'error': 'No se puede reactivar este usuario hasta que se le asigne un docente vinculado.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # Detectar si es una reactivación (usuario actualmente inactivo)
+        es_reactivacion = not user.is_active
 
+        if es_reactivacion:
+            # Validación mínima previa: debe tener vínculo docente
+            if _usuario_docente_sin_vinculo(user):
+                return Response(
+                    {'error': 'No se puede reactivar este usuario hasta que se le asigne un docente vinculado.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Blindaje estructural de reactivación (normativa UABJB)
+            error_reactivacion = self._validar_reactivacion_asignaciones(user)
+            if error_reactivacion:
+                return Response(error_reactivacion, status=status.HTTP_400_BAD_REQUEST)
+
+        # Aplicar cambio de estado
         user.is_active = not user.is_active
         user.save()
 
         # Regla de sincronización: activar/desactivar usuario también afecta su docente y asignaciones
         perfil = PerfilUsuario.objects.filter(user=user).select_related('docente').first()
-        
+
         if user.is_active is False:
-            # Desactivar usuario: también desactivar docente y asignaciones
+            # Desactivar usuario: también desactivar docente y asignaciones docentes
             if perfil and perfil.docente and perfil.docente.activo:
                 perfil.docente.activo = False
                 perfil.docente.save(update_fields=['activo'])
 
-            # Revocar asignaciones operativas de rol docente para este usuario.
             user.asignaciones_carrera.filter(rol='docente', activo=True).update(activo=False)
         else:
-            # Activar usuario: también activar docente y asignaciones
+            # Reactivar usuario: también activar docente y asignaciones docentes
             if perfil and perfil.docente and not perfil.docente.activo:
                 perfil.docente.activo = True
                 perfil.docente.save(update_fields=['activo'])
 
-            # Reactivar asignaciones de carrera para este usuario
             user.asignaciones_carrera.filter(rol='docente', activo=False).update(activo=True)
 
         user = _sincronizar_estado_usuario_huerfano(user)
-        
-        output_serializer = UsuarioSerializer(user)
+
         output_serializer = UsuarioSerializer(user, context={'request': request})
         return Response(output_serializer.data)
+
+    def _validar_reactivacion_asignaciones(self, user):
+        """
+        Blindaje de reactivación (normativa UABJB).
+
+        Antes de permitir que un usuario pausado vuelva a estar activo, verifica:
+          1. Que ningún cargo de gestión (Director / Jefe de Estudios) haya sido
+             ocupado por otro titular mientras el usuario estuvo inactivo.
+          2. Que las horas semanales activas sigan respetando el tope contractual
+             vigente (fondo de tiempo) para combinaciones doble rol.
+
+        Retorna un dict {'error': mensaje} si la validación falla, o None si todo está OK.
+        """
+        perfil = PerfilUsuario.objects.filter(user=user).select_related('docente', 'carrera').first()
+        if not perfil:
+            return None
+
+        # ------------------------------------------------
+        # 1) RECOLECTAR ASIGNACIONES A REACTIVAR
+        # ------------------------------------------------
+        bloques = []
+
+        # Rol principal del PerfilUsuario (cargo de gestión)
+        if perfil.rol in ('director', 'jefe_estudios') and perfil.carrera_id:
+            bloques.append({
+                'rol': perfil.rol,
+                'carrera': perfil.carrera,
+                'docente': perfil.docente,
+            })
+
+        # Asignaciones explícitas en AsignacionCarrera (todas, sin importar estado activo)
+        for asignacion in user.asignaciones_carrera.select_related('carrera', 'docente'):
+            bloques.append({
+                'rol': asignacion.rol,
+                'carrera': asignacion.carrera,
+                'docente': asignacion.docente or perfil.docente,
+            })
+
+        # Eliminar duplicados (rol, carrera) manteniendo la primera ocurrencia
+        vistos = set()
+        bloques_unicos = []
+        for bloque in bloques:
+            carrera_id = bloque['carrera'].id if bloque.get('carrera') else None
+            clave = (bloque.get('rol'), carrera_id)
+            if clave not in vistos:
+                vistos.add(clave)
+                bloques_unicos.append(bloque)
+        bloques = bloques_unicos
+
+        if not bloques:
+            return None
+
+        # ------------------------------------------------
+        # 2) VALIDAR UNICIDAD DE CARGO DE GESTIÓN
+        # ------------------------------------------------
+        cargos_display = {
+            'director': 'Director de Carrera',
+            'jefe_estudios': 'Jefe de Estudios',
+        }
+
+        for bloque in bloques:
+            rol = bloque.get('rol')
+            carrera = bloque.get('carrera')
+            if rol in ('director', 'jefe_estudios') and carrera:
+                try:
+                    validar_unicidad_cargo_por_carrera(
+                        carrera=carrera,
+                        rol=rol,
+                        exclude_user_id=user.id,
+                    )
+                except drf_serializers.ValidationError:
+                    cargo = cargos_display.get(rol, rol)
+                    return {
+                        'error': (
+                            f'No se puede reactivar al usuario porque la carrera '
+                            f'"{carrera.nombre}" ya cuenta con un {cargo} activo. '
+                            f'Debe dar de baja al titular actual antes de reactivar este usuario.'
+                        )
+                    }
+
+        # ------------------------------------------------
+        # 3) VALIDAR FONDO DE TIEMPO CONTRACTUAL (DOBLE ROL)
+        # ------------------------------------------------
+        try:
+            _validar_fondo_tiempo_contractual_doble_rol(
+                bloques,
+                docente_por_defecto=perfil.docente,
+            )
+        except drf_serializers.ValidationError as exc:
+            detalle = self._extraer_mensaje_validation_error(exc.detail)
+            return {
+                'error': (
+                    f'No se puede reactivar al usuario debido a una violación de fondo de tiempo '
+                    f'contractual: {detalle}'
+                )
+            }
+
+        return None
+
+    def _extraer_mensaje_validation_error(self, detail):
+        """Convierte el detail de un ValidationError de DRF en un mensaje legible."""
+        if isinstance(detail, dict):
+            for valor in detail.values():
+                return self._extraer_mensaje_validation_error(valor)
+        if isinstance(detail, list):
+            return self._extraer_mensaje_validation_error(detail[0]) if detail else ''
+        return str(detail) if detail is not None else ''
 
 
 # ============================================

@@ -35,7 +35,10 @@ html:not(.dark) .border-t {
   border-top-color: #cbd5e1;
 }
 
-/* Uniformizar color de bordes en modo claro: anula utilidades conflictivas solo en light-theme */
+/* Uniformizar color de bordes en modo claro.
+   SIN !important: devuelve a Tailwind el control total de los estilos dinámicos
+   (errores, feedback, hover) para que clases como !border-red-600 funcionen
+   de forma nativa y uniforme en todo el formulario. */
 html:not(.dark) .border,
 html:not(.dark) .border-2,
 html:not(.dark) .rounded-xl,
@@ -47,7 +50,7 @@ html:not(.dark) textarea,
 html:not(.dark) .card,
 html:not(.dark) .dropdown,
 html:not(.dark) .shadow-sm {
-  border-color: #94a3b8 !important;
+  border-color: #94a3b8;
 }
 
 html:not(.dark) .dedicacion-accent {
