@@ -249,7 +249,10 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
       }));
       return;
     }
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    const normalizedValue = name === 'ci'
+      ? String(value || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 15)
+      : value;
+    setFormData((prev) => ({ ...prev, [name]: normalizedValue }));
   };
 
   const handleRolChange = (e) => {
@@ -699,7 +702,7 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
 
               <div>
                 {mostrarCiAutoridad ? (
-                  <InputField label="C.I." name="ci" value={formData.ci} onChange={handleChange} error={errors.ci} />
+                  <InputField label="C.I." name="ci" value={formData.ci} onChange={handleChange} error={errors.ci} maxLength={15} />
                 ) : (
                   <div>
                     <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
@@ -1076,7 +1079,7 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
   );
 };
 
-const InputField = ({ label, name, type = 'text', value, onChange, required, disabled, readOnly, error }) => (
+const InputField = ({ label, name, type = 'text', value, onChange, required, disabled, readOnly, error, ...rest }) => (
   <div>
     <label className="mb-2 block text-sm font-semibold text-slate-800 dark:text-slate-300">
       {label} {required && <span className="text-red-500">*</span>}
@@ -1089,6 +1092,7 @@ const InputField = ({ label, name, type = 'text', value, onChange, required, dis
       required={required}
       disabled={disabled}
       readOnly={readOnly}
+      {...rest}
       className={`w-full rounded-xl border-2 bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-white px-4 py-3 shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 ${
         error ? 'border-red-500' : 'border-slate-400 dark:border-slate-600'
       } ${(disabled || readOnly) ? 'cursor-not-allowed bg-slate-200 dark:bg-slate-700/50' : ''}`}

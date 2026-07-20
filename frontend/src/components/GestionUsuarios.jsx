@@ -1517,18 +1517,21 @@ const initialData = {
     const { name, value } = e.target;
 
     setFormData(prev => {
-      const updated = { ...prev, [name]: value };
+      const normalizedValue = name === 'ci'
+        ? String(value || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 15)
+        : value;
+      const updated = { ...prev, [name]: normalizedValue };
 
       if (name === 'nombre_completo') {
-        const partes = value.trim().split(/\s+/).filter(Boolean);
+        const partes = normalizedValue.trim().split(/\s+/).filter(Boolean);
         updated.first_name = partes[0] || '';
         updated.last_name = partes.slice(1).join(' ');
       }
 
       // Auto-generar contraseña por defecto al escribir el username
       if (name === 'username') {
-        updated.password = value + 'UABJB';
-        updated.password_confirm = value + 'UABJB';
+        updated.password = normalizedValue + 'UABJB';
+        updated.password_confirm = normalizedValue + 'UABJB';
       }
 
       if (name === 'docente' && value) {
@@ -2174,9 +2177,18 @@ const initialData = {
       sessionStorage.removeItem('docenteTemporalDesdeUsuarios');
       sessionStorage.removeItem('flujoDocenteDesdeUsuarios');
       if (volverANuevoDocente) {
+        sessionStorage.setItem('datosCrearUsuario', JSON.stringify({
+          ...formData,
+          ci: ciNormalizado,
+          carrera: carreraNormalizada,
+        }));
         sessionStorage.setItem('abrirModalNuevoDocente', 'true');
         if (response?.data?.id) {
-          sessionStorage.setItem('autoSeleccionarUsuarioDesdeGestion', JSON.stringify(response.data));
+          sessionStorage.setItem('autoSeleccionarUsuarioDesdeGestion', JSON.stringify({
+            ...response.data,
+            _ciRetornoDocente: ciNormalizado,
+            _carreraRetornoDocente: carreraNormalizada,
+          }));
         }
         navigate('/fondo-tiempo/docentes');
         return;
@@ -2533,6 +2545,7 @@ const initialData = {
                         clearError={clearFieldError}
                         error={errors.ci}
                         pulse={errorPulse.ci || 0}
+                        maxLength={15}
                       />
                     ) : (
                       <div />

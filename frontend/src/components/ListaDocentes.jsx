@@ -509,6 +509,7 @@ const InputField = ({
   inputClassName = '',
   showLock = false,
   lockTooltip = '',
+  ...rest
 }) => {
   const [isPulsing, setIsPulsing] = useState(false);
   useEffect(() => {
@@ -538,6 +539,7 @@ const InputField = ({
       disabled={disabled}
       readOnly={readOnly}
       title={(disabled || readOnly) ? (lockTooltip || 'No editable') : undefined}
+      {...rest}
       className={`w-full px-4 py-2.5 rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white italic focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md ${inputClassName} ${disabled ? 'cursor-not-allowed opacity-80' : ''} ${error ? '!border-red-600 dark:!border-red-500 ring-1 ring-inset ring-red-500/50' : 'border-slate-300 dark:border-slate-600'} ${isPulsing ? 'animate-field-error-shake' : ''}`}
     />
     {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
@@ -1022,13 +1024,45 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       if (usuarioCreadoRaw) {
         try {
           const usuarioCreado = JSON.parse(usuarioCreadoRaw);
+          const datosUsuarioRaw = sessionStorage.getItem('datosCrearUsuario');
+          const datosUsuario = datosUsuarioRaw ? JSON.parse(datosUsuarioRaw) : null;
           // Esperar a que los usuarios estén cargados para seleccionar
           setTimeout(() => {
             const usuarioEncontrado = usuarios.find(
               (u) => String(u.id) === String(usuarioCreado.id)
             ) || usuarioCreado;
             if (usuarioEncontrado && typeof handleSeleccionUsuario === 'function') {
-              handleSeleccionUsuario(usuarioEncontrado);
+              const ciGuardado = usuarioCreado?._ciRetornoDocente || datosUsuario?.ci || '';
+              const usuarioParaSeleccion = {
+                ...usuarioCreado,
+                ...usuarioEncontrado,
+                ci: usuarioEncontrado?.ci || usuarioCreado?.ci || ciGuardado,
+              };
+              const carreraGuardada = usuarioCreado?._carreraRetornoDocente || datosUsuario?.carrera || '';
+              const carreraSeleccionada = carreraGuardada || getCarreraDocenteUsuario(usuarioParaSeleccion) || '';
+              const ciSeleccionado = getCiUsuario(usuarioParaSeleccion, ciGuardado);
+              const usuarioTieneRolGestion = ['director', 'jefe_estudios', 'iiisyp'].some((rol) => usuarioTieneRol(usuarioParaSeleccion, rol));
+
+              setBuscarUsuario(`${usuarioParaSeleccion.first_name || ''} ${usuarioParaSeleccion.last_name || ''}`.trim());
+              setFormData((prev) => ({
+                ...prev,
+                user: usuarioParaSeleccion.id,
+                nombre_completo: buildNombreCompleto(usuarioParaSeleccion.first_name, usuarioParaSeleccion.last_name),
+                ci: ciSeleccionado,
+                cargo_profesional: getRolesActivosUsuario(usuarioParaSeleccion).join(' / ') || usuarioParaSeleccion.perfil?.rol_display || usuarioParaSeleccion.perfil?.rol || '',
+                email: usuarioParaSeleccion.email || '',
+                username: usuarioParaSeleccion.username || '',
+                password: '',
+                password_confirm: '',
+                carrera: carreraSeleccionada || prev.carrera || '',
+                dedicacion: usuarioTieneRolGestion && ['tiempo_completo', 'medio_tiempo'].includes(String(prev.dedicacion || ''))
+                  ? 'horario_40'
+                  : prev.dedicacion,
+              }));
+              setShowAutocomplete(false);
+              setSearchMode(false);
+              setShowUserInfo(true);
+              setUserInfoKey(Date.now());
             }
             sessionStorage.removeItem('autoSeleccionarUsuarioDesdeGestion');
           }, 800);
@@ -1184,6 +1218,12 @@ function ListaDocentes({ sidebarCollapsed = false }) {
     });
     setFormData(prev => {
       let nextValue = type === 'checkbox' ? checked : value;
+      if (name === 'telefono') {
+        nextValue = String(nextValue || '').replace(/\D/g, '').slice(0, 10);
+      }
+      if (name === 'ci') {
+        nextValue = String(nextValue || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 15);
+      }
       const newState = {
         ...prev,
         [name]: nextValue,
@@ -1317,6 +1357,36 @@ function ListaDocentes({ sidebarCollapsed = false }) {
     return carreras.find((carrera) => String(carrera.id) === String(carreraValue))?.nombre || String(carreraValue).trim();
   };
 
+  const getCarreraIdValue = (carreraValue) => {
+    if (!carreraValue) return '';
+    if (typeof carreraValue === 'object') {
+      return carreraValue.id || carreraValue.pk || carreraValue.value || '';
+    }
+    const carreraPorCodigoONombre = carreras.find((carrera) => (
+      String(carrera.codigo || '').trim() === String(carreraValue).trim()
+      || String(carrera.nombre || '').trim() === String(carreraValue).trim()
+    ));
+    return carreraPorCodigoONombre?.id || carreraValue;
+  };
+
+  const getCarreraDocenteUsuario = (usuarioItem) => {
+    if (!usuarioItem) return '';
+
+    const asignaciones = Array.isArray(usuarioItem?.asignaciones) ? usuarioItem.asignaciones : [];
+    const asignacionDocente = asignaciones.find((asignacion) => (
+      asignacion?.activo !== false
+      && String(asignacion?.rol || '').trim().toLowerCase() === 'docente'
+      && (asignacion?.carrera || asignacion?.carrera_id)
+    ));
+
+    return getCarreraIdValue(
+      asignacionDocente?.carrera
+      || asignacionDocente?.carrera_id
+      || usuarioItem?.perfil?.carrera
+      || ''
+    );
+  };
+
   const getCarrerasUsuario = (usuarioItem) => {
     if (!usuarioItem) return [];
 
@@ -1336,6 +1406,14 @@ function ListaDocentes({ sidebarCollapsed = false }) {
     return Array.from(new Set(nombresCarrera));
   };
 
+  const getCiUsuario = (usuarioItem, fallback = '') => (
+    usuarioItem?.ci
+    || usuarioItem?.perfil?.ci
+    || usuarioItem?.perfil?.docente_ci
+    || fallback
+    || ''
+  );
+
   const handleSeleccionUsuario = (usuarioItem) => {
     const usuarioTieneRolGestion = ['director', 'jefe_estudios', 'iiisyp'].some((rol) => usuarioTieneRol(usuarioItem, rol));
     // Limpiar el error de selección de usuario al elegir uno (regla global)
@@ -1350,13 +1428,13 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       ...prev,
       user: usuarioItem.id,
       nombre_completo: buildNombreCompleto(usuarioItem.first_name, usuarioItem.last_name),
-      ci: usuarioItem.ci || prev.ci || '',
+      ci: getCiUsuario(usuarioItem, prev.ci),
       cargo_profesional: getRolesActivosUsuario(usuarioItem).join(' / ') || usuarioItem.perfil?.rol_display || usuarioItem.perfil?.rol || '',
       email: usuarioItem.email || '',
       username: usuarioItem.username || '',
       password: '',
       password_confirm: '',
-      carrera: usuarioItem?.perfil?.carrera || prev.carrera || '',
+      carrera: getCarreraDocenteUsuario(usuarioItem) || prev.carrera || '',
       dedicacion: usuarioTieneRolGestion && ['tiempo_completo', 'medio_tiempo'].includes(String(prev.dedicacion || ''))
         ? 'horario_40'
         : prev.dedicacion,
@@ -1961,7 +2039,15 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                     onChange={(val) => setFormData(prev => ({ ...prev, fecha_ingreso: val }))}
                     error={errors.fecha_ingreso}
                   />
-                  <InputField label="Telefono" name="telefono" value={formData.telefono} onChange={handleChange} error={errors.telefono} />
+                  <InputField
+                    label="Telefono"
+                    name="telefono"
+                    value={formData.telefono}
+                    onChange={handleChange}
+                    error={errors.telefono}
+                    maxLength={10}
+                    inputMode="numeric"
+                  />
                   <SelectConDropdown
                     label="Dedicacion"
                     name="dedicacion"
@@ -2327,6 +2413,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                   value={formData.ci}
                   onChange={handleChange}
                   error={errors.ci}
+                  maxLength={15}
                   readOnly
                   showLock
                   lockTooltip={tooltipDatosUsuarios}
@@ -2389,7 +2476,15 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                     error={errors.fecha_ingreso}
                   />
                 )}
-                <InputField label="Telefono" name="telefono" value={formData.telefono} onChange={handleChange} error={errors.telefono} />
+                <InputField
+                  label="Telefono"
+                  name="telefono"
+                  value={formData.telefono}
+                  onChange={handleChange}
+                  error={errors.telefono}
+                  maxLength={10}
+                  inputMode="numeric"
+                />
 
                 <SelectConDropdown
                   label="Categoria"
