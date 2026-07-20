@@ -4,6 +4,14 @@ import { getDocentes, getCarreras, crearFondoTiempo, getCalendarioActivo, getCal
 import api from '../apis/api';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import {
+  ERROR_FIELD_BORDER_CLASS,
+  ERROR_MOTION_CLASS,
+  ERROR_SHAKE_DURATION_MS,
+  sanitizeChoiceError,
+  sanitizeApiErrors,
+  getBackendErrorMessage,
+} from '../utils/formErrors';
 
 function FormularioFondo({ isDark, editar = false }) {
   const navigate = useNavigate();
@@ -17,7 +25,18 @@ function FormularioFondo({ isDark, editar = false }) {
   const [loading, setLoading] = useState(false);
   const [loadingDatos, setLoadingDatos] = useState(editar);
   const [error, setError] = useState('');
-  const [erroresCampos, setErroresCampos] = useState({});  
+  const [erroresCampos, setErroresCampos] = useState({});
+  // Campos que están actualmente "sacudiéndose" (shake animation).
+  const [shakingFields, setShakingFields] = useState({});
+
+  // Dispara la sacudida (shake) de 460ms en los campos indicados.
+  const triggerShake = (fields) => {
+    if (!fields || fields.length === 0) return;
+    const next = {};
+    fields.forEach((f) => { next[f] = true; });
+    setShakingFields(next);
+    setTimeout(() => setShakingFields({}), ERROR_SHAKE_DURATION_MS);
+  };
   
   const [formData, setFormData] = useState({
     docente: '',
@@ -161,6 +180,20 @@ function FormularioFondo({ isDark, editar = false }) {
     }
   };
 
+  // Limpieza inmediata del borde rojo al hacer focus/click en el campo.
+  // REGLA GLOBAL: el error y su borde desaparecen apenas el usuario interactúa.
+  const handleFieldFocus = (e) => {
+    const { name } = e.target;
+    if (erroresCampos[name]) {
+      setErroresCampos(prev => {
+        if (!prev[name]) return prev;
+        const next = { ...prev };
+        delete next[name];
+        return next;
+      });
+    }
+  };
+
   const getPeriodoLabel = (periodo) => {
     const periodos = {
       '1S': 'Primer Semestre',
@@ -173,18 +206,18 @@ function FormularioFondo({ isDark, editar = false }) {
 
   const validarFormulario = () => {
     const errores = {};
-    
+
     if (!formData.carrera) {
-      errores.carrera = 'Debe seleccionar una carrera';
+      errores.carrera = 'Por favor, seleccione una opción.';
     }
     if (!formData.calendario_academico) {
-      errores.calendario_academico = 'Debe seleccionar un calendario académico';
+      errores.calendario_academico = 'Por favor, seleccione una opción.';
     }
     if (!formData.gestion || formData.gestion < 2020) {
       errores.gestion = 'Gestión inválida';
     }
     if (!formData.periodo) {
-      errores.periodo = 'Debe seleccionar un periodo académico';
+      errores.periodo = 'Por favor, seleccione una opción.';
     }
     if (!formData.asignatura || formData.asignatura.trim().length < 3) {
       errores.asignatura = 'Asignatura inválida (mínimo 3 caracteres)';
@@ -192,9 +225,9 @@ function FormularioFondo({ isDark, editar = false }) {
     if (formData.tiene_programa_analitico && !formData.programa_analitico_url) {
       errores.programa_analitico_url = 'Debe proporcionar la URL del programa analítico';
     }
-    
+
     setErroresCampos(errores);
-    return Object.keys(errores).length === 0;
+    return errores;
   };
 
   const verificarDuplicado = async () => {
@@ -307,12 +340,20 @@ function FormularioFondo({ isDark, editar = false }) {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    // REGLA GLOBAL: detener por completo el comportamiento por defecto para
+    // evitar parpadeo/re-renderizado de modales.
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     setError('');
-    
-    const esValido = validarFormulario();
-    
-    if (!esValido) {
+
+    const erroresValidados = validarFormulario();
+    const hayErrores = Object.keys(erroresValidados).length > 0;
+
+    if (hayErrores) {
+      // Disparar sacudida (shake) de 460ms en los campos con error.
+      triggerShake(Object.keys(erroresValidados));
       setError('Por favor, corrija los errores en el formulario');
       toast.error('⚠️ Por favor, corrija los errores en el formulario');
       return;
@@ -368,9 +409,10 @@ function FormularioFondo({ isDark, editar = false }) {
         const data = err.response.data;
 
         if (status === 400) {
-          const erroresBackend = mapearErroresBackendACampos(data);
+          const erroresBackend = sanitizeApiErrors(mapearErroresBackendACampos(data));
           if (Object.keys(erroresBackend).length > 0) {
             setErroresCampos(erroresBackend);
+            triggerShake(Object.keys(erroresBackend));
             enfocarPrimerCampoConError(erroresBackend);
           }
 
@@ -449,7 +491,7 @@ function FormularioFondo({ isDark, editar = false }) {
         </div>
 
         {/* Formulario */}
-        <form onSubmit={handleSubmit} className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-lg">
+        <form onSubmit={handleSubmit} noValidate className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-lg">
           <div className="px-6 py-5 border-b-2 border-slate-200 dark:border-slate-700">
             <h2 className="text-xl font-bold text-slate-800 dark:text-white">
               Información General del Fondo
@@ -489,7 +531,7 @@ function FormularioFondo({ isDark, editar = false }) {
                       </div>
 
                       {/* Carrera */}
-                      <div>
+                      <div className={shakingFields.carrera ? ERROR_MOTION_CLASS : ''}>
                         <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
                           Carrera {erroresCampos.carrera && <span className="text-red-500">*</span>}
                         </label>
@@ -497,10 +539,11 @@ function FormularioFondo({ isDark, editar = false }) {
                           name="carrera"
                           value={formData.carrera}
                           onChange={handleChange}
-                          required
+                          onFocus={handleFieldFocus}
+                          onClick={handleFieldFocus}
                           disabled={loading || editar}
                           className={`w-full px-4 py-3 rounded-xl border-2 ${
-                            erroresCampos.carrera ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'
+                            erroresCampos.carrera ? ERROR_FIELD_BORDER_CLASS : 'border-slate-300 dark:border-slate-600'
                           } bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm`}
                         >
                           <option value="">Seleccione una carrera</option>
@@ -516,7 +559,7 @@ function FormularioFondo({ isDark, editar = false }) {
                       </div>
 
                       {/* Calendario */}
-                      <div>
+                      <div className={shakingFields.calendario_academico ? ERROR_MOTION_CLASS : ''}>
                         <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
                           Calendario Académico {erroresCampos.calendario_academico && <span className="text-red-500">*</span>}
                           {calendarioActivo && formData.calendario_academico == calendarioActivo.id && (
@@ -532,10 +575,11 @@ function FormularioFondo({ isDark, editar = false }) {
                           name="calendario_academico"
                           value={formData.calendario_academico}
                           onChange={handleChange}
-                          required
+                          onFocus={handleFieldFocus}
+                          onClick={handleFieldFocus}
                           disabled={loading || editar}
                           className={`w-full px-4 py-3 rounded-xl border-2 ${
-                            erroresCampos.calendario_academico ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'
+                            erroresCampos.calendario_academico ? ERROR_FIELD_BORDER_CLASS : 'border-slate-300 dark:border-slate-600'
                           } bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm`}
                         >
                           <option value="">Seleccione un calendario académico</option>
@@ -554,7 +598,7 @@ function FormularioFondo({ isDark, editar = false }) {
                       </div>
 
                       {/* Asignatura */}
-                      <div>
+                      <div className={shakingFields.asignatura ? ERROR_MOTION_CLASS : ''}>
                         <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
                           Nombre de la Asignatura {erroresCampos.asignatura && <span className="text-red-500">*</span>}
                         </label>
@@ -563,11 +607,12 @@ function FormularioFondo({ isDark, editar = false }) {
                           name="asignatura"
                           value={formData.asignatura}
                           onChange={handleChange}
-                          required
+                          onFocus={handleFieldFocus}
+                          onClick={handleFieldFocus}
                           disabled={loading || editar}
                           placeholder="Ej: Programación Web, Álgebra II, etc."
                           className={`w-full px-4 py-3 rounded-xl border-2 ${
-                            erroresCampos.asignatura ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'
+                            erroresCampos.asignatura ? ERROR_FIELD_BORDER_CLASS : 'border-slate-300 dark:border-slate-600'
                           } bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm`}
                         />
                         {erroresCampos.asignatura && (
@@ -631,7 +676,7 @@ function FormularioFondo({ isDark, editar = false }) {
                       </div>
 
                       {formData.tiene_programa_analitico && (
-                        <div>
+                        <div className={shakingFields.programa_analitico_url ? ERROR_MOTION_CLASS : ''}>
                           <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
                             URL del Programa {erroresCampos.programa_analitico_url && <span className="text-red-500">*</span>}
                           </label>
@@ -640,10 +685,12 @@ function FormularioFondo({ isDark, editar = false }) {
                             name="programa_analitico_url"
                             value={formData.programa_analitico_url}
                             onChange={handleChange}
+                            onFocus={handleFieldFocus}
+                            onClick={handleFieldFocus}
                             disabled={loading}
                             placeholder="https://drive.google.com/file/d/..."
                             className={`w-full px-4 py-3 rounded-xl border-2 ${
-                              erroresCampos.programa_analitico_url ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'
+                              erroresCampos.programa_analitico_url ? ERROR_FIELD_BORDER_CLASS : 'border-slate-300 dark:border-slate-600'
                             } bg-white dark:bg-slate-900 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm`}
                           />
                           {erroresCampos.programa_analitico_url && (

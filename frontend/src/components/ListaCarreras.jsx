@@ -5,10 +5,17 @@ import { getCarreras, getFacultadesCarrera, addFacultadCarrera, deleteFacultadCa
 import api from '../apis/api';
 import toast from 'react-hot-toast';
 import html2pdf from 'html2pdf.js';
+import {
+  ERROR_FIELD_BORDER_CLASS,
+  ERROR_MOTION_CLASS,
+  ERROR_SHAKE_DURATION_MS,
+  sanitizeChoiceError,
+  sanitizeApiErrors,
+} from '../utils/formErrors';
 
 const FECHA_MAXIMA_HOY = new Date().toISOString().split('T')[0];
 
-const InputField = ({ label, name, type = 'text', value, onChange, required, error }) => (
+const InputField = ({ label, name, type = 'text', value, onChange, onFocus, required, error }) => (
   <div>
     <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label} {error && <span className="text-red-500">*</span>}</label>
     <input
@@ -16,29 +23,16 @@ const InputField = ({ label, name, type = 'text', value, onChange, required, err
       name={name}
       value={value}
       onChange={onChange}
+      onFocus={onFocus}
       required={required}
-      className={`w-full px-4 py-2.5 rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md ${error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'}`}
+      className={`w-full px-4 py-2.5 rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md ${error ? ERROR_FIELD_BORDER_CLASS : 'border-slate-300 dark:border-slate-600'}`}
     />
     {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
   </div>
 );
 
-// Animación de rebote (igual que GestionUsuarios)
-const styleCarrera = document.createElement('style');
-styleCarrera.textContent = `
-  @keyframes fieldErrorPop {
-    0% { transform: translateY(0) scale(1); }
-    30% { transform: translateY(-3px) scale(1.01); }
-    60% { transform: translateY(1px) scale(0.995); }
-    100% { transform: translateY(0) scale(1); }
-  }
-  .animate-field-error-pop { animation: fieldErrorPop 220ms ease-out; transform-origin: center; }
-`;
-document.head.appendChild(styleCarrera);
-const ERROR_MOTION_CLASS = 'animate-field-error-pop';
-
-// InputField con pulso de error (reproduce clase cuando cambia `pulse`)
-const InputFieldPulse = ({ label, name, type = 'text', value, onChange, required, error, pulse = 0, ...rest }) => {
+// InputField con sacudida (shake) de error global (460ms) y limpieza en focus.
+const InputFieldPulse = ({ label, name, type = 'text', value, onChange, onFocus, required, error, pulse = 0, ...rest }) => {
   const [isPulsing, setIsPulsing] = useState(false);
   const errorMessage = Array.isArray(error) ? (error[0] || '') : (typeof error === 'string' ? error : '');
 
@@ -46,9 +40,13 @@ const InputFieldPulse = ({ label, name, type = 'text', value, onChange, required
     if (!error) { setIsPulsing(false); return; }
     setIsPulsing(false);
     const frame = requestAnimationFrame(() => setIsPulsing(true));
-    const to = setTimeout(() => setIsPulsing(false), 260);
+    const to = setTimeout(() => setIsPulsing(false), ERROR_SHAKE_DURATION_MS);
     return () => { cancelAnimationFrame(frame); clearTimeout(to); };
   }, [error, pulse]);
+
+  const handleFocusClear = (e) => {
+    if (onFocus) onFocus(e);
+  };
 
   return (
     <div className={error && isPulsing ? ERROR_MOTION_CLASS : ''}>
@@ -58,9 +56,10 @@ const InputFieldPulse = ({ label, name, type = 'text', value, onChange, required
         name={name}
         value={value}
         onChange={onChange}
+        onFocus={handleFocusClear}
         required={required}
         {...rest}
-        className={`w-full px-4 py-2.5 rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm ${error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'}`}
+        className={`w-full px-4 py-2.5 rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm ${error ? ERROR_FIELD_BORDER_CLASS : 'border-slate-300 dark:border-slate-600'}`}
       />
       {errorMessage && <p className="text-xs text-red-600 mt-1">{errorMessage}</p>}
     </div>
@@ -237,7 +236,7 @@ const SelectConDropdown = ({
     if (!error) { setIsPulsing(false); return; }
     setIsPulsing(false);
     const frame = requestAnimationFrame(() => setIsPulsing(true));
-    const to = setTimeout(() => setIsPulsing(false), 260);
+    const to = setTimeout(() => setIsPulsing(false), ERROR_SHAKE_DURATION_MS);
     return () => { cancelAnimationFrame(frame); clearTimeout(to); };
   }, [error, pulse]);
 
@@ -261,7 +260,7 @@ const SelectConDropdown = ({
             disabled ? 'cursor-not-allowed opacity-60' : 'hover:shadow-md'
           } ${
             error
-              ? 'border-2 border-red-500 bg-slate-50 dark:bg-slate-700'
+              ? ERROR_FIELD_BORDER_CLASS + ' bg-slate-50 dark:bg-slate-700'
               : open
                 ? 'border-2 border-[#2C4AAE] bg-slate-50 dark:bg-slate-700'
                 : 'border-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 hover:border-[#2C4AAE]'
@@ -606,7 +605,7 @@ const DatePickerField = ({ label, name, value, onDateChange, error, required, ma
     if (!error) { setIsPulsing(false); return; }
     setIsPulsing(false);
     const frame = requestAnimationFrame(() => setIsPulsing(true));
-    const to = setTimeout(() => setIsPulsing(false), 260);
+    const to = setTimeout(() => setIsPulsing(false), ERROR_SHAKE_DURATION_MS);
     return () => { cancelAnimationFrame(frame); clearTimeout(to); };
   }, [error, pulse]);
 
@@ -739,7 +738,7 @@ const DatePickerField = ({ label, name, value, onDateChange, error, required, ma
   return (
     <div ref={containerRef} className={`relative ${error && isPulsing ? ERROR_MOTION_CLASS : ''}`}>
       <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label} {error && <span className="text-red-500">*</span>}</label>
-      <div className={`relative w-full rounded-xl border-2 bg-slate-50 dark:bg-slate-700 shadow-sm ${error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'} focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent`}>
+      <div className={`relative w-full rounded-xl border-2 bg-slate-50 dark:bg-slate-700 shadow-sm ${error ? ERROR_FIELD_BORDER_CLASS : 'border-slate-300 dark:border-slate-600'} focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent`}>
         <input
           type="text"
           inputMode="numeric"
@@ -1456,7 +1455,11 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
   };
 
   const handleCreateSubmit = async (e) => {
-    e.preventDefault();
+    // REGLA GLOBAL: detener el comportamiento por defecto para evitar parpadeo.
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     setErrors({});
     const newErrors = validateCarreraForm({ requireLogo: true });
     if (Object.keys(newErrors).length > 0) {
@@ -1478,9 +1481,10 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
       console.error(err);
       const apiErrors = err.response?.data;
       if (apiErrors) {
-        setErrors(apiErrors);
-        pulseFieldErrors(Object.keys(apiErrors));
-        const errorMsg = Object.values(apiErrors).flat().join(' ');
+        const sanitized = sanitizeApiErrors(apiErrors);
+        setErrors(sanitized);
+        pulseFieldErrors(Object.keys(sanitized));
+        const errorMsg = Object.values(sanitized).flat().join(' ');
         toast.error(`Error: ${errorMsg}`);
       } else {
         toast.error('Ocurrió un error inesperado.');
@@ -1491,7 +1495,11 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
   };
 
   const handleUpdateSubmit = async (e) => {
-    e.preventDefault();
+    // REGLA GLOBAL: detener el comportamiento por defecto para evitar parpadeo.
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+      e.stopPropagation();
+    }
 
     setErrors({});
     const newErrors = validateCarreraForm({ requireLogo: false });
@@ -1519,20 +1527,17 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
     } catch (err) {
       console.error(err);
       const apiData = err.response?.data;
-      let errorMsg = err.message;
 
-      if (apiData) {
-        if (apiData.detail) {
-          errorMsg = apiData.detail;
-        } else if (apiData.activo) {
-          errorMsg = Array.isArray(apiData.activo) ? apiData.activo.join(' ') : String(apiData.activo);
-        } else {
-          const values = Object.values(apiData).flatMap((value) => Array.isArray(value) ? value : [value]);
-          errorMsg = values.join(' ');
-        }
+      if (apiData && typeof apiData === 'object' && !apiData.detail) {
+        const sanitized = sanitizeApiErrors(apiData);
+        setErrors(sanitized);
+        pulseFieldErrors(Object.keys(sanitized));
+        const errorMsg = Object.values(sanitized).flat().join(' ');
+        toast.error(`Error: ${errorMsg}`);
+      } else {
+        let errorMsg = apiData?.detail || err.message;
+        toast.error('Error al actualizar: ' + errorMsg);
       }
-
-      toast.error('Error al actualizar: ' + errorMsg);
     } finally {
       setIsSubmitting(false);
     }
@@ -2325,7 +2330,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Nombre de la Carrera {errors.nombre && <span className="text-red-500">*</span>}</label>
-                      <input type="text" name="nombre" value={formData.nombre} onChange={handleChange} required placeholder="Ej: Ingeniería de Sistemas" className={`w-full px-4 py-2.5 rounded-xl border-2 ${errors.nombre ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'} bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 placeholder:text-xs placeholder:italic transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:shadow-md`} />
+                      <input type="text" name="nombre" value={formData.nombre} onChange={handleChange} onFocus={() => setErrors(prev => prev.nombre ? ({ ...prev, nombre: undefined }) : prev)} required placeholder="Ej: Ingeniería de Sistemas" className={`w-full px-4 py-2.5 rounded-xl border-2 ${errors.nombre ? ERROR_FIELD_BORDER_CLASS : 'border-slate-300 dark:border-slate-600'} bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 placeholder:text-xs placeholder:italic transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:shadow-md`} />
                       {errors.nombre && <p className="text-xs text-red-600 mt-1">{getErrorMessage(errors.nombre)}</p>}
                     </div>
 
@@ -2352,13 +2357,13 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Código {errors.codigo && <span className="text-red-500">*</span>}</label>
-                      <input type="text" name="codigo" value={formData.codigo} onChange={handleChange} required placeholder="Ej: IS" className={`w-full px-4 py-2.5 rounded-xl border-2 ${errors.codigo ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'} bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 placeholder:text-xs placeholder:italic transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:shadow-md`} />
+                      <input type="text" name="codigo" value={formData.codigo} onChange={handleChange} onFocus={() => setErrors(prev => prev.codigo ? ({ ...prev, codigo: undefined }) : prev)} required placeholder="Ej: IS" className={`w-full px-4 py-2.5 rounded-xl border-2 ${errors.codigo ? ERROR_FIELD_BORDER_CLASS : 'border-slate-300 dark:border-slate-600'} bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 placeholder:text-xs placeholder:italic transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:shadow-md`} />
                       {errors.codigo && <p className="text-xs text-red-600 mt-1">{getErrorMessage(errors.codigo)}</p>}
                     </div>
 
                     <div>
                       <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Resolución Ministerial {errors.resolucion_ministerial && <span className="text-red-500">*</span>}</label>
-                      <input type="text" name="resolucion_ministerial" value={formData.resolucion_ministerial} onChange={handleChange} required placeholder="Ej: RM 123/2020" className={`w-full px-4 py-2.5 rounded-xl border-2 ${errors.resolucion_ministerial ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'} bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 placeholder:text-xs placeholder:italic transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:shadow-md`} />
+                      <input type="text" name="resolucion_ministerial" value={formData.resolucion_ministerial} onChange={handleChange} onFocus={() => setErrors(prev => prev.resolucion_ministerial ? ({ ...prev, resolucion_ministerial: undefined }) : prev)} required placeholder="Ej: RM 123/2020" className={`w-full px-4 py-2.5 rounded-xl border-2 ${errors.resolucion_ministerial ? ERROR_FIELD_BORDER_CLASS : 'border-slate-300 dark:border-slate-600'} bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 placeholder:text-xs placeholder:italic transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:shadow-md`} />
                       {errors.resolucion_ministerial && <p className="text-xs text-red-600 mt-1">{getErrorMessage(errors.resolucion_ministerial)}</p>}
                     </div>
                   </div>

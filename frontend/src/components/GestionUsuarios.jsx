@@ -1,27 +1,18 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { FaEdit, FaTrash } from 'react-icons/fa';
 import api from '../apis/api';
 import ModalUsuario from './ModalUsuario';
 import toast from 'react-hot-toast';
-
-const getBackendErrorMessage = (apiErrors, fallback = 'Ocurrió un error inesperado.') => {
-  if (!apiErrors) return fallback;
-
-  if (typeof apiErrors === 'string') {
-    return apiErrors.includes('<!DOCTYPE') ? fallback : apiErrors;
-  }
-
-  if (typeof apiErrors.error === 'string' && apiErrors.error.trim()) return apiErrors.error;
-  if (typeof apiErrors.detail === 'string' && apiErrors.detail.trim()) return apiErrors.detail;
-
-  const nested = Object.values(apiErrors)
-    .flatMap((value) => Array.isArray(value) ? value : [value])
-    .find((value) => typeof value === 'string' && value.trim() && !value.includes('<!DOCTYPE'));
-
-  return nested || fallback;
-};
+import {
+  ERROR_MOTION_CLASS,
+  ERROR_FIELD_BORDER_CLASS,
+  ERROR_SHAKE_DURATION_MS,
+  sanitizeChoiceError,
+  sanitizeApiErrors,
+  getBackendErrorMessage,
+} from '../utils/formErrors';
 
 // Animación para el search input
 const style = document.createElement('style');
@@ -60,13 +51,13 @@ style.textContent = `
   
   @keyframes fieldErrorPop {
     0% { transform: translateY(0) scale(1); }
-    35% { transform: translateY(-6px) scale(1.02); }
-    70% { transform: translateY(1px) scale(0.99); }
+    35% { transform: translateY(-3px) scale(1.008); }
+    70% { transform: translateY(0.5px) scale(0.996); }
     100% { transform: translateY(0) scale(1); }
   }
   
   .animate-field-error-pop {
-    animation: fieldErrorPop 240ms cubic-bezier(.2,.9,.3,1);
+    animation: fieldErrorPop 300ms ease-out;
     transform-origin: center;
   }
 
@@ -120,7 +111,6 @@ const TrashIcon = (props) => (
     </svg>
 );
 
-const ERROR_MOTION_CLASS = 'animate-field-error-pop';
 // Mensajes descriptivos para validación en caliente (Normativa UABJB)
 const MENSAJE_DUPLICADO = 'Esta combinación de Rol y Carrera ya se encuentra asignada.';
 const MENSAJE_LIMITE_ASIGNACIONES = 'Un usuario no puede tener más de 2 asignaciones en el sistema (Normativa de Fondo de Tiempo).';
@@ -239,7 +229,7 @@ const AnimatedInlineMessage = ({ show, message, wrapperClassName = '', messageCl
   );
 };
 
-const InputField = ({ label, name, type = 'text', value, onChange, required, disabled, error, pulse = 0, ...rest }) => {
+const InputField = ({ label, name, type = 'text', value, onChange, onFocus, required, disabled, error, pulse = 0, clearError, ...rest }) => {
   const [isPulsing, setIsPulsing] = useState(false);
   const errorMessage = Array.isArray(error) ? (error[0] || '') : (typeof error === 'string' ? error : '');
 
@@ -251,13 +241,21 @@ const InputField = ({ label, name, type = 'text', value, onChange, required, dis
 
     setIsPulsing(false);
     const frameId = requestAnimationFrame(() => setIsPulsing(true));
-    const timeoutId = setTimeout(() => setIsPulsing(false), 260);
+    const timeoutId = setTimeout(() => setIsPulsing(false), ERROR_SHAKE_DURATION_MS);
 
     return () => {
       cancelAnimationFrame(frameId);
       clearTimeout(timeoutId);
     };
   }, [error, pulse]);
+
+  // REGLA GLOBAL: limpiar el error de inmediato al hacer focus/clic en el campo.
+  const handleFocusClear = (e) => {
+    if (typeof clearError === 'function') {
+      clearError(name);
+    }
+    if (typeof onFocus === 'function') onFocus(e);
+  };
 
   return (
   <div className={error && isPulsing ? ERROR_MOTION_CLASS : ''}>
@@ -270,10 +268,12 @@ const InputField = ({ label, name, type = 'text', value, onChange, required, dis
       name={name}
       value={value}
       onChange={onChange}
+      onFocus={handleFocusClear}
+      onClick={handleFocusClear}
       disabled={disabled}
       placeholder={required ? '' : ' '}
       {...rest}
-      className={`w-full px-4 py-3 rounded-xl border-2 bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 transition-all shadow-sm ${error ? '!border-red-600 dark:!border-red-500 focus:ring-red-500/60' : 'border-slate-400 dark:border-slate-600 focus:ring-blue-500'}`}
+      className={`w-full px-4 py-3 rounded-xl border-2 bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 transition-all shadow-sm ${error ? `${ERROR_FIELD_BORDER_CLASS} focus:ring-red-500/60` : 'border-slate-400 dark:border-slate-600 focus:ring-blue-500'}`}
     />
     <AnimatedInlineMessage
       show={Boolean(errorMessage)}
@@ -322,13 +322,20 @@ const SelectConDropdown = ({ label, name, value, onChange, options, error, disab
 
     setIsPulsing(false);
     const frameId = requestAnimationFrame(() => setIsPulsing(true));
-    const timeoutId = setTimeout(() => setIsPulsing(false), 260);
+    const timeoutId = setTimeout(() => setIsPulsing(false), ERROR_SHAKE_DURATION_MS);
 
     return () => {
       cancelAnimationFrame(frameId);
       clearTimeout(timeoutId);
     };
   }, [error, pulse]);
+
+  // REGLA GLOBAL: limpiar el error de inmediato al abrir el dropdown (clic/focus).
+  const handleButtonFocus = () => {
+    if (!disabled && typeof onInteract === 'function') {
+      onInteract();
+    }
+  };
 
   const selectedLabel = options.find(opt => opt.value === value)?.label;
 
@@ -343,11 +350,10 @@ const SelectConDropdown = ({ label, name, value, onChange, options, error, disab
       <button
         type="button"
         onClick={() => {
-          if (!disabled && typeof onInteract === 'function') {
-            onInteract();
-          }
+          handleButtonFocus();
           setOpen(!open);
         }}
+        onFocus={handleButtonFocus}
         disabled={disabled}
         style={STATIC_CONTROL_STYLE}
         className={standardStyle
@@ -355,14 +361,14 @@ const SelectConDropdown = ({ label, name, value, onChange, options, error, disab
               disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
             } ${
               error
-                ? `border-2 !border-red-600 dark:!border-red-500 bg-slate-50 dark:bg-slate-700 focus:ring-red-500/60 ${error && isPulsing ? ERROR_MOTION_CLASS : ''}`
+                ? `${ERROR_FIELD_BORDER_CLASS} bg-slate-50 dark:bg-slate-700 focus:ring-red-500/60 ${error && isPulsing ? ERROR_MOTION_CLASS : ''}`
                 : SELECT_INPUT_BASE_CLASS
             }`
           : `w-full h-[52px] px-4 py-3 rounded-xl text-left flex items-center justify-between shadow-sm transition-none transform-none hover:shadow-none ${
               disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
             } ${
               error 
-                ? `border-2 !border-red-600 dark:!border-red-500 bg-slate-50 dark:bg-slate-700 focus:ring-red-500/60 ${error && isPulsing ? ERROR_MOTION_CLASS : ''}` 
+                ? `${ERROR_FIELD_BORDER_CLASS} bg-slate-50 dark:bg-slate-700 focus:ring-red-500/60 ${error && isPulsing ? ERROR_MOTION_CLASS : ''}` 
                 : SELECT_INPUT_BASE_CLASS
             }`
         }
@@ -454,10 +460,28 @@ const FilterDocentes = ({
 }) => {
   const [open, setOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isPulsing, setIsPulsing] = useState(false);
   const containerRef = useRef(null);
   const inputRef = useRef(null);
 
   const selectedDocente = docentes.find((d) => String(d.id) === String(value));
+
+  // Efecto rebote (shake) al detectar error
+  useEffect(() => {
+    if (!error) {
+      setIsPulsing(false);
+      return;
+    }
+
+    setIsPulsing(false);
+    const frameId = requestAnimationFrame(() => setIsPulsing(true));
+    const timeoutId = setTimeout(() => setIsPulsing(false), ERROR_SHAKE_DURATION_MS);
+
+    return () => {
+      cancelAnimationFrame(frameId);
+      clearTimeout(timeoutId);
+    };
+  }, [error]);
 
   useEffect(() => {
     if (selectedDocente) {
@@ -515,7 +539,7 @@ const FilterDocentes = ({
   };
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className={`relative ${error && isPulsing ? ERROR_MOTION_CLASS : ''}`}>
       {label && (
         <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
           {label}
@@ -528,7 +552,7 @@ const FilterDocentes = ({
           disabled
             ? `cursor-not-allowed opacity-60 ${SELECT_INPUT_BASE_CLASS}`
             : error
-              ? 'border-2 !border-red-600 dark:!border-red-500 bg-slate-50 dark:bg-slate-700'
+              ? `${ERROR_FIELD_BORDER_CLASS} bg-slate-50 dark:bg-slate-700`
               : SELECT_INPUT_BASE_CLASS
         }`}
       >
@@ -693,7 +717,7 @@ const FilterCarreras = ({
           disabled
             ? `cursor-not-allowed opacity-60 ${SELECT_INPUT_BASE_CLASS}`
             : error
-              ? 'border-2 !border-red-600 dark:!border-red-500 bg-slate-50 dark:bg-slate-700'
+              ? `${ERROR_FIELD_BORDER_CLASS} bg-slate-50 dark:bg-slate-700`
               : SELECT_INPUT_BASE_CLASS
         }`}
       >
@@ -994,6 +1018,7 @@ const SearchInput = ({ value, onChange, placeholder = 'Buscar por nombre o C.I..
 
 function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = true }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const restoringFormRef = useRef(false);
   const restoringEditModalRef = useRef(false);
   const restoringLinkRef = useRef(false);
@@ -1062,7 +1087,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
     }
     setLeftPanelPulsing(false);
     const frameId = requestAnimationFrame(() => setLeftPanelPulsing(true));
-    const timeoutId = setTimeout(() => setLeftPanelPulsing(false), 260);
+    const timeoutId = setTimeout(() => setLeftPanelPulsing(false), ERROR_SHAKE_DURATION_MS);
     return () => {
       cancelAnimationFrame(frameId);
       clearTimeout(timeoutId);
@@ -1081,7 +1106,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
     }
     setRightPanelPulsing(false);
     const frameId = requestAnimationFrame(() => setRightPanelPulsing(true));
-    const timeoutId = setTimeout(() => setRightPanelPulsing(false), 260);
+    const timeoutId = setTimeout(() => setRightPanelPulsing(false), ERROR_SHAKE_DURATION_MS);
     return () => {
       cancelAnimationFrame(frameId);
       clearTimeout(timeoutId);
@@ -1093,6 +1118,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
   const [showAddRoleTooltip, setShowAddRoleTooltip] = useState(false);
   const [abrirModalAlVolver, setAbrirModalAlVolver] = useState(false);
   const [vinculacionRapidaDocente, setVinculacionRapidaDocente] = useState(false);
+  const [volverANuevoDocente, setVolverANuevoDocente] = useState(false);
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [usuarioToDelete, setUsuarioToDelete] = useState(null);
@@ -1111,6 +1137,13 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
   useEffect(() => {
     cargarDatos();
   }, []);
+
+  useEffect(() => {
+    if (location?.state?.from !== 'docente') return;
+    setVolverANuevoDocente(true);
+    setIsCreating(true);
+    setUsuarioEditando(null);
+  }, [location?.state?.from]);
 
   useEffect(() => {
     if (restoringEditModalRef.current || usuarios.length === 0) return;
@@ -1407,7 +1440,7 @@ const initialData = {
 
     setIsAddRoleButtonPulsing(false);
     const frameId = requestAnimationFrame(() => setIsAddRoleButtonPulsing(true));
-    const timeoutId = setTimeout(() => setIsAddRoleButtonPulsing(false), 260);
+    const timeoutId = setTimeout(() => setIsAddRoleButtonPulsing(false), ERROR_SHAKE_DURATION_MS);
 
     return () => {
       cancelAnimationFrame(frameId);
@@ -1897,7 +1930,7 @@ const initialData = {
         setErrors((prev) => ({ ...prev, asignaciones: [resultado.mensaje] }));
         setRightPanelPulse((p) => p + 1);
         // Limpiar el marcador de fila conflictiva tras la animación
-        setTimeout(() => setFilaConflictoIndex(null), 260);
+        setTimeout(() => setFilaConflictoIndex(null), 300);
         return;
       }
     }
@@ -1925,8 +1958,22 @@ const initialData = {
     });
   };
 
+  // REGLA GLOBAL: limpia el error de un campo al recibir focus/clic.
+  const clearFieldError = (fieldName) => {
+    setErrors((prev) => {
+      if (!prev?.[fieldName]) return prev;
+      const next = { ...prev };
+      delete next[fieldName];
+      return next;
+    });
+  };
+
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    // REGLA GLOBAL: detener el comportamiento por defecto para evitar parpadeo/re-render.
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+      e.stopPropagation();
+    }
 
     const validationErrors = {};
     const camposFaltantes = [];
@@ -2119,13 +2166,21 @@ const initialData = {
     payload.ci = ciNormalizado;
 
     try {
-      await api.post('/usuarios/', payload);
+      const response = await api.post('/usuarios/', payload);
       toast.success('Usuario creado correctamente');
       setIsCreating(false);
       setAsignacionesExtra([]);
       setIndiceAsignacionActiva(0);
       sessionStorage.removeItem('docenteTemporalDesdeUsuarios');
       sessionStorage.removeItem('flujoDocenteDesdeUsuarios');
+      if (volverANuevoDocente) {
+        sessionStorage.setItem('abrirModalNuevoDocente', 'true');
+        if (response?.data?.id) {
+          sessionStorage.setItem('autoSeleccionarUsuarioDesdeGestion', JSON.stringify(response.data));
+        }
+        navigate('/fondo-tiempo/docentes');
+        return;
+      }
       cargarDatos();
     } catch (err) {
       console.error('Error al crear usuario:', err.response);
@@ -2144,8 +2199,8 @@ const initialData = {
           pulseFieldErrors(fieldsToPulse);
           setErrors(
             esErrorDeCargoPorCarrera
-              ? { ...apiErrors, rol: [backendMessage] }
-              : apiErrors
+              ? { ...sanitizeApiErrors(apiErrors), rol: [backendMessage] }
+              : sanitizeApiErrors(apiErrors)
           );
         }
         const ciMsg = Array.isArray(apiErrors?.ci)
@@ -2298,13 +2353,14 @@ const initialData = {
                   <div className="p-6 overflow-y-auto">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* Fila 1: Usuario - Nombre completo */}
-                    <InputField label="Usuario" name="username" value={formData.username || ''} onChange={handleChange} error={errors.username} required pulse={errorPulse.username || 0} />
+                    <InputField label="Usuario" name="username" value={formData.username || ''} onChange={handleChange} clearError={clearFieldError} error={errors.username} required pulse={errorPulse.username || 0} />
                     {mostrarNombreCompletoCreacion ? (
                       <InputField
                         label="Nombre completo"
                         name="nombre_completo"
                         value={formData.nombre_completo || ''}
                         onChange={handleChange}
+                        clearError={clearFieldError}
                         error={nombreCompletoError}
                         required
                         pulse={errorPulse.nombre_completo || errorPulse.first_name || errorPulse.last_name || 0}
@@ -2317,7 +2373,7 @@ const initialData = {
                     <div className="md:col-span-2">
                       <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-stretch">
                         {/* Panel izquierdo: Roles disponibles */}
-                        <div className={`rounded-2xl border-2 bg-white dark:bg-slate-800 flex flex-col transition-colors ${errors?.rol ? '!border-red-600 dark:!border-red-500' : 'border-slate-300 dark:border-slate-600'} ${leftPanelPulsing ? ERROR_MOTION_CLASS : ''}`}>
+                        <div className={`rounded-2xl border-2 bg-white dark:bg-slate-800 flex flex-col transition-colors ${errors?.rol ? `${ERROR_FIELD_BORDER_CLASS}` : 'border-slate-300 dark:border-slate-600'} ${leftPanelPulsing ? ERROR_MOTION_CLASS : ''}`}>
                           <div className="px-3 py-2 border-b border-slate-300 dark:border-slate-600 rounded-t-2xl">
                             <p className="text-xs font-bold text-slate-700 dark:text-slate-200 text-center uppercase tracking-wide">Roles disponibles</p>
                           </div>
@@ -2382,7 +2438,7 @@ const initialData = {
                         </div>
 
                         {/* Panel derecho: Roles asignados con menú extensible de Carrera */}
-                        <div className={`rounded-2xl border-2 bg-white dark:bg-slate-800 flex flex-col transition-colors ${(errors?.asignaciones || errors?.rol) ? '!border-red-600 dark:!border-red-500' : 'border-slate-300 dark:border-slate-600'} ${rightPanelPulsing ? ERROR_MOTION_CLASS : ''}`}>
+                        <div className={`rounded-2xl border-2 bg-white dark:bg-slate-800 flex flex-col transition-colors ${(errors?.asignaciones || errors?.rol) ? `${ERROR_FIELD_BORDER_CLASS}` : 'border-slate-300 dark:border-slate-600'} ${rightPanelPulsing ? ERROR_MOTION_CLASS : ''}`}>
                           <div className="px-3 py-2 border-b border-slate-300 dark:border-slate-600 rounded-t-2xl">
                             <p className="text-xs font-bold text-slate-700 dark:text-slate-200 text-center uppercase tracking-wide">Roles asignados</p>
                           </div>
@@ -2459,6 +2515,7 @@ const initialData = {
                       type="text"
                       value={formData.email || ''}
                       onChange={handleChange}
+                      clearError={clearFieldError}
                       error={errors.email}
                       required
                       pulse={errorPulse.email || 0}
@@ -2473,6 +2530,7 @@ const initialData = {
                         type="text"
                         value={formData.ci || ''}
                         onChange={handleChange}
+                        clearError={clearFieldError}
                         error={errors.ci}
                         pulse={errorPulse.ci || 0}
                       />
@@ -2494,17 +2552,23 @@ const initialData = {
                     onClick={() => {
                       setIsCreating(false);
                       setVinculacionRapidaDocente(false);
+                      if (volverANuevoDocente) {
+                        sessionStorage.setItem('abrirModalNuevoDocente', 'true');
+                        navigate('/fondo-tiempo/docentes');
+                      }
                     }}
                     className="px-6 py-2.5 rounded-xl font-semibold text-slate-700 dark:text-slate-200 bg-slate-200 dark:bg-slate-600 hover:bg-slate-300 dark:hover:bg-slate-500 transition-all"
                   >
-                    Cancelar
+                    {volverANuevoDocente ? 'Cancelar y volver' : 'Cancelar'}
                   </button>
                   <button
                     type="submit"
                     disabled={isSubmitting}
                     className="px-6 py-2.5 rounded-xl font-bold text-white bg-[#2C4AAE] hover:bg-[#1a3a8a] transition-all disabled:opacity-50"
                   >
-                    {isSubmitting ? 'Creando...' : 'Crear Usuario'}
+                    {isSubmitting
+                      ? (volverANuevoDocente ? 'Guardando y volviendo...' : 'Creando...')
+                      : (volverANuevoDocente ? 'Guardar y volver' : 'Crear Usuario')}
                   </button>
                 </div>
               </form>

@@ -5,23 +5,16 @@ import { FaChevronLeft, FaChevronRight, FaEdit, FaTrash, FaExclamationTriangle }
 import { getDocentes } from '../apis/api';
 import api from '../apis/api';
 import toast from 'react-hot-toast';
+import {
+  getBackendErrorMessage,
+  sanitizeApiErrors,
+  ERROR_SHAKE_DURATION_MS,
+} from '../utils/formErrors';
 
-const getBackendErrorMessage = (apiErrors, fallback = 'Ocurrió un error inesperado.') => {
-  if (!apiErrors) return fallback;
-
-  if (typeof apiErrors === 'string') {
-    return apiErrors.includes('<!DOCTYPE') ? fallback : apiErrors;
-  }
-
-  if (typeof apiErrors.error === 'string' && apiErrors.error.trim()) return apiErrors.error;
-  if (typeof apiErrors.detail === 'string' && apiErrors.detail.trim()) return apiErrors.detail;
-
-  const nested = Object.values(apiErrors)
-    .flatMap((value) => Array.isArray(value) ? value : [value])
-    .find((value) => typeof value === 'string' && value.trim() && !value.includes('<!DOCTYPE'));
-
-  return nested || fallback;
-};
+// Normaliza mensajes de error confusos del backend (ej: """" no es una elección válida.")
+// a un texto claro y humano para selects como Dedicación/Categoría.
+// Ahora usa las reglas globales de formErrors.js (sanitizeApiErrors).
+const normalizeErrors = (errs) => sanitizeApiErrors(errs);
 
 // ============================================================================
 // COMPONENTE INTERNO: FechaIngresoPicker (Calendario personalizado)
@@ -69,6 +62,7 @@ function FechaIngresoPicker({ value, onChange, error }) {
   const [open, setOpen] = useState(false);
   const [openQuickPicker, setOpenQuickPicker] = useState(null);
   const [inputValue, setInputValue] = useState(formatDisplayDate(value));
+  const [isPulsing, setIsPulsing] = useState(false);
   const [visibleMonth, setVisibleMonth] = useState(() => {
     const selectedDate = parseIsoDate(value);
     const today = new Date();
@@ -86,6 +80,14 @@ function FechaIngresoPicker({ value, onChange, error }) {
   React.useEffect(() => {
     setInputValue(formatDisplayDate(value));
   }, [value]);
+
+  React.useEffect(() => {
+    if (error) {
+      setIsPulsing(true);
+      const t = setTimeout(() => setIsPulsing(false), ERROR_SHAKE_DURATION_MS);
+      return () => clearTimeout(t);
+    }
+  }, [error]);
 
   React.useEffect(() => {
     const handleOutside = (event) => {
@@ -177,7 +179,7 @@ function FechaIngresoPicker({ value, onChange, error }) {
   return (
     <div ref={containerRef} className="relative">
       <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Fecha de Ingreso <span className="text-red-500">*</span></label>
-      <div className={`relative w-full rounded-xl border-2 bg-slate-50 dark:bg-slate-700 shadow-sm ${error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'} focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent`}>
+      <div className={`relative w-full rounded-xl border-2 bg-slate-50 dark:bg-slate-700 shadow-sm ${error ? '!border-red-600 dark:!border-red-500 ring-1 ring-inset ring-red-500/50' : 'border-slate-300 dark:border-slate-600'} focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent ${isPulsing ? 'animate-field-error-shake' : ''}`}>
         <input
           type="text"
           inputMode="numeric"
@@ -358,6 +360,15 @@ const SelectConDropdown = ({
   const containerRef = React.useRef(null);
   const menuRef = React.useRef(null);
   const [menuStyle, setMenuStyle] = useState(null);
+  const [isPulsing, setIsPulsing] = useState(false);
+
+  React.useEffect(() => {
+    if (error) {
+      setIsPulsing(true);
+      const t = setTimeout(() => setIsPulsing(false), ERROR_SHAKE_DURATION_MS);
+      return () => clearTimeout(t);
+    }
+  }, [error]);
 
   React.useEffect(() => {
     const handleOutside = (event) => {
@@ -417,7 +428,7 @@ const SelectConDropdown = ({
       </label>
       
       {/* Bot+�n principal */}
-      <div className={`relative w-full rounded-xl border-2 bg-slate-50 dark:bg-slate-700 shadow-sm ${disabled ? 'opacity-70' : ''} ${error ? 'border-red-500' : open ? 'border-[#3A56AF] dark:border-[#3A56AF]' : 'border-slate-300 dark:border-slate-600'} ${containerClassName}`}>
+      <div className={`relative w-full rounded-xl border-2 bg-slate-50 dark:bg-slate-700 shadow-sm ${disabled ? 'opacity-70' : ''} ${error ? '!border-red-600 dark:!border-red-500 ring-1 ring-inset ring-red-500/50' : open ? 'border-[#3A56AF] dark:border-[#3A56AF]' : 'border-slate-300 dark:border-slate-600'} ${containerClassName} ${isPulsing ? 'animate-field-error-shake' : ''}`}>
         <button
           type="button"
           onClick={() => {
@@ -498,7 +509,17 @@ const InputField = ({
   inputClassName = '',
   showLock = false,
   lockTooltip = '',
-}) => (
+}) => {
+  const [isPulsing, setIsPulsing] = useState(false);
+  useEffect(() => {
+    if (error) {
+      setIsPulsing(true);
+      const t = setTimeout(() => setIsPulsing(false), ERROR_SHAKE_DURATION_MS);
+      return () => clearTimeout(t);
+    }
+  }, [error]);
+
+  return (
   <div>
     <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
       <span className="inline-flex items-center gap-1.5">
@@ -517,11 +538,12 @@ const InputField = ({
       disabled={disabled}
       readOnly={readOnly}
       title={(disabled || readOnly) ? (lockTooltip || 'No editable') : undefined}
-      className={`w-full px-4 py-2.5 rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white italic focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md ${inputClassName} ${disabled ? 'cursor-not-allowed opacity-80' : ''} ${error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'}`}
+      className={`w-full px-4 py-2.5 rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white italic focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md ${inputClassName} ${disabled ? 'cursor-not-allowed opacity-80' : ''} ${error ? '!border-red-600 dark:!border-red-500 ring-1 ring-inset ring-red-500/50' : 'border-slate-300 dark:border-slate-600'} ${isPulsing ? 'animate-field-error-shake' : ''}`}
     />
     {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
   </div>
-);
+  );
+};
 
 const SimpleDropdown = ({ value, onChange, options, placeholder = 'Carreras', clearOnToggle = false }) => {
   const [open, setOpen] = useState(false);
@@ -874,11 +896,36 @@ function ListaDocentes({ sidebarCollapsed = false }) {
     };
   }, []);
   const [showAutocomplete, setShowAutocomplete] = useState(false);
+  const userSearchContainerRef = React.useRef(null);
+  const [isUserSearchPulsing, setIsUserSearchPulsing] = useState(false);
   const [userInfoShownBefore, setUserInfoShownBefore] = useState(false);
   const [confirmacionCambioPendiente, setConfirmacionCambioPendiente] = useState(null);
   const [infoEdicionIndex, setInfoEdicionIndex] = useState(0);
   const [infoEdicionDirection, setInfoEdicionDirection] = useState('right');
   const [confirmacionDesactivarDocente, setConfirmacionDesactivarDocente] = useState(null);
+
+  // Sacudida (shake) del campo "Buscar nombre o usuario" al detectar error (regla global)
+  useEffect(() => {
+    if (errors.user) {
+      setIsUserSearchPulsing(true);
+      const t = setTimeout(() => setIsUserSearchPulsing(false), ERROR_SHAKE_DURATION_MS);
+      return () => clearTimeout(t);
+    }
+  }, [errors.user]);
+
+  useEffect(() => {
+    const handleOutside = (event) => {
+      if (userSearchContainerRef.current && !userSearchContainerRef.current.contains(event.target)) {
+        setShowAutocomplete(false);
+      }
+    };
+
+    if (showAutocomplete) {
+      document.addEventListener('mousedown', handleOutside);
+    }
+
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [showAutocomplete]);
 
   // Efecto: cuando showUserInfo pasa a true POR PRIMERA VEZ, establecer userInfoKey para trigger animación
   useEffect(() => {
@@ -946,7 +993,53 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       setIsCreating(true);
       sessionStorage.removeItem('abrirModalDesdeUsuarios');
     }
-  }, []);
+
+    // Detectar si venimos desde "Gestión de Usuarios" (botón "Guardar y volver"
+    // o "Cancelar y volver" con from === 'docente'). Abrir el modal de Nuevo
+    // Docente automáticamente y, si hay un usuario recién creado, seleccionarlo.
+    const abrirModalNuevoDocente = sessionStorage.getItem('abrirModalNuevoDocente');
+    if (abrirModalNuevoDocente === 'true') {
+      const datosDocenteGuardados = sessionStorage.getItem('datosCrearDocente');
+      if (datosDocenteGuardados) {
+        try {
+          const datosDocente = JSON.parse(datosDocenteGuardados);
+          restoringCreateFormRef.current = true;
+          setFormData((prev) => ({
+            ...prev,
+            ...datosDocente,
+            nombre_completo: datosDocente.nombre_completo || buildNombreCompleto(
+              datosDocente.nombres,
+              datosDocente.apellido_paterno,
+              datosDocente.apellido_materno
+            ),
+          }));
+        } catch (e) {
+          console.error('Error al recuperar datos de docente desde usuarios:', e);
+        }
+      }
+      setIsCreating(true);
+      const usuarioCreadoRaw = sessionStorage.getItem('autoSeleccionarUsuarioDesdeGestion');
+      if (usuarioCreadoRaw) {
+        try {
+          const usuarioCreado = JSON.parse(usuarioCreadoRaw);
+          // Esperar a que los usuarios estén cargados para seleccionar
+          setTimeout(() => {
+            const usuarioEncontrado = usuarios.find(
+              (u) => String(u.id) === String(usuarioCreado.id)
+            ) || usuarioCreado;
+            if (usuarioEncontrado && typeof handleSeleccionUsuario === 'function') {
+              handleSeleccionUsuario(usuarioEncontrado);
+            }
+            sessionStorage.removeItem('autoSeleccionarUsuarioDesdeGestion');
+          }, 800);
+        } catch (e) {
+          console.error('Error al auto-seleccionar usuario desde gestión:', e);
+          sessionStorage.removeItem('autoSeleccionarUsuarioDesdeGestion');
+        }
+      }
+      sessionStorage.removeItem('abrirModalNuevoDocente');
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   React.useEffect(() => {
     if (showModal) {
@@ -1027,6 +1120,35 @@ function ListaDocentes({ sidebarCollapsed = false }) {
     }
   };
 
+  const handleCrearUsuarioDesdeNuevoDocente = () => {
+    const nombresSplit = splitNombreCompleto(formData.nombre_completo);
+    sessionStorage.setItem('datosCrearDocente', JSON.stringify({
+      ...formData,
+      nombres: formData.nombres || nombresSplit.nombres,
+      apellido_paterno: formData.apellido_paterno || nombresSplit.apellido_paterno,
+      apellido_materno: formData.apellido_materno || nombresSplit.apellido_materno,
+      nombre_completo: formData.nombre_completo,
+    }));
+    sessionStorage.setItem('datosCrearUsuario', JSON.stringify({
+      username: '',
+      email: formData.email || '',
+      nombre_completo: formData.nombre_completo || '',
+      first_name: formData.nombres || nombresSplit.nombres || '',
+      last_name: [
+        formData.apellido_paterno || nombresSplit.apellido_paterno || '',
+        formData.apellido_materno || nombresSplit.apellido_materno || '',
+      ].filter(Boolean).join(' '),
+      ci: formData.ci || '',
+      rol: 'docente',
+      carrera: formData.carrera || '',
+      docente: '',
+      docente_data: null,
+      password: '',
+      password_confirm: '',
+    }));
+    navigate('/usuarios', { state: { from: 'docente' } });
+  };
+
   const obtenerConfigConfirmacionCampo = (name, value) => {
     if (name === 'dedicacion') {
       const etiqueta = opcionesDedicacion.find((op) => String(op.value) === String(value))?.label || String(value || 'sin valor');
@@ -1053,6 +1175,13 @@ function ListaDocentes({ sidebarCollapsed = false }) {
   };
 
   const aplicarCambioFormulario = (name, value, type = 'text', checked = false) => {
+    // Limpiar el error del campo que se está editando (regla global de formularios)
+    setErrors((prev) => {
+      if (!prev[name]) return prev;
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
     setFormData(prev => {
       let nextValue = type === 'checkbox' ? checked : value;
       const newState = {
@@ -1180,8 +1309,42 @@ function ListaDocentes({ sidebarCollapsed = false }) {
     usuarioItem?.perfil?.docente_id || usuarioItem?.perfil?.docente
   );
 
+  const getNombreCarreraUsuario = (carreraValue) => {
+    if (!carreraValue) return '';
+    if (typeof carreraValue === 'object') {
+      return String(carreraValue.nombre || carreraValue.codigo || carreraValue.name || '').trim();
+    }
+    return carreras.find((carrera) => String(carrera.id) === String(carreraValue))?.nombre || String(carreraValue).trim();
+  };
+
+  const getCarrerasUsuario = (usuarioItem) => {
+    if (!usuarioItem) return [];
+
+    const nombresCarrera = [];
+    const carreraPrincipal = getNombreCarreraUsuario(usuarioItem?.perfil?.carrera);
+    if (carreraPrincipal) nombresCarrera.push(carreraPrincipal);
+
+    const asignaciones = Array.isArray(usuarioItem?.asignaciones) ? usuarioItem.asignaciones : [];
+    asignaciones.forEach((asignacion) => {
+      if (asignacion?.activo === false) return;
+      const carreraAsignacion = getNombreCarreraUsuario(
+        asignacion?.carrera || asignacion?.carrera_id || asignacion?.carrera_nombre || asignacion?.carrera_codigo
+      );
+      if (carreraAsignacion) nombresCarrera.push(carreraAsignacion);
+    });
+
+    return Array.from(new Set(nombresCarrera));
+  };
+
   const handleSeleccionUsuario = (usuarioItem) => {
     const usuarioTieneRolGestion = ['director', 'jefe_estudios', 'iiisyp'].some((rol) => usuarioTieneRol(usuarioItem, rol));
+    // Limpiar el error de selección de usuario al elegir uno (regla global)
+    setErrors((prev) => {
+      if (!prev.user) return prev;
+      const next = { ...prev };
+      delete next.user;
+      return next;
+    });
     setBuscarUsuario(`${usuarioItem.first_name || ''} ${usuarioItem.last_name || ''}`.trim());
     setFormData((prev) => ({
       ...prev,
@@ -1227,6 +1390,12 @@ function ListaDocentes({ sidebarCollapsed = false }) {
     });
   };
 
+  const getFechaCreacionUsuario = (usuarioItem) => {
+    const rawDate = usuarioItem?.created_at || usuarioItem?.date_joined || usuarioItem?.fecha_creacion || usuarioItem?.created;
+    const timestamp = rawDate ? new Date(rawDate).getTime() : NaN;
+    return Number.isNaN(timestamp) ? Number(usuarioItem?.id || 0) : timestamp;
+  };
+
   const usuariosAutocomplete = usuarios.filter((usuarioItem) => {
     const tieneRolDocente = usuarioTieneRol(usuarioItem, 'docente');
     const tienePerfilDocente = usuarioTienePerfilDocente(usuarioItem);
@@ -1239,7 +1408,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
     const correo = String(usuarioItem.email || '').toLowerCase();
     const username = String(usuarioItem.username || '').toLowerCase();
     return nombre.includes(query) || correo.includes(query) || username.includes(query);
-  }).slice(0, 8);
+  }).sort((a, b) => getFechaCreacionUsuario(b) - getFechaCreacionUsuario(a)).slice(0, 3);
 
   const usuarioSeleccionado = usuarios.find((usuarioItem) => String(usuarioItem.id) === String(formData.user || ''));
   const usuarioFormularioTieneRolGestion = ['director', 'jefe_estudios', 'iiisyp'].some((rol) =>
@@ -1257,7 +1426,10 @@ function ListaDocentes({ sidebarCollapsed = false }) {
   ].filter((opcion) => (
     !usuarioFormularioTieneRolGestion || !['tiempo_completo', 'medio_tiempo'].includes(opcion.value)
   ));
-  const carreraSeleccionadaNombre = carreras.find((carrera) => String(carrera.id) === String(formData.carrera || ''))?.nombre || '';
+  const carrerasUsuarioSeleccionado = getCarrerasUsuario(usuarioSeleccionado);
+  const carreraSeleccionadaNombre = carrerasUsuarioSeleccionado.length > 0
+    ? carrerasUsuarioSeleccionado.join('\n')
+    : carreras.find((carrera) => String(carrera.id) === String(formData.carrera || ''))?.nombre || '';
   const mensajeIncompatibilidadGestion = 'Los cargos de gestión solo son compatibles con docencia a Tiempo Horario';
   const mensajesInfoEdicion = [
     {
@@ -1291,6 +1463,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
 
   const handleCreateSubmit = async (e) => {
     e.preventDefault();
+    e.stopPropagation();
     console.log('Iniciando submit...', formData);
     setIsSubmitting(true);
     setErrors({});
@@ -1395,7 +1568,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       console.error('Response status:', err.response?.status);
       const apiErrors = err.response?.data;
       if (apiErrors) {
-        setErrors(apiErrors);
+        setErrors(normalizeErrors(apiErrors));
         toast.error(getBackendErrorMessage(apiErrors, 'Error al crear docente'));
       } else {
         toast.error('Error al crear docente: ' + (err.message || 'Error desconocido'));
@@ -1474,7 +1647,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       console.error(err);
       const apiErrors = err.response?.data;
       if (apiErrors) {
-        setErrors(apiErrors);
+        setErrors(normalizeErrors(apiErrors));
         toast.error(getBackendErrorMessage(apiErrors, 'Error al actualizar docente'));
       } else {
         toast.error('Error al actualizar: ' + (err.message || 'Error desconocido'));
@@ -1658,10 +1831,21 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                     <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
                       Buscar nombre o usuario
                     </label>
-                    <div className="relative space-y-2 overflow-visible">
+                    <div ref={userSearchContainerRef} className="relative overflow-visible">
                       <input
                         type="text"
                         value={buscarUsuario}
+                        onFocus={() => {
+                          // Limpiar el error del campo de inmediato al recibir foco (regla global)
+                          if (errors.user) {
+                            setErrors((prev) => {
+                              const next = { ...prev };
+                              delete next.user;
+                              return next;
+                            });
+                            setIsUserSearchPulsing(false);
+                          }
+                        }}
                         onMouseDown={(e) => {
                           // Comportamiento por pasos: si ya hay un usuario seleccionado,
                           // el primer click activa el modo de búsqueda sin borrar el texto;
@@ -1691,8 +1875,8 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                         }}
                         placeholder="Buscar por nombre, correo o usuario..."
                         className={`w-full px-4 py-3 rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white ${
-                          errors.user ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'
-                        }`}
+                          errors.user ? '!border-red-600 dark:!border-red-500 ring-1 ring-inset ring-red-500/50' : 'border-slate-300 dark:border-slate-600'
+                        } ${isUserSearchPulsing ? 'animate-field-error-shake' : ''}`}
                       />
                       {showAutocomplete && buscarUsuario !== null && (
                         <>
@@ -1708,16 +1892,27 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                                 <div className="font-semibold text-slate-800 dark:text-white">
                                   {`${usuarioItem.first_name || ''} ${usuarioItem.last_name || ''}`.trim() || usuarioItem.username}
                                 </div>
-                                <div className="text-xs text-slate-500 dark:text-slate-400">
-                                  {usuarioItem.email || 'Sin correo'} · @{usuarioItem.username}
-                                </div>
                               </button>
                             ))}
                           </div>
                         </>
                       )}
                     </div>
-                    {errors.user && <p className="text-xs text-red-600 mt-1">{Array.isArray(errors.user) ? errors.user[0] : errors.user}</p>}
+                    <div className="flex items-center justify-between mt-1">
+                      <p className="text-xs text-slate-600 dark:text-slate-400">
+                        ¿No encuentras al usuario?{' '}
+                        <button
+                          type="button"
+                          onClick={handleCrearUsuarioDesdeNuevoDocente}
+                          className="text-blue-600 dark:text-blue-400 font-semibold hover:underline"
+                        >
+                          Crea uno nuevo
+                        </button>
+                      </p>
+                      {errors.user && (
+                        <p className="text-xs text-red-600">{Array.isArray(errors.user) ? errors.user[0] : errors.user}</p>
+                      )}
+                    </div>
                   </div>
 
                   <div className="md:col-span-2">
@@ -1741,14 +1936,14 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                             disabled
                             inputClassName="text-sm"
                           />
-                          <InputField
-                            label="Carrera"
-                            name="carrera_info"
-                            value={carreraSeleccionadaNombre}
-                            onChange={() => {}}
-                            disabled
-                            inputClassName="text-sm"
-                          />
+                          <div>
+                            <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
+                              Carrera
+                            </label>
+                            <div className="w-full min-h-[46px] whitespace-pre-line px-4 py-2.5 rounded-xl border-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-sm italic text-slate-800 dark:text-white shadow-sm cursor-not-allowed opacity-80">
+                              {carreraSeleccionadaNombre}
+                            </div>
+                          </div>
                           <InputField
                             label="C.I."
                             name="ci_info"
@@ -1788,7 +1983,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                     ]}
                     error={errors.categoria}
                   />
-                  <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-[minmax(0,380px)_1fr] gap-4 items-start">
+                  <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-[minmax(0,267px)_1fr] gap-4 items-start">
                     <div>
                     <InputField
                       label="Horas Semanales"
@@ -1796,6 +1991,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                       value={horasSemanalesDerivadas}
                       onChange={() => {}}
                       disabled
+                      inputClassName="max-w-[267px]"
                     />
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
                         {formData.dedicacion === 'horario_16' && 'Este docente trabaja 16 horas al mes (4 horas por semana).'}
