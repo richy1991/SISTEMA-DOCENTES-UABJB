@@ -4,12 +4,21 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import api from '../../apis/api';
 import toast from 'react-hot-toast';
 import { AnimatePresence, motion } from 'framer-motion';
+import {
+  ERROR_FIELD_BORDER_CLASS,
+  getBackendErrorMessage,
+  getErrorMessage,
+  sanitizeApiErrors,
+  useErrorPulse,
+} from '../../utils/formErrors';
 
 // Componente selector de semestre (1-10) con ruleta vertical
-const SemesterPicker = ({ value, onChange, error }) => {
+const SemesterPicker = ({ value, onChange, error, onClearError, errorPulse = 0 }) => {
   const [open, setOpen] = useState(false);
   const [draftSemester, setDraftSemester] = useState(Number(value || 1));
   const [pickerOpenToken, setPickerOpenToken] = useState(0);
+  const { motionClass } = useErrorPulse(error, errorPulse);
+  const errorMessage = getErrorMessage(error);
 
   const minSemester = 1;
   const maxSemester = 10;
@@ -28,6 +37,7 @@ const SemesterPicker = ({ value, onChange, error }) => {
   };
 
   const openSemesterSelector = () => {
+    onClearError?.();
     setDraftSemester(Number(value || 1));
     setPickerOpenToken((prev) => prev + 1);
     setOpen(true);
@@ -43,13 +53,14 @@ const SemesterPicker = ({ value, onChange, error }) => {
         <button
           type="button"
           onClick={openSemesterSelector}
+          aria-invalid={Boolean(errorMessage)}
           className={`w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-left flex items-center justify-between transition-all ${
-            error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600 hover:border-[#3D6DE0]/70'
+            errorMessage ? `${ERROR_FIELD_BORDER_CLASS} ${motionClass}` : 'border-2 border-slate-300 dark:border-slate-600 hover:border-[#3D6DE0]/70'
           }`}
         >
           <span className="font-semibold">{draftSemester || 'Seleccione...'}</span>
         </button>
-        {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+        {errorMessage && <p className={`text-xs text-red-600 dark:text-red-400 mt-1 ${motionClass}`}>{errorMessage}</p>}
       </div>
 
       <AnimatePresence>
@@ -393,12 +404,17 @@ const VerticalSemesterWheelPicker = ({
 };
 
 // Componente Input numérico con botones personalizados
-const NumberInput = ({ label, name, value, onChange, required, error }) => {
+const NumberInput = ({ label, name, value, onChange, required, error, onClearError, errorPulse = 0 }) => {
+  const { motionClass } = useErrorPulse(error, errorPulse);
+  const errorMessage = getErrorMessage(error);
+
   const handleIncrement = () => {
+    onClearError?.();
     onChange({ target: { name, value: String(Number(value || 0) + 1) } });
   };
 
   const handleDecrement = () => {
+    onClearError?.();
     const newValue = Math.max(0, Number(value || 0) - 1);
     onChange({ target: { name, value: String(newValue) } });
   };
@@ -415,11 +431,13 @@ const NumberInput = ({ label, name, value, onChange, required, error }) => {
           name={name}
           value={value}
           onChange={onChange}
+          onFocus={onClearError}
           min="0"
           max="12"
           required={required}
+          aria-invalid={Boolean(errorMessage)}
           className={`w-20 px-2 py-3 text-center rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${
-            error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'
+            errorMessage ? `${ERROR_FIELD_BORDER_CLASS} ${motionClass}` : 'border-slate-300 dark:border-slate-600'
           } [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
         />
 
@@ -450,27 +468,34 @@ const NumberInput = ({ label, name, value, onChange, required, error }) => {
           </button>
         </div>
       </div>
-      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+      {errorMessage && <p className={`text-xs text-red-600 dark:text-red-400 mt-1 ${motionClass}`}>{errorMessage}</p>}
     </div>
   );
 };
 
-const InputField = ({ label, name, type = 'text', value, onChange, required, error }) => (
-  <div>
-        <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label} {required && <span className="text-red-500">*</span>}</label>
-    <input
-      type={type}
-      name={name}
-      value={value}
-      onChange={onChange}
-      required={required}
-            className={`w-full px-4 py-3 rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md ${
-        error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'
-      } [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
-    />
-        {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
-  </div>
-);
+const InputField = ({ label, name, type = 'text', value, onChange, required, error, onClearError, errorPulse = 0 }) => {
+  const { motionClass } = useErrorPulse(error, errorPulse);
+  const errorMessage = getErrorMessage(error);
+
+  return (
+    <div>
+      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label} {required && <span className="text-red-500">*</span>}</label>
+      <input
+        type={type}
+        name={name}
+        value={value}
+        onChange={onChange}
+        onFocus={onClearError}
+        required={required}
+        aria-invalid={Boolean(errorMessage)}
+        className={`w-full px-4 py-3 rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md ${
+          errorMessage ? `${ERROR_FIELD_BORDER_CLASS} ${motionClass}` : 'border-slate-300 dark:border-slate-600'
+        } [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
+      />
+      {errorMessage && <p className={`text-xs text-red-600 dark:text-red-400 mt-1 ${motionClass}`}>{errorMessage}</p>}
+    </div>
+  );
+};
 
 const ChevronDown = ({ open = false }) => (
     <div className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center">
@@ -493,6 +518,8 @@ const CustomSelect = ({
     onChange,
     placeholder,
     error,
+    onClearError,
+    errorPulse = 0,
     disabled = false,
     emptyText = 'Sin opciones disponibles',
     menuMaxHeight = 'max-h-56',
@@ -500,6 +527,8 @@ const CustomSelect = ({
     const [open, setOpen] = useState(false);
     const containerRef = useRef(null);
     const selected = options.find((opt) => opt.value?.toString() === value?.toString());
+    const { motionClass } = useErrorPulse(error, errorPulse);
+    const errorMessage = getErrorMessage(error);
 
     useEffect(() => {
         const handleClickOutside = (event) => {
@@ -522,6 +551,7 @@ const CustomSelect = ({
     }, []);
 
     const handlePick = (newValue) => {
+        onClearError?.();
         onChange(newValue);
         setOpen(false);
     };
@@ -530,15 +560,20 @@ const CustomSelect = ({
         <div ref={containerRef} className="relative">
             <button
                 type="button"
-                onClick={() => !disabled && setOpen((prev) => !prev)}
+                onClick={() => {
+                    if (disabled) return;
+                    onClearError?.();
+                    setOpen((prev) => !prev);
+                }}
                 disabled={disabled}
+                aria-invalid={Boolean(errorMessage)}
                 className={`w-full text-left pl-3.5 pr-10 py-2.5 rounded-xl border bg-white dark:bg-slate-800 text-sm shadow-sm transition-all ${
                     disabled
                         ? 'border-slate-300/80 dark:border-slate-700 text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-70'
                         : open
                             ? 'border-[#263F8A] dark:border-[#3A56AF] ring-2 ring-[#263F8A]/35 dark:ring-[#3A56AF]/35 text-slate-900 dark:text-slate-100'
-                            : error
-                                ? 'border-red-500 text-slate-800 dark:text-slate-100'
+                            : errorMessage
+                                ? `${ERROR_FIELD_BORDER_CLASS} ${motionClass} text-slate-800 dark:text-slate-100`
                                 : 'border-[#263F8A]/45 dark:border-[#3A56AF]/60 hover:border-[#263F8A]/75 dark:hover:border-[#4B67C0] text-slate-800 dark:text-slate-100'
                 }`}
             >
@@ -591,6 +626,7 @@ const MateriaForm = ({ sidebarCollapsed = false }) => {
         horas_practicas: 0,
     });
     const [errors, setErrors] = useState({});
+    const [errorPulse, setErrorPulse] = useState(0);
 
     const carreraOptions = (carreras || []).map((c) => ({
         value: String(c.id),
@@ -603,7 +639,7 @@ const MateriaForm = ({ sidebarCollapsed = false }) => {
 
         const userData = JSON.parse(localStorage.getItem('user') || '{}');
         // iiisyp es solo lectura: no puede acceder al form de gestion de materias
-        const esAdmin = userData?.is_superuser || userData?.perfil?.rol === 'director';
+        const esAdmin = userData?.is_superuser || ['director', 'jefe_estudios'].includes(userData?.perfil?.rol);
 
         if (!esAdmin) {
             toast.error("No tienes permisos para gestionar materias");
@@ -652,8 +688,23 @@ const MateriaForm = ({ sidebarCollapsed = false }) => {
         }
     }, [id, location.search, navigate]);
 
+    const clearFieldError = (fieldName) => {
+        setErrors(prev => {
+            if (!prev?.[fieldName]) return prev;
+            const next = { ...prev };
+            delete next[fieldName];
+            return next;
+        });
+    };
+
+    const applyErrors = (nextErrors) => {
+        setErrors(nextErrors);
+        setErrorPulse(prev => prev + 1);
+    };
+
     const handleChange = (e) => {
         const { name, value } = e.target;
+        clearFieldError(name);
         setFormData(prev => ({
             ...prev,
             [name]: value
@@ -661,6 +712,7 @@ const MateriaForm = ({ sidebarCollapsed = false }) => {
     };
 
     const handleSelectChange = (fieldName, value) => {
+        clearFieldError(fieldName);
         setFormData(prev => ({
             ...prev,
             [fieldName]: value
@@ -672,51 +724,45 @@ const MateriaForm = ({ sidebarCollapsed = false }) => {
         setLoading(true);
         setErrors({});
 
+        const clientErrors = {};
+        if (!String(formData.nombre || '').trim()) {
+            clientErrors.nombre = 'El nombre de la materia es obligatorio.';
+        }
+        if (!String(formData.sigla || '').trim()) {
+            clientErrors.sigla = 'La sigla de la materia es obligatoria.';
+        }
+        if (!String(formData.carrera || '').trim()) {
+            clientErrors.carrera = 'Debe seleccionar una carrera.';
+        }
+
         // Validaciones de horas
         const horasTeoricas = Number(formData.horas_teoricas) || 0;
         const horasPracticas = Number(formData.horas_practicas) || 0;
         const horasTotales = horasTeoricas + horasPracticas;
-
-        // Validar semestre
         const semestreValue = Number(formData.semestre);
+
         if (!formData.semestre || isNaN(semestreValue) || semestreValue < 1 || semestreValue > 10) {
-            setErrors({
-                semestre: 'Introduzca un número entero válido entre 1 y 10'
-            });
-            toast.error('Semestre inválido: Debe seleccionar un semestre entre 1 y 10');
-            setLoading(false);
-            return;
+            clientErrors.semestre = 'Introduzca un numero entero valido entre 1 y 10.';
+        }
+        if (horasTeoricas < 0) {
+            clientErrors.horas_teoricas = 'Las horas no pueden ser negativas.';
+        }
+        if (horasPracticas < 0) {
+            clientErrors.horas_practicas = 'Las horas no pueden ser negativas.';
         }
 
-        // Validar mínimo de horas
-        if (horasTotales < 2) {
-            setErrors({
-                horas_teoricas: 'La suma de horas teóricas y prácticas debe ser mínimo 2 horas',
-                horas_practicas: 'La suma de horas teóricas y prácticas debe ser mínimo 2 horas'
-            });
-            toast.error('Horas insuficientes: La materia debe tener al menos 2 horas semanales en total');
-            setLoading(false);
-            return;
+        if (!clientErrors.horas_teoricas && !clientErrors.horas_practicas && horasTotales < 2) {
+            clientErrors.horas_teoricas = 'La suma de horas teoricas y practicas debe ser minimo 2 horas.';
+            clientErrors.horas_practicas = 'La suma de horas teoricas y practicas debe ser minimo 2 horas.';
         }
-
-        // Validar máximo de horas
         if (horasTotales > 12) {
-            setErrors({
-                horas_teoricas: 'La suma de horas teóricas y prácticas no puede exceder 12 horas',
-                horas_practicas: 'La suma de horas teóricas y prácticas no puede exceder 12 horas'
-            });
-            toast.error('Horas excedidas: La materia no puede tener más de 12 horas semanales en total');
-            setLoading(false);
-            return;
+            clientErrors.horas_teoricas = 'La suma de horas teoricas y practicas no puede exceder 12 horas.';
+            clientErrors.horas_practicas = 'La suma de horas teoricas y practicas no puede exceder 12 horas.';
         }
 
-        // Validar números negativos
-        if (horasTeoricas < 0 || horasPracticas < 0) {
-            setErrors({
-                horas_teoricas: horasTeoricas < 0 ? 'Las horas no pueden ser negativas' : '',
-                horas_practicas: horasPracticas < 0 ? 'Las horas no pueden ser negativas' : ''
-            });
-            toast.error('Valores inválidos: Las horas no pueden ser negativas');
+        if (Object.keys(clientErrors).length > 0) {
+            applyErrors(clientErrors);
+            toast.error(getBackendErrorMessage(clientErrors, 'Revise los campos marcados en rojo.'));
             setLoading(false);
             return;
         }
@@ -743,15 +789,8 @@ const MateriaForm = ({ sidebarCollapsed = false }) => {
             const statusCode = err.response?.status;
             const apiErrors = err.response?.data;
             if (apiErrors) {
-                setErrors(apiErrors);
-                Object.keys(apiErrors).forEach(key => {
-                    const msg = Array.isArray(apiErrors[key]) ? apiErrors[key].join(' ') : apiErrors[key];
-                    if (key === 'non_field_errors') {
-                        toast.error(msg);
-                    } else {
-                        toast.error(`Error en ${key}: ${msg}`);
-                    }
-                });
+                applyErrors(sanitizeApiErrors(apiErrors));
+                toast.error(getBackendErrorMessage(apiErrors, 'No se pudo guardar la materia.'));
                 if (statusCode === 400) {
                     return;
                 }
@@ -776,14 +815,14 @@ const MateriaForm = ({ sidebarCollapsed = false }) => {
                         </h1>
                     </div>
 
-                    <form onSubmit={handleSubmit} className="p-5 md:p-6 space-y-6">
+                    <form onSubmit={handleSubmit} noValidate className="p-5 md:p-6 space-y-6">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                             <div className="md:col-span-2 rounded-xl border border-[#3D6DE0]/30 dark:border-[#4B67C0]/40 bg-gradient-to-r from-white/60 via-[#3D6DE0]/5 to-cyan-400/10 dark:from-slate-800/55 dark:to-cyan-900/20 p-4 shadow-sm">
-                                <InputField label="Nombre de la Materia" name="nombre" value={formData.nombre} onChange={handleChange} required error={errors.nombre} />
+                                <InputField label="Nombre de la Materia" name="nombre" value={formData.nombre} onChange={handleChange} onClearError={() => clearFieldError('nombre')} required error={errors.nombre} errorPulse={errorPulse} />
                             </div>
 
                             <div>
-                                <InputField label="Sigla" name="sigla" value={formData.sigla} onChange={handleChange} required error={errors.sigla} />
+                                <InputField label="Sigla" name="sigla" value={formData.sigla} onChange={handleChange} onClearError={() => clearFieldError('sigla')} required error={errors.sigla} errorPulse={errorPulse} />
                             </div>
 
                             <div>
@@ -794,8 +833,10 @@ const MateriaForm = ({ sidebarCollapsed = false }) => {
                                     onChange={(value) => handleSelectChange('carrera', value)}
                                     placeholder="Seleccione una carrera"
                                     error={errors.carrera}
+                                    onClearError={() => clearFieldError('carrera')}
+                                    errorPulse={errorPulse}
                                 />
-                                {errors.carrera && <p className="text-xs text-red-600 mt-1">{errors.carrera}</p>}
+                                {errors.carrera && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{getErrorMessage(errors.carrera)}</p>}
                             </div>
 
                             <div className="grid grid-cols-3 gap-3">
@@ -803,6 +844,8 @@ const MateriaForm = ({ sidebarCollapsed = false }) => {
                                 value={formData.semestre}
                                 onChange={handleChange}
                                 error={errors.semestre}
+                                onClearError={() => clearFieldError('semestre')}
+                                errorPulse={errorPulse}
                               />
                               <NumberInput
                                 label="Horas T."
@@ -811,6 +854,8 @@ const MateriaForm = ({ sidebarCollapsed = false }) => {
                                 onChange={handleChange}
                                 required
                                 error={errors.horas_teoricas}
+                                onClearError={() => clearFieldError('horas_teoricas')}
+                                errorPulse={errorPulse}
                               />
                               <NumberInput
                                 label="Horas P."
@@ -819,6 +864,8 @@ const MateriaForm = ({ sidebarCollapsed = false }) => {
                                 onChange={handleChange}
                                 required
                                 error={errors.horas_practicas}
+                                onClearError={() => clearFieldError('horas_practicas')}
+                                errorPulse={errorPulse}
                               />
                             </div>
                             <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">

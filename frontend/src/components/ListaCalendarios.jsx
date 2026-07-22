@@ -3,6 +3,12 @@ import { FaEdit, FaTrash } from 'react-icons/fa';
 import api from '../apis/api';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
+import {
+  ERROR_FIELD_BORDER_CLASS,
+  getErrorMessage,
+  sanitizeApiErrors,
+  useErrorPulse,
+} from '../utils/formErrors';
 
 const PauseIcon = (props) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
@@ -34,38 +40,48 @@ const ToggleSwitch = ({ isActive, onChange }) => (
   </button>
 );
 
-const SegmentedOptions = ({ options, value, onChange, className = '' }) => (
-  <div
-    className={`grid gap-1.5 rounded-2xl p-1.5 bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 shadow-sm ${className}`}
-  >
-    {options.map((opt) => {
-      const isActive = String(opt.value) === String(value);
-      return (
-        <button
-          key={opt.value}
-          type="button"
-          onClick={() => onChange(opt.value)}
-          className="relative h-14 md:h-12 w-full rounded-xl overflow-hidden"
-        >
-          {isActive && (
-            <motion.span
-              layoutId="period-segment-pill"
-              className="absolute inset-0 rounded-xl border border-[#4A55F0] bg-[#4654E8] shadow-[0_8px_20px_rgba(70,84,232,0.35)]"
-              transition={{ type: 'spring', stiffness: 420, damping: 34, mass: 0.7 }}
-            />
-          )}
-          <span
-            className={`relative z-10 px-2 text-sm md:text-base font-semibold leading-tight transition-colors duration-200 ${
-              isActive ? 'text-white' : 'text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-            }`}
+const SegmentedOptions = ({ options, value, onChange, className = '', error, errorPulse = 0, onClearError }) => {
+  const errorMessage = getErrorMessage(error);
+  const { motionClass } = useErrorPulse(errorMessage, errorPulse);
+
+  return (
+    <div
+      className={`grid gap-1.5 rounded-2xl p-1.5 bg-slate-200 dark:bg-slate-800 shadow-sm ${
+        errorMessage ? `${ERROR_FIELD_BORDER_CLASS} ${motionClass}` : 'border border-slate-300 dark:border-slate-700'
+      } ${className}`}
+    >
+      {options.map((opt) => {
+        const isActive = String(opt.value) === String(value);
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => {
+              onClearError?.();
+              onChange(opt.value);
+            }}
+            className="relative h-14 md:h-12 w-full rounded-xl overflow-hidden"
           >
-            {opt.label}
-          </span>
-        </button>
-      );
-    })}
-  </div>
-);
+            {isActive && (
+              <motion.span
+                layoutId="period-segment-pill"
+                className="absolute inset-0 rounded-xl border border-[#4A55F0] bg-[#4654E8] shadow-[0_8px_20px_rgba(70,84,232,0.35)]"
+                transition={{ type: 'spring', stiffness: 420, damping: 34, mass: 0.7 }}
+              />
+            )}
+            <span
+              className={`relative z-10 px-2 text-sm md:text-base font-semibold leading-tight transition-colors duration-200 ${
+                isActive ? 'text-white' : 'text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              {opt.label}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+};
 
 const YearWheelItem = ({ year, distance, itemHeight, onCenterClick }) => {
   const isCenter = Math.abs(distance) < 0.35;
@@ -454,7 +470,7 @@ const VerticalYearWheelPicker = ({
   );
 };
 
-const YearPickerField = ({ value, onChange, currentYear }) => {
+const YearPickerField = ({ value, onChange, currentYear, error, errorPulse = 0, onClearError }) => {
   const [open, setOpen] = useState(false);
   const [manualMode, setManualMode] = useState(false);
   const [manualYear, setManualYear] = useState(String(value || currentYear));
@@ -467,6 +483,8 @@ const YearPickerField = ({ value, onChange, currentYear }) => {
   const longPressTimerRef = useRef(null);
   const popupValidationTimerRef = useRef(null);
   const popupTypingTimerRef = useRef(null);
+  const errorMessage = getErrorMessage(error);
+  const { motionClass } = useErrorPulse(errorMessage, errorPulse);
 
   useEffect(() => {
     if (!open) {
@@ -529,6 +547,7 @@ const YearPickerField = ({ value, onChange, currentYear }) => {
   };
 
   const openYearSelector = () => {
+    onClearError?.();
     if (popupValidationTimerRef.current) clearTimeout(popupValidationTimerRef.current);
     if (popupTypingTimerRef.current) clearTimeout(popupTypingTimerRef.current);
     setDraftYear(actualCurrentYear);
@@ -553,7 +572,9 @@ const YearPickerField = ({ value, onChange, currentYear }) => {
           onMouseDown={startLongPress}
           onMouseUp={clearLongPress}
           onMouseLeave={clearLongPress}
-          className="w-full px-4 py-3 rounded-xl border border-[#3D6DE0]/35 dark:border-[#4B67C0]/45 bg-white/80 dark:bg-slate-800/75 text-slate-800 dark:text-slate-100 text-left flex items-center justify-between hover:border-[#3D6DE0]/70 transition-all"
+          className={`w-full px-4 py-3 rounded-xl bg-white/80 dark:bg-slate-800/75 text-slate-800 dark:text-slate-100 text-left flex items-center justify-between hover:border-[#3D6DE0]/70 transition-all ${
+            errorMessage ? `${ERROR_FIELD_BORDER_CLASS} ${motionClass}` : 'border border-[#3D6DE0]/35 dark:border-[#4B67C0]/45'
+          }`}
           title="Click para abrir ruleta. Doble click o click prolongado para escribir."
         >
           <span className="font-semibold">{draftYear}</span>
@@ -566,13 +587,19 @@ const YearPickerField = ({ value, onChange, currentYear }) => {
           inputMode="numeric"
           pattern="[0-9]*"
           value={manualYear}
-          onChange={(e) => setManualYear(e.target.value)}
+          onChange={(e) => {
+            onClearError?.();
+            setManualYear(e.target.value);
+          }}
+          onFocus={onClearError}
           onBlur={commitManualYear}
           onKeyDown={(e) => {
             if (e.key === 'Enter') commitManualYear();
             if (e.key === 'Escape') setManualMode(false);
           }}
-          className="w-full px-4 py-3 rounded-xl border border-[#3D6DE0]/45 dark:border-[#4B67C0]/55 bg-white/85 dark:bg-slate-800/80 text-slate-900 dark:text-slate-100 text-center font-semibold focus:outline-none focus:ring-2 focus:ring-[#3D6DE0]/35"
+          className={`w-full px-4 py-3 rounded-xl bg-white/85 dark:bg-slate-800/80 text-slate-900 dark:text-slate-100 text-center font-semibold focus:outline-none focus:ring-2 focus:ring-[#3D6DE0]/35 ${
+            errorMessage ? `${ERROR_FIELD_BORDER_CLASS} ${motionClass}` : 'border border-[#3D6DE0]/45 dark:border-[#4B67C0]/55'
+          }`}
         />
       )}
 
@@ -765,23 +792,47 @@ const CustomSelect = ({
   );
 };
 
-const InputField = ({ label, name, type = 'text', value, onChange, required, error, ...props }) => (
-  <div>
-    <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label} {required && <span className="text-red-500">*</span>}</label>
-    <input
-      type={type}
-      name={name}
-      value={value}
-      onChange={onChange}
-      required={required}
-      className={`w-full px-4 py-2.5 rounded-xl border-2 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md ${error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'}`}
-      {...props}
-    />
-    {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
-  </div>
-);
+const InputField = ({
+  label,
+  name,
+  type = 'text',
+  value,
+  onChange,
+  required,
+  error,
+  errorPulse = 0,
+  onClearError,
+  ...props
+}) => {
+  const errorMessage = getErrorMessage(error);
+  const { motionClass } = useErrorPulse(errorMessage, errorPulse);
 
-const DatePickerField = ({ label, name, value, onDateChange, required, error, minDate, invalidSelectionMessage, onInvalidSelection, showErrorText = true, onFieldInteraction }) => {
+  return (
+    <div>
+      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label} {required && <span className="text-red-500">*</span>}</label>
+      <input
+        type={type}
+        name={name}
+        value={value}
+        onChange={(event) => {
+          onClearError?.();
+          onChange?.(event);
+        }}
+        onFocus={onClearError}
+        onClick={onClearError}
+        required={required}
+        aria-invalid={Boolean(errorMessage)}
+        className={`w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md ${
+          errorMessage ? `${ERROR_FIELD_BORDER_CLASS} ${motionClass}` : 'border-2 border-slate-300 dark:border-slate-600'
+        }`}
+        {...props}
+      />
+      {errorMessage && <p className={`text-xs text-red-600 dark:text-red-400 mt-1 ${motionClass}`}>{errorMessage}</p>}
+    </div>
+  );
+};
+
+const DatePickerField = ({ label, name, value, onDateChange, required, error, errorPulse = 0, minDate, invalidSelectionMessage, onInvalidSelection, showErrorText = true, onFieldInteraction, onClearError }) => {
   const [open, setOpen] = useState(false);
   const [openQuickPicker, setOpenQuickPicker] = useState(null);
   const [draftDay, setDraftDay] = useState(null);
@@ -792,6 +843,8 @@ const DatePickerField = ({ label, name, value, onDateChange, required, error, mi
   const containerRef = useRef(null);
   const yearMenuRef = useRef(null);
   const currentYearOptionRef = useRef(null);
+  const errorMessage = getErrorMessage(error);
+  const { motionClass } = useErrorPulse(errorMessage, errorPulse);
 
   const parseIsoDate = (iso) => {
     if (!iso || typeof iso !== 'string') return null;
@@ -1019,6 +1072,7 @@ const DatePickerField = ({ label, name, value, onDateChange, required, error, mi
   };
 
   const handleManualInputChange = (e) => {
+    onClearError?.();
     const rawValue = e.target.value;
     const onlyDigits = rawValue.replace(/\D/g, '').slice(0, 8);
 
@@ -1080,7 +1134,9 @@ const DatePickerField = ({ label, name, value, onDateChange, required, error, mi
   return (
     <div ref={containerRef} className="relative">
       <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label} {required && <span className="text-red-500">*</span>}</label>
-      <div className={`relative w-full rounded-xl border-2 bg-slate-50 dark:bg-slate-700 shadow-sm ${error ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'} focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent`}>
+      <div className={`relative w-full rounded-xl bg-slate-50 dark:bg-slate-700 shadow-sm ${
+        errorMessage ? `${ERROR_FIELD_BORDER_CLASS} ${motionClass}` : 'border-2 border-slate-300 dark:border-slate-600'
+      } focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent`}>
         <input
           type="text"
           inputMode="numeric"
@@ -1088,13 +1144,19 @@ const DatePickerField = ({ label, name, value, onDateChange, required, error, mi
           value={inputValue}
           onChange={handleManualInputChange}
           onBlur={handleManualInputBlur}
-          onClick={() => onFieldInteraction?.()}
+          onFocus={onClearError}
+          onClick={() => {
+            onClearError?.();
+            onFieldInteraction?.();
+          }}
           className="w-full bg-transparent text-slate-800 dark:text-white px-4 py-2.5 pr-12 rounded-xl focus:outline-none"
           aria-label={label}
+          aria-invalid={Boolean(errorMessage)}
         />
         <button
           type="button"
           onClick={() => {
+            onClearError?.();
             onFieldInteraction?.();
             setOpen((prev) => !prev);
           }}
@@ -1307,7 +1369,7 @@ const DatePickerField = ({ label, name, value, onDateChange, required, error, mi
         </div>
       )}
 
-      {error && showErrorText && <p className="text-xs text-red-600 mt-1">{error}</p>}
+      {errorMessage && showErrorText && <p className={`text-xs text-red-600 dark:text-red-400 mt-1 ${motionClass}`}>{errorMessage}</p>}
     </div>
   );
 };
@@ -1343,6 +1405,7 @@ function ListaCalendarios() {
   const [formData, setFormData] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
+  const [errorPulse, setErrorPulse] = useState(0);
 
   const periodoOptions = [
     { value: '1', label: 'Primer Semestre' },
@@ -1362,6 +1425,20 @@ function ListaCalendarios() {
     semanas_efectivas: 16,
     activo: false,
   });
+
+  const applyErrors = (nextErrors) => {
+    setErrors(nextErrors);
+    setErrorPulse((prev) => prev + 1);
+  };
+
+  const clearFieldError = (fieldName) => {
+    setErrors((prev) => {
+      if (!prev[fieldName]) return prev;
+      const next = { ...prev };
+      delete next[fieldName];
+      return next;
+    });
+  };
 
   const parseDateValue = (rawValue) => {
     if (!rawValue || typeof rawValue !== 'string') return null;
@@ -1474,6 +1551,23 @@ function ListaCalendarios() {
   const isProjectRangeInvalid = Boolean(projectStartOutOfRange || projectEndOutOfRange);
   const isEditingActiveCalendar = Boolean(calendarioSeleccionado?.activo);
   const isCriticalProjectRangeConflict = Boolean(isEditingActiveCalendar && isProjectRangeInvalid);
+  const semanasCalendario = (
+    fechaInicioDate
+    && fechaFinDate
+    && fechaFinDate.getTime() >= fechaInicioDate.getTime()
+  )
+    ? (fechaFinDate.getTime() - fechaInicioDate.getTime()) / (1000 * 60 * 60 * 24 * 7)
+    : null;
+  const semanasCalendarioDisplay = semanasCalendario === null
+    ? ''
+    : (Number.isInteger(semanasCalendario) ? String(semanasCalendario) : semanasCalendario.toFixed(2));
+  const semanasEfectivasValue = Number(formData.semanas_efectivas);
+  const semanasEfectivasExcedenCalendario = Boolean(
+    semanasCalendario !== null
+    && Number.isFinite(semanasEfectivasValue)
+    && semanasEfectivasValue > semanasCalendario
+  );
+  const semanasEfectivasErrorMessage = 'Las semanas efectivas no pueden exceder las semanas calendario del periodo.';
   const isFormReady = Boolean(
     formData.gestion
     && formData.periodo
@@ -1485,28 +1579,11 @@ function ListaCalendarios() {
     && formData.semanas_efectivas !== null
     && formData.semanas_efectivas !== undefined
     && !isDateRangeInvalid
+    && !semanasEfectivasExcedenCalendario
     && !isProjectRangeInvalid
     && !isProjectOrderInvalid
   );
-  const isSaveBlocked = Boolean(isSubmitting || !isFormReady || isProjectOrderInvalid);
-
-  useEffect(() => {
-    const startDate = parseDateValue(formData.fecha_inicio);
-    const endDate = parseDateValue(formData.fecha_fin);
-    if (!startDate || !endDate) return;
-
-    const startMs = startDate.getTime();
-    const endMs = endDate.getTime();
-    if (Number.isNaN(startMs) || Number.isNaN(endMs) || endMs < startMs) return;
-
-    const autoWeeks = Math.ceil((endMs - startMs) / (1000 * 60 * 60 * 24 * 7));
-
-    setFormData((prev) => {
-      const currentWeeks = Number(prev.semanas_efectivas);
-      if (currentWeeks === autoWeeks) return prev;
-      return { ...prev, semanas_efectivas: autoWeeks };
-    });
-  }, [formData.fecha_inicio, formData.fecha_fin]);
+  const isSaveBlocked = Boolean(isSubmitting);
 
   useEffect(() => {
     cargarCalendarios();
@@ -1544,6 +1621,7 @@ function ListaCalendarios() {
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
+    clearFieldError(name);
     setFormData(prev => ({
       ...prev,
       [name]: type === 'checkbox' ? checked : value
@@ -1551,14 +1629,20 @@ function ListaCalendarios() {
   };
 
   const handlePeriodoChange = (periodo) => {
+    clearFieldError('periodo');
     setFormData((prev) => ({ ...prev, periodo }));
   };
 
   const handleGestionChange = (gestion) => {
+    clearFieldError('gestion');
     setFormData((prev) => ({ ...prev, gestion }));
   };
 
   const handleDateFieldChange = (name, isoDate, options = {}) => {
+    clearFieldError(name);
+    if (name === 'fecha_inicio' || name === 'fecha_fin') {
+      clearFieldError('semanas_efectivas');
+    }
     const { skipRangeToast = false } = options;
     const normalized = isoDate
       ? (() => {
@@ -1683,23 +1767,44 @@ function ListaCalendarios() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    const requiredErrors = {};
+    if (!formData.gestion) requiredErrors.gestion = 'Este campo es obligatorio.';
+    if (!formData.periodo) requiredErrors.periodo = 'Este campo es obligatorio.';
+    if (!formData.fecha_inicio) requiredErrors.fecha_inicio = 'Este campo es obligatorio.';
+    if (!formData.fecha_fin) requiredErrors.fecha_fin = 'Este campo es obligatorio.';
+    if (!formData.fecha_inicio_presentacion_proyectos) requiredErrors.fecha_inicio_presentacion_proyectos = 'Este campo es obligatorio.';
+    if (!formData.fecha_limite_presentacion_proyectos) requiredErrors.fecha_limite_presentacion_proyectos = 'Este campo es obligatorio.';
+    if (
+      formData.semanas_efectivas === ''
+      || formData.semanas_efectivas === null
+      || formData.semanas_efectivas === undefined
+    ) {
+      requiredErrors.semanas_efectivas = 'Este campo es obligatorio.';
+    }
+
+    if (Object.keys(requiredErrors).length > 0) {
+      applyErrors(requiredErrors);
+      toast.error('Completa los campos obligatorios.');
+      return;
+    }
+
     if (isProjectOrderInvalid) {
       toast.error('Error: El cierre de proyectos no puede ser antes de la apertura');
-      setErrors((prev) => ({
-        ...prev,
+      applyErrors({
+        ...errors,
         fecha_inicio_presentacion_proyectos: projectOrderErrorMessage,
         fecha_limite_presentacion_proyectos: projectOrderErrorMessage,
-      }));
+      });
       return;
     }
 
     if (isCriticalProjectRangeConflict) {
       toast.error(criticalProjectRangeMessage);
-      setErrors((prev) => ({
-        ...prev,
+      applyErrors({
+        ...errors,
         fecha_inicio_presentacion_proyectos: criticalProjectRangeMessage,
         fecha_limite_presentacion_proyectos: criticalProjectRangeMessage,
-      }));
+      });
       return;
     }
 
@@ -1708,11 +1813,20 @@ function ListaCalendarios() {
     }
 
     if (isDateRangeInvalid) {
-      setErrors((prev) => ({
-        ...prev,
+      applyErrors({
+        ...errors,
         fecha_inicio: endDateErrorMessage,
         fecha_fin: endDateErrorMessage,
-      }));
+      });
+      return;
+    }
+
+    if (semanasEfectivasExcedenCalendario) {
+      applyErrors({
+        ...errors,
+        semanas_efectivas: semanasEfectivasErrorMessage,
+      });
+      toast.error(semanasEfectivasErrorMessage);
       return;
     }
 
@@ -1734,7 +1848,7 @@ function ListaCalendarios() {
 
     if (duplicateExists) {
       const duplicateMsg = 'Ya existe un calendario para este periodo';
-      setErrors((prev) => ({ ...prev, gestion: duplicateMsg, periodo: duplicateMsg }));
+      applyErrors({ ...errors, gestion: duplicateMsg, periodo: duplicateMsg });
       toast.error(duplicateMsg);
       setIsSubmitting(false);
       return;
@@ -1762,15 +1876,15 @@ function ListaCalendarios() {
           const duplicateText = validationMessage.toLowerCase();
           if (duplicateText.includes('unique') || duplicateText.includes('already exists') || duplicateText.includes('ya existe')) {
             const duplicateMsg = 'Ya existe un calendario para este periodo';
-            setErrors((prev) => ({ ...prev, gestion: duplicateMsg, periodo: duplicateMsg }));
+            applyErrors({ ...errors, gestion: duplicateMsg, periodo: duplicateMsg });
             toast.error(`ERROR DE VALIDACIÓN: ${duplicateMsg}`);
             return;
           }
 
           if (apiErrors?.details && typeof apiErrors.details === 'object') {
-            setErrors(apiErrors.details);
+            applyErrors(sanitizeApiErrors(apiErrors.details));
           } else if (typeof apiErrors === 'object') {
-            setErrors(apiErrors);
+            applyErrors(sanitizeApiErrors(apiErrors));
           }
 
           toast.error(`ERROR DE VALIDACIÓN: ${validationMessage}`);
@@ -2006,7 +2120,7 @@ function ListaCalendarios() {
                 {calendarioSeleccionado ? '✏️ Editar Calendario' : '➕ Nuevo Calendario'}
               </h3>
             </div>
-            <form onSubmit={handleSubmit} className="p-5 md:p-6">
+            <form onSubmit={handleSubmit} noValidate className="p-5 md:p-6">
               {isEditingActiveCalendar && (
                 <div className="mb-4 rounded-xl border border-red-700/70 bg-red-200/70 dark:bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-900 dark:text-red-200">
                   {activeCalendarEditWarning}
@@ -2020,8 +2134,11 @@ function ListaCalendarios() {
                     value={Number(formData.gestion || currentYear)}
                     onChange={handleGestionChange}
                     currentYear={currentYear}
+                    error={errors.gestion}
+                    errorPulse={errorPulse}
+                    onClearError={() => clearFieldError('gestion')}
                   />
-                  {errors.gestion && <p className="text-xs text-red-600 mt-1">{errors.gestion}</p>}
+                  {errors.gestion && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{getErrorMessage(errors.gestion)}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Periodo</label>
@@ -2030,8 +2147,11 @@ function ListaCalendarios() {
                     value={formData.periodo}
                     onChange={handlePeriodoChange}
                     className="grid-cols-3"
+                    error={errors.periodo}
+                    errorPulse={errorPulse}
+                    onClearError={() => clearFieldError('periodo')}
                   />
-                  {errors.periodo && <p className="text-xs text-red-600 mt-1">{errors.periodo}</p>}
+                  {errors.periodo && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{getErrorMessage(errors.periodo)}</p>}
                 </div>
 
                 <div className="md:col-span-2 rounded-xl border border-[#3D6DE0]/30 dark:border-[#4B67C0]/40 bg-gradient-to-r from-white/60 via-[#3D6DE0]/5 to-cyan-400/10 dark:from-slate-800/55 dark:to-cyan-900/20 p-4 shadow-sm hover:shadow-md transition-all duration-200">
@@ -2044,6 +2164,8 @@ function ListaCalendarios() {
                       onDateChange={handleDateFieldChange}
                       required
                       error={errors.fecha_inicio || (isDateRangeInvalid ? endDateErrorMessage : '')}
+                      errorPulse={errorPulse}
+                      onClearError={() => clearFieldError('fecha_inicio')}
                     />
                     <DatePickerField
                       label="Fecha de Fin"
@@ -2061,6 +2183,8 @@ function ListaCalendarios() {
                       }}
                       required
                       error={errors.fecha_fin || (isDateRangeInvalid ? endDateErrorMessage : '')}
+                      errorPulse={errorPulse}
+                      onClearError={() => clearFieldError('fecha_fin')}
                     />
                   </div>
                 </div>
@@ -2084,7 +2208,9 @@ function ListaCalendarios() {
                   onDateChange={handleDateFieldChange}
                   required
                   error={errors.fecha_inicio_presentacion_proyectos || (isProjectOrderInvalid ? projectOrderErrorMessage : '') || (projectStartOutOfRange ? projectRangeWarning : '')}
+                  errorPulse={errorPulse}
                   onFieldInteraction={() => notifyProjectRangeIfInvalid('fecha_inicio_presentacion_proyectos')}
+                  onClearError={() => clearFieldError('fecha_inicio_presentacion_proyectos')}
                 />
                 <DatePickerField
                   label="Límite Presentación Proyectos"
@@ -2093,9 +2219,39 @@ function ListaCalendarios() {
                   onDateChange={handleDateFieldChange}
                   required
                   error={errors.fecha_limite_presentacion_proyectos || (isProjectOrderInvalid ? projectOrderErrorMessage : '') || (projectEndOutOfRange ? projectRangeWarning : '')}
+                  errorPulse={errorPulse}
                   onFieldInteraction={() => notifyProjectRangeIfInvalid('fecha_limite_presentacion_proyectos')}
+                  onClearError={() => clearFieldError('fecha_limite_presentacion_proyectos')}
                 />
-                <InputField label="Semanas Efectivas" name="semanas_efectivas" type="number" value={formData.semanas_efectivas} onChange={handleChange} required error={errors.semanas_efectivas} />
+                <div>
+                  <InputField
+                    label="Semanas Calendario"
+                    name="semanas_calendario"
+                    type="number"
+                    value={semanasCalendarioDisplay}
+                    onChange={() => {}}
+                    readOnly
+                  />
+                  <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
+                    Total de semanas del periodo (calculado)
+                  </p>
+                </div>
+                <div>
+                  <InputField
+                    label="Semanas Efectivas"
+                    name="semanas_efectivas"
+                    type="number"
+                    value={formData.semanas_efectivas}
+                    onChange={handleChange}
+                    required
+                    error={errors.semanas_efectivas || (semanasEfectivasExcedenCalendario ? semanasEfectivasErrorMessage : '')}
+                    errorPulse={errorPulse}
+                    onClearError={() => clearFieldError('semanas_efectivas')}
+                  />
+                  <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
+                    Semanas de clases efectivas (16 por defecto, editable)
+                  </p>
+                </div>
                 <div className="mt-1 bg-white/70 dark:bg-slate-800/60 rounded-xl p-3 border border-[#3D6DE0]/25 dark:border-[#4B67C0]/40 md:self-end">
                   <div className="flex items-center gap-3">
                     <ToggleSwitch

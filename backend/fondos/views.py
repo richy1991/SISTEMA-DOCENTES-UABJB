@@ -737,6 +737,9 @@ class MateriaViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         if self._usuario_carrera_inactiva():
             raise PermissionDenied('Acceso bloqueado: tu carrera está inactiva.')
+        carrera = serializer.validated_data.get('carrera')
+        if carrera and not carrera.activo:
+            raise PermissionDenied('No se puede crear una materia en una carrera inactiva.')
         serializer.save()
 
     def update(self, request, *args, **kwargs):
@@ -868,9 +871,9 @@ class CalendarioAcademicoViewSet(viewsets.ModelViewSet):
     ordering = ['-gestion', '-periodo']
     
     def get_permissions(self):
-        """Solo admins pueden crear, editar y eliminar calendarios"""
+        """Superusuario, Director y Jefe de Estudios pueden gestionar calendarios."""
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsFullAdmin()]
+            return [IsAdminOrDirector()]
         return [IsAuthenticated()]
 
     def _build_dependency_counts(self, calendario):

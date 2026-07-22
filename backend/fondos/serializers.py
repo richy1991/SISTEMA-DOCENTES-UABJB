@@ -1,3 +1,5 @@
+import re
+
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -1122,8 +1124,12 @@ class MateriaSerializer(serializers.ModelSerializer):
         if sigla_normalizada and len(sigla_normalizada) < 2:
             errors = {'sigla': 'La sigla de la materia debe tener al menos 2 caracteres.'}
             raise serializers.ValidationError(errors)
+        if sigla_normalizada and not re.fullmatch(r'[A-Z]{3}-[A-Z]{3}-[OE]\d{5}', sigla_normalizada):
+            errors = {'sigla': 'La sigla debe seguir el formato XXX-XXX-[oe]XXXXX. Ej: CIS-ALG-o11101.'}
+            raise serializers.ValidationError(errors)
         horas_teoricas = attrs.get('horas_teoricas', getattr(instance, 'horas_teoricas', 0))
         horas_practicas = attrs.get('horas_practicas', getattr(instance, 'horas_practicas', 0))
+        semestre = attrs.get('semestre', getattr(instance, 'semestre', None))
 
         errors = {}
 
@@ -1133,13 +1139,18 @@ class MateriaSerializer(serializers.ModelSerializer):
         if horas_practicas is None or horas_practicas < 0:
             errors['horas_practicas'] = 'Las horas prácticas deben ser positivas o cero.'
 
+        if semestre is None or semestre < 1 or semestre > 10:
+            errors['semestre'] = 'El semestre debe estar entre 1 y 10.'
+
         total_horas_semana = (horas_teoricas or 0) + (horas_practicas or 0)
-        if total_horas_semana <= 0:
-            errors['non_field_errors'] = ['La materia debe tener al menos una carga horaria positiva.']
+        if total_horas_semana < 2:
+            errors['non_field_errors'] = ['La suma de horas teoricas y practicas debe ser minimo 2 horas semanales.']
+        elif total_horas_semana > 12:
+            errors['non_field_errors'] = ['La suma de horas teoricas y practicas no puede exceder 12 horas semanales.']
 
         # Relación reglamentaria usada en el sistema para materia semestral.
         horas_periodo_20_semanas = total_horas_semana * 20
-        if horas_periodo_20_semanas <= 0:
+        if horas_periodo_20_semanas <= 0 and 'non_field_errors' not in errors:
             errors['non_field_errors'] = ['La relación con 20 semanas debe resultar en horas mayores a cero.']
 
         if sigla_normalizada:
@@ -2348,11 +2359,31 @@ class CalendarioAcademicoSerializer(serializers.ModelSerializer):
             'fecha_limite_presentacion_proyectos',
             getattr(instance, 'fecha_limite_presentacion_proyectos', None)
         )
+        semanas_efectivas = attrs.get('semanas_efectivas', getattr(instance, 'semanas_efectivas', None))
 
         if fecha_inicio and fecha_fin and fecha_fin < fecha_inicio:
             raise serializers.ValidationError({
                 'fecha_fin': 'La fecha de finalización no puede ser anterior a la de inicio.'
             })
+
+        if fecha_inicio and fecha_fin:
+            calendarios_solapados = CalendarioAcademico.objects.filter(
+                fecha_inicio__lte=fecha_fin,
+                fecha_fin__gte=fecha_inicio,
+            )
+            if instance:
+                calendarios_solapados = calendarios_solapados.exclude(pk=instance.pk)
+            if calendarios_solapados.exists():
+                raise serializers.ValidationError({
+                    'non_field_errors': ['Las fechas se solapan con otro calendario academico existente.']
+                })
+
+            if semanas_efectivas is not None:
+                semanas_reales = (fecha_fin - fecha_inicio).days / 7
+                if abs(float(semanas_efectivas) - semanas_reales) > 2:
+                    raise serializers.ValidationError({
+                        'semanas_efectivas': 'Las semanas efectivas no son coherentes con el rango de fechas seleccionado (margen máximo de 2 semanas)'
+                    })
 
         if fecha_inicio_proy and fecha_fin_proy and fecha_fin_proy <= fecha_inicio_proy:
             raise serializers.ValidationError({

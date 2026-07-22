@@ -317,7 +317,7 @@ function App() {
               {/* Rutas de Administración (Integradas en el Sidebar) */}
               <Route path="docentes" element={<AnimatedRoute><ListaDocentes isDark={isDark} sidebarCollapsed={sidebarCollapsed} /></AnimatedRoute>} />
               <Route path="calendarios" element={<AnimatedRoute><ListaCalendarios /></AnimatedRoute>} />
-              <Route path="materias" element={<AnimatedRoute><MateriaList isDark={isDark} sidebarCollapsed={sidebarCollapsed} /></AnimatedRoute>}>
+              <Route path="materias" element={<MateriaList isDark={isDark} sidebarCollapsed={sidebarCollapsed} />}>
                 <Route path="nueva" element={<MateriaForm sidebarCollapsed={sidebarCollapsed} />} />
                 <Route path="editar/:id" element={<MateriaForm sidebarCollapsed={sidebarCollapsed} />} />
               </Route>
