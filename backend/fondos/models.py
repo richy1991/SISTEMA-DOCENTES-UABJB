@@ -121,6 +121,7 @@ class Docente(models.Model):
         ('horario_24', 'Horario 24hrs/mes'),
         ('horario_40', 'Horario 40hrs/mes'),
         ('horario_48', 'Horario 48hrs/mes'),
+        ('dedicacion_exclusiva', 'Dedicacion Exclusiva'),
     ]
 
     user = models.OneToOneField(
@@ -234,6 +235,11 @@ class DocenteCarrera(models.Model):
     cada uno con su propia categoría y dedicación.
     """
 
+    CONDICION_CHOICES = [
+        ('titular', 'Titular'),
+        ('invitado', 'Invitado'),
+    ]
+
     docente = models.ForeignKey(
         Docente,
         on_delete=models.CASCADE,
@@ -248,6 +254,7 @@ class DocenteCarrera(models.Model):
     # === Datos específicos del vínculo con esta carrera ===
     categoria = models.CharField(max_length=20, choices=Docente.CATEGORIA_CHOICES)
     dedicacion = models.CharField(max_length=20, choices=Docente.DEDICACION_CHOICES)
+    condicion = models.CharField(max_length=10, choices=CONDICION_CHOICES, default='titular', blank=False)
     activo = models.BooleanField(default=True)
 
     fecha_creacion = models.DateTimeField(auto_now_add=True)
@@ -618,6 +625,21 @@ class CalendarioAcademico(models.Model):
     semanas_efectivas = models.IntegerField(
         default=16,
         help_text="Número de semanas efectivas del periodo"
+    )
+    fecha_limite_programas_analiticos = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Fecha limite para presentar programas analiticos"
+    )
+    fecha_inicio_receso = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Inicio del receso academico"
+    )
+    fecha_fin_receso = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Fin del receso academico"
     )
     activo = models.BooleanField(
         default=False,
@@ -1074,13 +1096,13 @@ class CategoriaFuncion(models.Model):
     """Categorías de funciones sustantivas"""
     
     TIPO_CHOICES = [
-        ('docente', 'Docente'),
+        ('academica', 'Académica'),
         ('investigacion', 'Investigación'),
-        ('extension', 'Extensión e Interacción Social'),
-        ('asesorias', 'Asesorías y Tutorías'),
-        ('tribunales', 'Tribunales'),
-        ('administrativo', 'Administrativo'),
-        ('vida_universitaria', 'Vida Universitaria'),
+        ('extension_universitaria', 'Extensión universitaria'),
+        ('interaccion_social', 'Interacción social'),
+        ('gestion', 'Gestión'),
+        ('academica_administrativa', 'Académica-administrativa'),
+        ('social_cultural_deportiva', 'Social, cultural, deportiva y Otros'),
     ]
     
     fondo_tiempo = models.ForeignKey(FondoTiempo, on_delete=models.CASCADE, related_name='categorias')

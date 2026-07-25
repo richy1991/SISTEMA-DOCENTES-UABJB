@@ -809,7 +809,7 @@ const InputField = ({
 
   return (
     <div>
-      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label} {required && <span className="text-red-500">*</span>}</label>
+      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label} {errorMessage && <span className="text-red-500">*</span>}</label>
       <input
         type={type}
         name={name}
@@ -1133,7 +1133,7 @@ const DatePickerField = ({ label, name, value, onDateChange, required, error, er
 
   return (
     <div ref={containerRef} className="relative">
-      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label} {required && <span className="text-red-500">*</span>}</label>
+      <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">{label} {errorMessage && <span className="text-red-500">*</span>}</label>
       <div className={`relative w-full rounded-xl bg-slate-50 dark:bg-slate-700 shadow-sm ${
         errorMessage ? `${ERROR_FIELD_BORDER_CLASS} ${motionClass}` : 'border-2 border-slate-300 dark:border-slate-600'
       } focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent`}>
@@ -1422,7 +1422,10 @@ function ListaCalendarios() {
     fecha_fin: '',
     fecha_inicio_presentacion_proyectos: '',
     fecha_limite_presentacion_proyectos: '',
-    semanas_efectivas: 16,
+    fecha_limite_programas_analiticos: '',
+    fecha_inicio_receso: '',
+    fecha_fin_receso: '',
+    semanas_efectivas: '',
     activo: false,
   });
 
@@ -1556,11 +1559,14 @@ function ListaCalendarios() {
     && fechaFinDate
     && fechaFinDate.getTime() >= fechaInicioDate.getTime()
   )
-    ? (fechaFinDate.getTime() - fechaInicioDate.getTime()) / (1000 * 60 * 60 * 24 * 7)
+    ? Math.round((fechaFinDate.getTime() - fechaInicioDate.getTime()) / (1000 * 60 * 60 * 24 * 7))
     : null;
   const semanasCalendarioDisplay = semanasCalendario === null
     ? ''
-    : (Number.isInteger(semanasCalendario) ? String(semanasCalendario) : semanasCalendario.toFixed(2));
+    : String(semanasCalendario);
+  const semanasEfectivasCalculadas = semanasCalendario === null
+    ? ''
+    : String(semanasCalendario <= 18 ? 16 : semanasCalendario - 2);
   const semanasEfectivasValue = Number(formData.semanas_efectivas);
   const semanasEfectivasExcedenCalendario = Boolean(
     semanasCalendario !== null
@@ -1584,6 +1590,13 @@ function ListaCalendarios() {
     && !isProjectOrderInvalid
   );
   const isSaveBlocked = Boolean(isSubmitting);
+
+  useEffect(() => {
+    setFormData((prev) => {
+      if (prev.semanas_efectivas === semanasEfectivasCalculadas) return prev;
+      return { ...prev, semanas_efectivas: semanasEfectivasCalculadas };
+    });
+  }, [semanasEfectivasCalculadas]);
 
   useEffect(() => {
     cargarCalendarios();
@@ -1612,6 +1625,9 @@ function ListaCalendarios() {
       fecha_fin: calendario.fecha_fin,
       fecha_inicio_presentacion_proyectos: calendario.fecha_inicio_presentacion_proyectos,
       fecha_limite_presentacion_proyectos: calendario.fecha_limite_presentacion_proyectos,
+      fecha_limite_programas_analiticos: calendario.fecha_limite_programas_analiticos || '',
+      fecha_inicio_receso: calendario.fecha_inicio_receso || '',
+      fecha_fin_receso: calendario.fecha_fin_receso || '',
       semanas_efectivas: calendario.semanas_efectivas,
       activo: calendario.activo,
     } : buildInitialFormData());
@@ -1622,9 +1638,12 @@ function ListaCalendarios() {
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     clearFieldError(name);
+    const nextValue = name === 'semanas_efectivas' && value !== ''
+      ? Math.round(Number(value))
+      : value;
     setFormData(prev => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : value
+      [name]: type === 'checkbox' ? checked : nextValue
     }));
   };
 
@@ -1808,10 +1827,6 @@ function ListaCalendarios() {
       return;
     }
 
-    if (!isFormReady) {
-      toast.error('Revisa los errores en las fechas antes de continuar');
-    }
-
     if (isDateRangeInvalid) {
       applyErrors({
         ...errors,
@@ -1838,7 +1853,14 @@ function ListaCalendarios() {
     setIsSubmitting(true);
     setErrors({});
     
-    const payload = { ...formData, gestion: parseInt(formData.gestion), semanas_efectivas: parseInt(formData.semanas_efectivas) };
+    const payload = {
+      ...formData,
+      gestion: parseInt(formData.gestion),
+      semanas_efectivas: parseInt(formData.semanas_efectivas),
+      fecha_limite_programas_analiticos: formData.fecha_limite_programas_analiticos || null,
+      fecha_inicio_receso: formData.fecha_inicio_receso || null,
+      fecha_fin_receso: formData.fecha_fin_receso || null,
+    };
 
     const duplicateExists = calendarios.some((cal) => (
       Number(cal.gestion) === Number(payload.gestion)
@@ -2223,6 +2245,33 @@ function ListaCalendarios() {
                   onFieldInteraction={() => notifyProjectRangeIfInvalid('fecha_limite_presentacion_proyectos')}
                   onClearError={() => clearFieldError('fecha_limite_presentacion_proyectos')}
                 />
+                <DatePickerField
+                  label="Fecha limite programas analiticos"
+                  name="fecha_limite_programas_analiticos"
+                  value={formData.fecha_limite_programas_analiticos}
+                  onDateChange={handleDateFieldChange}
+                  error={errors.fecha_limite_programas_analiticos}
+                  errorPulse={errorPulse}
+                  onClearError={() => clearFieldError('fecha_limite_programas_analiticos')}
+                />
+                <DatePickerField
+                  label="Inicio receso academico"
+                  name="fecha_inicio_receso"
+                  value={formData.fecha_inicio_receso}
+                  onDateChange={handleDateFieldChange}
+                  error={errors.fecha_inicio_receso}
+                  errorPulse={errorPulse}
+                  onClearError={() => clearFieldError('fecha_inicio_receso')}
+                />
+                <DatePickerField
+                  label="Fin receso academico"
+                  name="fecha_fin_receso"
+                  value={formData.fecha_fin_receso}
+                  onDateChange={handleDateFieldChange}
+                  error={errors.fecha_fin_receso}
+                  errorPulse={errorPulse}
+                  onClearError={() => clearFieldError('fecha_fin_receso')}
+                />
                 <div>
                   <InputField
                     label="Semanas Calendario"
@@ -2241,16 +2290,20 @@ function ListaCalendarios() {
                     label="Semanas Efectivas"
                     name="semanas_efectivas"
                     type="number"
+                    step="1"
                     value={formData.semanas_efectivas}
                     onChange={handleChange}
                     required
                     error={errors.semanas_efectivas || (semanasEfectivasExcedenCalendario ? semanasEfectivasErrorMessage : '')}
                     errorPulse={errorPulse}
                     onClearError={() => clearFieldError('semanas_efectivas')}
+                    readOnly
                   />
-                  <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                    Semanas de clases efectivas (16 por defecto, editable)
-                  </p>
+                  {!errors.semanas_efectivas && !semanasEfectivasExcedenCalendario && (
+                    <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
+                      Semanas efectivas calculadas automaticamente desde el rango de fechas
+                    </p>
+                  )}
                 </div>
                 <div className="mt-1 bg-white/70 dark:bg-slate-800/60 rounded-xl p-3 border border-[#3D6DE0]/25 dark:border-[#4B67C0]/40 md:self-end">
                   <div className="flex items-center gap-3">

@@ -155,7 +155,7 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
     const [allMaterias, setAllMaterias] = useState([]);
     const [semestresDisponibles, setSemestresDisponibles] = useState([]);
     const [formData, setFormData] = useState({
-        categoria: 'docente',
+        categoria: 'academica',
         titulo_actividad: '',
         horas: '',
         documento_respaldo: ''
@@ -164,13 +164,13 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
     const isReadOnly = Boolean(readOnly);
 
     const CATEGORIA_OPCIONES = [
-        { value: 'docente', label: 'Docencia' },
+        { value: 'academica', label: 'Académica' },
         { value: 'investigacion', label: 'Investigación' },
-        { value: 'extension', label: 'Extensión e Interacción' },
-        { value: 'asesorias', label: 'Asesorías y Tutorías' },
-        { value: 'tribunales', label: 'Tribunales' },
-        { value: 'administrativo', label: 'Administrativo / Gestión' },
-        { value: 'vida_universitaria', label: 'Vida Universitaria' },
+        { value: 'extension_universitaria', label: 'Extensión universitaria' },
+        { value: 'interaccion_social', label: 'Interacción social' },
+        { value: 'gestion', label: 'Gestión' },
+        { value: 'academica_administrativa', label: 'Académica-administrativa' },
+        { value: 'social_cultural_deportiva', label: 'Social, cultural, deportiva y Otros' },
     ];
 
     useEffect(() => {
@@ -180,13 +180,13 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
     useEffect(() => {
         if (cargaEdicion) {
             setFormData({
-                categoria: cargaEdicion.categoria || 'docente',
+                categoria: cargaEdicion.categoria || 'academica',
                 titulo_actividad: cargaEdicion.titulo_actividad,
                 horas: cargaEdicion.horas,
                 documento_respaldo: cargaEdicion.respaldo || ''
             });
         } else {
-            setFormData({ categoria: 'docente', titulo_actividad: '', horas: '', documento_respaldo: '' });
+            setFormData({ categoria: 'academica', titulo_actividad: '', horas: '', documento_respaldo: '' });
         }
     }, [cargaEdicion]);
 
@@ -250,8 +250,8 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
             toast.error("Complete los campos obligatorios");
             return;
         }
-        if (formData.categoria !== 'docente' && !formData.documento_respaldo?.trim()) {
-            toast.error("El campo de respaldo es obligatorio para categorías distintas a Docencia");
+        if (formData.categoria !== 'academica' && !formData.documento_respaldo?.trim()) {
+            toast.error("El campo de respaldo es obligatorio para categorías distintas a Académica");
             return;
         }
         setIsSubmitting(true);
@@ -268,7 +268,7 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
                 });
                 toast.success("Asignación agregada");
             }
-            setFormData({ categoria: 'docente', titulo_actividad: '', horas: '', documento_respaldo: '' });
+            setFormData({ categoria: 'academica', titulo_actividad: '', horas: '', documento_respaldo: '' });
             setSemestre('');
             cargarCargas();
             if (onCargaUpdate) onCargaUpdate();
@@ -322,7 +322,7 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
         label: `${m.nombre} (${m.horas_teoricas} HT / ${m.horas_practicas} HP - Total: ${m.horas_totales} hrs/sem)`
     }));
     const selectedMateriaId = materias.find(m => m.nombre === formData.titulo_actividad)?.id?.toString() || '';
-    const respaldoRequerido = formData.categoria !== 'docente';
+    const respaldoRequerido = formData.categoria !== 'academica';
     const respaldoInvalido = respaldoRequerido && !formData.documento_respaldo?.trim();
     const submitDisabled = isSubmitting || !formData.titulo_actividad || !formData.horas || respaldoInvalido;
 

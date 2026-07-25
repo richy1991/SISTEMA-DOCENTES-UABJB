@@ -46,7 +46,7 @@ const SelectorMateria = ({ onSeleccion, disabled }) => {
         onSeleccion({
           titulo_actividad: materia.nombre,
           horas: horasTotales,
-          categoria: 'docente', // Categoría fija
+          categoria: 'academica', // Categoría fija
           materia_id: materia.id
         });
       }

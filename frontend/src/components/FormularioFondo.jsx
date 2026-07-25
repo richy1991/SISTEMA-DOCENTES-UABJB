@@ -50,6 +50,23 @@ function FormularioFondo({ isDark, editar = false }) {
     estado: 'borrador',
   });
 
+  const obtenerNombreDocente = (docente) => {
+    if (!docente) return '';
+    return docente.nombre_completo
+      || `${docente.nombres || ''} ${docente.apellido_paterno || ''} ${docente.apellido_materno || ''}`.trim()
+      || docente.usuario_nombre
+      || `Docente ${docente.id}`;
+  };
+
+  const obtenerVinculoActivo = (docente) => {
+    const vinculos = Array.isArray(docente?.vinculos) ? docente.vinculos : [];
+    return vinculos.find((vinculo) => vinculo?.activo !== false) || vinculos[0] || null;
+  };
+
+  const docenteSeleccionado = docentes.find((docente) => String(docente.id) === String(formData.docente || ''));
+  const vinculoDocenteSeleccionado = obtenerVinculoActivo(docenteSeleccionado);
+  const docenteDedicacionExclusiva = vinculoDocenteSeleccionado?.dedicacion === 'dedicacion_exclusiva';
+
   useEffect(() => {
     cargarDatos();
     if (editar && id) {
@@ -180,6 +197,25 @@ function FormularioFondo({ isDark, editar = false }) {
     }
   };
 
+  const handleDocenteChange = (e) => {
+    const docenteId = e.target.value;
+    const docente = docentes.find((item) => String(item.id) === String(docenteId));
+    const vinculo = obtenerVinculoActivo(docente);
+
+    setFormData(prev => ({
+      ...prev,
+      docente: docenteId,
+      carrera: vinculo?.carrera || prev.carrera
+    }));
+    setNombreDocenteMostrado(obtenerNombreDocente(docente));
+
+    setErroresCampos(prev => {
+      const next = { ...prev };
+      delete next.docente;
+      return next;
+    });
+  };
+
   // Limpieza inmediata del borde rojo al hacer focus/click en el campo.
   // REGLA GLOBAL: el error y su borde desaparecen apenas el usuario interactúa.
   const handleFieldFocus = (e) => {
@@ -207,6 +243,12 @@ function FormularioFondo({ isDark, editar = false }) {
   const validarFormulario = () => {
     const errores = {};
 
+    if (!formData.docente) {
+      errores.docente = 'Debe seleccionar un docente.';
+    }
+    if (docenteDedicacionExclusiva) {
+      errores.docente = 'Docente exento de distribución de tiempo (Art. 25°)';
+    }
     if (!formData.carrera) {
       errores.carrera = 'Por favor, seleccione una opción.';
     }
@@ -516,18 +558,41 @@ function FormularioFondo({ isDark, editar = false }) {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       {/* Campo Docente */}
-                      <div>
+                      <div className={shakingFields.docente ? ERROR_MOTION_CLASS : ''}>
                         <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
-                          Docente
+                          Docente {erroresCampos.docente && <span className="text-red-500">*</span>}
                         </label>
                         <div className="relative">
-                          <div className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 shadow-sm cursor-not-allowed flex items-center gap-2 font-medium">
-                            {nombreDocenteMostrado || 'Cargando...'}
-                          </div>
+                          <select
+                            name="docente"
+                            value={formData.docente}
+                            onChange={handleDocenteChange}
+                            onFocus={handleFieldFocus}
+                            onClick={handleFieldFocus}
+                            disabled={loading || editar}
+                            className={`w-full px-4 py-3 rounded-xl border-2 ${
+                              erroresCampos.docente ? ERROR_FIELD_BORDER_CLASS : 'border-slate-300 dark:border-slate-600'
+                            } bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm`}
+                          >
+                            <option value="">Seleccione un docente</option>
+                            {docentes.map((docente) => (
+                              <option key={docente.id} value={docente.id}>
+                                {obtenerNombreDocente(docente)}
+                              </option>
+                            ))}
+                          </select>
                           <div className="absolute -top-2 right-3 px-2 py-0.5 bg-blue-500 text-white text-xs font-bold rounded-full shadow-md">
                             Asignado
                           </div>
                         </div>
+                        {erroresCampos.docente && (
+                          <p className="text-xs text-red-600 dark:text-red-400 mt-1">{erroresCampos.docente}</p>
+                        )}
+                        {docenteDedicacionExclusiva && (
+                          <div className="mt-2 rounded-xl border-2 border-red-300 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-700 dark:bg-red-900/20 dark:text-red-300">
+                            Docente exento de distribución de tiempo (Art. 25°)
+                          </div>
+                        )}
                       </div>
 
                       {/* Carrera */}
@@ -743,7 +808,7 @@ function FormularioFondo({ isDark, editar = false }) {
             </button>
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || docenteDedicacionExclusiva}
               className="px-6 py-2.5 rounded-xl text-white font-bold transition-all shadow-lg hover:shadow-xl flex items-center gap-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? 'Guardando...' : (editar ? 'Actualizar Fondo' : 'Crear Fondo')}

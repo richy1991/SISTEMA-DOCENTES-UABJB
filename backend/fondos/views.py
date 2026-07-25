@@ -12,13 +12,14 @@ from django.db import transaction, IntegrityError
 from django.db.models import Prefetch, ProtectedError, prefetch_related_objects, Q
 from django.core.exceptions import ValidationError as DjangoValidationError
 from datetime import datetime, date
+from decimal import Decimal, InvalidOperation
 from .utils.pdf_generator import FondoPDFGenerator
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from .models import (
     Docente, Carrera, Materia, FondoTiempo, CategoriaFuncion, Actividad, PerfilUsuario, CargaHoraria,
     CalendarioAcademico, Proyecto, InformeFondo, ObservacionFondo, MensajeObservacion, HistorialFondo,
-    SaldoVacacionesGestion, FacultadCatalogo, DatosLaborales
+    SaldoVacacionesGestion, FacultadCatalogo, DatosLaborales, DocenteCarrera
 )
 from .serializers import (
     DocenteSerializer, CarreraSerializer, MateriaSerializer, FondoTiempoSerializer,
@@ -877,16 +878,21 @@ class CalendarioAcademicoViewSet(viewsets.ModelViewSet):
         return [IsAuthenticated()]
 
     def _build_dependency_counts(self, calendario):
-        fondos_qs = FondoTiempo.objects.filter(calendario_academico=calendario)
-        fondos_count = fondos_qs.count()
-        informes_count = InformeFondo.objects.filter(fondo_tiempo__in=fondos_qs).count()
+        fondos_ids = list(
+            FondoTiempo.objects.filter(calendario_academico=calendario)
+            .values_list('id', flat=True)
+        )
+        fondos_count = len(fondos_ids)
+        informes_count = InformeFondo.objects.filter(fondo_tiempo_id__in=fondos_ids).count() if fondos_ids else 0
         cargas_horarias_count = CargaHoraria.objects.filter(calendario=calendario).count()
+        can_delete = fondos_count == 0 and informes_count == 0 and cargas_horarias_count == 0
 
         return {
             'planificaciones': fondos_count,
             'informes': informes_count,
             'cargas_horarias': cargas_horarias_count,
-            'can_delete': fondos_count == 0 and informes_count == 0 and cargas_horarias_count == 0,
+            'can_delete': can_delete,
+            'has_dependencies': not can_delete,
         }
 
     @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated])
@@ -898,18 +904,42 @@ class CalendarioAcademicoViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         """Eliminar calendario respetando integridad referencial (PROTECT)."""
         instance = self.get_object()
+        counts = self._build_dependency_counts(instance)
+        if not counts['can_delete']:
+            dependencias = []
+            if counts['planificaciones'] > 0:
+                dependencias.append(f"{counts['planificaciones']} Fondos de Tiempo asociados")
+            if counts['informes'] > 0:
+                dependencias.append(f"{counts['informes']} informes asociados")
+            if counts['cargas_horarias'] > 0:
+                dependencias.append(f"{counts['cargas_horarias']} cargas horarias asociadas")
+
+            return Response(
+                {
+                    'code': 'protected_error',
+                    'detail': f"No se puede eliminar porque tiene {', '.join(dependencias)}.",
+                    'dependencias': counts,
+                },
+                status=status.HTTP_409_CONFLICT
+            )
+
         try:
             instance.delete()
             return Response({'detail': 'Calendario eliminado correctamente.'}, status=status.HTTP_200_OK)
         except ProtectedError:
             counts = self._build_dependency_counts(instance)
+            dependencias = []
+            if counts['planificaciones'] > 0:
+                dependencias.append(f"{counts['planificaciones']} Fondos de Tiempo asociados")
+            if counts['informes'] > 0:
+                dependencias.append(f"{counts['informes']} informes asociados")
+            if counts['cargas_horarias'] > 0:
+                dependencias.append(f"{counts['cargas_horarias']} cargas horarias asociadas")
+            detalle_dependencias = ', '.join(dependencias) if dependencias else 'dependencias protegidas'
             return Response(
                 {
                     'code': 'protected_error',
-                    'detail': (
-                        f"ERROR DE INTEGRIDAD: No se puede eliminar el calendario {instance.gestion}-{instance.get_periodo_display()} "
-                        f"porque tiene {counts['planificaciones']} planificaciones y {counts['informes']} informes vinculados."
-                    ),
+                    'detail': f"No se puede eliminar porque tiene {detalle_dependencias}.",
                     'dependencias': counts,
                 },
                 status=status.HTTP_409_CONFLICT
@@ -1063,10 +1093,7 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
     
     def _asegurar_categorias(self, fondo):
         """Garantiza que el fondo tenga las 7 categorías creadas para recibir carga horaria."""
-        tipos_requeridos = [
-            'docente', 'investigacion', 'extension', 'asesorias', 
-            'tribunales', 'administrativo', 'vida_universitaria'
-        ]
+        tipos_requeridos = [tipo for tipo, _label in CategoriaFuncion.TIPO_CHOICES]
         existentes = set(fondo.categorias.values_list('tipo', flat=True))
         for tipo in tipos_requeridos:
             if tipo not in existentes:
@@ -1095,6 +1122,79 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
     def _validation_error_response(self, detail):
         message = self._flatten_validation_messages(detail) or 'Error de validación en los datos enviados.'
         return Response({'error': message, 'details': detail}, status=status.HTTP_400_BAD_REQUEST)
+
+    def _validar_docente_no_exclusivo(self, docente, carrera=None):
+        filtros = {'docente': docente, 'activo': True}
+        if carrera:
+            filtros['carrera'] = carrera
+
+        vinculos = DocenteCarrera.objects.filter(**filtros)
+        if vinculos.filter(dedicacion='dedicacion_exclusiva').exists():
+            raise drf_serializers.ValidationError(
+                {'docente': 'Docente exento de distribución de tiempo según Art. 25°'}
+            )
+
+    def _validar_permiso_distribucion(self, fondo):
+        user = self.request.user
+        perfil = _obtener_perfil_usuario(user)
+
+        if not user.is_superuser:
+            if not perfil or perfil.rol != 'jefe_estudios':
+                raise PermissionDenied("Solo Jefes de Estudio pueden modificar la distribucion de horas.")
+            if not _usuario_tiene_acceso_a_carrera(user, fondo.carrera):
+                raise PermissionDenied("No tienes acceso a la carrera de este Fondo de Tiempo.")
+
+        if fondo.carrera and not fondo.carrera.activo:
+            raise PermissionDenied("No se puede modificar la distribucion porque la carrera esta inactiva.")
+
+        if fondo.estado not in ['borrador', 'observado']:
+            raise PermissionDenied(f"No se puede modificar la distribucion. El fondo esta en estado '{fondo.get_estado_display()}'.")
+
+    def _normalizar_horas_distribucion(self, raw_categorias):
+        if not isinstance(raw_categorias, dict):
+            raise drf_serializers.ValidationError({
+                'categorias': 'Debe enviar un objeto con las 7 categorias y sus horas.'
+            })
+
+        tipos_requeridos = [tipo for tipo, _label in CategoriaFuncion.TIPO_CHOICES]
+        faltantes = [tipo for tipo in tipos_requeridos if tipo not in raw_categorias]
+        extras = [tipo for tipo in raw_categorias.keys() if tipo not in tipos_requeridos]
+
+        errores = {}
+        if faltantes:
+            errores['faltantes'] = faltantes
+        if extras:
+            errores['no_permitidas'] = extras
+        if errores:
+            raise drf_serializers.ValidationError({'categorias': errores})
+
+        horas_por_tipo = {}
+        for tipo in tipos_requeridos:
+            try:
+                horas = Decimal(str(raw_categorias.get(tipo, 0)))
+            except (InvalidOperation, TypeError, ValueError):
+                raise drf_serializers.ValidationError({
+                    'categorias': {tipo: 'Las horas deben ser numericas.'}
+                })
+            if horas < 0:
+                raise drf_serializers.ValidationError({
+                    'categorias': {tipo: 'Las horas no pueden ser negativas.'}
+                })
+            horas_por_tipo[tipo] = horas.quantize(Decimal('0.01'))
+
+        return horas_por_tipo
+
+    def _validar_suma_exacta_semanal(self, fondo, horas_por_tipo):
+        total = sum(horas_por_tipo.values(), Decimal('0.00'))
+        horas_semana = Decimal(str(fondo.horas_semana or 0)).quantize(Decimal('0.01'))
+
+        if total != horas_semana:
+            raise drf_serializers.ValidationError({
+                'categorias': (
+                    f'La suma de las 7 categorias debe ser exactamente igual a '
+                    f'{horas_semana} horas semanales. Total enviado: {total}.'
+                )
+            })
     
     def create(self, request, *args, **kwargs):
         """
@@ -1145,18 +1245,122 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         """Al crear un fondo, se asocia al calendario activo. El docente viene en el payload."""
         calendario_activo = CalendarioAcademico.objects.get(activo=True)
+        docente = serializer.validated_data.get('docente')
+        carrera = serializer.validated_data.get('carrera')
+        self._validar_docente_no_exclusivo(docente, carrera)
         
         # Ya no forzamos el docente del usuario logueado.
         # El serializer valida que 'docente' venga en el request.
         fondo = serializer.save(calendario_academico=calendario_activo)
         
         # CORRECCIÓN DE RAÍZ: Crear inmediatamente las categorías vacías
-        tipos = [
-            'docente', 'investigacion', 'extension', 'asesorias', 
-            'tribunales', 'administrativo', 'vida_universitaria'
-        ]
+        tipos = [tipo for tipo, _label in CategoriaFuncion.TIPO_CHOICES]
         for tipo in tipos:
             CategoriaFuncion.objects.create(fondo_tiempo=fondo, tipo=tipo)
+
+    @action(detail=True, methods=['post', 'patch'], url_path='distribuir-horas')
+    def distribuir_horas(self, request, pk=None):
+        fondo = self.get_object()
+        self._validar_permiso_distribucion(fondo)
+
+        try:
+            horas_por_tipo = self._normalizar_horas_distribucion(request.data.get('categorias'))
+            self._validar_suma_exacta_semanal(fondo, horas_por_tipo)
+        except drf_serializers.ValidationError as exc:
+            return self._validation_error_response(exc.detail)
+
+        with transaction.atomic():
+            self._asegurar_categorias(fondo)
+            categorias = {
+                categoria.tipo: categoria
+                for categoria in CategoriaFuncion.objects.select_for_update().filter(fondo_tiempo=fondo)
+            }
+            for tipo, horas in horas_por_tipo.items():
+                categoria = categorias[tipo]
+                categoria.total_horas = horas
+                categoria.save(update_fields=['total_horas'])
+
+        serializer = FondoTiempoDetalleSerializer(
+            self.get_object(),
+            context=self.get_serializer_context()
+        )
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['post'], url_path='generar-masivo')
+    def generar_masivo(self, request):
+        """
+        Genera Fondos de Tiempo para los docentes activos de las carreras
+        accesibles al usuario, omitiendo dedicacion exclusiva y fondos existentes.
+        """
+        user = request.user
+        perfil = _obtener_perfil_usuario(user)
+
+        if not user.is_superuser and (not perfil or perfil.rol not in ['director', 'jefe_estudios']):
+            raise PermissionDenied("No tienes permisos para generar Fondos de Tiempo masivamente.")
+
+        calendario_activo = CalendarioAcademico.objects.filter(activo=True).first()
+        if not calendario_activo:
+            return Response(
+                {'error': 'No existe un periodo academico activo para iniciar la planificacion.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        carreras_activas = _obtener_carreras_activas_usuario(user)
+        if not carreras_activas.exists():
+            return Response(
+                {'error': 'No tienes carreras activas disponibles para generar Fondos de Tiempo.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        vinculos = DocenteCarrera.objects.filter(
+            activo=True,
+            carrera__in=carreras_activas,
+            docente__activo=True,
+            carrera__activo=True,
+        ).select_related('docente', 'carrera').order_by('carrera__nombre', 'docente__apellido_paterno')
+
+        creados = 0
+        omitidos_exclusiva = 0
+        omitidos_ya_existentes = 0
+        tipos_categoria = [tipo for tipo, _label in CategoriaFuncion.TIPO_CHOICES]
+
+        with transaction.atomic():
+            for vinculo in vinculos:
+                if vinculo.dedicacion == 'dedicacion_exclusiva':
+                    omitidos_exclusiva += 1
+                    continue
+
+                ya_existe = FondoTiempo.objects.filter(
+                    docente=vinculo.docente,
+                    carrera=vinculo.carrera,
+                    calendario_academico=calendario_activo,
+                ).exists()
+                if ya_existe:
+                    omitidos_ya_existentes += 1
+                    continue
+
+                etiqueta_carrera = vinculo.carrera.codigo or vinculo.carrera.nombre
+                fondo = FondoTiempo.objects.create(
+                    docente=vinculo.docente,
+                    carrera=vinculo.carrera,
+                    calendario_academico=calendario_activo,
+                    gestion=calendario_activo.gestion,
+                    periodo=calendario_activo.periodo,
+                    asignatura=f"Fondo de Tiempo - {etiqueta_carrera}",
+                    estado='borrador',
+                )
+
+                CategoriaFuncion.objects.bulk_create([
+                    CategoriaFuncion(fondo_tiempo=fondo, tipo=tipo)
+                    for tipo in tipos_categoria
+                ])
+                creados += 1
+
+        return Response({
+            'creados': creados,
+            'omitidos_exclusiva': omitidos_exclusiva,
+            'omitidos_ya_existentes': omitidos_ya_existentes,
+        }, status=status.HTTP_201_CREATED)
 
     def update(self, request, *args, **kwargs):
         """Verificar permisos de edición"""
@@ -1980,11 +2184,11 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         cargas = CargaHoraria.objects.filter(
             docente=fondo.docente,
             calendario=fondo.calendario_academico,
-            categoria='docente',
+            categoria='academica',
         ).select_related('materia')
 
         if not cargas.exists():
-            errores.append('No existen registros de Carga Horaria docente para este fondo/calendario.')
+            errores.append('No existen registros de Carga Horaria académica para este fondo/calendario.')
 
         total_horas_anuales = 0.0
         total_horas_semanales_horario = 0.0
@@ -2039,25 +2243,137 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         checklist = self._build_checklist_salud_pdf(fondo)
         return Response(checklist, status=status.HTTP_200_OK)
         
-class CategoriaFuncionViewSet(viewsets.ModelViewSet):
-    queryset = CategoriaFuncion.objects.all()
+class FondoTiempoDistribucionAccessMixin:
+    permission_classes = [IsAuthenticated]
+
+    def _usuario_carrera_inactiva(self):
+        user = self.request.user
+        if user.is_superuser:
+            return False
+        if hasattr(user, 'perfil') and user.perfil:
+            carreras_activas = _obtener_carreras_activas_usuario(user)
+            return carreras_activas.exists() and not carreras_activas.filter(activo=True).exists()
+        return False
+
+    def get_permissions(self):
+        if self._usuario_carrera_inactiva():
+            raise PermissionDenied('Acceso bloqueado: tu carrera está inactiva.')
+
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            user = self.request.user
+            perfil = _obtener_perfil_usuario(user)
+            if not user.is_superuser and (not perfil or perfil.rol != 'jefe_estudios'):
+                raise PermissionDenied("Solo Jefes de Estudio pueden modificar la distribución de horas.")
+
+        return super().get_permissions()
+
+    def _validar_fondo_modificable(self, fondo):
+        user = self.request.user
+        perfil = _obtener_perfil_usuario(user)
+
+        if not fondo:
+            raise PermissionDenied("No se pudo identificar el Fondo de Tiempo asociado.")
+
+        if not user.is_superuser:
+            if not perfil or perfil.rol != 'jefe_estudios':
+                raise PermissionDenied("Solo Jefes de Estudio pueden modificar la distribución de horas.")
+            if not _usuario_tiene_acceso_a_carrera(user, fondo.carrera):
+                raise PermissionDenied("No tienes acceso a la carrera de este Fondo de Tiempo.")
+
+        if fondo.carrera and not fondo.carrera.activo:
+            raise PermissionDenied("No se puede modificar la distribución porque la carrera está inactiva.")
+
+        if fondo.estado not in ['borrador', 'observado']:
+            raise PermissionDenied(f"No se puede modificar la distribución. El fondo está en estado '{fondo.get_estado_display()}'.")
+
+    def _filtrar_por_rol(self, queryset, fondo_path):
+        user = self.request.user
+        perfil = _obtener_perfil_usuario(user)
+
+        if self._usuario_carrera_inactiva():
+            return queryset.none()
+
+        if user.is_superuser:
+            return queryset
+
+        if not perfil:
+            return queryset.none()
+
+        if perfil.rol in ['director', 'jefe_estudios']:
+            carreras_activas = _obtener_carreras_activas_usuario(user)
+            if carreras_activas.exists():
+                return queryset.filter(**{f'{fondo_path}__carrera__in': carreras_activas})
+            return queryset.none()
+
+        if perfil.rol == 'docente' and perfil.docente:
+            return queryset.filter(**{f'{fondo_path}__docente': perfil.docente})
+
+        return queryset.none()
+
+
+class CategoriaFuncionViewSet(FondoTiempoDistribucionAccessMixin, viewsets.ModelViewSet):
+    queryset = CategoriaFuncion.objects.select_related('fondo_tiempo', 'fondo_tiempo__docente', 'fondo_tiempo__carrera').all()
     serializer_class = CategoriaFuncionSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['fondo_tiempo', 'tipo']
 
+    def get_queryset(self):
+        return self._filtrar_por_rol(super().get_queryset(), 'fondo_tiempo')
 
-class ActividadViewSet(viewsets.ModelViewSet):
-    queryset = Actividad.objects.all()
+    def perform_create(self, serializer):
+        fondo = serializer.validated_data.get('fondo_tiempo')
+        self._validar_fondo_modificable(fondo)
+        total_horas = serializer.validated_data.get('total_horas', Decimal('0'))
+        if 'total_horas' in self.request.data and Decimal(str(total_horas or 0)) != Decimal('0'):
+            raise drf_serializers.ValidationError({
+                'total_horas': 'Use el endpoint de distribucion del fondo para asignar horas.'
+            })
+        serializer.save()
+
+    def perform_update(self, serializer):
+        instance = self.get_object()
+        fondo = serializer.validated_data.get('fondo_tiempo', instance.fondo_tiempo)
+        self._validar_fondo_modificable(fondo)
+        if 'total_horas' in self.request.data:
+            raise drf_serializers.ValidationError({
+                'total_horas': 'Use el endpoint de distribucion del fondo para asignar horas.'
+            })
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._validar_fondo_modificable(instance.fondo_tiempo)
+        instance.delete()
+
+
+class ActividadViewSet(FondoTiempoDistribucionAccessMixin, viewsets.ModelViewSet):
+    queryset = Actividad.objects.select_related(
+        'categoria',
+        'categoria__fondo_tiempo',
+        'categoria__fondo_tiempo__docente',
+        'categoria__fondo_tiempo__carrera',
+    ).all()
     serializer_class = ActividadSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['categoria', 'categoria__fondo_tiempo', 'proyecto']
     search_fields = ['detalle', 'evidencias']
 
     def get_queryset(self):
-        """
-        Asegurar que se retornen todas las actividades sin filtros ocultos.
-        """
-        return Actividad.objects.all()
+        return self._filtrar_por_rol(super().get_queryset(), 'categoria__fondo_tiempo')
+
+    def perform_create(self, serializer):
+        categoria = serializer.validated_data.get('categoria')
+        self._validar_fondo_modificable(categoria.fondo_tiempo if categoria else None)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        instance = self.get_object()
+        categoria = serializer.validated_data.get('categoria', instance.categoria)
+        self._validar_fondo_modificable(categoria.fondo_tiempo if categoria else None)
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._validar_fondo_modificable(instance.categoria.fondo_tiempo)
+        instance.delete()
 
 
 # =====================================================

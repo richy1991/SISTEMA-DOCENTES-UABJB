@@ -484,13 +484,13 @@ class CargaHorariaSerializer(serializers.ModelSerializer):
                     })
 
         # Esta regla aplica a la carga docente (materias), no a otras categorías.
-        if not docente or not calendario or categoria != 'docente':
+        if not docente or not calendario or categoria != 'academica':
             return data
 
         cargas_existentes = CargaHoraria.objects.filter(
             docente=docente,
             calendario=calendario,
-            categoria='docente',
+            categoria='academica',
         )
 
         # En actualización, excluir el registro actual para evitar doble conteo.
@@ -532,6 +532,7 @@ class DocenteCarreraSerializer(serializers.ModelSerializer):
     carrera_nombre = serializers.CharField(source='carrera.nombre', read_only=True)
     tipo_dedicacion = serializers.CharField(source='get_dedicacion_display', read_only=True)
     tipo_categoria = serializers.CharField(source='get_categoria_display', read_only=True)
+    tipo_condicion = serializers.CharField(source='get_condicion_display', read_only=True)
     horas_semanales = serializers.ReadOnlyField(source='horas_semanales_maximas')
 
     class Meta:
@@ -541,6 +542,7 @@ class DocenteCarreraSerializer(serializers.ModelSerializer):
             'carrera', 'carrera_nombre',
             'categoria', 'tipo_categoria',
             'dedicacion', 'tipo_dedicacion',
+            'condicion', 'tipo_condicion',
             'horas_semanales', 'activo',
             'fecha_creacion', 'fecha_modificacion',
         ]
@@ -571,6 +573,7 @@ class DocenteSerializer(serializers.ModelSerializer):
     carrera = serializers.PrimaryKeyRelatedField(queryset=Carrera.objects.all(), write_only=True, required=True)
     categoria = serializers.ChoiceField(choices=Docente.CATEGORIA_CHOICES, write_only=True, required=False)
     dedicacion = serializers.ChoiceField(choices=Docente.DEDICACION_CHOICES, write_only=True, required=False)
+    condicion = serializers.ChoiceField(choices=DocenteCarrera.CONDICION_CHOICES, write_only=True, required=False)
     user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), write_only=True, required=False, allow_null=True)
     user_data = serializers.JSONField(write_only=True, required=False, allow_null=True)
     carrera_id = serializers.SerializerMethodField()
@@ -590,7 +593,7 @@ class DocenteSerializer(serializers.ModelSerializer):
             'usuario_rol', 'usuario_rol_display', 'asignaciones',
             'horas_declaradas', 'fondos_validados',
             'carrera', 'carrera_id', 'carrera_nombre',
-            'categoria', 'dedicacion',
+            'categoria', 'dedicacion', 'condicion',
             'vinculos', 'activo',
             'fecha_creacion', 'fecha_modificacion',
         ]
@@ -754,6 +757,7 @@ class DocenteSerializer(serializers.ModelSerializer):
         ci_docente = (validated_data.pop('ci', None) or '').strip()
         categoria = validated_data.pop('categoria', 'asistente')
         dedicacion = validated_data.pop('dedicacion', 'horario_40')
+        condicion = validated_data.pop('condicion', 'titular')
         fecha_ingreso = validated_data.pop('fecha_ingreso', None)
         dias_vacacion = validated_data.pop('dias_vacacion', 15)
         horas_feriados = validated_data.pop('horas_feriados_gestion', 128)
@@ -860,6 +864,7 @@ class DocenteSerializer(serializers.ModelSerializer):
             defaults={
                 'categoria': categoria,
                 'dedicacion': dedicacion,
+                'condicion': condicion,
                 'activo': True,
             },
         )
@@ -871,6 +876,7 @@ class DocenteSerializer(serializers.ModelSerializer):
         carrera = validated_data.pop('carrera', serializers.empty)
         categoria = validated_data.pop('categoria', serializers.empty)
         dedicacion = validated_data.pop('dedicacion', serializers.empty)
+        condicion = validated_data.pop('condicion', serializers.empty)
         user = validated_data.pop('user', serializers.empty)
         validated_data.pop('user_data', None)
 
@@ -902,6 +908,7 @@ class DocenteSerializer(serializers.ModelSerializer):
                 defaults={
                     'categoria': categoria if categoria is not serializers.empty else (vinculo_existente.categoria if vinculo_existente else 'asistente'),
                     'dedicacion': dedicacion if dedicacion is not serializers.empty else (vinculo_existente.dedicacion if vinculo_existente else 'horario_40'),
+                    'condicion': condicion if condicion is not serializers.empty else (vinculo_existente.condicion if vinculo_existente else 'titular'),
                     'activo': True,
                 },
             )
@@ -2343,6 +2350,9 @@ class CalendarioAcademicoSerializer(serializers.ModelSerializer):
             'fecha_inicio', 'fecha_fin',
             'fecha_inicio_presentacion_proyectos',
             'fecha_limite_presentacion_proyectos',
+            'fecha_limite_programas_analiticos',
+            'fecha_inicio_receso',
+            'fecha_fin_receso',
             'semanas_efectivas', 'activo'
         ]
 
@@ -2358,6 +2368,18 @@ class CalendarioAcademicoSerializer(serializers.ModelSerializer):
         fecha_fin_proy = attrs.get(
             'fecha_limite_presentacion_proyectos',
             getattr(instance, 'fecha_limite_presentacion_proyectos', None)
+        )
+        fecha_limite_programas = attrs.get(
+            'fecha_limite_programas_analiticos',
+            getattr(instance, 'fecha_limite_programas_analiticos', None)
+        )
+        fecha_inicio_receso = attrs.get(
+            'fecha_inicio_receso',
+            getattr(instance, 'fecha_inicio_receso', None)
+        )
+        fecha_fin_receso = attrs.get(
+            'fecha_fin_receso',
+            getattr(instance, 'fecha_fin_receso', None)
         )
         semanas_efectivas = attrs.get('semanas_efectivas', getattr(instance, 'semanas_efectivas', None))
 
@@ -2400,6 +2422,29 @@ class CalendarioAcademicoSerializer(serializers.ModelSerializer):
             if fecha_fin_proy < fecha_inicio or fecha_fin_proy > fecha_fin:
                 raise serializers.ValidationError({
                     'fecha_limite_presentacion_proyectos': 'Error Crítico: la fecha límite de presentación de proyectos debe estar dentro del rango del periodo académico.'
+                })
+
+        if fecha_inicio and fecha_fin and fecha_limite_programas:
+            if fecha_limite_programas < fecha_inicio or fecha_limite_programas > fecha_fin:
+                raise serializers.ValidationError({
+                    'fecha_limite_programas_analiticos': 'La fecha limite de programas analiticos debe estar dentro del rango del periodo academico.'
+                })
+
+        if fecha_inicio_receso and fecha_fin_receso and fecha_inicio_receso > fecha_fin_receso:
+            raise serializers.ValidationError({
+                'fecha_fin_receso': 'La fecha de fin de receso debe ser posterior o igual a la fecha de inicio de receso.'
+            })
+
+        if fecha_inicio and fecha_fin and fecha_inicio_receso:
+            if fecha_inicio_receso < fecha_inicio or fecha_inicio_receso > fecha_fin:
+                raise serializers.ValidationError({
+                    'fecha_inicio_receso': 'La fecha de inicio de receso debe estar dentro del rango del periodo academico.'
+                })
+
+        if fecha_inicio and fecha_fin and fecha_fin_receso:
+            if fecha_fin_receso < fecha_inicio or fecha_fin_receso > fecha_fin:
+                raise serializers.ValidationError({
+                    'fecha_fin_receso': 'La fecha de fin de receso debe estar dentro del rango del periodo academico.'
                 })
 
         return attrs

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getFondosTiempo } from '../apis/api';
+import { generarFondosTiempoMasivo, getFondosTiempo } from '../apis/api';
+import { puedeCrearFondoTiempo } from '../utils/fondoTiempoPermissions';
 import axios from 'axios';
 
 // --- ICONOS ---
@@ -23,11 +24,25 @@ const ArchiveBoxIcon = (props) => (
   </svg>
 );
 
+const PlusIcon = (props) => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+  </svg>
+);
+
+const SparklesIcon = (props) => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.456-2.456L14.25 6l1.035-.259a3.375 3.375 0 0 0 2.456-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z" />
+  </svg>
+);
+
 function ListaFondos({ isDark }) {
   const [fondos, setFondos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [user, setUser] = useState(null);
+  const [showMassiveModal, setShowMassiveModal] = useState(false);
+  const [generandoMasivo, setGenerandoMasivo] = useState(false);
   
   useEffect(() => {
     cargarFondos();
@@ -71,13 +86,35 @@ function ListaFondos({ isDark }) {
   };
 
   const puedeEditar = (fondo) => {
-    if (user?.perfil?.rol === 'docente') return false;
-    return fondo.estado === 'borrador';
+    return puedeCrearFondoTiempo(user) && fondo.estado === 'borrador';
   };
 
   // iiisyp es solo lectura: solo superuser puede archivar fondos
   const esAdmin = () => {
     return user?.is_superuser === true;
+  };
+
+  const puedeCrear = puedeCrearFondoTiempo(user);
+
+  const generarFondosMasivamente = async () => {
+    setGenerandoMasivo(true);
+
+    try {
+      const response = await generarFondosTiempoMasivo();
+      const resumen = response.data || {};
+      setShowMassiveModal(false);
+      await cargarFondos();
+      alert(
+        `Fondos generados correctamente.\n\nCreados: ${resumen.creados || 0}\n` +
+        `Omitidos por Dedicación Exclusiva: ${resumen.omitidos_exclusiva || 0}\n` +
+        `Omitidos por ya existentes: ${resumen.omitidos_ya_existentes || 0}`
+      );
+    } catch (err) {
+      console.error(err);
+      alert('Error al generar fondos masivamente: ' + (err.response?.data?.error || err.response?.data?.detail || err.message));
+    } finally {
+      setGenerandoMasivo(false);
+    }
   };
 
   if (loading) {
@@ -121,6 +158,25 @@ function ListaFondos({ isDark }) {
 
             {/* Contador y Botón */}
             <div className="flex items-center gap-4">
+              {puedeCrear && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowMassiveModal(true)}
+                    className="inline-flex items-center gap-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl shadow-md hover:shadow-lg transition-all"
+                  >
+                    <SparklesIcon className="w-5 h-5" />
+                    <span>Generar Fondos Masivamente</span>
+                  </button>
+                  <Link
+                    to="/fondo-tiempo/nuevo-fondo"
+                    className="inline-flex items-center gap-2 px-5 py-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl shadow-md hover:shadow-lg transition-all"
+                  >
+                    <PlusIcon className="w-5 h-5" />
+                    <span>Crear Fondo de Tiempo</span>
+                  </Link>
+                </>
+              )}
               <div className="bg-slate-50 dark:bg-slate-700 px-6 py-3 rounded-xl border-2 border-slate-300 dark:border-slate-600 shadow-md">
                 <div className="text-center">
                   <div className="text-3xl font-bold text-blue-600 dark:text-white">
@@ -224,13 +280,22 @@ function ListaFondos({ isDark }) {
                       </Link>
 
                       {puedeEditar(fondo) && (
-                        <Link 
-                          to={`/fondo-tiempo/editar-fondo/${fondo.id}`}
-                          className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg transition duration-300 hover:scale-105 shadow-md hover:shadow-lg"
-                        >
-                          <PencilIcon className="w-5 h-5" />
-                          <span>Editar</span>
-                        </Link>
+                        <>
+                          <Link
+                            to={`/fondo-tiempo/fondo/${fondo.id}`}
+                            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg transition duration-300 hover:scale-105 shadow-md hover:shadow-lg"
+                          >
+                            <PencilIcon className="w-5 h-5" />
+                            <span>Distribuir Horas</span>
+                          </Link>
+                          <Link
+                            to={`/fondo-tiempo/editar-fondo/${fondo.id}`}
+                            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg transition duration-300 hover:scale-105 shadow-md hover:shadow-lg"
+                          >
+                            <PencilIcon className="w-5 h-5" />
+                            <span>Editar</span>
+                          </Link>
+                        </>
                       )}
 
                       {esAdmin() && ['aprobado_director', 'finalizado', 'rechazado', 'aprobado', 'anulado'].includes(fondo.estado) && (
@@ -259,9 +324,65 @@ function ListaFondos({ isDark }) {
             <p className="text-slate-700 dark:text-slate-400 mb-6">
               Comienza creando tu primer fondo de tiempo
             </p>
+            {puedeCrear && (
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowMassiveModal(true)}
+                  className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl shadow-md hover:shadow-lg transition-all"
+                >
+                  <SparklesIcon className="w-5 h-5" />
+                  <span>Generar Fondos Masivamente</span>
+                </button>
+                <Link
+                  to="/fondo-tiempo/nuevo-fondo"
+                  className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl shadow-md hover:shadow-lg transition-all"
+                >
+                  <PlusIcon className="w-5 h-5" />
+                  <span>Crear Fondo de Tiempo</span>
+                </Link>
+              </div>
+            )}
           </div>
         )}
       </div>
+
+      {showMassiveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-2xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-2xl">
+            <div className="px-6 py-5 border-b-2 border-slate-200 dark:border-slate-700">
+              <h3 className="text-xl font-bold text-slate-800 dark:text-white">
+                Generar Fondos Masivamente
+              </h3>
+            </div>
+            <div className="p-6">
+              <p className="text-sm leading-6 text-slate-700 dark:text-slate-300">
+                ¿Está seguro que desea generar los Fondos de Tiempo para todos los docentes activos de la gestión actual?
+                El sistema omitirá automáticamente a los docentes con Dedicación Exclusiva y a los que ya tengan fondo creado.
+              </p>
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 bg-slate-50 dark:bg-slate-900/40 border-t-2 border-slate-200 dark:border-slate-700 rounded-b-2xl">
+              <button
+                type="button"
+                onClick={() => setShowMassiveModal(false)}
+                disabled={generandoMasivo}
+                className="px-5 py-2.5 rounded-xl border-2 border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 transition-all disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={generarFondosMasivamente}
+                disabled={generandoMasivo}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold shadow-md hover:shadow-lg transition-all disabled:opacity-50"
+              >
+                <SparklesIcon className="w-5 h-5" />
+                <span>{generandoMasivo ? 'Generando...' : 'Confirmar generación'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -739,6 +739,14 @@ const dedicacionStyles = {
     title: 'text-rose-900 dark:text-rose-300',
     text: 'text-rose-800 dark:text-rose-400',
   },
+  dedicacion_exclusiva: {
+    bg: 'bg-violet-50 dark:bg-violet-900/10',
+    accent: 'ring-1 ring-inset ring-violet-600/50 dark:ring-violet-400/50 border-l-[12px] !border-l-violet-800 dark:!border-l-violet-400',
+    leftBorder: '#6d28d9',
+    icon: 'text-violet-700',
+    title: 'text-violet-900 dark:text-violet-300',
+    text: 'text-violet-800 dark:text-violet-400',
+  },
 };
 
 function ListaDocentes({ sidebarCollapsed = false }) {
@@ -824,13 +832,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
 
     if (rolesUnicos.length === 0) return null;
 
-    const ROL_LABELS = {
-      iiisyp: '🔬 Instituto de investigación',
-      director: '🏛️ Director de Carrera',
-      jefe_estudios: '📚 Jefe de Estudios',
-    };
-
-    return rolesUnicos.map((rol) => ROL_LABELS[rol] || rol).join(' / ');
+    return formatearRolesCargoProfesional(rolesUnicos);
   };
 
   const navigate = useNavigate();
@@ -860,6 +862,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
     carrera: '',
     ci: '',
     categoria: 'catedratico',
+    condicion: '',
     dedicacion: 'tiempo_completo',
     fecha_ingreso: new Date().toISOString().split('T')[0],
     email: '',
@@ -1049,7 +1052,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                 user: usuarioParaSeleccion.id,
                 nombre_completo: buildNombreCompleto(usuarioParaSeleccion.first_name, usuarioParaSeleccion.last_name),
                 ci: ciSeleccionado,
-                cargo_profesional: getRolesActivosUsuario(usuarioParaSeleccion).join(' / ') || usuarioParaSeleccion.perfil?.rol_display || usuarioParaSeleccion.perfil?.rol || '',
+                cargo_profesional: formatearRolesCargoProfesional(getRolesActivosUsuario(usuarioParaSeleccion)) || usuarioParaSeleccion.perfil?.rol_display || usuarioParaSeleccion.perfil?.rol || '',
                 email: usuarioParaSeleccion.email || '',
                 username: usuarioParaSeleccion.username || '',
                 password: '',
@@ -1120,6 +1123,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       carrera: '',
       ci: '',
       categoria: '',
+      condicion: '',
       dedicacion: '',
       fecha_ingreso: new Date().toISOString().split('T')[0],
       email: '',
@@ -1281,6 +1285,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       carrera: docente.vinculos?.[0]?.carrera || '',
       ci: docente.ci,
       categoria: docente.vinculos?.[0]?.categoria || '',
+      condicion: '',
       dedicacion: docente.vinculos?.[0]?.dedicacion || '',
       fecha_ingreso: docente.fecha_ingreso || new Date().toISOString().split('T')[0],
       email: docente.email || '',
@@ -1340,6 +1345,25 @@ function ListaDocentes({ sidebarCollapsed = false }) {
     });
 
     return Array.from(new Set(roles));
+  };
+
+  const formatearRolCargoProfesional = (rol) => {
+    const labels = {
+      iiisyp: 'Instituto I.I.S. y P.',
+      director: 'Director de Carrera',
+      jefe_estudios: 'Jefe de Estudios',
+      docente: 'Docente',
+    };
+    const rolNormalizado = String(rol || '').trim().toLowerCase();
+    return labels[rolNormalizado] || String(rol || '').replace(/_/g, ' ');
+  };
+
+  const formatearRolesCargoProfesional = (roles) => {
+    const rolesLista = Array.isArray(roles) ? roles : [];
+    return rolesLista
+      .filter(Boolean)
+      .map(formatearRolCargoProfesional)
+      .join('\n');
   };
 
   const usuarioTieneRol = (usuarioItem, rolBuscado) =>
@@ -1429,7 +1453,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       user: usuarioItem.id,
       nombre_completo: buildNombreCompleto(usuarioItem.first_name, usuarioItem.last_name),
       ci: getCiUsuario(usuarioItem, prev.ci),
-      cargo_profesional: getRolesActivosUsuario(usuarioItem).join(' / ') || usuarioItem.perfil?.rol_display || usuarioItem.perfil?.rol || '',
+      cargo_profesional: formatearRolesCargoProfesional(getRolesActivosUsuario(usuarioItem)) || usuarioItem.perfil?.rol_display || usuarioItem.perfil?.rol || '',
       email: usuarioItem.email || '',
       username: usuarioItem.username || '',
       password: '',
@@ -1493,7 +1517,8 @@ function ListaDocentes({ sidebarCollapsed = false }) {
     usuarioTieneRol(usuarioSeleccionado, rol)
   );
   const dedicacionEsTiempoHorario = ['horario_16', 'horario_24', 'horario_40', 'horario_48'].includes(String(formData.dedicacion || ''));
-  const mostrarAdvertenciaGestion = usuarioFormularioTieneRolGestion && showGestionWarningVisible && !dedicacionEsTiempoHorario;
+  const esDedicacionExclusiva = formData.dedicacion === 'dedicacion_exclusiva';
+  const mostrarAdvertenciaGestion = usuarioFormularioTieneRolGestion && showGestionWarningVisible && !dedicacionEsTiempoHorario && !esDedicacionExclusiva;
   const opcionesDedicacion = [
     { value: 'tiempo_completo', label: 'Tiempo Completo' },
     { value: 'medio_tiempo', label: 'Medio Tiempo' },
@@ -1501,6 +1526,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
     { value: 'horario_24', label: 'Horario 24hrs/mes' },
     { value: 'horario_40', label: 'Horario 40hrs/mes' },
     { value: 'horario_48', label: 'Horario 48hrs/mes' },
+    { value: 'dedicacion_exclusiva', label: 'Dedicacion Exclusiva' },
   ].filter((opcion) => (
     !usuarioFormularioTieneRolGestion || !['tiempo_completo', 'medio_tiempo'].includes(opcion.value)
   ));
@@ -1560,6 +1586,13 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       return;
     }
 
+    if (!formData.condicion) {
+      setErrors((prev) => ({ ...prev, condicion: ['Debe seleccionar una condicion.'] }));
+      toast.error('Debe seleccionar una condicion para el docente.');
+      setIsSubmitting(false);
+      return;
+    }
+
     const ciNormalizado = (formData.ci || '').trim();
     if (ciNormalizado && validarCiUnicoLocal(ciNormalizado)) {
       setErrors((prev) => ({ ...prev, ci: ['Ya existe un docente con este C.I.'] }));
@@ -1602,6 +1635,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       payload.apellido_paterno = nombresSplit.apellido_paterno;
       payload.apellido_materno = nombresSplit.apellido_materno;
       payload.ci = ciNormalizado;
+      delete payload.condicion;
       delete payload.nombre_completo;
       if (payload.email === '') payload.email = null;
       if (payload.telefono === '') payload.telefono = null;
@@ -1707,7 +1741,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       payload.apellido_paterno = nombresSplit.apellido_paterno;
       payload.apellido_materno = nombresSplit.apellido_materno;
       delete payload.cargo_profesional;
-      delete payload.cargo_profesional;
+      delete payload.condicion;
       delete payload.nombre_completo;
       if (payload.email === '') payload.email = null;
       if (payload.telefono === '') payload.telefono = null;
@@ -2002,18 +2036,15 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                       }`}
                     >
                       <div key={userInfoKey} className="slide-down rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4 shadow-sm">
-                        <div className="flex items-center justify-between mb-3">
-                          <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200"></h4>
-                        </div>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                          <InputField
-                            label="Cargo profesional"
-                            name="cargo_profesional"
-                            value={formData.cargo_profesional || ''}
-                            onChange={() => {}}
-                            disabled
-                            inputClassName="text-sm"
-                          />
+                          <div>
+                            <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
+                              Cargo profesional
+                            </label>
+                            <div className="w-full min-h-[46px] whitespace-pre-line px-4 py-2.5 rounded-xl border-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-sm italic text-slate-800 dark:text-white shadow-sm cursor-not-allowed opacity-80">
+                              {formData.cargo_profesional || ''}
+                            </div>
+                          </div>
                           <div>
                             <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
                               Carrera
@@ -2048,45 +2079,62 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                     maxLength={10}
                     inputMode="numeric"
                   />
-                  <SelectConDropdown
-                    label="Dedicacion"
-                    name="dedicacion"
-                    value={formData.dedicacion}
-                    onChange={handleChange}
-                    options={opcionesDedicacion}
-                    menuClassName="overflow-visible"
-                    error={errors.dedicacion}
-                  />
-                  <SelectConDropdown
-                    label="Categoria"
-                    name="categoria"
-                    value={formData.categoria}
-                    onChange={handleChange}
-                    options={[
-                      { value: 'catedratico', label: 'Catedratico' },
-                      { value: 'adjunto', label: 'Adjunto' },
-                      { value: 'asistente', label: 'Asistente' },
-                    ]}
-                    error={errors.categoria}
-                  />
+                  <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-5">
+                    <SelectConDropdown
+                      label="Dedicacion"
+                      name="dedicacion"
+                      value={formData.dedicacion}
+                      onChange={handleChange}
+                      options={opcionesDedicacion}
+                      menuClassName="overflow-visible"
+                      error={errors.dedicacion}
+                    />
+                    <SelectConDropdown
+                      label="Categoria"
+                      name="categoria"
+                      value={formData.categoria}
+                      onChange={handleChange}
+                      options={[
+                        { value: 'catedratico', label: 'Catedratico' },
+                        { value: 'adjunto', label: 'Adjunto' },
+                        { value: 'asistente', label: 'Asistente' },
+                      ]}
+                      error={errors.categoria}
+                    />
+                    <SelectConDropdown
+                      label="Condicion"
+                      name="condicion"
+                      value={formData.condicion}
+                      onChange={handleChange}
+                      options={[
+                        { value: 'titular', label: 'Titular' },
+                        { value: 'invitado', label: 'Invitado' },
+                      ]}
+                      error={errors.condicion}
+                    />
+                  </div>
                   <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-[minmax(0,267px)_1fr] gap-4 items-start">
                     <div>
-                    <InputField
-                      label="Horas Semanales"
-                      name="horas_contrato_semanales"
-                      value={horasSemanalesDerivadas}
-                      onChange={() => {}}
-                      disabled
-                      inputClassName="max-w-[267px]"
-                    />
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
-                        {formData.dedicacion === 'horario_16' && 'Este docente trabaja 16 horas al mes (4 horas por semana).'}
-                        {formData.dedicacion === 'horario_24' && 'Este docente trabaja 24 horas al mes (6 horas por semana).'}
-                        {formData.dedicacion === 'horario_40' && 'Este docente trabaja 40 horas al mes (10 horas por semana).'}
-                        {formData.dedicacion === 'horario_48' && 'Este docente trabaja 48 horas al mes (12 horas por semana).'}
-                        {(formData.dedicacion === 'tiempo_completo' || formData.dedicacion === 'medio_tiempo')
-                          && 'Horas semanales fijas por reglamento.'}
-                      </p>
+                      {!esDedicacionExclusiva && (
+                        <>
+                          <InputField
+                            label="Horas Semanales"
+                            name="horas_contrato_semanales"
+                            value={horasSemanalesDerivadas}
+                            onChange={() => {}}
+                            disabled
+                            inputClassName="max-w-[267px]"
+                          />
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
+                            {formData.dedicacion === 'horario_16' && 'Este docente trabaja 16 horas al mes (4 horas por semana).'}
+                            {formData.dedicacion === 'horario_24' && 'Este docente trabaja 24 horas al mes (6 horas por semana).'}
+                            {formData.dedicacion === 'horario_40' && 'Este docente trabaja 40 horas al mes (10 horas por semana).'}
+                            {formData.dedicacion === 'horario_48' && 'Este docente trabaja 48 horas al mes (12 horas por semana).'}
+                            {(formData.dedicacion === 'tiempo_completo' || formData.dedicacion === 'medio_tiempo')
+                              && 'Horas semanales fijas por reglamento.'}
+                          </p>
+                        </>
+                      )}
                     </div>
 
                     <div className="space-y-3">
@@ -2149,8 +2197,12 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                                   horario_24: 'Horario 24hrs/mes',
                                   horario_40: 'Horario 40hrs/mes',
                                   horario_48: 'Horario 48hrs/mes',
+                                  dedicacion_exclusiva: 'Dedicacion Exclusiva',
                                 };
                                 const label = dedicacionLabels[formData.dedicacion] || formData.dedicacion;
+                                if (formData.dedicacion === 'dedicacion_exclusiva') {
+                                  return 'Docente con dedicacion exclusiva - exento de distribucion de tiempo';
+                                }
                                 if (horas !== null) {
                                   return `${label}: ${horas.toFixed(0)} horas efectivas anuales (${antiguedad} año${antiguedad !== 1 ? 's' : ''} de antigüedad, vacaciones calculadas según antigüedad).`;
                                 }

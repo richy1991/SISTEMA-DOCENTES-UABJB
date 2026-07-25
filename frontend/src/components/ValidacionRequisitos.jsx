@@ -67,10 +67,10 @@ function ValidacionRequisitos({ requisitos, fondo, esJefatura = false }) {
             <span className="flex-shrink-0">{requisitos.horas ? <CheckCircleIcon /> : <XCircleIcon />}</span>
           </div>
 
-          {/* FunciÃ³n Docente */}
+          {/* Función Académica */}
           <div className="flex items-center justify-between gap-4 py-1 border-b border-slate-100 dark:border-slate-700/60">
             <span className="text-sm text-slate-700 dark:text-slate-300 leading-snug">
-              Carga en funciÃ³n docente
+              Carga en Función Académica
             </span>
             <span className="flex-shrink-0">{requisitos.docencia ? <CheckCircleIcon /> : <XCircleIcon />}</span>
           </div>

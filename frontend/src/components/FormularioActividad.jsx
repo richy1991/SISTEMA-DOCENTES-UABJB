@@ -31,7 +31,7 @@ function FormularioActividad({ categoria, categoriasDisponibles, onGuardar, onCa
   };
 
   const categoriaActual = categoriasDisponibles?.find(c => c.id === parseInt(formData.categoria_id)) || categoria;
-  const esEvidenciaObligatoria = categoriaActual?.tipo !== 'docente';
+  const esEvidenciaObligatoria = categoriaActual?.tipo !== 'academica';
 
   const handleSubmit = (e) => {
     e.preventDefault();

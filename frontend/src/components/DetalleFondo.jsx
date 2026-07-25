@@ -130,13 +130,13 @@ const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'
 const CATEGORIAS_BLOQUEADAS = [];
 
 const CATEGORY_ICONS = {
-  'docente': DocenteIcon,
+  'academica': DocenteIcon,
   'investigacion': InvestigacionIcon,
-  'extension': ExtensionIcon,
-  'asesorias': AsesoriasIcon,
-  'tribunales': TribunalesIcon,
-  'administrativo': AdministrativoIcon,
-  'vida_universitaria': VidaUniversitariaIcon,
+  'extension_universitaria': ExtensionIcon,
+  'interaccion_social': AsesoriasIcon,
+  'gestion': AdministrativoIcon,
+  'academica_administrativa': TribunalesIcon,
+  'social_cultural_deportiva': VidaUniversitariaIcon,
 };
 
 function DetalleFondo({ isDark }) {
@@ -191,8 +191,10 @@ function DetalleFondo({ isDark }) {
   const [enviandoInforme, setEnviandoInforme] = useState(false);
 
   // iiisyp es solo lectura: no puede aprobar ni gestionar fondos
+  const esSuperAdmin = usuarioActual?.is_superuser === true;
   const esAdmin = false;
   const esJefeEstudios = usuarioActual?.perfil?.rol === 'jefe_estudios';
+  const puedeGestionarDistribucion = esSuperAdmin || esJefeEstudios;
   const puedeGestionarCarga = esJefeEstudios;
   const soloLecturaPorRol = !esJefeEstudios;
 
@@ -371,7 +373,7 @@ function DetalleFondo({ isDark }) {
   };
 
   const abrirFormularioActividad = (categoria) => {
-    if (!esJefeEstudios) {
+    if (!puedeGestionarDistribucion) {
       toast.error('Solo Jefatura puede agregar actividades.');
       return;
     }
@@ -380,11 +382,11 @@ function DetalleFondo({ isDark }) {
   };
 
   const abrirFormularioActividadGlobal = () => {
-    if (!esJefeEstudios) {
+    if (!puedeGestionarDistribucion) {
       toast.error('Solo Jefatura puede agregar actividades.');
       return;
     }
-    const catDefault = fondo.categorias?.find(c => c.tipo === 'vida_universitaria') || fondo.categorias?.[0] || { id: '' };
+    const catDefault = fondo.categorias?.find(c => c.tipo === 'social_cultural_deportiva') || fondo.categorias?.[0] || { id: '' };
     setCategoriaSeleccionada({ id: catDefault.id, nombre: catDefault.tipo_display });
     setMostrarFormActividad(true);
   };
@@ -412,7 +414,7 @@ function DetalleFondo({ isDark }) {
   };
 
   const guardarActividad = async (actividadData) => {
-    if (!esJefeEstudios) {
+    if (!puedeGestionarDistribucion) {
       toast.error('No tienes permisos para agregar actividades.');
       return;
     }
@@ -448,7 +450,7 @@ function DetalleFondo({ isDark }) {
   };
 
   const editarActividadHandler = (actividad) => {
-    if (!esJefeEstudios) {
+    if (!puedeGestionarDistribucion) {
       toast.error('No tienes permisos para editar actividades.');
       return;
     }
@@ -461,7 +463,7 @@ function DetalleFondo({ isDark }) {
   };
 
   const actualizarActividad = async (actividadData) => {
-    if (!esJefeEstudios) {
+    if (!puedeGestionarDistribucion) {
       toast.error('No tienes permisos para editar actividades.');
       return;
     }
@@ -498,7 +500,7 @@ function DetalleFondo({ isDark }) {
 
   const confirmarEliminarActividad = async () => {
     if (!actividadAEliminar) return;
-    if (!esJefeEstudios) {
+    if (!puedeGestionarDistribucion) {
       toast.error('No tienes permisos para eliminar actividades.');
       return;
     }
@@ -742,7 +744,7 @@ function DetalleFondo({ isDark }) {
     if (!fondo) return { horas: false, docencia: false, docs: false, total: false };
 
     const horas = Math.abs(fondo.total_asignado - fondo.horas_efectivas) < 0.1;
-    const docencia = fondo.categorias?.some(c => c.tipo === 'docente' && parseFloat(c.total_horas) > 0);
+    const docencia = fondo.categorias?.some(c => c.tipo === 'academica' && parseFloat(c.total_horas) > 0);
     const docs = fondo.tiene_programa_analitico;
 
     return {
@@ -907,7 +909,8 @@ function DetalleFondo({ isDark }) {
 
   const puedeEditar = fondo.puede_editar;
   const requisitos = validarRequisitos();
-  const puedeEditarDocente = Boolean(puedeEditar) && !esAdmin && esJefeEstudios;
+  const puedeEditarDocente = (Boolean(puedeEditar) || esSuperAdmin) && !esAdmin && puedeGestionarDistribucion;
+  const puedeEditarDistribucion = puedeEditarDocente && ['borrador', 'observado'].includes(fondo.estado);
 
   const mostrarCargaAcademica = panelCentral === 'carga';
 
@@ -1321,10 +1324,12 @@ function DetalleFondo({ isDark }) {
                             <DistribuirHoras
                               fondoId={fondo.id}
                               horasEfectivas={fondo.horas_efectivas}
+                              horasObjetivo={fondo.horas_semana}
+                              editable={puedeEditarDistribucion}
                               onActualizar={handleActualizacionHoras}
-                              onAgregarActividad={esJefeEstudios ? abrirFormularioActividadGlobal : undefined}
-                              canAddActivity={esJefeEstudios}
-                              hideActionButtons={esAdmin || !puedeEditarDocente}
+                              onAgregarActividad={puedeGestionarDistribucion ? abrirFormularioActividadGlobal : undefined}
+                              canAddActivity={puedeGestionarDistribucion}
+                              hideActionButtons={esAdmin || !puedeEditarDistribucion}
                             />
                           </div>
                         </div>
@@ -1487,7 +1492,7 @@ function DetalleFondo({ isDark }) {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                   {(() => {
-                    const ORDEN_FUNCIONES = ['docente', 'investigacion', 'extension', 'asesorias', 'tribunales', 'administrativo', 'vida_universitaria'];
+                    const ORDEN_FUNCIONES = ['academica', 'investigacion', 'extension_universitaria', 'interaccion_social', 'gestion', 'academica_administrativa', 'social_cultural_deportiva'];
                     const categoriasOrdenadas = [...fondo.categorias].sort((a, b) => {
                       return ORDEN_FUNCIONES.indexOf(a.tipo) - ORDEN_FUNCIONES.indexOf(b.tipo);
                     });
@@ -1762,7 +1767,7 @@ function DetalleFondo({ isDark }) {
       {fondo && mostrarFormActividad && categoriaSeleccionada && ReactDOM.createPortal(
         <FormularioActividad
           categoria={categoriaSeleccionada}
-          categoriasDisponibles={fondo.categorias.filter(c => c.tipo !== 'docente').map(c => ({ id: c.id, nombre: c.tipo_display, tipo: c.tipo }))}
+          categoriasDisponibles={fondo.categorias.filter(c => c.tipo !== 'academica').map(c => ({ id: c.id, nombre: c.tipo_display, tipo: c.tipo }))}
           onGuardar={guardarActividad}
           onCancelar={cerrarFormularioActividad}
           horasDisponibles={fondo.horas_disponibles}

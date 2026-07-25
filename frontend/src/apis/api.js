@@ -71,6 +71,8 @@ api.interceptors.response.use(
 export const getFondosTiempo = () => api.get('/fondos-tiempo/');
 export const getFondoTiempoDetalle = (id) => api.get(`/fondos-tiempo/${id}/`);
 export const crearFondoTiempo = (data) => api.post('/fondos-tiempo/', data);
+export const generarFondosTiempoMasivo = () => api.post('/fondos-tiempo/generar-masivo/');
+export const distribuirHorasFondoTiempo = (id, data) => api.patch(`/fondos-tiempo/${id}/distribuir-horas/`, data);
 export const actualizarFondoTiempo = (id, data) => api.put(`/fondos-tiempo/${id}/`, data);
 export const eliminarFondoTiempo = (id) => api.delete(`/fondos-tiempo/${id}/`);
 export const getFondosLargoPlazo = () => api.get('/fondos-tiempo/largo-plazo/');
