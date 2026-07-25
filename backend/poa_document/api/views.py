@@ -1,3 +1,5 @@
+from datetime import date
+from decimal import Decimal
 from io import BytesIO
 
 from rest_framework import viewsets, mixins
@@ -9,14 +11,28 @@ from rest_framework.views import APIView
 from django.http import FileResponse, HttpResponse
 from django.utils import timezone
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.core.exceptions import ObjectDoesNotExist
 from rest_framework.exceptions import PermissionDenied
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import landscape, letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import SimpleDocTemplate, Spacer, Table, TableStyle, Paragraph
-from poa_document.models import Direccion, DocumentoPOA, ObjetivoEspecifico, Actividad, DetallePresupuesto, UsuarioPOA, RevisionDocumentoPOA, HistorialDocumentoPOA, MensajeChat, BloqueoChat, Evidencia, EvidenciaArchivo
+from poa_document.models import (
+    Direccion,
+    DocumentoPOA,
+    ObjetivoEspecifico,
+    Actividad,
+    DetallePresupuesto,
+    UsuarioPOA,
+    HistorialDocumentoPOA,
+    ObservacionDocumentoPOA,
+    SolicitudCambioPOA,
+    MensajeChat,
+    BloqueoChat,
+    Evidencia,
+    EvidenciaArchivo,
+)
 from fondos.models import Docente
 from django.contrib.auth.models import User
 from .serializers import (
@@ -26,6 +42,8 @@ from .serializers import (
     ActividadSerializer,
     DetallePresupuestoSerializer,
     UsuarioPOASerializer,
+    ObservacionDocumentoPOASerializer,
+    SolicitudCambioPOASerializer,
     DocenteSimpleSerializer,
     MensajeChatSerializer,
     EvidenciaSerializer,
@@ -74,6 +92,22 @@ def _filtrar_documentos_por_usuario(qs, user):
     return qs.filter(unidad_solicitante_id=carrera.id)
 
 
+def _usuario_pertenece_a_carrera(user_obj, carrera):
+    if not user_obj or not carrera:
+        return False
+    perfil = _get_user_profile(user_obj)
+    if getattr(perfil, 'carrera_id', None) == carrera.id:
+        return True
+    if getattr(perfil, 'docente_id', None):
+        if Docente.objects.filter(
+            pk=perfil.docente_id,
+            asignaciones_carrera__carrera_id=carrera.id,
+            asignaciones_carrera__activo=True,
+        ).exists():
+            return True
+    return user_obj.asignaciones_carrera.filter(carrera_id=carrera.id, activo=True).exists()
+
+
 def _documento_accesible_para_usuario(user, documento):
     if not documento:
         return False
@@ -104,7 +138,13 @@ def _poa_roles_activos(user):
     docente_id = getattr(perfil, 'docente_id', None)
     if docente_id:
         filtros |= Q(docente_id=docente_id)
-    return set(UsuarioPOA.objects.filter(filtros, activo=True).values_list('rol', flat=True))
+    qs = UsuarioPOA.objects.filter(filtros, activo=True)
+    if not user.is_superuser:
+        carrera = _carrera_usuario_poa(user)
+        if not carrera:
+            return set()
+        qs = qs.filter(carrera_id=carrera.id)
+    return set(qs.values_list('rol', flat=True))
 
 
 def _es_elaborador(user):
@@ -113,13 +153,7 @@ def _es_elaborador(user):
     roles = _poa_roles_activos(user)
     if 'elaborador' in roles:
         return True
-    perfil = _get_user_profile(user)
-    docente_id = getattr(perfil, 'docente_id', None)
-    return UsuarioPOA.objects.filter(
-        Q(user_id=user.id) | Q(docente_id=docente_id),
-        activo=True,
-        rol='elaborador',
-    ).exists()
+    return False
 
 
 def _es_revisor(user):
@@ -149,31 +183,14 @@ def _es_admin_principal(user):
     return getattr(perfil, 'rol', None) == 'iiisyp'
 
 
-def _requerir_gestor_accesos(request):
-    if not (_es_elaborador(request.user) or _es_admin_principal(request.user)):
-        raise PermissionDenied('Solo el rol Elaborador POA o el superusuario puede gestionar accesos POA.')
-
-
 def _requerir_gestor_o_director(request):
-    """Permite gestionar accesos a: Elaborador POA, Director de carrera o admin principal/superuser."""
-    if not (_es_elaborador(request.user) or _es_admin_principal(request.user) or _es_revisor(request.user)):
-        raise PermissionDenied('Solo Elaborador POA, Director de Carrera o el superusuario puede gestionar accesos POA.')
+    if not (_es_admin_principal(request.user) or _es_revisor(request.user)):
+        raise PermissionDenied('Solo Director de Carrera o el superusuario puede gestionar accesos POA.')
 
 
 def _requerir_revisor(request):
     if not _es_revisor(request.user):
         raise PermissionDenied('Solo el Director del sistema principal puede realizar esta acción.')
-
-
-def _accesos_poa_usuario(user):
-    if not user or not user.is_authenticated:
-        return UsuarioPOA.objects.none()
-    filtros = Q(user=user)
-    perfil = _get_user_profile(user)
-    docente_id = getattr(perfil, 'docente_id', None)
-    if docente_id:
-        filtros |= Q(docente_id=docente_id)
-    return UsuarioPOA.objects.filter(filtros)
 
 
 def _crear_historial_documento(documento, usuario, tipo_evento, descripcion, estado_anterior='', estado_nuevo='', datos_evento=None):
@@ -190,29 +207,212 @@ def _crear_historial_documento(documento, usuario, tipo_evento, descripcion, est
     )
 
 
-def _resumen_observaciones_revision(documento):
-    observadas = documento.revisiones.filter(
-        activo=True,
-        ciclo_revision=documento.ciclo_revision_actual,
-        estado='observado',
-    ).select_related('revisor__user')
-    mensajes = []
-    for revision in observadas:
-        etiqueta = revision.revisor.nombre_entidad or revision.revisor.nombre_display
-        if revision.observaciones:
-            mensajes.append(f'[{etiqueta}] {revision.observaciones}')
-    return '\n\n'.join(mensajes)
+ESTADOS_PLANIFICACION_EDITABLE = ('elaboracion', 'observado')
+ESTADOS_PLANIFICACION_CON_SOLICITUD = ('aprobado', 'ejecucion')
 
 
-def _obtener_revision_del_usuario(documento, user):
-    acceso_ids = list(_accesos_poa_usuario(user).values_list('id', flat=True))
-    if not acceso_ids:
-        return None
-    return documento.revisiones.filter(
-        activo=True,
-        ciclo_revision=documento.ciclo_revision_actual,
-        revisor_id__in=acceso_ids,
-    ).select_related('revisor__user').first()
+def _requerir_documento_editable_directo(request, documento):
+    _requerir_elaborador(request)
+    if documento.estado not in ESTADOS_PLANIFICACION_EDITABLE:
+        raise PermissionDenied(
+            'Este documento esta bloqueado para edicion directa. '
+            'Debe enviar una solicitud de cambios al Director de Carrera.'
+        )
+
+
+def _requerir_evidencia_editable(request, actividad):
+    _requerir_elaborador(request)
+    documento = actividad.objetivo.documento
+    if documento.estado != 'ejecucion':
+        raise PermissionDenied('Las evidencias solo pueden cargarse cuando el documento esta en ejecucion.')
+
+
+def _parse_observaciones_items(value):
+    if isinstance(value, list):
+        raw_items = value
+    else:
+        raw_items = str(value or '').replace('\r', '\n').split('\n')
+    items = []
+    for item in raw_items:
+        text = str(item or '').strip()
+        text = text.lstrip('-*• ').strip()
+        while text and text[0].isdigit():
+            text = text[1:].strip()
+            if text.startswith(('.', ')', '-')):
+                text = text[1:].strip()
+            else:
+                break
+        if text:
+            items.append(text)
+    return items
+
+
+def _recalcular_montos_actividad(actividad):
+    if not actividad:
+        return
+    detalles = actividad.detalles_presupuesto.all()
+    monto_funcion = Decimal('0')
+    monto_inversion = Decimal('0')
+    for detalle in detalles:
+        monto = Decimal(detalle.costo_total or 0)
+        tipo = str(detalle.tipo or '').lower()
+        if tipo == 'inversion':
+            monto_inversion += monto
+        else:
+            monto_funcion += monto
+    Actividad.objects.filter(pk=actividad.pk).update(
+        monto_funcion=monto_funcion,
+        monto_inversion=monto_inversion,
+    )
+
+
+def _aplicar_solicitud_cambio(solicitud):
+    documento = solicitud.documento
+    payload = solicitud.payload or {}
+    tipo = solicitud.tipo_objeto
+    accion = solicitud.accion
+
+    if documento.estado not in ESTADOS_PLANIFICACION_CON_SOLICITUD:
+        raise PermissionDenied('Solo se pueden aprobar solicitudes de documentos aprobados o en ejecucion.')
+
+    if tipo == 'documento':
+        if accion != 'editar':
+            raise PermissionDenied('La solicitud de documento solo permite edicion.')
+        allowed = {
+            'programa',
+            'objetivo_gestion_institucional',
+            'elaborado_por',
+            'jefe_unidad',
+            'fecha_elaboracion',
+            'observaciones',
+        }
+        cambios = []
+        for field in allowed:
+            if field not in payload:
+                continue
+            anterior = getattr(documento, field)
+            nuevo = payload.get(field)
+            if str(anterior or '') == str(nuevo or ''):
+                continue
+            setattr(documento, field, nuevo)
+            cambios.append({'campo': field, 'antes': str(anterior or ''), 'despues': str(nuevo or '')})
+        if cambios:
+            documento.save(update_fields=[c['campo'] for c in cambios] + ['actualizado_en'])
+        return {'cambios': cambios}
+
+    if tipo == 'objetivo':
+        if accion == 'crear':
+            obj = ObjetivoEspecifico.objects.create(
+                documento=documento,
+                codigo=payload.get('codigo') or '',
+                descripcion=payload.get('descripcion') or '',
+            )
+            return {'objetivo_id': obj.id}
+        obj = ObjetivoEspecifico.objects.filter(pk=solicitud.objeto_id, documento=documento).first()
+        if not obj:
+            raise PermissionDenied('El objetivo solicitado no pertenece al documento.')
+        if accion == 'editar':
+            obj.codigo = payload.get('codigo', obj.codigo) or ''
+            obj.descripcion = payload.get('descripcion', obj.descripcion) or ''
+            obj.save(update_fields=['codigo', 'descripcion'])
+            return {'objetivo_id': obj.id}
+        if accion == 'eliminar':
+            obj.delete()
+            return {'objetivo_id': solicitud.objeto_id}
+
+    if tipo == 'actividad':
+        if accion == 'crear':
+            objetivo_id = payload.get('objetivo_id') or payload.get('objetivo')
+            objetivo = ObjetivoEspecifico.objects.filter(pk=objetivo_id, documento=documento).first()
+            if not objetivo:
+                raise PermissionDenied('El objetivo de la actividad no pertenece al documento.')
+            actividad = Actividad.objects.create(
+                objetivo=objetivo,
+                codigo=payload.get('codigo') or '',
+                nombre=payload.get('nombre') or '',
+                responsable=payload.get('responsable') or '',
+                productos_esperados=payload.get('productos_esperados') or '',
+                mes_inicio=payload.get('mes_inicio') or '',
+                mes_fin=payload.get('mes_fin') or '',
+                indicador_descripcion=payload.get('indicador_descripcion') or '',
+                indicador_unidad=payload.get('indicador_unidad') or 'numero',
+                indicador_linea_base=payload.get('indicador_linea_base') or 0,
+                indicador_meta=payload.get('indicador_meta') or 0,
+                estado=payload.get('estado') or 'programado',
+            )
+            return {'actividad_id': actividad.id}
+        actividad = Actividad.objects.select_related('objetivo__documento').filter(
+            pk=solicitud.objeto_id,
+            objetivo__documento=documento,
+        ).first()
+        if not actividad:
+            raise PermissionDenied('La actividad solicitada no pertenece al documento.')
+        if accion == 'editar':
+            editable = [
+                'codigo', 'nombre', 'responsable', 'productos_esperados',
+                'mes_inicio', 'mes_fin', 'indicador_descripcion',
+                'indicador_unidad', 'indicador_linea_base', 'indicador_meta',
+                'estado',
+            ]
+            for field in editable:
+                if field in payload:
+                    setattr(actividad, field, payload.get(field))
+            actividad.save(update_fields=editable)
+            return {'actividad_id': actividad.id}
+        if accion == 'eliminar':
+            actividad.delete()
+            return {'actividad_id': solicitud.objeto_id}
+
+    if tipo == 'presupuesto':
+        actividad = None
+        if accion == 'crear':
+            actividad_id = payload.get('actividad_id') or payload.get('actividad')
+            actividad = Actividad.objects.select_related('objetivo__documento').filter(
+                pk=actividad_id,
+                objetivo__documento=documento,
+            ).first()
+            if not actividad:
+                raise PermissionDenied('La actividad del presupuesto no pertenece al documento.')
+            detalle = DetallePresupuesto.objects.create(
+                actividad=actividad,
+                tipo=payload.get('tipo') or 'funcionamiento',
+                partida=payload.get('partida') or '',
+                item=payload.get('item') or '',
+                unidad_medida=payload.get('unidad_medida') or '',
+                caracteristicas=payload.get('caracteristicas') or '',
+                cantidad=payload.get('cantidad') or 0,
+                costo_unitario=payload.get('costo_unitario') or 0,
+                costo_total=0,
+                mes_requerimiento=payload.get('mes_requerimiento') or '',
+            )
+            _recalcular_montos_actividad(actividad)
+            return {'detalle_id': detalle.id}
+        detalle = DetallePresupuesto.objects.select_related('actividad__objetivo__documento').filter(
+            pk=solicitud.objeto_id,
+            actividad__objetivo__documento=documento,
+        ).first()
+        if not detalle:
+            raise PermissionDenied('El presupuesto solicitado no pertenece al documento.')
+        actividad = detalle.actividad
+        if accion == 'editar':
+            editable = [
+                'tipo', 'partida', 'item', 'unidad_medida',
+                'caracteristicas', 'cantidad', 'costo_unitario',
+                'mes_requerimiento',
+            ]
+            for field in editable:
+                if field in payload:
+                    setattr(detalle, field, payload.get(field))
+            detalle.save()
+            _recalcular_montos_actividad(actividad)
+            return {'detalle_id': detalle.id}
+        if accion == 'eliminar':
+            detalle_id = detalle.id
+            detalle.delete()
+            _recalcular_montos_actividad(actividad)
+            return {'detalle_id': detalle_id}
+
+    raise PermissionDenied('La solicitud de cambio no es valida.')
 
 
 def _documentos_queryset():
@@ -220,12 +420,16 @@ def _documentos_queryset():
         'objetivos',
         'revisiones__revisor__user',
         'historial__usuario',
+        'observaciones_checklist__creado_por',
+        'observaciones_checklist__resuelto_por',
+        'solicitudes_cambio__solicitado_por',
+        'solicitudes_cambio__revisado_por',
     )
 
 
 class UsuarioPOAViewSet(viewsets.ModelViewSet):
     """CRUD de usuarios con acceso al módulo POA."""
-    queryset = UsuarioPOA.objects.select_related('user', 'docente').all()
+    queryset = UsuarioPOA.objects.select_related('user', 'docente', 'carrera').all()
     serializer_class = UsuarioPOASerializer
     permission_classes = [IsAuthenticated]
 
@@ -236,9 +440,25 @@ class UsuarioPOAViewSet(viewsets.ModelViewSet):
 
         user = serializer.validated_data.get('user')
         rol = serializer.validated_data.get('rol')
+        carrera_solicitante = _carrera_usuario_poa(request.user)
+        carrera = carrera_solicitante if not request.user.is_superuser else (
+            carrera_solicitante or serializer.validated_data.get('carrera')
+        )
+
+        if not carrera:
+            return Response(
+                {'carrera': ['Debe existir una carrera activa para asignar un elaborador POA.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not request.user.is_superuser and not _usuario_pertenece_a_carrera(user, carrera):
+            return Response(
+                {'user': ['Solo puede asignar usuarios que pertenecen a su misma carrera.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         if rol == 'elaborador':
-            existing_assignment = UsuarioPOA.objects.filter(user=user, rol=rol).first()
+            existing_assignment = UsuarioPOA.objects.filter(user=user, rol=rol, carrera=carrera).first()
 
             if existing_assignment and existing_assignment.activo:
                 nombre_usuario = user.get_full_name() or user.username
@@ -249,16 +469,21 @@ class UsuarioPOAViewSet(viewsets.ModelViewSet):
 
             with transaction.atomic():
                 # Desactivar todos los otros elaboradores activos
-                UsuarioPOA.objects.filter(rol='elaborador', activo=True).exclude(user=user).update(activo=False)
+                UsuarioPOA.objects.filter(
+                    rol='elaborador',
+                    activo=True,
+                    carrera=carrera,
+                ).exclude(user=user).update(activo=False)
 
                 if existing_assignment: # significa que estaba inactivo
                     existing_assignment.activo = True
-                    existing_assignment.save()
+                    existing_assignment.carrera = carrera
+                    existing_assignment.save(update_fields=['activo', 'carrera'])
                     serializer = self.get_serializer(existing_assignment)
                     headers = self.get_success_headers(serializer.data)
                     return Response(serializer.data, status=status.HTTP_200_OK, headers=headers)
                 else: # no existia
-                    instance = serializer.save()
+                    instance = serializer.save(carrera=carrera)
                     headers = self.get_success_headers(serializer.data)
                     return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
         else:
@@ -276,7 +501,19 @@ class UsuarioPOAViewSet(viewsets.ModelViewSet):
         if instance.rol == 'elaborador' and request.data.get('activo') is True:
             with transaction.atomic():
                 # Desactivar todos los demás elaboradores
-                UsuarioPOA.objects.filter(rol='elaborador', activo=True).exclude(pk=instance.pk).update(activo=False)
+                carrera = instance.carrera or _carrera_usuario_poa(request.user)
+                if not carrera:
+                    return Response(
+                        {'carrera': ['Debe existir una carrera activa para activar este acceso.']},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                instance.carrera = carrera
+                instance.save(update_fields=['carrera'])
+                UsuarioPOA.objects.filter(
+                    rol='elaborador',
+                    activo=True,
+                    carrera=carrera,
+                ).exclude(pk=instance.pk).update(activo=False)
                 # Proceder con la activación del actual
                 return super().partial_update(request, *args, **kwargs)
 
@@ -286,8 +523,33 @@ class UsuarioPOAViewSet(viewsets.ModelViewSet):
         _requerir_gestor_o_director(request)
         return super().destroy(request, *args, **kwargs)
 
+    def perform_update(self, serializer):
+        carrera = serializer.validated_data.get('carrera') or serializer.instance.carrera or _carrera_usuario_poa(self.request.user)
+        user = serializer.validated_data.get('user') or serializer.instance.user
+
+        if not self.request.user.is_superuser:
+            carrera_usuario = _carrera_usuario_poa(self.request.user)
+            if not carrera_usuario:
+                raise PermissionDenied('El usuario no tiene una carrera activa para gestionar accesos POA.')
+            carrera = carrera_usuario
+            if user and not _usuario_pertenece_a_carrera(user, carrera):
+                raise PermissionDenied('Solo puede asignar usuarios que pertenecen a su misma carrera.')
+
+        instance = serializer.save(carrera=carrera)
+        if instance.rol == 'elaborador' and instance.activo and instance.carrera_id:
+            UsuarioPOA.objects.filter(
+                rol='elaborador',
+                activo=True,
+                carrera_id=instance.carrera_id,
+            ).exclude(pk=instance.pk).update(activo=False)
+
     def get_queryset(self):
-        qs = UsuarioPOA.objects.select_related('user', 'docente').all()
+        qs = UsuarioPOA.objects.select_related('user', 'docente', 'carrera').all()
+        if not self.request.user.is_superuser:
+            carrera = _carrera_usuario_poa(self.request.user)
+            if not carrera:
+                return UsuarioPOA.objects.none()
+            qs = qs.filter(carrera_id=carrera.id)
         activo = self.request.query_params.get('activo')
         if activo in ('true', '1'):
             qs = qs.filter(activo=True)
@@ -637,6 +899,7 @@ class ChatContactosPOAView(APIView):
                 accesos_elaborador_qs = UsuarioPOA.objects.select_related('user', 'docente').filter(
                     rol='elaborador',
                     activo=True,
+                    carrera_id=carrera.id,
                 ).filter(
                     Q(user__is_active=True, user__perfil__carrera_id=carrera.id)
                     | Q(docente__activo=True, docente__asignaciones_carrera__carrera_id=carrera.id, docente__asignaciones_carrera__activo=True)
@@ -647,6 +910,7 @@ class ChatContactosPOAView(APIView):
                         is_active=True,
                         accesos_poa__activo=True,
                         accesos_poa__rol='elaborador',
+                        accesos_poa__carrera_id=carrera.id,
                     ).filter(
                         Q(accesos_poa__docente__asignaciones_carrera__carrera_id=carrera.id, accesos_poa__docente__asignaciones_carrera__activo=True)
                         | Q(perfil__carrera_id=carrera.id)
@@ -657,6 +921,7 @@ class ChatContactosPOAView(APIView):
                 asignado_inactivo_qs = UsuarioPOA.objects.select_related('user', 'docente').filter(
                     rol='elaborador',
                     activo=False,
+                    carrera_id=carrera.id,
                 ).filter(
                     Q(user__perfil__carrera_id=carrera.id)
                     | Q(docente__asignaciones_carrera__carrera_id=carrera.id)
@@ -683,6 +948,14 @@ class ChatContactosPOAView(APIView):
             contactos_qs = User.objects.select_related('perfil').filter(is_active=True).exclude(pk=request.user.id).distinct().order_by('last_name', 'first_name', 'username')
             rol_contactos = 'usuarios'
 
+        no_leidos_qs = MensajeChat.objects.filter(receptor=request.user, leido_en__isnull=True)
+        no_leidos_total = no_leidos_qs.count()
+        no_leidos_por_usuario = dict(
+            no_leidos_qs.values('emisor_id')
+            .annotate(total=Count('id'))
+            .values_list('emisor_id', 'total')
+        )
+
         contactos = []
         for usuario in contactos_qs:
             perfil = _get_user_profile(usuario)
@@ -691,6 +964,7 @@ class ChatContactosPOAView(APIView):
                 'username': usuario.username,
                 'nombre_completo': usuario.get_full_name() or usuario.username,
                 'rol': rol_contactos or getattr(perfil, 'rol', None),
+                'no_leidos': no_leidos_por_usuario.get(usuario.id, 0),
             })
 
         recientes_map = {}
@@ -710,13 +984,16 @@ class ChatContactosPOAView(APIView):
                 'rol': getattr(perfil, 'rol', None),
                 'fecha_ultimo_mensaje': mensaje.fecha,
                 'ultimo_mensaje': mensaje.texto,
+                'no_leidos': no_leidos_por_usuario.get(peer_id, 0),
             }
 
         recientes = list(recientes_map.values())
 
-        # El predeterminado en POA prioriza la sugerencia por rol/carrera (contactos),
-        # y si no existe se toma el más reciente.
-        if contactos and not requiere_asignar_elaborador:
+        # El chat por defecto solo se mantiene fijo entre director y elaborador.
+        # Para los demas usuarios, el historial/buscador decide la conversacion.
+        mantiene_chat_director_elaborador = rol_contactos in ('director', 'elaborador')
+
+        if contactos and mantiene_chat_director_elaborador and not requiere_asignar_elaborador:
             contacto_default = contactos[0]
         elif recientes:
             contacto_default = recientes[0]
@@ -735,6 +1012,7 @@ class ChatContactosPOAView(APIView):
             'contactos': contactos_sugeridos,
             'contactos_recientes': recientes,
             'contacto_default': contacto_default,
+            'no_leidos_total': no_leidos_total,
             'requiere_seleccion': len(contactos_sugeridos) > 1,
             'requiere_asignar_elaborador': requiere_asignar_elaborador,
             'alerta_asignacion': alerta_asignacion,
@@ -794,30 +1072,38 @@ class DocumentoPOAViewSet(viewsets.ModelViewSet):
         return super().create(request, *args, **kwargs)
 
     def update(self, request, *args, **kwargs):
-        _requerir_elaborador(request)
+        doc = self.get_object()
+        _requerir_documento_editable_directo(request, doc)
         return super().update(request, *args, **kwargs)
 
     def partial_update(self, request, *args, **kwargs):
-        _requerir_elaborador(request)
+        doc = self.get_object()
+        _requerir_documento_editable_directo(request, doc)
         return super().partial_update(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):
-        _requerir_elaborador(request)
+        doc = self.get_object()
+        _requerir_documento_editable_directo(request, doc)
         return super().destroy(request, *args, **kwargs)
 
     def perform_create(self, serializer):
-        serializer.save()
+        documento = serializer.save()
+        _crear_historial_documento(
+            documento=documento,
+            usuario=self.request.user,
+            tipo_evento='creacion',
+            descripcion='Documento POA creado.',
+            estado_anterior='',
+            estado_nuevo=documento.estado,
+            datos_evento={
+                'gestion': documento.gestion,
+                'programa': documento.programa,
+            },
+        )
 
     def perform_update(self, serializer):
         instancia = serializer.instance
         estado_anterior = serializer.instance.estado if serializer.instance else ''
-        justificacion = ''
-        if estado_anterior in ('aprobado', 'ejecucion'):
-            justificacion = str(self.request.data.get('justificacion_edicion', '')).strip()
-            if not justificacion:
-                from rest_framework.exceptions import ValidationError as DRFValidationError
-                raise DRFValidationError({'justificacion_edicion': 'Debe ingresar una justificación para editar un documento aprobado.'})
-
         def _string_valor(valor):
             if valor is None or valor == '':
                 return 'Sin valor'
@@ -871,7 +1157,6 @@ class DocumentoPOAViewSet(viewsets.ModelViewSet):
             datos_evento={
                 'gestion': documento.gestion,
                 'programa': documento.programa,
-                'justificacion': justificacion,
                 'cambios': cambios,
             },
         )
@@ -957,6 +1242,37 @@ class DocumentoPOAViewSet(viewsets.ModelViewSet):
         )
         return Response(self.get_serializer(doc).data)
 
+    @action(detail=True, methods=['post'], url_path='iniciar-ejecucion')
+    def iniciar_ejecucion(self, request, pk=None):
+        _requerir_revisor(request)
+        doc = self.get_object()
+        if doc.estado != 'aprobado':
+            return Response({'detail': f'Solo se puede iniciar ejecucion desde estado Aprobado. Estado actual: {doc.get_estado_display()}.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        hoy = timezone.now().date()
+        gestion_actual = hoy.year
+        excepcion_archivo_2026 = hoy <= date(2026, 12, 31) and doc.gestion < gestion_actual
+        if doc.gestion != gestion_actual and not excepcion_archivo_2026:
+            return Response({'detail': 'Solo se puede iniciar ejecucion para documentos aprobados de la gestion actual.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        estado_anterior = doc.estado
+        doc.estado = 'ejecucion'
+        doc.save(update_fields=['estado', 'actualizado_en'])
+
+        _crear_historial_documento(
+            documento=doc,
+            usuario=request.user,
+            tipo_evento='inicio_ejecucion',
+            descripcion='Documento POA iniciado en ejecucion.',
+            estado_anterior=estado_anterior,
+            estado_nuevo=doc.estado,
+            datos_evento={
+                'gestion': doc.gestion,
+                'excepcion_archivo_2026': excepcion_archivo_2026,
+            },
+        )
+        return Response(self.get_serializer(doc).data)
+
     @action(detail=True, methods=['post'], url_path='observar')
     def observar(self, request, pk=None):
         _requerir_revisor(request)
@@ -964,14 +1280,29 @@ class DocumentoPOAViewSet(viewsets.ModelViewSet):
         if doc.estado != 'revision':
             return Response({'detail': f'Solo se puede observar en estado En revisión. Estado actual: {doc.get_estado_display()}.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        observaciones = (request.data.get('observaciones') or request.data.get('observacion') or '').strip()
-        if not observaciones:
+        observaciones_raw = request.data.get('observaciones')
+        if observaciones_raw is None:
+            observaciones_raw = request.data.get('observacion') or ''
+        observaciones_items = _parse_observaciones_items(observaciones_raw)
+        observaciones = '\n'.join(observaciones_items).strip()
+        if not observaciones_items:
             return Response({'observaciones': ['Debe registrar observaciones para marcar el documento como observado.']}, status=status.HTTP_400_BAD_REQUEST)
 
         estado_anterior = doc.estado
         doc.estado = 'observado'
         doc.observaciones = observaciones
         doc.save(update_fields=['estado', 'observaciones', 'actualizado_en'])
+
+        doc.observaciones_checklist.filter(ciclo_revision=doc.ciclo_revision_actual).delete()
+        ObservacionDocumentoPOA.objects.bulk_create([
+            ObservacionDocumentoPOA(
+                documento=doc,
+                ciclo_revision=doc.ciclo_revision_actual,
+                texto=texto,
+                creado_por=request.user,
+            )
+            for texto in observaciones_items
+        ])
 
         _crear_historial_documento(
             documento=doc,
@@ -1044,9 +1375,194 @@ class DocumentoPOAViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 
+class ObservacionDocumentoPOAViewSet(viewsets.ModelViewSet):
+    serializer_class = ObservacionDocumentoPOASerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        docs = _filtrar_documentos_por_usuario(DocumentoPOA.objects.all(), self.request.user)
+        qs = ObservacionDocumentoPOA.objects.select_related(
+            'documento',
+            'creado_por',
+            'resuelto_por',
+        ).filter(documento__in=docs)
+        documento_id = self.request.query_params.get('documento_id')
+        if documento_id:
+            qs = qs.filter(documento_id=documento_id)
+        return qs.order_by('ciclo_revision', 'id')
+
+    def create(self, request, *args, **kwargs):
+        return Response({'detail': 'Las observaciones se crean al observar un documento.'}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    def update(self, request, *args, **kwargs):
+        return self.partial_update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        _requerir_elaborador(request)
+        observacion = self.get_object()
+        documento = observacion.documento
+        if documento.estado != 'observado':
+            return Response({'detail': 'Solo se pueden marcar observaciones mientras el documento esta observado.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        resuelta = bool(request.data.get('resuelta'))
+        observacion.resuelta = resuelta
+        if resuelta:
+            observacion.resuelto_por = request.user
+            observacion.resuelto_en = timezone.now()
+        else:
+            observacion.resuelto_por = None
+            observacion.resuelto_en = None
+        observacion.save(update_fields=['resuelta', 'resuelto_por', 'resuelto_en'])
+
+        _crear_historial_documento(
+            documento=documento,
+            usuario=request.user,
+            tipo_evento='edicion',
+            descripcion='Observacion marcada como corregida.' if resuelta else 'Observacion marcada como pendiente.',
+            estado_anterior=documento.estado,
+            estado_nuevo=documento.estado,
+            datos_evento={
+                'observacion_id': observacion.id,
+                'observacion': observacion.texto,
+                'resuelta': resuelta,
+            },
+        )
+        return Response(self.get_serializer(observacion).data)
+
+    def destroy(self, request, *args, **kwargs):
+        return Response({'detail': 'Las observaciones no se eliminan desde este endpoint.'}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
+
+
+class SolicitudCambioPOAViewSet(viewsets.ModelViewSet):
+    serializer_class = SolicitudCambioPOASerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        docs = _filtrar_documentos_por_usuario(DocumentoPOA.objects.all(), self.request.user)
+        qs = SolicitudCambioPOA.objects.select_related(
+            'documento',
+            'solicitado_por',
+            'revisado_por',
+        ).filter(documento__in=docs)
+        estado_param = self.request.query_params.get('estado')
+        if estado_param:
+            qs = qs.filter(estado=estado_param)
+        documento_id = self.request.query_params.get('documento_id')
+        if documento_id:
+            qs = qs.filter(documento_id=documento_id)
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        _requerir_elaborador(request)
+        documento = _obtener_documento_accesible(request.user, request.data.get('documento'))
+        if not documento:
+            return Response({'documento': ['Documento no encontrado o sin permisos.']}, status=status.HTTP_404_NOT_FOUND)
+        if documento.estado not in ESTADOS_PLANIFICACION_CON_SOLICITUD:
+            return Response(
+                {'detail': 'Las solicitudes de cambio solo aplican a documentos aprobados o en ejecucion.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        solicitud = serializer.save(documento=documento, solicitado_por=request.user)
+
+        _crear_historial_documento(
+            documento=documento,
+            usuario=request.user,
+            tipo_evento='solicitud_cambio',
+            descripcion='Solicitud de cambio enviada al Director de Carrera.',
+            estado_anterior=documento.estado,
+            estado_nuevo=documento.estado,
+            datos_evento={
+                'solicitud_id': solicitud.id,
+                'tipo_objeto': solicitud.tipo_objeto,
+                'accion': solicitud.accion,
+                'descripcion': solicitud.descripcion,
+                'resumen': solicitud.resumen,
+            },
+        )
+        return Response(self.get_serializer(solicitud).data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        return Response({'detail': 'Use aprobar o rechazar para resolver solicitudes.'}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    def partial_update(self, request, *args, **kwargs):
+        return self.update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        solicitud = self.get_object()
+        if solicitud.estado != 'pendiente':
+            return Response({'detail': 'Solo se pueden cancelar solicitudes pendientes.'}, status=status.HTTP_400_BAD_REQUEST)
+        if solicitud.solicitado_por_id != request.user.id and not request.user.is_superuser:
+            raise PermissionDenied('Solo quien solicito el cambio puede cancelarlo.')
+        return super().destroy(request, *args, **kwargs)
+
+    @action(detail=True, methods=['post'], url_path='aprobar')
+    def aprobar(self, request, pk=None):
+        _requerir_revisor(request)
+        solicitud = self.get_object()
+        if solicitud.estado != 'pendiente':
+            return Response({'detail': 'Esta solicitud ya fue resuelta.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            resultado = _aplicar_solicitud_cambio(solicitud)
+            solicitud.estado = 'aprobado'
+            solicitud.revisado_por = request.user
+            solicitud.respuesta = (request.data.get('respuesta') or '').strip()
+            solicitud.respondido_en = timezone.now()
+            solicitud.save(update_fields=['estado', 'revisado_por', 'respuesta', 'respondido_en', 'actualizado_en'])
+
+            _crear_historial_documento(
+                documento=solicitud.documento,
+                usuario=request.user,
+                tipo_evento='aprobacion_cambio',
+                descripcion='Solicitud de cambio aprobada y aplicada.',
+                estado_anterior=solicitud.documento.estado,
+                estado_nuevo=solicitud.documento.estado,
+                datos_evento={
+                    'solicitud_id': solicitud.id,
+                    'tipo_objeto': solicitud.tipo_objeto,
+                    'accion': solicitud.accion,
+                    'resultado': resultado,
+                    'respuesta': solicitud.respuesta,
+                },
+            )
+        return Response(self.get_serializer(solicitud).data)
+
+    @action(detail=True, methods=['post'], url_path='rechazar')
+    def rechazar(self, request, pk=None):
+        _requerir_revisor(request)
+        solicitud = self.get_object()
+        if solicitud.estado != 'pendiente':
+            return Response({'detail': 'Esta solicitud ya fue resuelta.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        solicitud.estado = 'rechazado'
+        solicitud.revisado_por = request.user
+        solicitud.respuesta = (request.data.get('respuesta') or '').strip()
+        solicitud.respondido_en = timezone.now()
+        solicitud.save(update_fields=['estado', 'revisado_por', 'respuesta', 'respondido_en', 'actualizado_en'])
+
+        _crear_historial_documento(
+            documento=solicitud.documento,
+            usuario=request.user,
+            tipo_evento='rechazo_cambio',
+            descripcion='Solicitud de cambio rechazada.',
+            estado_anterior=solicitud.documento.estado,
+            estado_nuevo=solicitud.documento.estado,
+            datos_evento={
+                'solicitud_id': solicitud.id,
+                'tipo_objeto': solicitud.tipo_objeto,
+                'accion': solicitud.accion,
+                'respuesta': solicitud.respuesta,
+            },
+        )
+        return Response(self.get_serializer(solicitud).data)
+
+
 class EvidenciaViewSet(viewsets.ModelViewSet):
     """CRUD para evidencias asociadas a actividades."""
-    queryset = Evidencia.objects.select_related('actividad').prefetch_related('archivos').all()
+    queryset = Evidencia.objects.select_related('actividad__objetivo__documento').prefetch_related('archivos').all()
     serializer_class = EvidenciaSerializer
     permission_classes = [IsAuthenticated]
 
@@ -1096,7 +1612,8 @@ class EvidenciaViewSet(viewsets.ModelViewSet):
             EvidenciaArchivo.objects.create(evidencia=evidencia, tipo='link', url=url)
 
     def get_queryset(self):
-        qs = self.queryset
+        docs = _filtrar_documentos_por_usuario(DocumentoPOA.objects.all(), self.request.user)
+        qs = self.queryset.filter(actividad__objetivo__documento__in=docs)
         actividad_id = self.request.query_params.get('actividad_id') or self.request.data.get('actividad_id')
         if actividad_id:
             try:
@@ -1112,6 +1629,13 @@ class EvidenciaViewSet(viewsets.ModelViewSet):
         actividad = data.get('actividad_id') or data.get('actividad')
         if not actividad:
             return Response({'actividad_id': ['El campo actividad_id es obligatorio.']}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            actividad_obj = Actividad.objects.select_related('objetivo__documento').get(pk=int(actividad))
+        except (TypeError, ValueError, Actividad.DoesNotExist):
+            return Response({'actividad_id': ['Actividad no encontrada.']}, status=status.HTTP_404_NOT_FOUND)
+        if not _documento_accesible_para_usuario(request.user, actividad_obj.objetivo.documento):
+            return Response({'detail': 'Actividad no encontrada o sin permisos.'}, status=status.HTTP_404_NOT_FOUND)
+        _requerir_evidencia_editable(request, actividad_obj)
 
         with transaction.atomic():
             # Validar y crear la evidencia
@@ -1121,6 +1645,15 @@ class EvidenciaViewSet(viewsets.ModelViewSet):
 
             self._guardar_adjuntos(evidencia, request, data)
             self._sincronizar_estado_actividad(evidencia.actividad_id, 'completado')
+            _crear_historial_documento(
+                documento=actividad_obj.objetivo.documento,
+                usuario=request.user,
+                tipo_evento='evidencia',
+                descripcion='Evidencia registrada.',
+                estado_anterior=actividad_obj.objetivo.documento.estado,
+                estado_nuevo=actividad_obj.objetivo.documento.estado,
+                datos_evento={'actividad_id': evidencia.actividad_id, 'evidencia_id': evidencia.id},
+            )
 
         out = EvidenciaSerializer(evidencia, context={'request': request}).data
         return Response(out, status=status.HTTP_201_CREATED)
@@ -1128,6 +1661,8 @@ class EvidenciaViewSet(viewsets.ModelViewSet):
     def update(self, request, *args, **kwargs):
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
+        actividad_obj = instance.actividad
+        _requerir_evidencia_editable(request, actividad_obj)
         data = request.data.copy()
 
         with transaction.atomic():
@@ -1137,17 +1672,39 @@ class EvidenciaViewSet(viewsets.ModelViewSet):
 
             self._guardar_adjuntos(evidencia, request, data, replace_links=True)
             self._sincronizar_estado_actividad(evidencia.actividad_id, 'completado')
+            _crear_historial_documento(
+                documento=actividad_obj.objetivo.documento,
+                usuario=request.user,
+                tipo_evento='evidencia',
+                descripcion='Evidencia actualizada.',
+                estado_anterior=actividad_obj.objetivo.documento.estado,
+                estado_nuevo=actividad_obj.objetivo.documento.estado,
+                datos_evento={'actividad_id': evidencia.actividad_id, 'evidencia_id': evidencia.id},
+            )
 
         out = EvidenciaSerializer(evidencia, context={'request': request}).data
         return Response(out, status=status.HTTP_200_OK)
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
+        actividad_obj = instance.actividad
+        _requerir_evidencia_editable(request, actividad_obj)
         actividad_id = instance.actividad_id
 
         with transaction.atomic():
+            documento = actividad_obj.objetivo.documento
+            evidencia_id = instance.id
             response = super().destroy(request, *args, **kwargs)
             self._sincronizar_estado_actividad(actividad_id, 'programado')
+            _crear_historial_documento(
+                documento=documento,
+                usuario=request.user,
+                tipo_evento='evidencia',
+                descripcion='Evidencia eliminada.',
+                estado_anterior=documento.estado,
+                estado_nuevo=documento.estado,
+                datos_evento={'actividad_id': actividad_id, 'evidencia_id': evidencia_id},
+            )
 
         return response
 
@@ -1242,19 +1799,65 @@ class ObjetivoEspecificoViewSet(viewsets.ModelViewSet):
         documento = _obtener_documento_accesible(request.user, request.data.get('documento_id'))
         if not documento:
             return Response({'detail': 'Documento no encontrado o sin permisos para modificarlo.'}, status=status.HTTP_404_NOT_FOUND)
-        return super().create(request, *args, **kwargs)
+        _requerir_documento_editable_directo(request, documento)
+        response = super().create(request, *args, **kwargs)
+        _crear_historial_documento(
+            documento=documento,
+            usuario=request.user,
+            tipo_evento='edicion',
+            descripcion='Objetivo especifico creado.',
+            estado_anterior=documento.estado,
+            estado_nuevo=documento.estado,
+            datos_evento={'objetivo': response.data},
+        )
+        return response
 
     def update(self, request, *args, **kwargs):
-        _requerir_elaborador(request)
-        return super().update(request, *args, **kwargs)
+        obj = self.get_object()
+        _requerir_documento_editable_directo(request, obj.documento)
+        response = super().update(request, *args, **kwargs)
+        _crear_historial_documento(
+            documento=obj.documento,
+            usuario=request.user,
+            tipo_evento='edicion',
+            descripcion='Objetivo especifico actualizado.',
+            estado_anterior=obj.documento.estado,
+            estado_nuevo=obj.documento.estado,
+            datos_evento={'objetivo_id': obj.id},
+        )
+        return response
 
     def partial_update(self, request, *args, **kwargs):
-        _requerir_elaborador(request)
-        return super().partial_update(request, *args, **kwargs)
+        obj = self.get_object()
+        _requerir_documento_editable_directo(request, obj.documento)
+        response = super().partial_update(request, *args, **kwargs)
+        _crear_historial_documento(
+            documento=obj.documento,
+            usuario=request.user,
+            tipo_evento='edicion',
+            descripcion='Objetivo especifico actualizado.',
+            estado_anterior=obj.documento.estado,
+            estado_nuevo=obj.documento.estado,
+            datos_evento={'objetivo_id': obj.id},
+        )
+        return response
 
     def destroy(self, request, *args, **kwargs):
-        _requerir_elaborador(request)
-        return super().destroy(request, *args, **kwargs)
+        obj = self.get_object()
+        documento = obj.documento
+        objetivo_id = obj.id
+        _requerir_documento_editable_directo(request, documento)
+        response = super().destroy(request, *args, **kwargs)
+        _crear_historial_documento(
+            documento=documento,
+            usuario=request.user,
+            tipo_evento='edicion',
+            descripcion='Objetivo especifico eliminado.',
+            estado_anterior=documento.estado,
+            estado_nuevo=documento.estado,
+            datos_evento={'objetivo_id': objetivo_id},
+        )
+        return response
 
 
 class ActividadViewSet(viewsets.ModelViewSet):
@@ -1285,6 +1888,7 @@ class ActividadViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['patch'])
     def asignar_catalogo(self, request, pk=None):
         actividad = self.get_object()
+        _requerir_documento_editable_directo(request, actividad.objetivo.documento)
         # Aceptamos texto directo (catalogo_descripcion) o, como fallback, catalogo_id
         catalogo_text = request.data.get('catalogo_descripcion') or request.data.get('catalogo_text')
         catalogo_id = request.data.get('catalogo_id')
@@ -1364,6 +1968,7 @@ class ActividadViewSet(viewsets.ModelViewSet):
 
         if not _documento_accesible_para_usuario(request.user, objetivo.documento):
             return Response({'detail': 'Documento no encontrado o sin permisos para modificarlo.'}, status=status.HTTP_404_NOT_FOUND)
+        _requerir_documento_editable_directo(request, objetivo.documento)
 
         documento_param = request.query_params.get('documento_id')
         if documento_param:
@@ -1374,19 +1979,66 @@ class ActividadViewSet(viewsets.ModelViewSet):
             if objetivo.documento_id != doc_param:
                 return Response({'detail': 'El objetivo no pertenece al documento solicitado.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        return super().create(request, *args, **kwargs)
+        response = super().create(request, *args, **kwargs)
+        _crear_historial_documento(
+            documento=objetivo.documento,
+            usuario=request.user,
+            tipo_evento='edicion',
+            descripcion='Actividad creada.',
+            estado_anterior=objetivo.documento.estado,
+            estado_nuevo=objetivo.documento.estado,
+            datos_evento={'actividad': response.data},
+        )
+        return response
 
     def update(self, request, *args, **kwargs):
-        _requerir_elaborador(request)
-        return super().update(request, *args, **kwargs)
+        actividad = self.get_object()
+        documento = actividad.objetivo.documento
+        _requerir_documento_editable_directo(request, documento)
+        response = super().update(request, *args, **kwargs)
+        _crear_historial_documento(
+            documento=documento,
+            usuario=request.user,
+            tipo_evento='edicion',
+            descripcion='Actividad actualizada.',
+            estado_anterior=documento.estado,
+            estado_nuevo=documento.estado,
+            datos_evento={'actividad_id': actividad.id},
+        )
+        return response
 
     def partial_update(self, request, *args, **kwargs):
-        _requerir_elaborador(request)
-        return super().partial_update(request, *args, **kwargs)
+        actividad = self.get_object()
+        documento = actividad.objetivo.documento
+        _requerir_documento_editable_directo(request, documento)
+        response = super().partial_update(request, *args, **kwargs)
+        _crear_historial_documento(
+            documento=documento,
+            usuario=request.user,
+            tipo_evento='edicion',
+            descripcion='Actividad actualizada.',
+            estado_anterior=documento.estado,
+            estado_nuevo=documento.estado,
+            datos_evento={'actividad_id': actividad.id},
+        )
+        return response
 
     def destroy(self, request, *args, **kwargs):
-        _requerir_elaborador(request)
-        return super().destroy(request, *args, **kwargs)
+        actividad = self.get_object()
+        documento = actividad.objetivo.documento
+        actividad_id = actividad.id
+        _requerir_documento_editable_directo(request, documento)
+        response = super().destroy(request, *args, **kwargs)
+        _crear_historial_documento(
+            documento=documento,
+            usuario=request.user,
+            tipo_evento='edicion',
+            descripcion='Actividad eliminada.',
+            estado_anterior=documento.estado,
+            estado_nuevo=documento.estado,
+            datos_evento={'actividad_id': actividad_id},
+        )
+        return response
 
     @action(detail=False, methods=['get'])
     def indicadores_por_direccion(self, request):
@@ -1404,6 +2056,7 @@ class ActividadViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['patch'])
     def asignar_indicador(self, request, pk=None):
         actividad = self.get_object()
+        _requerir_documento_editable_directo(request, actividad.objetivo.documento)
         # Aceptamos indicador_descripcion (texto) o indicador_id como fallback
         indicador_text = request.data.get('indicador_descripcion') or request.data.get('indicador_text')
         indicador_id = request.data.get('indicador_id')
@@ -1493,6 +2146,7 @@ class DetallePresupuestoViewSet(viewsets.ModelViewSet):
 
         if not _documento_accesible_para_usuario(request.user, actividad.objetivo.documento):
             return Response({'detail': 'Documento no encontrado o sin permisos para modificarlo.'}, status=status.HTTP_404_NOT_FOUND)
+        _requerir_documento_editable_directo(request, actividad.objetivo.documento)
 
         documento_param = request.query_params.get('documento_id')
         if documento_param:
@@ -1503,19 +2157,71 @@ class DetallePresupuestoViewSet(viewsets.ModelViewSet):
             if actividad.objetivo.documento_id != doc_param:
                 return Response({'detail': 'La actividad no pertenece al documento solicitado.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        return super().create(request, *args, **kwargs)
+        response = super().create(request, *args, **kwargs)
+        _recalcular_montos_actividad(actividad)
+        _crear_historial_documento(
+            documento=actividad.objetivo.documento,
+            usuario=request.user,
+            tipo_evento='edicion',
+            descripcion='Presupuesto creado.',
+            estado_anterior=actividad.objetivo.documento.estado,
+            estado_nuevo=actividad.objetivo.documento.estado,
+            datos_evento={'presupuesto': response.data},
+        )
+        return response
 
     def update(self, request, *args, **kwargs):
-        _requerir_elaborador(request)
-        return super().update(request, *args, **kwargs)
+        detalle = self.get_object()
+        documento = detalle.actividad.objetivo.documento
+        _requerir_documento_editable_directo(request, documento)
+        response = super().update(request, *args, **kwargs)
+        _recalcular_montos_actividad(detalle.actividad)
+        _crear_historial_documento(
+            documento=documento,
+            usuario=request.user,
+            tipo_evento='edicion',
+            descripcion='Presupuesto actualizado.',
+            estado_anterior=documento.estado,
+            estado_nuevo=documento.estado,
+            datos_evento={'detalle_id': detalle.id},
+        )
+        return response
 
     def partial_update(self, request, *args, **kwargs):
-        _requerir_elaborador(request)
-        return super().partial_update(request, *args, **kwargs)
+        detalle = self.get_object()
+        documento = detalle.actividad.objetivo.documento
+        _requerir_documento_editable_directo(request, documento)
+        response = super().partial_update(request, *args, **kwargs)
+        _recalcular_montos_actividad(detalle.actividad)
+        _crear_historial_documento(
+            documento=documento,
+            usuario=request.user,
+            tipo_evento='edicion',
+            descripcion='Presupuesto actualizado.',
+            estado_anterior=documento.estado,
+            estado_nuevo=documento.estado,
+            datos_evento={'detalle_id': detalle.id},
+        )
+        return response
 
     def destroy(self, request, *args, **kwargs):
-        _requerir_elaborador(request)
-        return super().destroy(request, *args, **kwargs)
+        detalle = self.get_object()
+        documento = detalle.actividad.objetivo.documento
+        actividad = detalle.actividad
+        detalle_id = detalle.id
+        _requerir_documento_editable_directo(request, documento)
+        response = super().destroy(request, *args, **kwargs)
+        _recalcular_montos_actividad(actividad)
+        _crear_historial_documento(
+            documento=documento,
+            usuario=request.user,
+            tipo_evento='edicion',
+            descripcion='Presupuesto eliminado.',
+            estado_anterior=documento.estado,
+            estado_nuevo=documento.estado,
+            datos_evento={'detalle_id': detalle_id},
+        )
+        return response
 
 
 
@@ -1530,14 +2236,22 @@ class MensajeChatViewSet(
     serializer_class = MensajeChatSerializer
     permission_classes = [IsAuthenticated]
 
+    def _get_peer_id(self):
+        peer_user_id = self.request.query_params.get('peer_user_id')
+        if not peer_user_id:
+            return None
+        try:
+            return int(peer_user_id)
+        except (ValueError, TypeError):
+            return None
+
     def get_queryset(self):
         qs = MensajeChat.objects.select_related('emisor', 'receptor')
         peer_user_id = self.request.query_params.get('peer_user_id')
+        peer_id = self._get_peer_id()
 
         if peer_user_id:
-            try:
-                peer_id = int(peer_user_id)
-            except (ValueError, TypeError):
+            if not peer_id:
                 return qs.none()
             return qs.filter(
                 (Q(emisor=self.request.user) & Q(receptor_id=peer_id)) |
@@ -1548,8 +2262,20 @@ class MensajeChatViewSet(
             Q(emisor=self.request.user) | Q(receptor=self.request.user)
         ).order_by('fecha')
 
+    def _marcar_mensajes_entrantes_como_leidos(self):
+        peer_id = self._get_peer_id()
+        if not peer_id or peer_id == self.request.user.id:
+            return
+
+        MensajeChat.objects.filter(
+            emisor_id=peer_id,
+            receptor=self.request.user,
+            leido_en__isnull=True,
+        ).update(leido_en=timezone.now())
+
     def list(self, request, *args, **kwargs):
         """Return the last page by default when no page param is provided."""
+        self._marcar_mensajes_entrantes_como_leidos()
         qs = self.get_queryset()
         # if pagination is configured and no page param, set page to last
         if getattr(self, 'paginator', None) is None and getattr(self, 'pagination_class', None):

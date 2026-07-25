@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 
 import { createPortal } from 'react-dom';
 import toast from 'react-hot-toast';
@@ -18,12 +18,15 @@ import {
   Edit,
   FileText,
   History,
+  ListChecks,
+  PlayCircle,
   SendHorizontal,
   ShieldCheck,
   Target,
   Trash2,
   User,
   Briefcase,
+  XCircle,
 } from 'lucide-react';
 import { useLocation, useNavigate, useOutletContext } from 'react-router-dom';
 import {
@@ -32,8 +35,13 @@ import {
   enviarRevisionDocumentoPOA,
   aprobarDocumentoPOA,
   observarDocumentoPOA,
+  iniciarEjecucionDocumentoPOA,
+  aprobarSolicitudCambioPOA,
+  rechazarSolicitudCambioPOA,
+  updateObservacionDocumentoPOA,
   API_BASE,
 } from '../../../apis/poa.api';
+import { buildPoaNavigationState, getPoaNavigationContext, replacePoaNavigationContext, savePoaNavigationContext } from '../utils/navigationContext';
 
 const ESTADO_CONFIG = {
   elaboracion: { label: 'En elaboración', dot: 'bg-amber-400', badge: 'bg-amber-500/10 text-amber-400 border border-amber-500/20' },
@@ -101,6 +109,30 @@ const parseChecklistItems = (observaciones) => {
     .map((item) => item.replace(/^\d+[\.)]\s*/, ''));
 };
 
+const getPendingSolicitudes = (doc) => {
+  const solicitudes = Array.isArray(doc?.solicitudes_cambio_pendientes)
+    ? doc.solicitudes_cambio_pendientes
+    : [];
+  return solicitudes.filter((solicitud) => !solicitud?.estado || solicitud.estado === 'pendiente');
+};
+
+const getChecklistEntries = (doc, observaciones) => {
+  const checklist = Array.isArray(doc?.observaciones_checklist) ? doc.observaciones_checklist : [];
+  if (checklist.length > 0) return checklist;
+  return parseChecklistItems(observaciones).map((texto, index) => ({
+    id: null,
+    texto,
+    resuelta: false,
+    fallbackKey: `${doc?.id || 'doc'}-obs-fallback-${index}`,
+  }));
+};
+
+const getSolicitudTitle = (solicitud) => {
+  const accion = solicitud?.accion_display || solicitud?.accion || 'Cambio';
+  const objeto = solicitud?.tipo_objeto_display || solicitud?.tipo_objeto || 'POA';
+  return `${accion} ${objeto}`;
+};
+
 const DocumentosPOAPage = ({ viewMode = 'all' }) => {
   const [showModal, setShowModal] = useState(false);
   const [showNuevoModal, setShowNuevoModal] = useState(false);
@@ -121,10 +153,12 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
   const canEdit = !!poaPermissions.canEdit;
   const canReview = !!poaPermissions.canReview;
   const isRevisionBoard = viewMode === 'revision-observado';
+  const documentosPath = isRevisionBoard ? '/poa/documentos-revision' : '/poa/documentos';
   const isDark = effectiveTheme === 'dark';
+  const navContext = useMemo(() => getPoaNavigationContext(location?.state), [location?.key, location?.state]);
 
   const [docs, setDocs] = useState(location?.state?.documentos || []);
-  const [gestionState, setGestionState] = useState(location?.state?.gestion || '');
+  const [gestionState, setGestionState] = useState(navContext?.gestion || '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
@@ -154,6 +188,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
       resolveGestionCandidate(doc?.gestion),
       resolveGestionCandidate(gestionState),
       resolveGestionCandidate(location?.state?.gestion),
+      resolveGestionCandidate(navContext?.gestion),
     ];
     for (const candidate of candidates) {
       if (candidate === null || candidate === undefined) continue;
@@ -163,7 +198,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
     return null;
   };
 
-  const hasGestionSelected = Boolean(gestionState || location?.state?.gestion);
+  const hasGestionSelected = Boolean(gestionState || navContext?.gestion);
 
   // Forzar selección de gestión al entrar a DocumentosPOA: abrir modal SOLO si la gestión no viene en el estado.
   // Si el usuario selecciona una vez, el modal debe cerrarse y NO volver a abrirse por efectos.
@@ -173,11 +208,11 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
     // Abrir modal al entrar si no hay gestión.
     // Para evitar que se “reabra” tras seleccionar, verificamos también que showModal no esté abierto.
     // Además, si ya existe un valor en location.state, no forzamos.
-    const gestionEnEstado = Boolean(location?.state?.gestion);
+    const gestionEnEstado = Boolean(location?.state?.gestion || navContext?.gestion);
     if (!gestionEnEstado && !hasGestionSelected && !loading && !showModal) {
       setShowModal(true);
     }
-  }, [hasGestionSelected, loading, showModal, location?.state?.gestion]);
+  }, [hasGestionSelected, loading, showModal, location?.state?.gestion, navContext?.gestion]);
 
 
 
@@ -214,11 +249,32 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
     setGestionState(gestion);
     setDocs(Array.isArray(documentos) ? documentos : []);
     setShowModal(false);
+    const nextState = {
+      ...replacePoaNavigationContext({ gestion, documentosPath }),
+      documentos: Array.isArray(documentos) ? documentos : [],
+    };
+    navigate(documentosPath, { replace: true, state: nextState });
+  };
+
+  const refreshDocsForGestion = async (gestionOverride = null) => {
+    const gestion = gestionOverride || gestionState || navContext?.gestion;
+    if (!gestion) return [];
+    const res = await getDocumentosPOAPorGestion(Number(gestion));
+    const list = Array.isArray(res.data) ? res.data : (res.data.results || []);
+    setDocs(list || []);
+    setGestionState(gestion);
+    savePoaNavigationContext({ gestion, documentosPath });
+    return list || [];
+  };
+
+  const handleGestionCancel = () => {
+    setShowModal(false);
+    navigate('/poa', { replace: true });
   };
 
   useEffect(() => {
     let mounted = true;
-    const initialGestion = gestionState || location?.state?.gestion;
+    const initialGestion = gestionState || navContext?.gestion;
     const shouldFetch = (!docs || docs.length === 0) && initialGestion;
     if (!shouldFetch) return undefined;
 
@@ -230,6 +286,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
         const list = Array.isArray(res.data) ? res.data : (res.data.results || []);
         setDocs(list || []);
         setGestionState(initialGestion);
+        savePoaNavigationContext({ gestion: initialGestion, documentosPath });
       })
       .catch((err) => {
         if (!mounted) return;
@@ -242,11 +299,11 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
     return () => {
       mounted = false;
     };
-  }, [location?.state?.gestion, gestionState]);
+  }, [documentosPath, location?.state?.gestion, gestionState, navContext?.gestion]);
 
   useEffect(() => {
     const handler = async () => {
-      const gestion = gestionState || location?.state?.gestion;
+      const gestion = gestionState || navContext?.gestion;
       if (!gestion) {
         toast.error('Seleccione una gestión antes de generar el reporte.');
         return;
@@ -255,17 +312,19 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
     };
     window.addEventListener('generate-general-report-poa', handler);
     return () => window.removeEventListener('generate-general-report-poa', handler);
-  }, [gestionState, location?.state?.gestion]);
+  }, [gestionState, navContext?.gestion]);
 
   const handleVerActividades = (docId, doc) => {
     const id = docId ?? doc?.id;
     if (!id) return;
     const gestionValue = getGestionNumberForDoc(doc);
     navigate(`/poa/objetivos-especificos/${id}`, {
-      state: {
+      state: buildPoaNavigationState(location?.state, {
         gestion: gestionValue,
-        gestionState: gestionValue,
-      },
+        documentosPath,
+        documentoId: Number(id),
+        documentoEstado: String(doc?.estado || '').toLowerCase(),
+      }),
     });
   };
 
@@ -275,7 +334,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
       return;
     }
 
-    const gestion = gestionState || location?.state?.gestion || doc?.gestion || '';
+    const gestion = gestionState || navContext?.gestion || doc?.gestion || '';
     if (!gestion) {
       toast.error('No se pudo eliminar: falta la gestión del documento.');
       return;
@@ -317,6 +376,48 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
     setReviewNotesByDoc((prev) => ({ ...prev, [docId]: value }));
   };
 
+  const handleToggleObservacion = async (doc, observacion, resuelta) => {
+    if (!observacion?.id) return;
+    try {
+      const res = await updateObservacionDocumentoPOA(observacion.id, { resuelta });
+      const updated = res?.data || { ...observacion, resuelta };
+      setDocs((prev) => (prev || []).map((item) => {
+        if (Number(item.id) !== Number(doc.id)) return item;
+        const checklist = Array.isArray(item.observaciones_checklist) ? item.observaciones_checklist : [];
+        return {
+          ...item,
+          observaciones_checklist: checklist.map((obs) => (Number(obs.id) === Number(updated.id) ? updated : obs)),
+        };
+      }));
+      toast.success(resuelta ? 'Observacion marcada como corregida.' : 'Observacion marcada como pendiente.');
+    } catch (err) {
+      toast.error(normalizeApiError(err, 'No se pudo actualizar la observacion.'));
+    }
+  };
+
+  const handleSolicitudCambio = async (doc, solicitud, accion) => {
+    if (!canReview) {
+      toast.error('No tiene permisos para revisar solicitudes.');
+      return;
+    }
+    const gestion = getGestionNumberForDoc(doc);
+    setUpdatingEstadoId(`solicitud-${solicitud.id}-${accion}`);
+    try {
+      if (accion === 'aprobar') {
+        await aprobarSolicitudCambioPOA(solicitud.id);
+        toast.success('Solicitud aprobada y aplicada.');
+      } else {
+        await rechazarSolicitudCambioPOA(solicitud.id);
+        toast.success('Solicitud rechazada.');
+      }
+      await refreshDocsForGestion(gestion);
+    } catch (err) {
+      toast.error(normalizeApiError(err, 'No se pudo resolver la solicitud.'));
+    } finally {
+      setUpdatingEstadoId(null);
+    }
+  };
+
   const handleCambioEstado = async (doc, nuevoEstado) => {
     const gestion = getGestionNumberForDoc(doc);
     if (!gestion) {
@@ -331,6 +432,9 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
       if (nuevoEstado === 'revision') {
         if (!canEdit) throw new Error('No tiene permisos para enviar a revisión.');
         res = await enviarRevisionDocumentoPOA(doc.id, Number(gestion));
+      } else if (nuevoEstado === 'ejecucion') {
+        if (!canReview) throw new Error('No tiene permisos para iniciar ejecucion.');
+        res = await iniciarEjecucionDocumentoPOA(doc.id, Number(gestion));
       } else if (nuevoEstado === 'aprobado') {
         if (!canReview) throw new Error('No tiene permisos para aprobar documentos.');
         res = await aprobarDocumentoPOA(doc.id, Number(gestion), reviewNote);
@@ -347,6 +451,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
       setReviewNotesByDoc((prev) => ({ ...prev, [doc.id]: '' }));
 
       if (nuevoEstado === 'revision') toast.success('Documento enviado a revisión.');
+      if (nuevoEstado === 'ejecucion') toast.success('Documento iniciado en ejecucion.');
       if (nuevoEstado === 'aprobado') toast.success('Documento aprobado correctamente.');
       if (nuevoEstado === 'observado') toast.success('Observación registrada correctamente.');
     } catch (err) {
@@ -358,24 +463,10 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
     }
   };
 
-  const estadoResumen = useMemo(() => (
-    (docs || []).reduce((acc, doc) => {
-      const estado = doc?.estado || 'elaboracion';
-      if (estado === 'elaboracion') acc.elaboracion += 1;
-      else if (estado === 'revision') acc.revision += 1;
-      else if (estado === 'observado') acc.observado += 1;
-      else if (estado === 'aprobado') acc.aprobado += 1;
-      else if (estado === 'ejecucion') acc.ejecucion += 1;
-      else acc.otro += 1;
-      acc.total += 1;
-      return acc;
-    }, { total: 0, elaboracion: 0, revision: 0, observado: 0, aprobado: 0, ejecucion: 0, otro: 0 })
-  ), [docs]);
-
   const filteredDocs = useMemo(() => {
     const list = Array.isArray(docs) ? docs : [];
     if (!isRevisionBoard) return list;
-    return list.filter((doc) => ['revision', 'observado'].includes(doc?.estado));
+    return list.filter((doc) => doc?.estado === 'revision' || getPendingSolicitudes(doc).length > 0);
   }, [docs, isRevisionBoard]);
 
   const filteredResumen = useMemo(() => (
@@ -388,52 +479,33 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
       else if (estado === 'ejecucion') acc.ejecucion += 1;
       else acc.otro += 1;
       acc.total += 1;
+      acc.solicitudes += getPendingSolicitudes(doc).length;
       return acc;
-    }, { total: 0, elaboracion: 0, revision: 0, observado: 0, aprobado: 0, ejecucion: 0, otro: 0 })
+    }, { total: 0, elaboracion: 0, revision: 0, observado: 0, aprobado: 0, ejecucion: 0, solicitudes: 0, otro: 0 })
   ), [filteredDocs]);
 
-  const boardTitle = isRevisionBoard ? 'Documentos en revisión y observados' : 'Documentos POA';
+  const boardTitle = isRevisionBoard ? 'Revision de Documentos POA' : 'Documentos POA';
   const boardDescription = isRevisionBoard
-    ? 'Aquí se concentran los documentos enviados a revisión u observados. Cuando un documento queda aprobado, deja de mostrarse en esta página.'
+    ? 'Aqui se concentran los documentos enviados a revision y las solicitudes de cambio pendientes.'
     : 'Seleccione una gestión para ver y administrar sus documentos.';
 
-  const summaryCardBase = 'poa-summary-stat rounded-lg p-3 border shadow-sm bg-white/85 dark:bg-slate-900/55';
+  const summaryCardBase = 'poa-summary-stat poa-mobile-kpi-card poa-kpi-formal rounded-lg p-3 border shadow-sm bg-white/85 dark:bg-slate-900/55';
   const statTone = isDark
     ? {
-        total: 'border-blue-500/30 text-blue-100',
-        revision: 'border-sky-500/30 text-sky-100',
-        observado: 'border-orange-500/30 text-orange-100',
-        elaboracion: 'border-amber-500/30 text-amber-100',
-        aprobado: 'border-emerald-500/30 text-emerald-100',
-        ejecucion: 'border-violet-500/30 text-violet-100',
+        total: 'poa-kpi-accent-blue border-blue-500/30 text-blue-100',
+        revision: 'poa-kpi-accent-sky border-sky-500/30 text-sky-100',
+        observado: 'poa-kpi-accent-orange border-orange-500/30 text-orange-100',
+        elaboracion: 'poa-kpi-accent-amber border-amber-500/30 text-amber-100',
+        aprobado: 'poa-kpi-accent-emerald border-emerald-500/30 text-emerald-100',
+        ejecucion: 'poa-kpi-accent-violet border-violet-500/30 text-violet-100',
       }
     : {
-        total: 'border-blue-200 text-blue-700',
-        revision: 'border-sky-200 text-sky-700',
-        observado: 'border-orange-200 text-orange-700',
-        elaboracion: 'border-amber-200 text-amber-700',
-        aprobado: 'border-emerald-200 text-emerald-700',
-        ejecucion: 'border-violet-200 text-violet-700',
-      };
-
-  const statTextTone = isDark
-    ? {
-        label: 'text-slate-300',
-        value: 'text-slate-50',
-      }
-    : {
-        label: 'text-slate-700',
-        value: 'text-slate-950',
-      };
-
-  const statTextColor = isDark
-    ? {
-        label: { color: '#cbd5e1' },
-        value: { color: '#f8fafc' },
-      }
-    : {
-        label: { color: '#1d4ed8' },
-        value: { color: '#1e3a8a' },
+        total: 'poa-kpi-accent-blue border-blue-200 text-blue-700',
+        revision: 'poa-kpi-accent-sky border-sky-200 text-sky-700',
+        observado: 'poa-kpi-accent-orange border-orange-200 text-orange-700',
+        elaboracion: 'poa-kpi-accent-amber border-amber-200 text-amber-700',
+        aprobado: 'poa-kpi-accent-emerald border-emerald-200 text-emerald-700',
+        ejecucion: 'poa-kpi-accent-violet border-violet-200 text-violet-700',
       };
 
   const actionButtonBase = 'flex items-center justify-center gap-3 w-full rounded-xl px-4 py-2.5 text-sm font-semibold shadow-sm transition-all duration-200 border';
@@ -458,21 +530,30 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
   const actionIconWrap = isDark
     ? 'inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-current ring-1 ring-inset ring-white/10'
     : 'inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white/15 text-current ring-1 ring-inset ring-white/15';
-  const generalGestion = getGestionNumberForDoc({ gestion: gestionState || location?.state?.gestion }) || Number(new Date().getFullYear());
+  const generalGestion = getGestionNumberForDoc({ gestion: gestionState || navContext?.gestion }) || Number(new Date().getFullYear());
 
   return (
     <section className="flex flex-col items-start justify-start flex-1 pb-4 px-1 w-full">
       <div className="w-full">
-        {showModal && <GestionSelectorModal onClose={() => setShowModal(false)} onSuccess={handleSuccess} />}
+        {showModal && (
+          <GestionSelectorModal
+            currentUser={outletContext?.user || outletContext?.currentUser || null}
+            poaRoles={poaRoles}
+            canCreateDocument={canEdit}
+            onClose={() => setShowModal(false)}
+            onCancel={handleGestionCancel}
+            onSuccess={handleSuccess}
+          />
+        )}
         {showNuevoModal && (
           <NuevoDocumentoModal
             currentUser={outletContext?.user || outletContext?.currentUser || null}
             onClose={closeNuevo}
-            initialGestion={gestionState || location?.state?.gestion || new Date().getFullYear()}
+            initialGestion={gestionState || navContext?.gestion || new Date().getFullYear()}
             document={editingDoc}
             onCreated={async (created) => {
               try {
-                const gestion = created?.gestion || gestionState || location?.state?.gestion || new Date().getFullYear();
+                const gestion = created?.gestion || gestionState || navContext?.gestion || new Date().getFullYear();
                 const res = await getDocumentosPOAPorGestion(Number(gestion));
                 const list = Array.isArray(res.data) ? res.data : (res.data.results || []);
                 setDocs(list || [created]);
@@ -617,7 +698,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
         )}
 
         {!hasGestionSelected && !loading && (
-          <div className="rounded-xl border border-blue-200 bg-white/85 p-6 shadow-sm w-full dark:border-slate-800 dark:bg-slate-950/40">
+          <div className="poa-mobile-page-card rounded-xl border border-blue-200 bg-white/85 p-6 shadow-sm w-full dark:border-slate-800 dark:bg-slate-950/40">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
                 <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">{boardTitle}</h3>
@@ -638,10 +719,10 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
 
         {hasGestionSelected && (
           <div className="mt-6 w-full">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+            <div className="poa-mobile-page-card flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4 rounded-2xl border border-blue-200/70 bg-white/75 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/55">
               <div>
                 <h3 className="text-2xl font-bold text-blue-900 dark:text-slate-100">{boardTitle}</h3>
-                <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">Gestión: {gestionState || location?.state?.gestion}</p>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">Gestión: {gestionState || navContext?.gestion}</p>
               </div>
               <button
                 onClick={() => setShowModal(true)}
@@ -652,32 +733,32 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
             </div>
 
             <div className="w-full mb-4">
-              <div className={`grid gap-3 ${isRevisionBoard ? 'grid-cols-1 md:grid-cols-3' : 'grid-cols-2 md:grid-cols-6'}`}>
+              <div className={`poa-mobile-kpi-strip ${isRevisionBoard ? 'poa-mobile-kpi-strip-3' : 'poa-mobile-kpi-strip-6'} grid gap-3 ${isRevisionBoard ? 'grid-cols-1 md:grid-cols-3' : 'grid-cols-2 md:grid-cols-6'}`}>
                 <div className={`${summaryCardBase} ${statTone.total}`}>
-                  <p className={`poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold ${statTextTone.label}`} style={statTextColor.label}>Total</p>
-                  <p className={`poa-summary-stat-value text-2xl font-bold ${statTextTone.value}`} style={statTextColor.value}>{filteredResumen.total}</p>
+                  <p className="poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold">Total</p>
+                  <p className="poa-summary-stat-value text-2xl font-bold">{filteredResumen.total}</p>
                 </div>
                 <div className={`${summaryCardBase} ${statTone.revision}`}>
-                  <p className={`poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold ${statTextTone.label}`} style={statTextColor.label}>En revisión</p>
-                  <p className={`poa-summary-stat-value text-2xl font-bold ${statTextTone.value}`} style={statTextColor.value}>{filteredResumen.revision}</p>
+                  <p className="poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold">En revisión</p>
+                  <p className="poa-summary-stat-value text-2xl font-bold">{filteredResumen.revision}</p>
                 </div>
                 <div className={`${summaryCardBase} ${statTone.observado}`}>
-                  <p className={`poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold ${statTextTone.label}`} style={statTextColor.label}>Observados</p>
-                  <p className={`poa-summary-stat-value text-2xl font-bold ${statTextTone.value}`} style={statTextColor.value}>{filteredResumen.observado}</p>
+                  <p className="poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold">{isRevisionBoard ? 'Solicitudes' : 'Observados'}</p>
+                  <p className="poa-summary-stat-value text-2xl font-bold">{isRevisionBoard ? filteredResumen.solicitudes : filteredResumen.observado}</p>
                 </div>
                 {!isRevisionBoard && (
                   <>
                     <div className={`${summaryCardBase} ${statTone.elaboracion}`}>
-                      <p className={`poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold ${statTextTone.label}`} style={statTextColor.label}>En elaboración</p>
-                      <p className={`poa-summary-stat-value text-2xl font-bold ${statTextTone.value}`} style={statTextColor.value}>{filteredResumen.elaboracion}</p>
+                      <p className="poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold">En elaboración</p>
+                      <p className="poa-summary-stat-value text-2xl font-bold">{filteredResumen.elaboracion}</p>
                     </div>
                     <div className={`${summaryCardBase} ${statTone.aprobado}`}>
-                      <p className={`poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold ${statTextTone.label}`} style={statTextColor.label}>Aprobados</p>
-                      <p className={`poa-summary-stat-value text-2xl font-bold ${statTextTone.value}`} style={statTextColor.value}>{filteredResumen.aprobado}</p>
+                      <p className="poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold">Aprobados</p>
+                      <p className="poa-summary-stat-value text-2xl font-bold">{filteredResumen.aprobado}</p>
                     </div>
                     <div className={`${summaryCardBase} ${statTone.ejecucion}`}>
-                      <p className={`poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold ${statTextTone.label}`} style={statTextColor.label}>En ejecución</p>
-                      <p className={`poa-summary-stat-value text-2xl font-bold ${statTextTone.value}`} style={statTextColor.value}>{filteredResumen.ejecucion}</p>
+                      <p className="poa-summary-stat-label text-[11px] uppercase tracking-widest font-bold">En ejecución</p>
+                      <p className="poa-summary-stat-value text-2xl font-bold">{filteredResumen.ejecucion}</p>
                     </div>
                   </>
                 )}
@@ -695,25 +776,33 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                   const entidad = typeof doc.entidad === 'object' ? (doc.entidad.nombre || DEFAULT_ENTIDAD) : (doc.entidad || DEFAULT_ENTIDAD);
                   const objetivo = typeof doc.objetivo_gestion_institucional === 'object' ? (doc.objetivo_gestion_institucional.nombre || '') : (doc.objetivo_gestion_institucional || '');
                   const observaciones = (doc.observaciones || '').trim();
-                  const observacionesChecklist = parseChecklistItems(observaciones);
+                  const observacionesChecklist = getChecklistEntries(doc, observaciones);
+                  const solicitudesPendientes = getPendingSolicitudes(doc);
                   const elaboradoPor = getPersonaLabel(doc.elaborado_por, null);
                   const jefeUnidad = getPersonaLabel(doc.jefe_unidad, null);
                   const note = reviewNotesByDoc[doc.id] || '';
-                  const canRespondThisDoc = canReview && ['revision', 'observado'].includes(estado);
-                  const canSendToRevision = canEdit && (estado === 'elaboracion' || estado === 'observado');
+                  const canRespondThisDoc = canReview && estado === 'revision';
+                  const canSendToRevision = canEdit && !isRevisionBoard && (estado === 'elaboracion' || estado === 'observado');
+                  const canOpenDocument = !isRevisionBoard;
+                  const canEditDocument = canEdit && !isRevisionBoard && estado !== 'revision';
+                  const canDeleteDocument = canEdit && !isRevisionBoard && ['elaboracion', 'observado'].includes(estado);
+                  const canStartExecution = canReview && estado === 'aprobado' && !isRevisionBoard;
                   return (
                     <div key={doc.id || idx} className="w-full">
                       <div
-                        role="button"
-                        tabIndex={0}
+                        role={canOpenDocument ? 'button' : undefined}
+                        tabIndex={canOpenDocument ? 0 : undefined}
                         onKeyDown={(e) => {
+                          if (!canOpenDocument) return;
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault();
                             handleVerActividades(doc.id, doc);
                           }
                         }}
-                        onClick={() => handleVerActividades(doc.id, doc)}
-                        className="relative bg-gradient-to-br from-blue-50 via-sky-50 to-indigo-50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 border-2 border-blue-400/70 dark:border-slate-800 rounded-xl overflow-hidden cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-blue-900/20 w-full focus:outline-none"
+                        onClick={() => {
+                          if (canOpenDocument) handleVerActividades(doc.id, doc);
+                        }}
+                        className={`relative bg-gradient-to-br from-blue-50 via-sky-50 to-indigo-50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 border-2 border-blue-400/70 dark:border-slate-800 rounded-xl overflow-hidden transition-all duration-300 w-full focus:outline-none ${canOpenDocument ? 'cursor-pointer hover:-translate-y-1 hover:shadow-2xl hover:shadow-blue-900/20' : 'cursor-default'}`}
                       >
                         <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-blue-600 via-cyan-500 to-blue-600" />
 
@@ -793,24 +882,84 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                               </div>
                             )}
 
-                            {observaciones && (
+                            {(observaciones || observacionesChecklist.length > 0) && (
                               <div className="mt-3 bg-orange-100/75 dark:bg-orange-950/35 border border-orange-300 dark:border-orange-800 rounded-lg p-3">
                                 <p className="text-[10px] text-orange-700 dark:text-orange-300 font-bold uppercase tracking-wider mb-1">Observaciones vigentes</p>
-                                {observacionesChecklist.length > 1 ? (
-                                  <ul className="space-y-1.5">
-                                    {observacionesChecklist.map((item, itemIndex) => (
-                                      <li key={`${doc.id}-obs-${itemIndex}`} className="flex items-start gap-2 text-orange-900 dark:text-orange-200 text-xs leading-relaxed">
-                                        <span className="mt-1 w-1.5 h-1.5 rounded-full bg-orange-500 dark:bg-orange-300 flex-shrink-0" />
-                                        <span>{item}</span>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                ) : (
-                                  <p className="text-orange-900 dark:text-orange-200 text-xs leading-relaxed whitespace-pre-line">{observaciones}</p>
-                                )}
+                                <ul className="space-y-1.5">
+                                  {observacionesChecklist.map((item, itemIndex) => (
+                                    <li key={item.id || item.fallbackKey || `${doc.id}-obs-${itemIndex}`} className="flex items-start gap-2 text-orange-900 dark:text-orange-200 text-xs leading-relaxed">
+                                      {canEdit && estado === 'observado' && item.id ? (
+                                        <input
+                                          type="checkbox"
+                                          checked={!!item.resuelta}
+                                          onChange={(e) => handleToggleObservacion(doc, item, e.target.checked)}
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="mt-0.5 h-4 w-4 rounded border-orange-400 text-orange-600 focus:ring-orange-500"
+                                          aria-label="Marcar observacion corregida"
+                                        />
+                                      ) : (
+                                        <span className={`mt-1 w-1.5 h-1.5 rounded-full flex-shrink-0 ${item.resuelta ? 'bg-emerald-500 dark:bg-emerald-300' : 'bg-orange-500 dark:bg-orange-300'}`} />
+                                      )}
+                                      <span className={item.resuelta ? 'line-through opacity-70' : ''}>{item.texto || item}</span>
+                                    </li>
+                                  ))}
+                                </ul>
                                 <p className="mt-2 text-[10px] text-orange-700/90 dark:text-orange-300/90">
                                   Use este checklist como guía de corrección para el elaborador.
                                 </p>
+                              </div>
+                            )}
+
+                            {solicitudesPendientes.length > 0 && (
+                              <div className="mt-3 rounded-lg border border-sky-300 bg-sky-50/85 p-3 dark:border-sky-800 dark:bg-sky-950/30" onClick={(e) => e.stopPropagation()}>
+                                <p className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-sky-700 dark:text-sky-300">
+                                  <ListChecks size={12} /> Solicitudes de cambio pendientes
+                                </p>
+                                <div className="space-y-2">
+                                  {solicitudesPendientes.map((solicitud) => {
+                                    const resumen = solicitud?.resumen || {};
+                                    const busyApprove = updatingEstadoId === `solicitud-${solicitud.id}-aprobar`;
+                                    const busyReject = updatingEstadoId === `solicitud-${solicitud.id}-rechazar`;
+                                    return (
+                                      <div key={solicitud.id} className="rounded-lg border border-sky-200 bg-white/80 p-2.5 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900/55 dark:text-slate-200">
+                                        <div className="flex flex-wrap items-start justify-between gap-2">
+                                          <div className="min-w-0">
+                                            <p className="font-bold text-slate-900 dark:text-white">{resumen.titulo || getSolicitudTitle(solicitud)}</p>
+                                            <p className="mt-0.5 text-slate-500 dark:text-slate-400">
+                                              {resumen.codigo || resumen.partida || resumen.item || solicitud.solicitado_por_nombre || 'Solicitud pendiente'}
+                                            </p>
+                                          </div>
+                                          <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-700 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200">
+                                            Pendiente
+                                          </span>
+                                        </div>
+                                        {solicitud.descripcion && (
+                                          <p className="mt-2 whitespace-pre-line text-slate-600 dark:text-slate-300">{solicitud.descripcion}</p>
+                                        )}
+                                        {canReview && (
+                                          <div className="mt-2 grid grid-cols-2 gap-2">
+                                            <button
+                                              type="button"
+                                              onClick={() => handleSolicitudCambio(doc, solicitud, 'aprobar')}
+                                              disabled={busyApprove || busyReject}
+                                              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                                            >
+                                              <CheckCircle2 size={13} /> {busyApprove ? 'Aplicando...' : 'Aprobar'}
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleSolicitudCambio(doc, solicitud, 'rechazar')}
+                                              disabled={busyApprove || busyReject}
+                                              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-rose-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-50"
+                                            >
+                                              <XCircle size={13} /> {busyReject ? 'Rechazando...' : 'Rechazar'}
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
                               </div>
                             )}
 
@@ -842,7 +991,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                               <span>Generar PDF</span>
                             </button>
 
-                            {canEdit && (
+                            {canEditDocument && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -852,11 +1001,11 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                                 className={actionButtonStyles.edit}
                               >
                                 <span className={actionIconWrap}><Edit size={14} /></span>
-                                <span>Editar</span>
+                                <span>{['aprobado', 'ejecucion'].includes(estado) ? 'Solicitar cambios' : 'Editar'}</span>
                               </button>
                             )}
 
-                            {canEdit && (
+                            {canDeleteDocument && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -870,14 +1019,28 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                               </button>
                             )}
 
+                            {canStartExecution && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCambioEstado(doc, 'ejecucion');
+                                }}
+                                disabled={updatingEstadoId === doc.id}
+                                className="flex items-center justify-center gap-3 w-full rounded-xl px-4 py-2.5 text-sm font-semibold shadow-sm transition-all duration-200 border bg-violet-600 hover:bg-violet-500 text-white border-violet-500/40 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                <span className={actionIconWrap}><PlayCircle size={14} /></span>
+                                <span>{updatingEstadoId === doc.id ? 'Iniciando...' : 'Iniciar ejecucion'}</span>
+                              </button>
+                            )}
+
                             {canRespondThisDoc && (
                               <div className="rounded-lg border border-emerald-200 bg-white/80 p-3 dark:border-slate-800 dark:bg-slate-950/35" onClick={(e) => e.stopPropagation()}>
                                 <p className="text-[10px] uppercase tracking-wider font-bold text-emerald-700 dark:text-emerald-300 mb-1">Revisión de Dirección</p>
-                                <p className="text-xs text-slate-500 dark:text-slate-400">Como director del sistema principal puede aprobar u observar este documento.</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">Revise el PDF y registre observaciones como lista, una por linea.</p>
                                 <textarea
                                   value={note}
                                   onChange={(e) => handleNoteChange(doc.id, e.target.value)}
-                                  placeholder="Escriba observaciones o comentario de aprobación..."
+                                  placeholder="Una observacion por linea..."
                                   className="mt-3 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-700 dark:text-slate-100 min-h-[92px] resize-y"
                                 />
                                 <div className="mt-3 grid grid-cols-1 gap-2">
@@ -932,7 +1095,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
               ) : (
                 <div className="col-span-full rounded-xl border border-dashed border-slate-300 bg-white/70 px-5 py-8 text-center text-gray-500 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-400">
                   {isRevisionBoard
-                    ? 'No hay documentos en revisión u observados para la gestión seleccionada.'
+                    ? 'No hay documentos en revision ni solicitudes pendientes para la gestion seleccionada.'
                     : 'No hay documentos para mostrar.'}
                 </div>
               )}

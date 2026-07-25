@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { History, X, FileEdit, CheckCircle2, AlertCircle, SendHorizontal, PlusCircle, ShieldCheck } from 'lucide-react';
+import { History, X, FileEdit, CheckCircle2, AlertCircle, SendHorizontal, PlusCircle, ShieldCheck, PlayCircle, XCircle, ImageUp } from 'lucide-react';
 import { getHistorialDocumentoPOA } from '../../../apis/poa.api';
 
 const EVENTO_ICON = {
@@ -10,6 +10,11 @@ const EVENTO_ICON = {
   aprobacion_revision: <CheckCircle2 size={14} className="text-emerald-400" />,
   observacion_revision: <AlertCircle size={14} className="text-orange-400" />,
   aprobacion_final: <ShieldCheck size={14} className="text-violet-400" />,
+  inicio_ejecucion: <PlayCircle size={14} className="text-violet-400" />,
+  solicitud_cambio: <SendHorizontal size={14} className="text-sky-400" />,
+  aprobacion_cambio: <CheckCircle2 size={14} className="text-emerald-400" />,
+  rechazo_cambio: <XCircle size={14} className="text-rose-400" />,
+  evidencia: <ImageUp size={14} className="text-cyan-400" />,
 };
 
 const EVENTO_COLOR = {
@@ -19,6 +24,11 @@ const EVENTO_COLOR = {
   aprobacion_revision: 'border-emerald-500/30 bg-emerald-500/5',
   observacion_revision: 'border-orange-500/30 bg-orange-500/5',
   aprobacion_final: 'border-violet-500/30 bg-violet-500/5',
+  inicio_ejecucion: 'border-violet-500/30 bg-violet-500/5',
+  solicitud_cambio: 'border-sky-500/30 bg-sky-500/5',
+  aprobacion_cambio: 'border-emerald-500/30 bg-emerald-500/5',
+  rechazo_cambio: 'border-rose-500/30 bg-rose-500/5',
+  evidencia: 'border-cyan-500/30 bg-cyan-500/5',
 };
 
 const formatDateTime = (value) => {
@@ -79,12 +89,12 @@ const BitacoraModal = ({ doc, gestion, onClose }) => {
   }, [items, filtroEvento]);
 
   const modalContent = (
-    <div className="fixed inset-0 z-[200]" onClick={onClose}>
+    <div className="poa-bitacora-modal fixed inset-0 z-[200]" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div className="absolute inset-0 flex items-center justify-center p-4">
         <div
           onClick={(e) => e.stopPropagation()}
-          className="w-full max-w-4xl max-h-[90vh] flex flex-col rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl"
+          className="poa-bitacora-panel w-full max-w-4xl max-h-[90vh] flex flex-col rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl"
         >
           <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-800 bg-slate-950/60">
             <div className="flex items-start gap-2.5 min-w-0">

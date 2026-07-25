@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getFondoTiempoDetalle, crearActividad, eliminarActividad, presentarFondoADirector, aprobarFondo } from '../apis/api';
 import api from '../apis/api';
+import { API_URL } from '../apis/apiConfig';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
 import DistribuirHoras from './DistribuirHoras';
 import FormularioActividad from './FormularioActividad';
@@ -2117,7 +2118,7 @@ function DetalleFondo({ isDark }) {
         <PDFPreviewModal
           isOpen={mostrarModalPDF}
           onClose={() => setMostrarModalPDF(false)}
-          pdfUrl={`http://127.0.0.1:8000/api/fondos-tiempo/${id}/pdf-oficial/`}
+          pdfUrl={`${API_URL}/fondos-tiempo/${id}/pdf-oficial/`}
         />
       )}
 

@@ -410,7 +410,7 @@ const CatalogoItems = () => {
 				onConfirm={confirmarEliminarItem}
 				onCancel={() => setDeleteDialogItem(null)}
 			/>
-			<div className="catalogo-card w-full p-6 rounded shadow border border-slate-200 bg-white/90 text-slate-900 dark:border-slate-700 dark:bg-slate-900/55 dark:text-slate-100">
+			<div className="poa-mobile-page-card catalogo-card w-full p-6 rounded shadow border border-slate-200 bg-white/90 text-slate-900 dark:border-slate-700 dark:bg-slate-900/55 dark:text-slate-100">
 			{!canEdit && (
 				<div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
 					Modo solo lectura: puedes ver y descargar el catálogo. Solo el encargado de elavorar el POA puede crear o modificar items.
@@ -587,13 +587,13 @@ const CatalogoItems = () => {
 						</div>
 
 						<div className="modal-body p-5">
-							<div className="mb-4 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-emerald-900 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200">
+							<div className="poa-mobile-kpi-card mb-4 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-emerald-900 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200">
 								<div className="text-sm font-medium">Cargados en base de datos</div>
 								<div className="text-2xl font-extrabold leading-tight">{importResumen.items_creados || 0}</div>
 								<div className="text-xs opacity-80">Registros nuevos insertados correctamente.</div>
 							</div>
 
-							<div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm text-blue-900">
+							<div className="poa-mobile-kpi-strip poa-mobile-kpi-strip-3 grid grid-cols-2 md:grid-cols-3 gap-2 text-sm text-blue-900">
 								<div>Procesadas: <b>{importResumen.filas_procesadas || 0}</b></div>
 								<div>Filas vacías: <b>{importResumen.filas_vacias || 0}</b></div>
 								<div>Errores: <b>{importResumen.errores || 0}</b></div>
@@ -665,8 +665,8 @@ const CatalogoItems = () => {
 			{!loading && !error && (
 				<div>
 					<div className="text-sm text-slate-500 dark:text-slate-400 mb-2">Total de registros: {totalCount}</div>
-					<div className="overflow-auto max-h-[68vh] border rounded border-sky-200 bg-white/75 dark:border-slate-700 dark:bg-transparent">
-						<table className="min-w-full table-auto border-collapse font-sans text-sm leading-snug text-blue-900 dark:text-white">
+					<div className="poa-table-wrapper overflow-auto max-h-[68vh] border rounded border-sky-200 bg-white/75 dark:border-slate-700 dark:bg-transparent">
+						<table className="poa-mobile-card-table min-w-full table-auto border-collapse font-sans text-sm leading-snug text-blue-900 dark:text-white">
 							<thead>
 								<tr className="text-left">
 									<th className="sticky top-0 z-20 px-3 py-2 border border-blue-300 dark:border-gray-600 font-medium bg-blue-100 text-blue-900 dark:bg-slate-900 dark:text-slate-100 shadow-sm">Partida</th>
@@ -692,9 +692,9 @@ const CatalogoItems = () => {
 											onClick={() => handleSelectItem(it)}
 											className={`cursor-pointer border-t transition-colors ${isSelected ? 'ring-1 ring-inset ring-amber-500 dark:ring-cyan-400' : ''}`}
 										>
-											<td className={`${rowBase} ${cellStateClass}`}>{it?.partida || '-'}</td>
-											<td className={`${rowBase} ${cellStateClass}`}><div className="table-cell-clamp">{it?.detalle || '-'}</div></td>
-											<td className={`${rowBase} ${cellStateClass}`}>{it?.unidad_medida || '-'}</td>
+											<td data-label="Partida" className={`${rowBase} ${cellStateClass}`}>{it?.partida || '-'}</td>
+											<td data-label="Detalle" className={`${rowBase} ${cellStateClass}`}><div className="table-cell-clamp">{it?.detalle || '-'}</div></td>
+											<td data-label="Unidad" className={`${rowBase} ${cellStateClass}`}>{it?.unidad_medida || '-'}</td>
 										</tr>
 									);
 								})}
@@ -740,4 +740,3 @@ const CatalogoItems = () => {
 };
 
 export default CatalogoItems;
-

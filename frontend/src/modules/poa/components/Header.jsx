@@ -1,8 +1,10 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { FaArrowLeft, FaPlus, FaEdit, FaTrash, FaFilePdf, FaMoneyBillAlt, FaBullseye, FaImage } from 'react-icons/fa';
+import { FaArrowLeft, FaPlus, FaEdit, FaTrash, FaFilePdf, FaMoneyBillAlt, FaImage } from 'react-icons/fa';
+import ThemeToggle from './ThemeToggle';
 import IconButton from './IconButton';
 import Dialog from './base/Dialog';
+import { buildPoaNavigationState, getPoaNavigationContext } from '../utils/navigationContext';
 
 const themeStyles = {
   dark: {
@@ -12,7 +14,6 @@ const themeStyles = {
     headerBorder: 'border-b border-blue-700/50',
     headerText: 'text-white',
     headerHomeText: 'text-white',
-    muted: 'text-blue-200',
     primaryButton: 'bg-gradient-to-r from-blue-500 via-blue-600 to-indigo-600',
     buttonShadow: 'shadow-[0_8px_20px_rgba(37,99,235,0.4)]',
     buttonHover: 'hover:from-blue-600 hover:via-blue-700 hover:to-indigo-700',
@@ -25,7 +26,6 @@ const themeStyles = {
     headerBorder: 'border-b border-blue-600/30',
     headerText: 'text-white',
     headerHomeText: 'text-white',
-    muted: 'text-blue-100',
     primaryButton: 'bg-gradient-to-r from-blue-500 via-blue-600 to-indigo-600',
     buttonShadow: 'shadow-[0_8px_20px_rgba(37,99,235,0.3)]',
     buttonHover: 'hover:from-blue-600 hover:via-blue-700 hover:to-indigo-700',
@@ -40,17 +40,108 @@ const Header = ({
   headerSelectedActividad, 
   headerSelectedDireccion, 
   headerSelectedOperacion,
-  onNavigate,
+  setTheme,
   sidebarExpanded = true,
   poaPermissions = {}
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const isDark = theme === 'dark';
   const themeConfig = themeStyles[theme];
   const canEdit = !!poaPermissions?.canEdit;
   const canManageAccess = !!poaPermissions?.canManageAccess;
   const [deleteOperacionDialog, setDeleteOperacionDialog] = React.useState(null);
+  const navContext = getPoaNavigationContext(location?.state);
+  const isPresupuestoPage = location?.pathname === '/poa/presupuestos';
+
+  const getActividadForNavigation = () => (
+    isPresupuestoPage
+      ? (navContext?.actividad || null)
+      : (headerSelectedActividad || navContext?.actividad || null)
+  );
+
+  const getSelectedObjetivoId = () => (
+    navContext?.objetivoId ||
+    navContext?.objetivoEspecificoId ||
+    getActividadForNavigation()?.objetivoId ||
+    getActividadForNavigation()?.objetivo ||
+    getActividadForNavigation()?.objetivo_id ||
+    null
+  );
+
+  const getSelectedDocumentoId = () => (
+    navContext?.documentoId ||
+    getActividadForNavigation()?.documento_id ||
+    getActividadForNavigation()?.documento ||
+    null
+  );
+
+  const getSelectedActividadId = () => (
+    navContext?.actividadId ||
+    navContext?.actividad?.id ||
+    getActividadForNavigation()?.id ||
+    null
+  );
+
+  const getDocumentosPath = () => (
+    navContext?.documentosPath === '/poa/documentos-revision'
+      ? '/poa/documentos-revision'
+      : '/poa/documentos'
+  );
+
+  const buildHeaderNavigationState = (patch = {}) => buildPoaNavigationState(location?.state, {
+    gestion: navContext?.gestion || getActividadForNavigation()?.gestion || getActividadForNavigation()?.documento_gestion,
+    documentoId: getSelectedDocumentoId(),
+    documentoEstado: navContext?.documentoEstado || getActividadForNavigation()?.documento_estado,
+    documentosPath: getDocumentosPath(),
+    objetivoId: getSelectedObjetivoId(),
+    actividadId: getSelectedActividadId(),
+    ...(getActividadForNavigation() ? { actividad: getActividadForNavigation() } : {}),
+    ...patch,
+  });
+
+  const handlePoaBack = () => {
+    const p = location?.pathname || '';
+    const objetivoId = getSelectedObjetivoId();
+    const documentoId = getSelectedDocumentoId();
+
+    if (p === '/poa/presupuestos' || p.includes('/evidencias')) {
+      if (objetivoId) {
+        navigate(`/poa/actividades/${objetivoId}`, {
+          replace: true,
+          state: buildHeaderNavigationState({ objetivoId }),
+        });
+        return;
+      }
+    }
+
+    if (p.startsWith('/poa/actividades')) {
+      if (documentoId) {
+        navigate(`/poa/objetivos-especificos/${documentoId}`, {
+          replace: true,
+          state: buildHeaderNavigationState({ documentoId }),
+        });
+        return;
+      }
+    }
+
+    if (p.startsWith('/poa/objetivos-especificos')) {
+      navigate(getDocumentosPath(), {
+        replace: true,
+        state: buildHeaderNavigationState({ gestion: navContext?.gestion }),
+      });
+      return;
+    }
+
+    if (navContext?.gestion) {
+      navigate(getDocumentosPath(), {
+        replace: true,
+        state: buildHeaderNavigationState({ gestion: navContext.gestion }),
+      });
+      return;
+    }
+
+    navigate(-1);
+  };
 
   const gradientButtonClasses = (size = 'md') => {
     const sizeMap = {
@@ -213,7 +304,16 @@ const Header = ({
               <IconButton 
                 showIcon 
                 icon={<FaMoneyBillAlt />} 
-                onClick={() => navigate('/poa/presupuestos', { state: { actividad: headerSelectedActividad } })} 
+                onClick={() => navigate('/poa/presupuestos', {
+                  state: buildHeaderNavigationState({
+                    actividad: headerSelectedActividad,
+                    actividadId: headerSelectedActividad?.id,
+                    objetivoId: getSelectedObjetivoId(),
+                    documentoId: headerSelectedActividad?.documento_id,
+                    documentoEstado: headerSelectedActividad?.documento_estado,
+                    gestion: headerSelectedActividad?.gestion || headerSelectedActividad?.documento_gestion || navContext?.gestion,
+                  }),
+                })}
                 title="Ver presupuesto" 
                 className={gradientButtonClasses()}
               >
@@ -222,7 +322,16 @@ const Header = ({
                   <IconButton
                     showIcon
                     icon={<FaImage />}
-                    onClick={() => navigate(`/poa/actividades/${headerSelectedActividad.id}/evidencias`)}
+                    onClick={() => navigate(`/poa/actividades/${headerSelectedActividad.id}/evidencias`, {
+                      state: buildHeaderNavigationState({
+                        actividad: headerSelectedActividad,
+                        actividadId: headerSelectedActividad?.id,
+                        objetivoId: getSelectedObjetivoId(),
+                        documentoId: headerSelectedActividad?.documento_id,
+                        documentoEstado: headerSelectedActividad?.documento_estado,
+                        gestion: headerSelectedActividad?.gestion || headerSelectedActividad?.documento_gestion || navContext?.gestion,
+                      }),
+                    })}
                     title="Evidencias"
                     className={gradientButtonClasses()}
                   >
@@ -310,12 +419,11 @@ const Header = ({
 
   if (isHome) {
     return (
-      <header className={`w-full ${themeConfig.headerHomeBg} ${themeConfig.headerHomeText} flex justify-between items-center px-8 py-6 ${themeConfig.headerShadow} ${themeConfig.headerBorder}`}>
-        <div />
-        <div className="text-2xl font-bold tracking-wide">Ingeniería de Sistemas</div>
-        <div className="flex flex-col items-end gap-1">
-          <div className={`text-base ${themeConfig.muted}`}>Bienvenido</div>
-          <div className={`text-xs ${themeConfig.muted}`}>Windows</div>
+      <header className={`poa-home-header w-full ${themeConfig.headerHomeBg} ${themeConfig.headerHomeText} grid grid-cols-[2.75rem_minmax(0,1fr)_2.75rem] md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 px-3 py-3 md:px-8 md:py-6 ${themeConfig.headerShadow} ${themeConfig.headerBorder}`}>
+        <div className="poa-home-spacer" aria-hidden="true" />
+        <div className="poa-home-title min-w-0 text-lg md:text-2xl font-bold tracking-wide leading-tight truncate">Ingeniería de Sistemas</div>
+        <div className="poa-home-theme justify-self-end">
+          <ThemeToggle theme={theme} setTheme={setTheme} variant="header" />
         </div>
       </header>
     );
@@ -341,9 +449,9 @@ const Header = ({
           setDeleteOperacionDialog(null);
         }}
       />
-      <header className={`${themeConfig.headerBg} ${themeConfig.headerText} flex flex-wrap items-center gap-y-3 px-4 pl-16 md:px-6 py-3 md:py-4 fixed top-0 right-0 left-0 z-30 w-full ${headerWidthClass} transform transition-all duration-300 ease-in-out ${sidebarOffset} ${showHeader ? `translate-y-0 opacity-100 ${themeConfig.headerShadow} ${themeConfig.headerBorder}` : '-translate-y-full opacity-0 pointer-events-none'}`}>
+      <header className={`poa-page-header ${themeConfig.headerBg} ${themeConfig.headerText} flex flex-wrap items-center gap-y-3 pl-20 pr-3 py-2 md:px-6 md:py-4 fixed top-0 right-0 left-0 z-30 w-full ${headerWidthClass} transform transition-all duration-300 ease-in-out ${sidebarOffset} ${showHeader ? `translate-y-0 opacity-100 ${themeConfig.headerShadow} ${themeConfig.headerBorder}` : '-translate-y-full opacity-0 pointer-events-none'}`}>
       {/* Left: page controls */}
-      <div className="flex shrink-0 items-center gap-2 md:mr-4">
+      <div className="poa-header-left flex shrink-0 items-center gap-2 md:mr-4">
         {(() => {
           const p = location?.pathname || '';
           if (p.startsWith('/poa/objetivos-especificos') || p.startsWith('/poa/actividades') || p.startsWith('/poa/presupuestos')) {
@@ -351,7 +459,7 @@ const Header = ({
               <IconButton 
                 showIcon 
                 icon={<FaArrowLeft />} 
-                onClick={() => navigate(-1)} 
+                onClick={handlePoaBack}
                 className={gradientButtonClasses()} 
                 title="Volver"
               >
@@ -364,12 +472,12 @@ const Header = ({
       </div>
 
       {/* Center: page title */}
-      <div className="order-3 basis-full min-w-0 px-0 text-left md:order-none md:flex-1 md:px-4 md:text-center">
+      <div className="poa-header-title order-3 basis-full min-w-0 px-0 text-center md:order-none md:flex-1 md:px-4">
         <h1 className="text-xl md:text-2xl font-bold truncate">{getPageTitle()}</h1>
       </div>
 
       {/* Right: actions */}
-      <div className="ml-auto flex shrink-0 items-center gap-2 md:gap-4">
+      <div className="poa-header-actions ml-auto flex shrink-0 items-center gap-2 md:gap-4">
         {renderRightActions()}
       </div>
       </header>

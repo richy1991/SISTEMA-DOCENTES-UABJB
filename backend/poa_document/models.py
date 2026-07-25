@@ -33,6 +33,15 @@ class UsuarioPOA(models.Model):
         related_name='accesos_poa_docente',
         verbose_name='Docente vinculado',
     )
+    carrera = models.ForeignKey(
+        Carrera,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='accesos_poa',
+        verbose_name='Carrera',
+        help_text='Carrera a la que pertenece este acceso POA.',
+    )
     rol = models.CharField(max_length=30, choices=ROL_CHOICES, verbose_name='Rol POA')
     nombre_entidad = models.CharField(
         max_length=150, blank=True,
@@ -47,9 +56,14 @@ class UsuarioPOA(models.Model):
         ordering = ['rol', 'id']
         constraints = [
             models.UniqueConstraint(
-                fields=['user', 'rol'],
+                fields=['user', 'rol', 'carrera'],
                 condition=models.Q(user__isnull=False),
-                name='unique_user_rol_poa',
+                name='unique_user_rol_carrera_poa',
+            ),
+            models.UniqueConstraint(
+                fields=['carrera', 'rol'],
+                condition=models.Q(activo=True, rol='elaborador', carrera__isnull=False),
+                name='unique_active_elaborador_poa_por_carrera',
             ),
         ]
 
@@ -148,6 +162,11 @@ class HistorialDocumentoPOA(models.Model):
         ('aprobacion_revision', 'Aprobacion de revision'),
         ('observacion_revision', 'Observacion de revision'),
         ('aprobacion_final', 'Aprobacion final'),
+        ('inicio_ejecucion', 'Inicio de ejecucion'),
+        ('solicitud_cambio', 'Solicitud de cambio'),
+        ('aprobacion_cambio', 'Aprobacion de cambio'),
+        ('rechazo_cambio', 'Rechazo de cambio'),
+        ('evidencia', 'Evidencia'),
     ]
 
     documento = models.ForeignKey(DocumentoPOA, on_delete=models.CASCADE, related_name='historial')
@@ -166,6 +185,88 @@ class HistorialDocumentoPOA(models.Model):
 
     def __str__(self):
         return f"{self.get_tipo_evento_display()} - Documento {self.documento_id}"
+
+
+class ObservacionDocumentoPOA(models.Model):
+    documento = models.ForeignKey(DocumentoPOA, on_delete=models.CASCADE, related_name='observaciones_checklist')
+    ciclo_revision = models.PositiveIntegerField(default=1)
+    texto = models.TextField()
+    creado_por = models.ForeignKey(User, on_delete=models.PROTECT, related_name='observaciones_poa_creadas')
+    creado_en = models.DateTimeField(auto_now_add=True)
+    resuelta = models.BooleanField(default=False)
+    resuelto_por = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='observaciones_poa_resueltas',
+    )
+    resuelto_en = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = 'Observacion de Documento POA'
+        verbose_name_plural = 'Observaciones de Documento POA'
+        ordering = ['ciclo_revision', 'id']
+        indexes = [
+            models.Index(fields=['documento', 'ciclo_revision']),
+        ]
+
+    def __str__(self):
+        return f"Observacion #{self.pk} - Documento {self.documento_id}"
+
+
+class SolicitudCambioPOA(models.Model):
+    TIPO_OBJETO_CHOICES = [
+        ('documento', 'Documento'),
+        ('objetivo', 'Objetivo especifico'),
+        ('actividad', 'Actividad'),
+        ('presupuesto', 'Presupuesto'),
+    ]
+
+    ACCION_CHOICES = [
+        ('crear', 'Crear'),
+        ('editar', 'Editar'),
+        ('eliminar', 'Eliminar'),
+    ]
+
+    ESTADO_CHOICES = [
+        ('pendiente', 'Pendiente'),
+        ('aprobado', 'Aprobado'),
+        ('rechazado', 'Rechazado'),
+    ]
+
+    documento = models.ForeignKey(DocumentoPOA, on_delete=models.CASCADE, related_name='solicitudes_cambio')
+    tipo_objeto = models.CharField(max_length=20, choices=TIPO_OBJETO_CHOICES)
+    objeto_id = models.PositiveIntegerField(null=True, blank=True)
+    accion = models.CharField(max_length=20, choices=ACCION_CHOICES)
+    payload = models.JSONField(default=dict, blank=True)
+    resumen = models.JSONField(default=dict, blank=True)
+    descripcion = models.TextField(blank=True, default='')
+    estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='pendiente')
+    solicitado_por = models.ForeignKey(User, on_delete=models.PROTECT, related_name='solicitudes_cambio_poa')
+    revisado_por = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='solicitudes_cambio_poa_revisadas',
+    )
+    respuesta = models.TextField(blank=True, default='')
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+    respondido_en = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = 'Solicitud de Cambio POA'
+        verbose_name_plural = 'Solicitudes de Cambio POA'
+        ordering = ['-creado_en']
+        indexes = [
+            models.Index(fields=['documento', 'estado']),
+            models.Index(fields=['tipo_objeto', 'objeto_id']),
+        ]
+
+    def __str__(self):
+        return f"Solicitud #{self.pk} - {self.tipo_objeto} {self.accion}"
 
 #objetivos especificos que pertenece a un solo documento poa
 

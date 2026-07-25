@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { createActividad, updateActividad, searchIndicadoresCatalogo } from '../../../apis/poa.api';
+import { createActividad, updateActividad, searchIndicadoresCatalogo, crearSolicitudCambioPOA } from '../../../apis/poa.api';
 import IconButton from './IconButton';
 import { FaTimes, FaSave } from 'react-icons/fa';
 import { Input, Textarea, Select, Modal } from './base';
 import { buildClientErrorMessages, formatApiErrors, mapApiErrorsToFieldErrors, ModalErrorAlert } from './formErrorUtils';
+import toast from 'react-hot-toast';
 
-const NuevaActividadModal = ({ onClose, onCreated, onUpdated, objetivoId, actividad }) => {
+const NuevaActividadModal = ({ onClose, onCreated, onUpdated, objetivoId, actividad, documentoId = null, documentoEstado = '' }) => {
   const [codigo, setCodigo] = useState('');
   const [nombre, setNombre] = useState('');
   const nombreRef = useRef(null);
@@ -26,6 +27,7 @@ const NuevaActividadModal = ({ onClose, onCreated, onUpdated, objetivoId, activi
   const [errorMessages, setErrorMessages] = useState([]);
   const [fieldErrors, setFieldErrors] = useState({});
   const skipNextSearchRef = useRef(false);
+  const requestChangeMode = ['aprobado', 'ejecucion'].includes(String(documentoEstado || '').toLowerCase());
 
   const focusFirstError = (errors) => {
     const firstKey = Object.keys(errors || {})[0];
@@ -136,6 +138,24 @@ const NuevaActividadModal = ({ onClose, onCreated, onUpdated, objetivoId, activi
       if (indicadorUnidad) payload.indicador_unidad = indicadorUnidad;
       if (indicadorLineaBase !== '') payload.indicador_linea_base = Number(indicadorLineaBase);
       if (indicadorMeta !== '') payload.indicador_meta = Number(indicadorMeta);
+      if (requestChangeMode) {
+        await crearSolicitudCambioPOA({
+          documento: Number(documentoId || actividad?.documento_id || 0),
+          tipo_objeto: 'actividad',
+          objeto_id: actividad?.id || null,
+          accion: actividad?.id ? 'editar' : 'crear',
+          payload,
+          descripcion: actividad?.id ? 'Modificar actividad.' : 'Crear actividad.',
+          resumen: {
+            titulo: actividad?.id ? 'Editar actividad' : 'Nueva actividad',
+            codigo: payload.codigo,
+            nombre: payload.nombre,
+          },
+        });
+        toast.success('Solicitud de cambios enviada al Director de Carrera');
+        if (onClose) onClose();
+        return;
+      }
       let res;
       if (actividad && actividad.id) {
         res = await updateActividad(actividad.id, payload);
@@ -400,8 +420,8 @@ const NuevaActividadModal = ({ onClose, onCreated, onUpdated, objetivoId, activi
 
             <div className="flex justify-end gap-3 modal-actions">
               <IconButton icon={<FaTimes />} onClick={() => onClose && onClose()} className="btn-cancel px-3 py-2 rounded" title="Cancelar">Cancelar</IconButton>
-              <IconButton icon={<FaSave />} type="submit" disabled={loading} className="btn-success px-3 py-2 rounded" title={loading ? 'Guardando...' : (actividad && actividad.id ? 'Guardar' : 'Crear')}>
-                {loading ? 'Guardando...' : (actividad && actividad.id ? 'Guardar' : 'Crear')}
+              <IconButton icon={<FaSave />} type="submit" disabled={loading} className="btn-success px-3 py-2 rounded" title={loading ? 'Guardando...' : (requestChangeMode ? 'Enviar solicitud de cambios' : (actividad && actividad.id ? 'Guardar' : 'Crear'))}>
+                {loading ? 'Guardando...' : (requestChangeMode ? 'Enviar solicitud de cambios' : (actividad && actividad.id ? 'Guardar' : 'Crear'))}
               </IconButton>
             </div>
           </form>

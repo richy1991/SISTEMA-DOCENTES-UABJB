@@ -103,7 +103,9 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
     ];
 
     // iiisyp es solo lectura: no puede acceder a herramientas globales de administracion
-    const mostrarHerramientasGlobales = user?.is_superuser;
+    const esDirectorCarrera = user?.perfil?.rol === 'director';
+    const mostrarHerramientasGestion = user?.is_superuser || esDirectorCarrera;
+    const tituloHerramientasGestion = user?.is_superuser ? 'Herramientas Globales' : 'Herramientas de Carrera';
     const herramientasGlobales = [
         {
             name: 'Usuarios del Sistema',
@@ -122,6 +124,14 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
             enabled: true,
         },
     ];
+    const herramientasVisibles = user?.is_superuser
+        ? herramientasGlobales
+        : herramientasGlobales.map((tool) => ({
+            ...tool,
+            description: tool.path === '/usuarios'
+                ? 'Usuarios y roles de tu carrera.'
+                : 'Informacion institucional de tu carrera.',
+        }));
 
     const moduleEntryVectors = [
         { x: -320, y: -220 },
@@ -131,7 +141,7 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
     ];
 
     return (
-        <div className="relative isolate min-h-screen w-full bg-gradient-to-br from-blue-100 via-indigo-50 to-purple-100 dark:from-gray-900 dark:via-blue-900 dark:to-purple-900 text-slate-800 dark:text-slate-200 font-sans transition-colors duration-500 overflow-hidden">
+        <div className="module-selector-root relative isolate min-h-screen w-full bg-gradient-to-br from-blue-100 via-indigo-50 to-purple-100 dark:from-gray-900 dark:via-blue-900 dark:to-purple-900 text-slate-800 dark:text-slate-200 font-sans transition-colors duration-500 overflow-hidden">
             <style>{`
                 @keyframes module-corner-in {
                     0% {
@@ -184,6 +194,108 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
                     transform-origin: center center;
                     will-change: transform, opacity, filter;
                 }
+                @media (max-width: 640px) {
+                    .module-selector-root {
+                        overflow-y: auto;
+                    }
+                    .module-selector-content {
+                        justify-content: flex-start;
+                        min-height: 100dvh;
+                        padding: 4.25rem 0.75rem 5rem;
+                    }
+                    .module-selector-header {
+                        padding: 0.65rem;
+                        align-items: flex-start;
+                        gap: 0.5rem;
+                    }
+                    .module-selector-welcome {
+                        max-width: calc(100vw - 8.25rem);
+                        padding: 0.38rem 0.6rem;
+                        font-size: 0.68rem;
+                        line-height: 1.15;
+                    }
+                    .module-selector-logout {
+                        padding: 0.42rem 0.58rem;
+                        font-size: 0.68rem;
+                        line-height: 1;
+                    }
+                    .module-selector-title {
+                        margin-bottom: 0.85rem;
+                    }
+                    .module-selector-heading {
+                        font-size: 1.65rem;
+                        line-height: 1.05;
+                        margin-bottom: 0.2rem;
+                    }
+                    .module-selector-subtitle {
+                        font-size: 0.78rem;
+                        line-height: 1.25;
+                    }
+                    .module-selector-grid {
+                        width: 100%;
+                        max-width: 22rem;
+                        grid-template-columns: repeat(2, minmax(0, 1fr));
+                        gap: 0.65rem;
+                    }
+                    .module-card {
+                        min-height: 7.25rem;
+                        padding: 0.75rem 0.55rem;
+                        border-radius: 0.95rem;
+                    }
+                    .module-card-icon {
+                        margin-bottom: 0.45rem;
+                    }
+                    .module-card-icon svg {
+                        width: 1.7rem;
+                        height: 1.7rem;
+                    }
+                    .module-card-title {
+                        font-size: 0.88rem;
+                        line-height: 1.1;
+                    }
+                    .module-card-description {
+                        margin-top: 0.25rem;
+                        font-size: 0.64rem;
+                        line-height: 1.15;
+                    }
+                    .module-tools-panel {
+                        margin-top: 0.75rem;
+                        max-width: 22rem;
+                    }
+                    .module-tools-card {
+                        border-radius: 0.95rem;
+                        padding: 0.65rem;
+                    }
+                    .module-tools-title {
+                        margin-bottom: 0.5rem;
+                        font-size: 0.55rem;
+                    }
+                    .module-tool-button {
+                        gap: 0.55rem;
+                        border-radius: 0.8rem;
+                        padding: 0.55rem 0.65rem;
+                    }
+                    .module-tool-icon {
+                        width: 2rem;
+                        height: 2rem;
+                    }
+                    .module-tool-icon svg {
+                        width: 1rem;
+                        height: 1rem;
+                    }
+                    .module-tool-title {
+                        font-size: 0.78rem;
+                        line-height: 1.05;
+                    }
+                    .module-tool-description {
+                        font-size: 0.62rem;
+                        line-height: 1.15;
+                    }
+                    .module-corner-enter,
+                    .tools-floating-enter {
+                        animation: none;
+                    }
+                }
             `}</style>
 
             {/* Logo institucional de fondo */}
@@ -205,12 +317,12 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
             <ThemeToggle theme={theme} setTheme={setTheme} />
 
             {/* Contenido Principal */}
-            <div className="relative min-h-screen flex flex-col items-center justify-center p-4 z-10">
+            <div className="module-selector-content relative min-h-screen flex flex-col items-center justify-center p-4 z-10">
                 
                 {/* Header */}
-                <header className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center">
+                <header className="module-selector-header absolute top-0 left-0 right-0 p-6 flex justify-between items-center">
                     {/* Lado Izquierdo: Mensaje de Bienvenida */}
-                    <div className="text-sm font-medium backdrop-blur-sm bg-black/5 dark:bg-white/5 py-2 px-4 rounded-full">
+                    <div className="module-selector-welcome text-sm font-medium backdrop-blur-sm bg-black/5 dark:bg-white/5 py-2 px-4 rounded-full">
                         Bienvenido, <span className="font-bold text-uab-blue-800 dark:text-uab-blue-300">{displayName}</span>
                     </div>
 
@@ -218,7 +330,7 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
                     <div className="flex items-center gap-4">
                         <button
                             onClick={handleLogoutClick}
-                            className="flex items-center gap-2 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:text-red-500 dark:hover:text-red-400 transition-colors duration-200 backdrop-blur-sm bg-black/5 dark:bg-white/5 py-2 px-4 rounded-full"
+                            className="module-selector-logout flex items-center gap-2 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:text-red-500 dark:hover:text-red-400 transition-colors duration-200 backdrop-blur-sm bg-black/5 dark:bg-white/5 py-2 px-4 rounded-full"
                             title="Cerrar Sesión"
                         >
                             <LogoutIcon />
@@ -228,15 +340,15 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
                 </header>
                 
                 {/* Título */}
-                <div className="text-center mb-12 animate-fade-in">
-                    <h1 className="text-5xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-uab-blue-700 to-blue-800 dark:from-uab-blue-300 dark:to-blue-400">
+                <div className="module-selector-title text-center mb-12 animate-fade-in">
+                    <h1 className="module-selector-heading text-5xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-uab-blue-700 to-blue-800 dark:from-uab-blue-300 dark:to-blue-400">
                         Panel de Módulos
                     </h1>
-                    <p className="text-lg text-slate-600 dark:text-slate-400">Seleccione el sistema al que desea ingresar.</p>
+                    <p className="module-selector-subtitle text-lg text-slate-600 dark:text-slate-400">Seleccione el sistema al que desea ingresar.</p>
                 </div>
 
                 {/* Grid de Módulos */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl">
+                <div className="module-selector-grid grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl">
                     {modules.filter(m => m.enabled).map((module, index) => {
                         const vector = moduleEntryVectors[index] || moduleEntryVectors[moduleEntryVectors.length - 1];
                         return (
@@ -255,15 +367,15 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
                     })}
                 </div>
 
-                {mostrarHerramientasGlobales && (
-                    <aside className="tools-floating-enter lg:fixed lg:right-8 lg:top-[calc(50%-152px)] lg:-translate-y-1/2 mt-10 lg:mt-0 w-full max-w-sm lg:w-80">
-                        <div className="relative rounded-2xl border border-white/35 dark:border-white/20 bg-white/5 dark:bg-slate-900/10 backdrop-blur-md shadow-2xl p-4">
+                {mostrarHerramientasGestion && (
+                    <aside className="module-tools-panel tools-floating-enter lg:fixed lg:right-8 lg:top-[calc(50%-152px)] lg:-translate-y-1/2 mt-10 lg:mt-0 w-full max-w-sm lg:w-80">
+                        <div className="module-tools-card relative rounded-2xl border border-white/35 dark:border-white/20 bg-white/5 dark:bg-slate-900/10 backdrop-blur-md shadow-2xl p-4">
                             <div className="absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/70 to-transparent" />
-                            <p className="text-xs uppercase tracking-[0.22em] text-cyan-200/90 dark:text-cyan-300/80 mb-3 text-center">
-                                Herramientas Globales
+                            <p className="module-tools-title text-xs uppercase tracking-[0.22em] text-cyan-200/90 dark:text-cyan-300/80 mb-3 text-center">
+                                {tituloHerramientasGestion}
                             </p>
                             <div className="space-y-3">
-                                {herramientasGlobales.map((tool) => (
+                                {herramientasVisibles.map((tool) => (
                                     <FloatingToolButton key={tool.name} {...tool} />
                                 ))}
                             </div>
@@ -286,14 +398,14 @@ const FloatingToolButton = ({ name, description, path, icon: Icon, color }) => {
     return (
         <Link
             to={path}
-            className={`group flex items-center gap-3 w-full rounded-xl border bg-gradient-to-r ${buttonColor} bg-white/10 dark:bg-slate-800/20 backdrop-blur-sm px-4 py-3 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg`}
+            className={`module-tool-button group flex items-center gap-3 w-full rounded-xl border bg-gradient-to-r ${buttonColor} bg-white/10 dark:bg-slate-800/20 backdrop-blur-sm px-4 py-3 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg`}
         >
-            <div className="w-10 h-10 rounded-lg bg-white/20 dark:bg-slate-900/30 flex items-center justify-center text-cyan-700 dark:text-cyan-100">
+            <div className="module-tool-icon w-10 h-10 rounded-lg bg-white/20 dark:bg-slate-900/30 flex items-center justify-center text-cyan-700 dark:text-cyan-100">
                 <Icon className="h-5 w-5" />
             </div>
             <div className="text-left">
-                <p className="font-semibold text-slate-900 dark:text-slate-100">{name}</p>
-                <p className="text-xs text-slate-600 dark:text-slate-300">{description}</p>
+                <p className="module-tool-title font-semibold text-slate-900 dark:text-slate-100">{name}</p>
+                <p className="module-tool-description text-xs text-slate-600 dark:text-slate-300">{description}</p>
             </div>
         </Link>
     );
@@ -354,7 +466,7 @@ const ModuleCard = ({ name, description, path, icon: Icon, color, enabled, onCli
 
     const cardContent = (
         <div className={`
-            relative p-8 rounded-2xl w-full h-full max-w-sm text-center flex flex-col items-center justify-center
+            module-card relative p-8 rounded-2xl w-full h-full max-w-sm text-center flex flex-col items-center justify-center
             backdrop-blur-xl border border-white/20 dark:border-white/10
             bg-white/50 dark:bg-white/5
             shadow-xl ${currentColors.shadow}
@@ -367,12 +479,12 @@ const ModuleCard = ({ name, description, path, icon: Icon, color, enabled, onCli
             {/* Anillo brillante en hover */}
             {enabled && <div className={`absolute inset-0 rounded-2xl ring-4 ring-transparent ${currentColors.hoverGlow} transition-all duration-300`}></div>}
             
-            <div className="mb-4 transition-transform duration-300 group-hover:scale-110">
+            <div className="module-card-icon mb-4 transition-transform duration-300 group-hover:scale-110">
                 <Icon className={`h-14 w-14 ${currentColors.icon}`} />
             </div>
             
-            <h2 className="text-2xl font-bold text-slate-800 dark:text-white">{name}</h2>
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{description}</p>
+            <h2 className="module-card-title text-2xl font-bold text-slate-800 dark:text-white">{name}</h2>
+            <p className="module-card-description mt-2 text-sm text-slate-500 dark:text-slate-400">{description}</p>
             
             {!enabled && (
                 <div className="absolute top-3 right-3 bg-uab-gold-500/80 dark:bg-uab-gold-500/50 text-white text-xs font-bold py-1 px-3 rounded-full backdrop-blur-sm">

@@ -2,17 +2,12 @@ import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import IconButton from './IconButton';
 import { FaTimes, FaSave, FaCalendarAlt } from 'react-icons/fa';
-import { getCarreras } from '../../../apis/api';
-import { createDocumentoPOA, updateDocumentoPOA, getUsuariosPOA, getDocumentosPOAPorGestion, getDirectorCarreraActual } from '../../../apis/poa.api';
+import { createDocumentoPOA, updateDocumentoPOA, getUsuariosPOA, getDocumentosPOAPorGestion, getDirectorCarreraActual, crearSolicitudCambioPOA } from '../../../apis/poa.api';
 import { Textarea, Modal } from './base';
 import { DEFAULT_ENTIDAD } from '../config/defaults';
-import { DEFAULT_ERROR_LABELS, formatApiErrors, mapApiErrorsToFieldErrors, ModalErrorAlert } from './formErrorUtils';
+import { formatApiErrors, mapApiErrorsToFieldErrors, ModalErrorAlert } from './formErrorUtils';
 
 const ELABORADOR_ROLE = 'elaborador';
-
-const ERROR_LABELS = {
-  ...DEFAULT_ERROR_LABELS,
-};
 
 const getPersonaNombre = (persona) => {
   if (!persona) return '';
@@ -45,6 +40,29 @@ const normalizeCarreraValue = (value) => {
     return value.id ?? value.pk ?? '';
   }
   return value ?? '';
+};
+
+const getUserCarreraId = (user) => normalizeCarreraValue(user?.perfil?.carrera);
+
+const getUserCarreraNombre = (user) => {
+  const perfil = user?.perfil || {};
+  const carrera = perfil.carrera;
+  if (carrera && typeof carrera === 'object') {
+    return carrera.nombre || carrera.codigo || '';
+  }
+  return perfil.carrera_nombre || perfil.carrera_codigo || '';
+};
+
+const getDocumentCarreraNombre = (documento) => {
+  const detalle = documento?.unidad_solicitante_detalle;
+  if (detalle && typeof detalle === 'object') {
+    return detalle.nombre || detalle.codigo || '';
+  }
+  const unidad = documento?.unidad_solicitante;
+  if (unidad && typeof unidad === 'object') {
+    return unidad.nombre || unidad.codigo || '';
+  }
+  return '';
 };
 
 const resolvePersonaNombre = (personaIdOrName, personas, fallbackText = '') => {
@@ -98,9 +116,6 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
   const [personas, setPersonas] = useState([]);
   const [personasLoading, setPersonasLoading] = useState(true);
   const [personasError, setPersonasError] = useState(null);
-  const [carreras, setCarreras] = useState([]);
-  const [carrerasLoading, setCarrerasLoading] = useState(true);
-  const [carrerasError, setCarrerasError] = useState(null);
 
   const [elabQuery, setElabQuery] = useState('');
   const [elabFilteredPersonas, setElabFilteredPersonas] = useState([]);
@@ -122,6 +137,12 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
     }
   })();
   const effectiveUser = currentUser || userFromStorage;
+  const carreraUsuarioId = getUserCarreraId(effectiveUser);
+  const carreraUsuarioNombre = getUserCarreraNombre(effectiveUser);
+  const unidadSolicitanteResuelta = normalizeCarreraValue(form.unidad_solicitante || carreraUsuarioId);
+  const unidadSolicitanteLabel = getDocumentCarreraNombre(docToEdit) || carreraUsuarioNombre || (
+    unidadSolicitanteResuelta ? `Carrera #${unidadSolicitanteResuelta}` : 'Carrera no asignada'
+  );
 
   const requiereJustificacionEdicion = Boolean(
     docToEdit?.id && ['aprobado', 'ejecucion'].includes(String(docToEdit?.estado || '').toLowerCase())
@@ -153,19 +174,6 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
     }
   }, [initialGestion]);
 
-
-  useEffect(() => {
-    setCarrerasLoading(true);
-    getCarreras()
-      .then((res) => {
-        const raw = Array.isArray(res.data) ? res.data : (res.data?.results || []);
-        setCarreras(raw);
-      })
-      .catch((err) => {
-        setCarrerasError(err?.response?.data || err.message || 'Error al cargar carreras');
-      })
-      .finally(() => setCarrerasLoading(false));
-  }, []);
   useEffect(() => {
     if (!docToEdit) return;
     try {
@@ -191,7 +199,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
 
   useEffect(() => {
     if (!isCreateMode) return;
-    const carreraId = effectiveUser?.perfil?.carrera;
+    const carreraId = getUserCarreraId(effectiveUser);
     if (!carreraId) return;
     setForm((prev) => ({ ...prev, unidad_solicitante: String(carreraId) }));
   }, [effectiveUser?.perfil?.carrera, isCreateMode]);
@@ -251,7 +259,6 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
     };
   }, [isCreateMode, jefeQuery]);
 
-  const lockUnidadSolicitante = Boolean(form.unidad_solicitante);
   const lockElaborador = Boolean(elabQuery);
   const lockJefeUnidad = Boolean(jefeQuery);
 
@@ -295,12 +302,12 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
     e && e.preventDefault && e.preventDefault();
     setErrorMessages([]);
     setFieldErrors({});
-    if (!form.gestion || !form.unidad_solicitante) {
+    if (!form.gestion || !unidadSolicitanteResuelta) {
       const nextErrors = {};
       if (!form.gestion) nextErrors.gestion = 'Este campo es obligatorio.';
-      if (!form.unidad_solicitante) nextErrors.unidad_solicitante = 'Este campo es obligatorio.';
+      if (!unidadSolicitanteResuelta) nextErrors.unidad_solicitante = 'Este usuario no tiene carrera asignada.';
       setFieldErrors(nextErrors);
-      setErrorMessages(['Gestión: este campo es obligatorio.', 'Unidad solicitante: este campo es obligatorio.']);
+      setErrorMessages(Object.values(nextErrors));
       focusFirstError(nextErrors);
       return;
     }
@@ -325,18 +332,32 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
         gestion: Number(form.gestion),
         programa: form.programa || null,
         objetivo_gestion_institucional: form.objetivo_gestion_institucional || null,
-        unidad_solicitante: form.unidad_solicitante ? Number(form.unidad_solicitante) : null,
+        unidad_solicitante: unidadSolicitanteResuelta ? Number(unidadSolicitanteResuelta) : null,
         elaborado_por: resolvePersonaNombre(form.elaborado_por, personas, elabQuery) || null,
         jefe_unidad: resolvePersonaNombre(form.jefe_unidad, personas, jefeQuery) || null,
         fecha_elaboracion: fechaElab || null,
         observaciones: form.observaciones || '',
       };
 
-      if (docToEdit?.id && requiereJustificacionEdicion) {
-        payload.justificacion_edicion = String(justificacionEdicion || '').trim();
-      }
-
       if (docToEdit && docToEdit.id) {
+        if (requiereJustificacionEdicion) {
+          await crearSolicitudCambioPOA({
+            documento: docToEdit.id,
+            tipo_objeto: 'documento',
+            objeto_id: docToEdit.id,
+            accion: 'editar',
+            payload,
+            descripcion: String(justificacionEdicion || '').trim(),
+            resumen: {
+              titulo: 'Cambio de encabezado del documento',
+              programa: payload.programa,
+              gestion: payload.gestion,
+            },
+          });
+          toast.success('Solicitud de cambios enviada al Director de Carrera');
+          if (onClose) onClose();
+          return;
+        }
         const res = await updateDocumentoPOA(docToEdit.id, payload, Number(payload.gestion));
         const updated = res?.data;
         toast.success('Edición guardada');
@@ -351,7 +372,11 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
             const listRes = await getDocumentosPOAPorGestion(payload.gestion);
             const list = Array.isArray(listRes.data) ? listRes.data : (listRes.data.results || listRes.data.documentos || []);
             if (payload.unidad_solicitante || payload.programa) {
-              const candidate = list.find(d => (payload.unidad_solicitante ? (d.unidad_solicitante === payload.unidad_solicitante) : false) && (payload.programa ? (d.programa === payload.programa || (d.programa && d.programa.nombre === payload.programa)) : true));
+              const candidate = list.find(d => (
+                payload.unidad_solicitante
+                  ? String(normalizeCarreraValue(d.unidad_solicitante_id ?? d.unidad_solicitante)) === String(payload.unidad_solicitante)
+                  : false
+              ) && (payload.programa ? (d.programa === payload.programa || (d.programa && d.programa.nombre === payload.programa)) : true));
               if (candidate) created = candidate;
             }
             if (!created && list.length > 0) {
@@ -432,29 +457,17 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
             </div>
 
             {/* Fila 2: Unidad solicitante + Programa */}
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Unidad solicitante</label>
-                {carrerasLoading ? (
-                  <div className="mt-1 text-sm text-gray-600 dark:text-slate-400">Cargando carreras...</div>
-                ) : carrerasError ? (
-                  <div className="mt-1 text-sm text-red-600 dark:text-red-400">{String(carrerasError)}</div>
-                ) : (
-                  <select
-                    name="unidad_solicitante"
-                    value={form.unidad_solicitante}
-                    onChange={handleChange}
-                    disabled={lockUnidadSolicitante}
-                    className={`poa-input block w-full ${fieldErrors.unidad_solicitante ? 'border-red-500 dark:border-red-500 focus:ring-red-500 dark:focus:ring-red-500' : ''}`}
-                  >
-                    <option value="">Seleccione una carrera...</option>
-                    {carreras.map((carrera) => (
-                      <option key={carrera.id} value={carrera.id}>
-                        {carrera.codigo ? `${carrera.codigo} - ${carrera.nombre}` : carrera.nombre}
-                      </option>
-                    ))}
-                  </select>
-                )}
+                <input
+                  name="unidad_solicitante"
+                  value={unidadSolicitanteLabel}
+                  readOnly
+                  className={`poa-input block w-full cursor-default bg-slate-50 text-slate-700 dark:bg-slate-900/80 dark:text-slate-200 ${fieldErrors.unidad_solicitante ? 'border-red-500 dark:border-red-500 focus:ring-red-500 dark:focus:ring-red-500' : ''}`}
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Se toma automaticamente de la carrera del usuario logueado.</p>
+                {fieldErrors.unidad_solicitante && <div className="mt-1 text-xs text-red-600 dark:text-red-400">{fieldErrors.unidad_solicitante}</div>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Programa</label>
@@ -481,7 +494,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
             </div>
 
             {/* Fila 5: Elaborado por + Jefe de unidad */}
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Elaborado por</label>
                 <p className="text-xs text-gray-500 dark:text-slate-400 mb-1">Solo usuarios POA activos con rol Elaborador del POA.</p>
@@ -579,7 +592,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Justificación de modificación</label>
                 <p className="text-xs text-gray-500 dark:text-slate-400 mb-1">
-                  Este comentario se guardará en la bitácora con fecha y usuario que realizó la modificación.
+                  El documento esta bloqueado. Los cambios se guardaran como solicitud pendiente y solo se aplicaran si el Director de Carrera los aprueba.
                 </p>
                 <Textarea
                   name="justificacion_edicion"
@@ -590,7 +603,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
                   }}
                   rows={3}
                   className="resize-y"
-                  placeholder="Explique por qué se modifica este documento después de su aprobación..."
+                  placeholder="Explique por que necesita modificar este documento..."
                   error={fieldErrors.justificacion_edicion}
                 />
               </div>
@@ -598,8 +611,8 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
 
             <div className="flex justify-end gap-3 pt-2 modal-actions">
               <IconButton icon={<FaTimes />} onClick={() => onClose && onClose()} className="btn-cancel px-3 py-2 rounded" title="Cancelar">Cancelar</IconButton>
-              <IconButton icon={<FaSave />} type="submit" disabled={loading} className="btn-success px-3 py-2 rounded" title={loading ? 'Guardando...' : (docToEdit ? 'Guardar' : 'Crear')}>
-                {loading ? (docToEdit ? 'Guardando...' : 'Guardando...') : (docToEdit ? 'Guardar' : 'Crear')}
+              <IconButton icon={<FaSave />} type="submit" disabled={loading} className="btn-success px-3 py-2 rounded" title={loading ? 'Guardando...' : (requiereJustificacionEdicion ? 'Enviar solicitud de cambios' : (docToEdit ? 'Guardar' : 'Crear'))}>
+                {loading ? 'Guardando...' : (requiereJustificacionEdicion ? 'Enviar solicitud de cambios' : (docToEdit ? 'Guardar' : 'Crear'))}
               </IconButton>
             </div>
           </form>

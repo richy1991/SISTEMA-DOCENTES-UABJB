@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { generarFondosTiempoMasivo, getFondosTiempo } from '../apis/api';
+import { eliminarFondoTiempo, generarFondosTiempoMasivo, getFondosTiempo } from '../apis/api';
 import { puedeCrearFondoTiempo } from '../utils/fondoTiempoPermissions';
-import axios from 'axios';
 
 // --- ICONOS ---
 const EyeIcon = (props) => (
@@ -69,13 +68,7 @@ function ListaFondos({ isDark }) {
     }
 
     try {
-      const token = localStorage.getItem('access_token');
-      await axios.delete(
-        `http://127.0.0.1:8000/api/fondos-tiempo/${fondoId}/`,
-        {
-          headers: { Authorization: `Bearer ${token}` }
-        }
-      );
+      await eliminarFondoTiempo(fondoId);
 
       await cargarFondos();
       alert('✅ Fondo archivado correctamente');
@@ -388,3 +381,4 @@ function ListaFondos({ isDark }) {
 }
 
 export default ListaFondos;
+

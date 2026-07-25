@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { getDocentes, getCarreras, crearFondoTiempo, getCalendarioActivo, getCalendarios } from '../apis/api';
 import api from '../apis/api';
-import axios from 'axios';
 import toast from 'react-hot-toast';
 import {
   ERROR_FIELD_BORDER_CLASS,
@@ -139,13 +138,7 @@ function FormularioFondo({ isDark, editar = false }) {
 
   const cargarFondo = async () => {
     try {
-      const token = localStorage.getItem('access_token');
-      const response = await axios.get(
-        `http://127.0.0.1:8000/api/fondos-tiempo/${id}/`,
-        {
-          headers: { Authorization: `Bearer ${token}` }
-        }
-      );
+      const response = await api.get(`/fondos-tiempo/${id}/`);
 
       const fondo = response.data;
       setFormData({
@@ -274,19 +267,14 @@ function FormularioFondo({ isDark, editar = false }) {
 
   const verificarDuplicado = async () => {
     try {
-      const token = localStorage.getItem('access_token');
-      const response = await axios.get(
-        `http://127.0.0.1:8000/api/fondos-tiempo/`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-          params: {
-            docente: formData.docente,
-            gestion: formData.gestion,
-            periodo: formData.periodo,
-            asignatura: formData.asignatura
-          }
+      const response = await api.get('/fondos-tiempo/', {
+        params: {
+          docente: formData.docente,
+          gestion: formData.gestion,
+          periodo: formData.periodo,
+          asignatura: formData.asignatura
         }
-      );
+      });
       
       const fondos = response.data.results || response.data;
       

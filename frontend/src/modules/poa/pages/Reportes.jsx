@@ -31,6 +31,8 @@ const matchesCareer = (doc, careerId) => {
 const Reportes = () => {
   const outletContext = useOutletContext() || {};
   const currentUser = outletContext.user || null;
+  const poaRoles = Array.isArray(outletContext.poaRoles) ? outletContext.poaRoles : [];
+  const canCreateDocument = Boolean(outletContext.poaPermissions?.canEdit);
   const currentYear = new Date().getFullYear();
   const careerId = getCareerIdFromUser(currentUser);
 
@@ -169,13 +171,15 @@ const Reportes = () => {
       {showGestionModal && (
         <GestionSelectorModal
           currentUser={currentUser}
+          poaRoles={poaRoles}
+          canCreateDocument={canCreateDocument}
           onClose={() => setShowGestionModal(false)}
           onSuccess={handleGestionSuccess}
         />
       )}
 
       <div className="w-full max-w-[1500px] mx-auto">
-        <div className="rounded-2xl border border-blue-200/80 bg-white/75 backdrop-blur-sm p-4 md:p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/55">
+        <div className="poa-mobile-page-card rounded-2xl border border-blue-200/80 bg-white/75 backdrop-blur-sm p-4 md:p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/55">
           <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5">
             <div className="space-y-2">
               <p className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.18em] font-bold text-blue-700 dark:text-sky-300">
@@ -190,7 +194,7 @@ const Reportes = () => {
             </div>
 
             <div className="flex flex-wrap items-center gap-2 justify-start lg:justify-end">
-              <div className="rounded-2xl border border-white/15 bg-gradient-to-br from-blue-600 to-sky-700 text-white px-4 py-3 min-w-[190px] shadow-sm">
+              <div className="poa-mobile-kpi-card rounded-2xl border border-white/15 bg-gradient-to-br from-blue-600 to-sky-700 text-white px-4 py-3 min-w-[190px] shadow-sm">
                 <p className="text-[10px] uppercase tracking-[0.18em] text-sky-100/80 font-bold">Gestión activa</p>
                 <p className="text-xl font-black mt-1">{gestion}</p>
               </div>
@@ -214,13 +218,13 @@ const Reportes = () => {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 items-stretch">
-          <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-blue-50 via-sky-50 to-indigo-50 p-4 shadow-sm h-full dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900">
+          <div className="poa-mobile-report-card rounded-2xl border border-slate-200 bg-gradient-to-br from-blue-50 via-sky-50 to-indigo-50 p-4 shadow-sm h-full dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-[10px] uppercase font-bold tracking-wider text-blue-700 dark:text-sky-300">Sección general</p>
                 <h3 className="text-xl font-bold text-slate-900 dark:text-white mt-1">PDF general</h3>
               </div>
-              <div className="rounded-xl bg-blue-600 text-white p-3">
+              <div className="poa-mobile-report-icon rounded-xl bg-blue-600 text-white p-3">
                 <Download size={18} />
               </div>
             </div>
@@ -236,13 +240,13 @@ const Reportes = () => {
             </button>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-blue-50 via-cyan-50 to-sky-50 p-4 shadow-sm h-full dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900">
+          <div className="poa-mobile-report-card rounded-2xl border border-slate-200 bg-gradient-to-br from-blue-50 via-cyan-50 to-sky-50 p-4 shadow-sm h-full dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-[10px] uppercase font-bold tracking-wider text-blue-700 dark:text-sky-300">Sección documentos</p>
                 <h3 className="text-xl font-bold text-slate-900 dark:text-white mt-1">Documentos de la gestión</h3>
               </div>
-              <div className="rounded-xl bg-cyan-600 text-white p-3">
+              <div className="poa-mobile-report-icon rounded-xl bg-cyan-600 text-white p-3">
                 <FileText size={18} />
               </div>
             </div>
@@ -288,13 +292,13 @@ const Reportes = () => {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 p-4 shadow-sm h-full">
+          <div className="poa-mobile-report-card rounded-2xl border border-slate-200 dark:border-slate-800 bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 p-4 shadow-sm h-full">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-[10px] uppercase font-bold tracking-wider text-amber-700 dark:text-amber-300">Sección seguimiento</p>
                 <h3 className="text-xl font-bold text-slate-900 dark:text-white mt-1">Seguimiento por programa</h3>
               </div>
-              <div className="rounded-xl bg-amber-600 text-white p-3">
+              <div className="poa-mobile-report-icon rounded-xl bg-amber-600 text-white p-3">
                 <TrendingUp size={18} />
               </div>
             </div>

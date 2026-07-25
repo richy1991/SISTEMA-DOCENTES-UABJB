@@ -133,6 +133,18 @@ class IsAdminOrDirector(BasePermission):
             (hasattr(request.user, 'perfil') and request.user.perfil.rol in ['director', 'jefe_estudios'])
         ))
 
+
+class IsFullAdminOrDirectorCarrera(BasePermission):
+    """
+    Permite gestionar recursos de carrera al superusuario o al Director de Carrera.
+    El alcance por carrera se aplica en get_queryset/get_object.
+    """
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated and (
+            request.user.is_superuser
+            or (hasattr(request.user, 'perfil') and request.user.perfil.rol == 'director')
+        ))
+
 class DocenteViewSet(viewsets.ModelViewSet):
     queryset = Docente.objects.select_related('user', 'datos_laborales').prefetch_related('vinculos_carrera__carrera').all()
     serializer_class = DocenteSerializer
@@ -414,8 +426,14 @@ class CarreraViewSet(viewsets.ModelViewSet):
         user = self.request.user
 
         # Usuarios con permisos de gestión deben ver activas e inactivas.
-        if self._is_superuser(user) or self._can_edit_logo_only(user):
+        if self._is_superuser(user):
             return queryset
+
+        if self._can_edit_own_profile(user) or self._can_edit_logo_only(user):
+            carreras = _obtener_carreras_activas_usuario(user)
+            if carreras.exists():
+                return queryset.filter(id__in=carreras.values_list('id', flat=True))
+            return queryset.none()
 
         # Para el resto, mantener solo carreras activas.
         return queryset.filter(activo=True)
@@ -441,7 +459,16 @@ class CarreraViewSet(viewsets.ModelViewSet):
         return user.perfil.rol
 
     def _can_edit_logo_only(self, user):
-        return self._rol_usuario(user) in ['director', 'jefe_estudios']
+        return self._rol_usuario(user) == 'jefe_estudios'
+
+    def _can_edit_own_profile(self, user):
+        return self._rol_usuario(user) == 'director'
+
+    def _user_can_access_carrera(self, user, carrera):
+        if self._is_superuser(user):
+            return True
+        carreras = _obtener_carreras_activas_usuario(user)
+        return carreras.filter(pk=carrera.pk).exists()
 
     def _enforce_create_destroy_permission(self, request):
         if not self._is_superuser(request.user):
@@ -662,7 +689,41 @@ class CarreraViewSet(viewsets.ModelViewSet):
             return Response(response_data, status=status.HTTP_200_OK)
 
         # Autoridades (admin/director/jefe): solo edición de logo desde modal Ver.
+        if self._can_edit_own_profile(user):
+            if not self._user_can_access_carrera(user, instance):
+                raise PermissionDenied('Solo puedes editar la carrera asociada a tu usuario.')
+
+            data = request.data.copy()
+            allowed_fields = {
+                'resolucion_ministerial',
+                'fecha_resolucion',
+                'mision',
+                'vision',
+                'perfil_profesional',
+                'objetivo_carrera',
+                'responsable',
+                'logo_carrera_file',
+                'remove_logo_carrera',
+            }
+
+            for field in list(data.keys()):
+                if field not in allowed_fields:
+                    data.pop(field, None)
+
+            if not data:
+                raise drf_serializers.ValidationError({
+                    'detail': 'No hay campos institucionales para actualizar.'
+                })
+
+            serializer = self.get_serializer(instance, data=data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            self.perform_update(serializer)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
         if self._can_edit_logo_only(user):
+            if not self._user_can_access_carrera(user, instance):
+                raise PermissionDenied('Solo puedes editar la carrera asociada a tu usuario.')
+
             data = request.data.copy()
             allowed_fields = {'logo_carrera_file', 'remove_logo_carrera'}
             provided_fields = set(data.keys())
@@ -2732,10 +2793,11 @@ class UsuarioViewSet(viewsets.ModelViewSet):
     
     def get_permissions(self):
         """
-        Solo admins pueden listar, crear y eliminar usuarios.
-        Usuarios autenticados pueden ver y editar su propio perfil.
+        Superusuario gestiona todo. Director gestiona usuarios dentro de su carrera.
         """
-        if self.action in ['list', 'create', 'destroy']:
+        if self.action in ['list', 'create', 'update', 'partial_update', 'toggle_activo', 'cambiar_password', 'resetear_password']:
+            return [IsFullAdminOrDirectorCarrera()]
+        if self.action in ['destroy']:
             return [IsFullAdmin()]
         return [IsAuthenticated()]
     
@@ -2926,7 +2988,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-    @action(detail=True, methods=['post'], permission_classes=[IsFullAdmin])
+    @action(detail=True, methods=['post'], permission_classes=[IsFullAdminOrDirectorCarrera])
     def cambiar_password(self, request, pk=None):
         """Cambiar contraseña de un usuario"""
         user = self.get_object()
@@ -2956,7 +3018,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         
         return Response({'success': 'Contraseña actualizada correctamente'})
 
-    @action(detail=True, methods=['post'], permission_classes=[IsFullAdmin])
+    @action(detail=True, methods=['post'], permission_classes=[IsFullAdminOrDirectorCarrera])
     def resetear_password(self, request, pk=None):
         """Restablece la contraseña del usuario a la contraseña por defecto (username + UABJB)"""
         user = self.get_object()
@@ -2968,7 +3030,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
             user.perfil.save()
         return Response({'success': f'Contraseña restablecida correctamente a: {nueva_password}'})
 
-    @action(detail=True, methods=['post'], permission_classes=[IsFullAdmin])
+    @action(detail=True, methods=['post'], permission_classes=[IsFullAdminOrDirectorCarrera])
     def toggle_activo(self, request, pk=None):
         """
         Activar o desactivar usuario.

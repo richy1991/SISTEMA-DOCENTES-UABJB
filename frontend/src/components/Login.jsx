@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { API_URL } from '../apis/apiConfig';
 
 function Login({ onLogin }) {
   const LOGIN_EXIT_DURATION = 1400;
@@ -38,7 +39,7 @@ function Login({ onLogin }) {
   let authenticatedUser = null;
 
   try {
-    const response = await axios.post('http://127.0.0.1:8000/api/token/', {
+    const response = await axios.post(`${API_URL}/token/`, {
       username,
       password,
     });
@@ -46,7 +47,7 @@ function Login({ onLogin }) {
     localStorage.setItem('access_token', response.data.access);
     localStorage.setItem('refresh_token', response.data.refresh);
 
-    const userResponse = await axios.get('http://127.0.0.1:8000/api/usuario/', {
+    const userResponse = await axios.get(`${API_URL}/usuario/`, {
       headers: {
         Authorization: `Bearer ${response.data.access}`,
       },

@@ -178,6 +178,19 @@ const obtenerCarrerasUsuario = (usuario) => {
   return [...new Set([carreraPrincipal, ...carrerasExtra].filter(Boolean))];
 };
 
+const obtenerCarreraIdsUsuario = (usuario) => {
+  if (!usuario) return [];
+
+  const carreraPrincipal = usuario?.perfil?.carrera;
+  const carrerasExtra = Array.isArray(usuario.asignaciones)
+    ? usuario.asignaciones
+        .filter((item) => item?.activo !== false && item?.carrera)
+        .map((item) => String(item.carrera))
+    : [];
+
+  return [...new Set([carreraPrincipal, ...carrerasExtra].filter(Boolean).map((id) => String(id)))];
+};
+
 const obtenerTextoCarrerasUsuario = (usuario) => {
   const carreras = obtenerCarrerasUsuario(usuario);
   if (carreras.length === 0) return 'Sin carrera';
@@ -1129,6 +1142,40 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
   const [showOnlyOrphans, setShowOnlyOrphans] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCarrera, setSelectedCarrera] = useState('');
+
+  const esSuperuserActual = user?.is_superuser === true;
+  const esDirectorCarreraActual = user?.perfil?.rol === 'director';
+  const carreraIdsGestionablesUsuario = (() => {
+    if (!esDirectorCarreraActual) return new Set();
+
+    const ids = [];
+    if (user?.perfil?.carrera) {
+      ids.push(String(user.perfil.carrera));
+    }
+    if (Array.isArray(user?.asignaciones)) {
+      user.asignaciones
+        .filter((item) => item?.activo !== false && item?.rol === 'director' && item?.carrera)
+        .forEach((item) => ids.push(String(item.carrera)));
+    }
+    return new Set(ids);
+  })();
+  const carrerasGestionables = esSuperuserActual
+    ? carreras
+    : (esDirectorCarreraActual && carreraIdsGestionablesUsuario.size > 0
+      ? carreras.filter((carrera) => carreraIdsGestionablesUsuario.has(String(carrera.id)))
+      : carreras);
+  const usuarioPerteneceACarrerasGestionables = (usuario) => {
+    if (esSuperuserActual) return true;
+    if (!esDirectorCarreraActual) return false;
+    if (carreraIdsGestionablesUsuario.size === 0) return true;
+    const idsUsuario = obtenerCarreraIdsUsuario(usuario);
+    return idsUsuario.some((id) => carreraIdsGestionablesUsuario.has(String(id)));
+  };
+  const filtrarRolesPorPermiso = (rolesBase) => (rolesBase || []).filter((rol) => {
+    if (esSuperuserActual) return true;
+    if (esDirectorCarreraActual) return !['iiisyp', 'director'].includes(rol.value);
+    return rol.value !== 'iiisyp';
+  });
   
   // Usuarios huerfanos: sin perfil o con cualquier rol docente sin docente vinculado
   const esUsuarioHuerfano = (u) => !u?.perfil || (usuarioTieneRolDocente(u) && !usuarioTieneVinculoDocente(u));
@@ -1303,13 +1350,8 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
       setDocentes(docentesRes.data.results || docentesRes.data);
       setCarreras(carrerasRes.data.results || carrerasRes.data);
 
-      // Filtrar roles: solo superuser puede ver y asignar rol 'iiisyp'
       const todosRoles = rolesRes.data || [];
-      const esSuperuser = user?.is_superuser === true;
-      const rolesFiltrados = todosRoles.filter(rol => 
-        esSuperuser ? true : rol.value !== 'iiisyp'
-      );
-      setRoles(rolesFiltrados);
+      setRoles(filtrarRolesPorPermiso(todosRoles));
       
       setLoading(false);
     } catch (err) {
@@ -1339,7 +1381,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
     let result = showOnlyOrphans ? usuarios.filter(esUsuarioHuerfano) : usuarios;
 
     if (selectedCarrera) {
-      result = result.filter((usuario) => String(usuario?.perfil?.carrera || '') === String(selectedCarrera));
+      result = result.filter((usuario) => obtenerCarreraIdsUsuario(usuario).includes(String(selectedCarrera)));
     }
 
     // Filtrar por término de búsqueda (nombre o C.I.)
@@ -1389,7 +1431,9 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
         return;
       }
       
-      const carreraDefault = '';
+      const carreraDefault = esDirectorCarreraActual && carrerasGestionables.length === 1
+        ? String(carrerasGestionables[0].id)
+        : '';
       
 const initialData = {
   username: '',
@@ -2303,8 +2347,15 @@ const initialData = {
     );
   }
 
-  // iiisyp es solo lectura: no puede crear/editar/eliminar usuarios
-  const puedeGestionarUsuarios = () => user?.is_superuser === true;
+  const puedeGestionarUsuarios = () => esSuperuserActual || esDirectorCarreraActual;
+  const puedeEliminarUsuarios = () => esSuperuserActual;
+  const puedeEditarUsuario = (usuario) => {
+    if (!puedeGestionarUsuarios() || usuario?.is_superuser) return false;
+    if (esSuperuserActual) return true;
+    if (!usuarioPerteneceACarrerasGestionables(usuario)) return false;
+    return !obtenerRolesUsuario(usuario).includes('director');
+  };
+  const puedeCambiarEstadoUsuario = (usuario) => puedeEditarUsuario(usuario);
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 p-6">
@@ -2327,7 +2378,7 @@ const initialData = {
                   label=""
                   value={selectedCarrera}
                   onChange={setSelectedCarrera}
-                  options={carreras.map(c => ({ value: c.id, label: c.nombre }))}
+                  options={carrerasGestionables.map(c => ({ value: c.id, label: c.nombre }))}
                   placeholder="Carreras"
                   clearOnToggle
                 />
@@ -2380,6 +2431,20 @@ const initialData = {
                     ) : (
                       <div />
                     )}
+
+                    <div className="md:col-span-2 rounded-xl border-2 border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-sm dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
+                      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                        <span className="font-semibold">
+                          Contrasena por defecto
+                        </span>
+                        <span className="font-mono font-black tracking-wide" aria-live="polite">
+                          {formData.username ? `${formData.username}UABJB` : 'usuarioUABJB'}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs font-medium text-amber-800 dark:text-amber-300">
+                        El usuario debera cambiarla al iniciar sesion.
+                      </p>
+                    </div>
 
                     {/* Transfer List de Roles y Carreras */}
                     <div className="md:col-span-2">
@@ -2495,7 +2560,7 @@ const initialData = {
                                     <div className="px-3 py-2 animate-panel-asignacion">
                                       <div className="flex justify-end">
                                         <div className="w-[70%] max-w-[260px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm max-h-40 overflow-y-auto">
-                                          {carreras.map((carrera) => (
+                                          {carrerasGestionables.map((carrera) => (
                                             <button
                                               key={carrera.id}
                                               type="button"
@@ -2606,7 +2671,7 @@ const initialData = {
           }}
           userToEdit={usuarioEditando}
           docentes={docentes}
-          carreras={carreras}
+          carreras={carrerasGestionables}
           roles={roles}
           sidebarCollapsed={sidebarCollapsed}
           hasSidebar={hasSidebar}
@@ -2763,8 +2828,8 @@ const initialData = {
                         {!usuario.is_superuser && (
                           <ToggleSwitch
                             isActive={!docenteSinVinculo && usuario.is_active}
-                            disabled={usuario.is_superuser || (docenteSinVinculo && !perfilDocentePendiente)}
-                            onChange={() => handleToggleActivo(usuario)}
+                            disabled={!puedeCambiarEstadoUsuario(usuario) || (docenteSinVinculo && !perfilDocentePendiente)}
+                            onChange={() => puedeCambiarEstadoUsuario(usuario) && handleToggleActivo(usuario)}
                           />
                         )}
                         <span className="text-sm font-semibold">
@@ -2781,7 +2846,8 @@ const initialData = {
                     </td>
                     <td className={`px-6 py-4 whitespace-nowrap text-center ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
                       {puedeGestionarUsuarios() && (() => {
-                        const blockedBtn = Boolean(usuario.is_superuser);
+                        const blockedBtn = !puedeEditarUsuario(usuario);
+                        const canDelete = puedeEliminarUsuarios() && !usuario.is_superuser;
                         const titleMsg = blockedBtn ? 'Acción deshabilitada: usuario protegido' : '';
                         return (
                           <div className="flex justify-center gap-3">
@@ -2793,14 +2859,16 @@ const initialData = {
                             >
                               <FaEdit size={18} />
                             </button>
-                            <button
-                              onClick={() => !blockedBtn && handleEliminar(usuario)}
-                              disabled={blockedBtn}
-                              className={`text-red-500 ${blockedBtn ? 'opacity-50 cursor-not-allowed' : 'hover:text-red-400 dark:text-red-400 dark:hover:text-red-300'} transition-all duration-200 ${blockedBtn ? '' : 'hover:scale-110'}`}
-                              title={titleMsg || 'Eliminar'}
-                            >
-                              <FaTrash size={18} />
-                            </button>
+                            {puedeEliminarUsuarios() && (
+                              <button
+                                onClick={() => canDelete && handleEliminar(usuario)}
+                                disabled={!canDelete}
+                                className={`text-red-500 ${!canDelete ? 'opacity-50 cursor-not-allowed' : 'hover:text-red-400 dark:text-red-400 dark:hover:text-red-300'} transition-all duration-200 ${!canDelete ? '' : 'hover:scale-110'}`}
+                                title={titleMsg || 'Eliminar'}
+                              >
+                                <FaTrash size={18} />
+                              </button>
+                            )}
                           </div>
                         );
                       })()}

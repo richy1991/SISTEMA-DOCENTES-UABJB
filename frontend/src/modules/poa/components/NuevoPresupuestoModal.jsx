@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import IconButton from './IconButton';
 import { FaTimes } from 'react-icons/fa';
-import { createDetallePresupuesto, updateDetalle, getItemsCatalogo } from '../../../apis/poa.api';
+import { createDetallePresupuesto, updateDetalle, getItemsCatalogo, crearSolicitudCambioPOA } from '../../../apis/poa.api';
 import NuevoCatalogoItemModal from './NuevoCatalogoItemModal';
 import toast from 'react-hot-toast';
 import { Input, Select, Modal } from './base';
 import { buildClientErrorMessages, formatApiErrors, mapApiErrorsToFieldErrors, ModalErrorAlert } from './formErrorUtils';
 
-const NuevoPresupuestoModal = ({ actividadId, documentoId, detalle, onClose, onCreated, onUpdated }) => {
+const NuevoPresupuestoModal = ({ actividadId, documentoId, documentoEstado = '', detalle, onClose, onCreated, onUpdated }) => {
   const [submitting, setSubmitting] = useState(false);
   const [errorMessages, setErrorMessages] = useState([]);
   const [fieldErrors, setFieldErrors] = useState({});
@@ -31,6 +31,7 @@ const NuevoPresupuestoModal = ({ actividadId, documentoId, detalle, onClose, onC
   const [selectedCatalogItem, setSelectedCatalogItem] = useState(null);
   const [showNuevoCatalogoItemModal, setShowNuevoCatalogoItemModal] = useState(false);
   const containerRef = useRef(null);
+  const requestChangeMode = ['aprobado', 'ejecucion'].includes(String(documentoEstado || '').toLowerCase());
 
   useEffect(() => {
     if (detalle && typeof detalle === 'object') {
@@ -183,6 +184,30 @@ const NuevoPresupuestoModal = ({ actividadId, documentoId, detalle, onClose, onC
     setSubmitting(true);
     setErrorMessages([]);
     try {
+      if (requestChangeMode) {
+        if (!documentoId) {
+          setErrorMessages(['Documento: no se pudo identificar el documento para solicitar cambios.']);
+          setSubmitting(false);
+          return;
+        }
+        await crearSolicitudCambioPOA({
+          documento: Number(documentoId),
+          tipo_objeto: 'presupuesto',
+          objeto_id: detalle?.id || null,
+          accion: detalle?.id ? 'editar' : 'crear',
+          payload,
+          descripcion: detalle?.id ? 'Modificar item de presupuesto.' : 'Crear item de presupuesto.',
+          resumen: {
+            titulo: detalle?.id ? 'Editar presupuesto' : 'Nuevo presupuesto',
+            item: payload.item,
+            partida: payload.partida,
+            monto_total: (Number(payload.cantidad) || 0) * (Number(payload.costo_unitario) || 0),
+          },
+        });
+        toast.success('Solicitud de cambios enviada al Director de Carrera');
+        if (onClose) onClose();
+        return;
+      }
       if (detalle && detalle.id) {
         const res = await updateDetalle(detalle.id, payload);
         const updated = res.data || res;
@@ -223,6 +248,11 @@ const NuevoPresupuestoModal = ({ actividadId, documentoId, detalle, onClose, onC
         </div>
         <form onSubmit={handleSubmit} ref={containerRef} className="p-4 space-y-4 modal-body">
           <ModalErrorAlert title="No se pudo guardar el presupuesto:" messages={errorMessages} />
+          {requestChangeMode && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/35 dark:text-amber-200">
+              El documento esta bloqueado. Los cambios se enviaran al Director de Carrera para aprobacion antes de aplicarse.
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Ítem / Detalle</label>
             <div className="relative flex items-center gap-2">
@@ -412,7 +442,7 @@ const NuevoPresupuestoModal = ({ actividadId, documentoId, detalle, onClose, onC
               Cancelar
             </IconButton>
             <button type="submit" disabled={submitting} className="px-4 py-2 rounded btn-success">
-              {submitting ? 'Guardando...' : 'Guardar'}
+              {submitting ? 'Guardando...' : (requestChangeMode ? 'Enviar solicitud de cambios' : 'Guardar')}
             </button>
           </div>
         </form>

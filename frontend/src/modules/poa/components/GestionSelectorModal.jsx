@@ -225,13 +225,22 @@ const YearWheelPicker = ({ value, onChange, disabled = false, compact = false })
   );
 };
 
-const GestionSelectorModal = ({ onClose, onSuccess, currentUser = null, poaRoles = [] }) => {
+const GestionSelectorModal = ({ onClose, onCancel, onSuccess, currentUser = null, poaRoles = [], canCreateDocument = null }) => {
   const [loading, setLoading] = useState(true);
   const [errorMessages, setErrorMessages] = useState([]);
   const [manualYear, setManualYear] = useState('');
   const [noDocsForYear, setNoDocsForYear] = useState(false);
   const maxGestionYear = getMaxGestionYear();
-  const canCreatePOADocument = userHasElaboradorPOARole(currentUser, poaRoles);
+  const canCreatePOADocument = canCreateDocument === null
+    ? userHasElaboradorPOARole(currentUser, poaRoles)
+    : Boolean(canCreateDocument);
+  const handleCancel = () => {
+    if (onCancel) {
+      onCancel();
+      return;
+    }
+    if (onClose) onClose();
+  };
 
   useEffect(() => {
     const current = new Date().getFullYear();
@@ -261,7 +270,6 @@ const GestionSelectorModal = ({ onClose, onSuccess, currentUser = null, poaRoles
         return;
       }
       if (onSuccess) onSuccess({ gestion: yearToQuery, documentos: docs });
-      if (onClose) onClose();
     } catch (err) {
       setErrorMessages(formatApiErrors(err?.response?.data || err?.message || 'Error al consultar documentos'));
     } finally {
@@ -276,13 +284,13 @@ const GestionSelectorModal = ({ onClose, onSuccess, currentUser = null, poaRoles
 
   const [showNuevoModal, setShowNuevoModal] = useState(false);
 
-  const handleCancelarNoDocs = () => {
+  const handleOtraGestion = () => {
     setNoDocsForYear(false);
     setErrorMessages([]);
   };
 
   return (
-    <Modal onClose={onClose}>
+    <Modal onClose={handleCancel}>
       <div className="modal-panel rounded-xl w-96">
         <div className="modal-header px-6 py-4">
           <div className="flex items-center justify-between">
@@ -290,7 +298,7 @@ const GestionSelectorModal = ({ onClose, onSuccess, currentUser = null, poaRoles
               <h3 className="text-white text-lg font-semibold">Seleccionar gestión</h3>
               <p className="text-blue-100 text-sm mt-0.5">Seleccione la gestión (año) para filtrar documentos POA</p>
             </div>
-            <IconButton icon={<FaTimes />} onClick={() => onClose && onClose()} className="btn-header-icon rounded-full w-8 h-8 flex items-center justify-center" title="Cerrar" ariaLabel="Cerrar" />
+            <IconButton icon={<FaTimes />} onClick={handleCancel} className="btn-header-icon rounded-full w-8 h-8 flex items-center justify-center" title="Cerrar" ariaLabel="Cerrar" />
           </div>
         </div>
 
@@ -310,7 +318,7 @@ const GestionSelectorModal = ({ onClose, onSuccess, currentUser = null, poaRoles
             </div>
             {!noDocsForYear && (
               <div className="mt-6 flex items-center justify-center gap-3 modal-actions">
-                <IconButton onClick={() => onClose && onClose()} className="btn-cancel px-3 py-2 rounded-md" title="Cancelar">Cancelar</IconButton>
+                <IconButton onClick={handleCancel} className="btn-cancel px-3 py-2 rounded-md" title="Cancelar">Cancelar</IconButton>
                 <IconButton onClick={handleIngresar} disabled={loading} className="btn-primary px-3 py-2 rounded-md disabled:opacity-60" title={loading ? 'Buscando...' : 'Ingresar'}>{loading ? 'Buscando...' : 'Ingresar'}</IconButton>
               </div>
             )}
@@ -326,7 +334,8 @@ const GestionSelectorModal = ({ onClose, onSuccess, currentUser = null, poaRoles
                 )}
 
                 <div className="mt-3 flex gap-2 justify-end modal-actions">
-                  <IconButton onClick={handleCancelarNoDocs} className="btn-cancel px-3 py-2 rounded-md" title="Cancelar">Cancelar</IconButton>
+                  <IconButton onClick={handleCancel} className="btn-cancel px-3 py-2 rounded-md" title="Cancelar">Cancelar</IconButton>
+                  <IconButton onClick={handleOtraGestion} className="btn-secondary px-3 py-2 rounded-md border border-sky-400 dark:border-sky-500 shadow-sm" title="Otra gestión">Otra gestión</IconButton>
                   {canCreatePOADocument && (
                     <IconButton onClick={handleAgregar} className="btn-success px-3 py-2 rounded-md" title="Nuevo">Nuevo</IconButton>
                   )}

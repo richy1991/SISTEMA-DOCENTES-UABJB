@@ -193,14 +193,33 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
   const [changingPassword, setChangingPassword] = useState(false);
   const [passwordData, setPasswordData] = useState({ password: '', password_confirm: '' });
   const [indiceAsignacionActiva, setIndiceAsignacionActiva] = useState(0);
+  const esDirectorEditor = currentUser?.perfil?.rol === 'director' && !currentUser?.is_superuser;
+  const rolesDisponiblesModal = (roles || []).filter((rol) => {
+    if (currentUser?.is_superuser) return true;
+    if (esDirectorEditor) return !['iiisyp', 'director'].includes(rol.value);
+    return rol.value !== 'iiisyp';
+  });
 
   useEffect(() => {
     const asignacionesUsuario = Array.isArray(userToEdit?.asignaciones) ? userToEdit.asignaciones : [];
-    const rolPrincipal = userToEdit?.perfil?.rol || 'docente';
-    const carreraPrincipal = userToEdit?.perfil?.carrera || '';
+    const carreraIdsPermitidas = new Set((carreras || []).map((carrera) => String(carrera.id)));
+    const asignacionesGestionables = esDirectorEditor
+      ? asignacionesUsuario.filter((item) => (
+          item?.activo !== false
+          && item?.carrera
+          && carreraIdsPermitidas.has(String(item.carrera))
+        ))
+      : asignacionesUsuario;
+    const asignacionGestionablePrincipal = asignacionesGestionables[0];
+    const rolPrincipal = esDirectorEditor && asignacionGestionablePrincipal
+      ? (asignacionGestionablePrincipal.rol || 'docente')
+      : (userToEdit?.perfil?.rol || 'docente');
+    const carreraPrincipal = esDirectorEditor && asignacionGestionablePrincipal
+      ? (asignacionGestionablePrincipal.carrera || '')
+      : (userToEdit?.perfil?.carrera || '');
     const clavePrincipal = `${String(rolPrincipal)}::${String(carreraPrincipal)}`;
     const clavesExtras = new Set();
-    const extras = asignacionesUsuario
+    const extras = asignacionesGestionables
       .filter((item) => {
         if (item?.activo === false) return false;
         const clave = `${String(item?.rol || '')}::${String(item?.carrera || '')}`;
@@ -235,7 +254,7 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
     setErrors({});
     setShowResetConfirm(false);
     setShowChangePassword(false);
-  }, [userToEdit]);
+  }, [userToEdit, carreras, esDirectorEditor]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -600,7 +619,7 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
                     name="rol"
                     value={indiceAsignacionActiva === 0 ? (formData.rol || '') : (asignacionesExtra[0]?.rol || '')}
                     onChange={handleRolSeleccionActual}
-                    options={(roles || []).filter((rol) => currentUser?.is_superuser || rol.value !== 'iiisyp').map((rol) => ({ value: rol.value, label: rol.label }))}
+                    options={rolesDisponiblesModal.map((rol) => ({ value: rol.value, label: rol.label }))}
                     error={errors.rol}
                     disabled={esSuperusuarioEditado}
                     required
@@ -772,7 +791,7 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
                         name="rol"
                         value={formData.rol}
                         onChange={handleRolChange}
-                        options={(roles || []).filter((rol) => currentUser?.is_superuser || rol.value !== 'iiisyp').map((rol) => ({ value: rol.value, label: rol.label }))}
+                        options={rolesDisponiblesModal.map((rol) => ({ value: rol.value, label: rol.label }))}
                         error={errors.rol}
                         disabled={esSuperusuarioEditado}
                         required
@@ -818,7 +837,7 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
                           name={`asignacion-rol-${index}`}
                           value={asignacion.rol || 'docente'}
                           onChange={(e) => handleAsignacionChange(index, 'rol', e.target.value)}
-                          options={(roles || []).filter((rol) => currentUser?.is_superuser || rol.value !== 'iiisyp').map((rol) => ({ value: rol.value, label: rol.label }))}
+                          options={rolesDisponiblesModal.map((rol) => ({ value: rol.value, label: rol.label }))}
                           error={errors[`asignaciones.${index}.rol`]}
                           disabled={esSuperusuarioEditado}
                           required
@@ -882,7 +901,7 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
                             name={`asignacion-rol-${index}`}
                             value={asignacion.rol || 'docente'}
                             onChange={(e) => handleAsignacionChange(index, 'rol', e.target.value)}
-                            options={(roles || []).filter((rol) => currentUser?.is_superuser || rol.value !== 'iiisyp').map((rol) => ({ value: rol.value, label: rol.label }))}
+                          options={rolesDisponiblesModal.map((rol) => ({ value: rol.value, label: rol.label }))}
                             error={errors[`asignaciones.${index}.rol`]}
                             required
                           />

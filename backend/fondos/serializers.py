@@ -176,6 +176,86 @@ def _resolver_carrera_asignacion(valor_carrera):
     return Carrera.objects.filter(pk=valor_carrera).first()
 
 
+def _rol_usuario_solicitante(user):
+    perfil = getattr(user, 'perfil', None)
+    return getattr(perfil, 'rol', None)
+
+
+def _carreras_gestionables_director(user):
+    if not user or not getattr(user, 'is_authenticated', False):
+        return Carrera.objects.none()
+
+    if user.is_superuser:
+        return None
+
+    perfil = getattr(user, 'perfil', None)
+    if not perfil or perfil.rol != 'director':
+        return Carrera.objects.none()
+
+    carreras = perfil.get_carreras_activas() if hasattr(perfil, 'get_carreras_activas') else Carrera.objects.none()
+    if carreras.exists():
+        return carreras
+
+    if perfil.carrera_id:
+        return Carrera.objects.filter(pk=perfil.carrera_id)
+
+    return Carrera.objects.none()
+
+
+def _ids_carreras_gestionables(carreras_gestionables):
+    if carreras_gestionables is None:
+        return None
+    return set(carreras_gestionables.values_list('id', flat=True))
+
+
+def _validar_bloques_en_carreras_gestionables(bloques, carreras_gestionables):
+    ids_permitidos = _ids_carreras_gestionables(carreras_gestionables)
+    if ids_permitidos is None:
+        return
+
+    if not ids_permitidos:
+        raise serializers.ValidationError({
+            'carrera': 'El director no tiene una carrera activa asignada para gestionar usuarios.'
+        })
+
+    for bloque in bloques:
+        if not isinstance(bloque, dict):
+            continue
+
+        rol = str(bloque.get('rol') or '').strip()
+        carrera = _resolver_carrera_asignacion(bloque.get('carrera'))
+        if not rol or not carrera:
+            continue
+
+        if rol in {'iiisyp', 'director'}:
+            raise serializers.ValidationError({
+                'rol': 'El director solo puede asignar roles operativos dentro de su carrera.'
+            })
+
+        if carrera.id not in ids_permitidos:
+            raise serializers.ValidationError({
+                'carrera': 'Solo puedes gestionar usuarios dentro de tu carrera.'
+            })
+
+
+def _combinar_bloques_con_asignaciones_externas(user, bloques, carreras_gestionables):
+    ids_permitidos = _ids_carreras_gestionables(carreras_gestionables)
+    if ids_permitidos is None:
+        return bloques
+
+    asignaciones_externas = []
+    for asignacion in AsignacionCarrera.objects.filter(user=user, activo=True).exclude(
+        carrera_id__in=ids_permitidos
+    ).select_related('carrera', 'docente'):
+        asignaciones_externas.append({
+            'rol': asignacion.rol,
+            'carrera': asignacion.carrera,
+            'docente': asignacion.docente,
+        })
+
+    return asignaciones_externas + bloques
+
+
 def _resolver_docente_asignacion(bloque, docente_por_defecto=None):
     if not isinstance(bloque, dict):
         return docente_por_defecto
@@ -275,6 +355,35 @@ def _resolver_docente_existente_asignacion(bloque, docente_por_defecto=None):
     return docente_por_defecto
 
 
+def _actualizar_ci_docente(docente, ci_normalizado):
+    if not docente or not ci_normalizado:
+        return
+
+    datos_conflicto = DatosLaborales.objects.filter(ci=ci_normalizado)
+    if docente.datos_laborales_id:
+        datos_conflicto = datos_conflicto.exclude(pk=docente.datos_laborales_id)
+
+    if datos_conflicto.exists():
+        raise serializers.ValidationError({
+            'ci': 'El CI ya esta registrado en otro registro laboral.'
+        })
+
+    if docente.datos_laborales_id:
+        datos_laborales = docente.datos_laborales
+        if datos_laborales.ci != ci_normalizado:
+            datos_laborales.ci = ci_normalizado
+            datos_laborales.full_clean()
+            datos_laborales.save(update_fields=['ci'])
+        return
+
+    datos_laborales = DatosLaborales.objects.create(
+        ci=ci_normalizado,
+        fecha_ingreso=timezone.now().date(),
+    )
+    docente.datos_laborales = datos_laborales
+    docente.save(update_fields=['datos_laborales'])
+
+
 def _normalizar_bloques_validacion_asignaciones(bloques, docente_por_defecto=None):
     normalizados = []
     for bloque in bloques:
@@ -316,7 +425,66 @@ def _validar_reglas_asignaciones_usuario(bloques, docente_por_defecto=None):
         raise serializers.ValidationError({'asignaciones': MENSAJE_CONFLICTO_AUTORIDAD})
 
 
-def _guardar_asignaciones_usuario(user, bloques, docente_por_defecto=None):
+def _guardar_asignaciones_usuario(user, bloques, docente_por_defecto=None, carreras_gestionables=None):
+    if carreras_gestionables is not None:
+        ids_permitidos = _ids_carreras_gestionables(carreras_gestionables)
+        if not ids_permitidos:
+            raise serializers.ValidationError({
+                'carrera': 'El director no tiene una carrera activa asignada para gestionar usuarios.'
+            })
+
+        bloques_gestionados = []
+        for bloque in bloques:
+            if not isinstance(bloque, dict):
+                continue
+
+            rol = str(bloque.get('rol') or '').strip()
+            carrera = _resolver_carrera_asignacion(bloque.get('carrera'))
+            if not rol or not carrera:
+                continue
+
+            if carrera.id not in ids_permitidos:
+                raise serializers.ValidationError({
+                    'carrera': 'Solo puedes gestionar usuarios dentro de tu carrera.'
+                })
+
+            bloques_gestionados.append({
+                **bloque,
+                'rol': rol,
+                'carrera': carrera,
+            })
+
+        bloques_validacion = _combinar_bloques_con_asignaciones_externas(
+            user,
+            bloques_gestionados,
+            carreras_gestionables,
+        )
+        _validar_limite_asignaciones_usuario(bloques_validacion)
+        _validar_reglas_asignaciones_usuario(bloques_validacion, docente_por_defecto=docente_por_defecto)
+        _validar_fondo_tiempo_contractual_doble_rol(
+            bloques_validacion,
+            docente_por_defecto=docente_por_defecto,
+        )
+
+        AsignacionCarrera.objects.filter(user=user, carrera_id__in=ids_permitidos).update(activo=False)
+
+        for bloque in bloques_gestionados:
+            docente = _resolver_docente_asignacion(bloque, docente_por_defecto=docente_por_defecto)
+            if docente and docente.activo is False:
+                raise serializers.ValidationError({
+                    'docente': 'No se puede asignar ni vincular un docente inactivo.'
+                })
+            AsignacionCarrera.objects.update_or_create(
+                user=user,
+                carrera=bloque['carrera'],
+                rol=bloque['rol'],
+                defaults={
+                    'docente': docente,
+                    'activo': True,
+                }
+            )
+        return
+
     _validar_limite_asignaciones_usuario(bloques)
     _validar_reglas_asignaciones_usuario(bloques, docente_por_defecto=docente_por_defecto)
 
@@ -1733,6 +1901,15 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
             'docente_data': data.get('docente_data'),
         }] + asignaciones
 
+        carreras_gestionables = _carreras_gestionables_director(current_user)
+        if current_user and not current_user.is_superuser:
+            if _rol_usuario_solicitante(current_user) != 'director':
+                raise serializers.ValidationError({
+                    'detail': 'No tienes permiso para crear usuarios.'
+                })
+            _validar_bloques_en_carreras_gestionables(bloques, carreras_gestionables)
+            self.context['carreras_gestionables'] = carreras_gestionables
+
         _validar_limite_asignaciones_usuario(bloques)
         _validar_reglas_asignaciones_usuario(bloques, docente_por_defecto=data.get('docente'))
         _validar_fondo_tiempo_contractual_doble_rol(
@@ -1764,9 +1941,12 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
         if ci_normalizado:
             perfil_ci = obtener_perfil_por_ci(ci_normalizado)
             if perfil_ci and perfil_ci.user and perfil_ci.user_id:
-                raise serializers.ValidationError({
-                    'ci': 'Ya existe un usuario con este C.I.'
-                })
+                if current_user and not current_user.is_superuser and _rol_usuario_solicitante(current_user) == 'director':
+                    self.context['usuario_existente_por_ci'] = perfil_ci.user
+                else:
+                    raise serializers.ValidationError({
+                        'ci': 'Ya existe un usuario con este C.I.'
+                    })
             if perfil_ci and not perfil_ci.user_id and not perfil_ci_es_reutilizable(perfil_ci, data['rol']):
                 raise serializers.ValidationError({
                     'ci': 'Ese C.I. sigue reservado por un perfil huérfano con historial del sistema. No se puede reutilizar automáticamente.'
@@ -1800,6 +1980,55 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
             docente_data = validated_data.pop('docente_data', None)
             asignaciones_extra = validated_data.pop('asignaciones', []) or []
             ci = validated_data.pop('ci', None)
+            usuario_existente = self.context.get('usuario_existente_por_ci')
+
+            if usuario_existente:
+                roles_extra = [a.get('rol') for a in asignaciones_extra]
+                tiene_rol_docente = (rol == 'docente') or ('docente' in roles_extra)
+                perfil_existente = PerfilUsuario.objects.filter(user=usuario_existente).select_related('docente', 'carrera').first()
+
+                docente_obj = docente
+                if tiene_rol_docente and not docente_obj:
+                    if perfil_existente and perfil_existente.docente:
+                        docente_obj = perfil_existente.docente
+                    else:
+                        perfil_ci = obtener_perfil_por_ci(ci)
+                        docente_obj = perfil_ci.docente if perfil_ci and perfil_ci.docente else None
+
+                if docente_obj and docente_obj.activo is False:
+                    raise serializers.ValidationError({
+                        'docente': 'No se puede asignar ni vincular un docente inactivo.'
+                    })
+
+                if rol in ['director', 'jefe_estudios'] and not usuario_existente.is_staff:
+                    usuario_existente.is_staff = True
+                    usuario_existente.save(update_fields=['is_staff'])
+
+                if perfil_existente:
+                    update_fields = []
+                    if not perfil_existente.ci and ci:
+                        perfil_existente.ci = ci
+                        update_fields.append('ci')
+                    if not perfil_existente.carrera_id and carrera:
+                        perfil_existente.carrera = carrera
+                        update_fields.append('carrera')
+                    if docente_obj and not perfil_existente.docente_id:
+                        perfil_existente.docente = docente_obj
+                        update_fields.append('docente')
+                    if perfil_existente.activo is False:
+                        perfil_existente.activo = True
+                        update_fields.append('activo')
+                    if update_fields:
+                        perfil_existente.save(update_fields=update_fields)
+
+                bloques_asignacion = [{'rol': rol, 'carrera': carrera, 'docente': docente_obj}] + asignaciones_extra
+                _guardar_asignaciones_usuario(
+                    usuario_existente,
+                    bloques_asignacion,
+                    docente_por_defecto=docente_obj,
+                    carreras_gestionables=self.context.get('carreras_gestionables'),
+                )
+                return usuario_existente
 
             # Crear usuario
             user = User.objects.create_user(
@@ -1969,7 +2198,12 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
                     docente_obj.save(update_fields=['email'])
 
             bloques_asignacion = [{'rol': rol, 'carrera': carrera, 'docente': docente_obj}] + asignaciones_extra
-            _guardar_asignaciones_usuario(user, bloques_asignacion, docente_por_defecto=docente_obj)
+            _guardar_asignaciones_usuario(
+                user,
+                bloques_asignacion,
+                docente_por_defecto=docente_obj,
+                carreras_gestionables=self.context.get('carreras_gestionables'),
+            )
 
             return user
 
@@ -2051,13 +2285,25 @@ class ActualizarUsuarioSerializer(serializers.ModelSerializer):
             'docente_data': data.get('docente_data'),
         }] + asignaciones
 
-        _validar_limite_asignaciones_usuario(bloques)
+        carreras_gestionables = _carreras_gestionables_director(current_user)
+        if current_user and not current_user.is_superuser and _rol_usuario_solicitante(current_user) == 'director':
+            _validar_bloques_en_carreras_gestionables(bloques, carreras_gestionables)
+            self.context['carreras_gestionables'] = carreras_gestionables
+            bloques_validacion = _combinar_bloques_con_asignaciones_externas(
+                self.instance,
+                bloques,
+                carreras_gestionables,
+            )
+        else:
+            bloques_validacion = bloques
+
+        _validar_limite_asignaciones_usuario(bloques_validacion)
         _validar_reglas_asignaciones_usuario(
-            bloques,
+            bloques_validacion,
             docente_por_defecto=data.get('docente') or (perfil_actual.docente if perfil_actual else None),
         )
         _validar_fondo_tiempo_contractual_doble_rol(
-            bloques,
+            bloques_validacion,
             docente_por_defecto=data.get('docente') or (perfil_actual.docente if perfil_actual else None),
         )
 
@@ -2071,7 +2317,10 @@ class ActualizarUsuarioSerializer(serializers.ModelSerializer):
             hasattr(self, 'initial_data')
             and ('rol' in self.initial_data or 'id_rol' in self.initial_data)
         )
-        if solicita_cambio_rol and (not current_user or not current_user.is_superuser):
+        if solicita_cambio_rol and (
+            not current_user
+            or (not current_user.is_superuser and _rol_usuario_solicitante(current_user) != 'director')
+        ):
             raise serializers.ValidationError({
                 'rol': 'Solo el Superusuario tiene la potestad de cambiar el rol de cualquier usuario en el sistema.'
             })
@@ -2229,13 +2478,10 @@ class ActualizarUsuarioSerializer(serializers.ModelSerializer):
             
             # Si el CI es vacío, limpiar
             if not ci_normalizado:
-                if perfil.docente:
-                    perfil.docente.ci = ''
-                    perfil.docente.save(update_fields=['ci'])
                 perfil.ci = None
             else:
                 # Validar que no exista en otros docentes (siempre), excluyendo el docente actual o el seleccionado
-                docentes_con_ci = Docente.objects.filter(ci=ci_normalizado)
+                docentes_con_ci = Docente.objects.filter(datos_laborales__ci=ci_normalizado)
                 docentes_a_excluir = []
                 if perfil.docente:
                     docentes_a_excluir.append(perfil.docente.id)
@@ -2261,8 +2507,7 @@ class ActualizarUsuarioSerializer(serializers.ModelSerializer):
                 
                 # Guardar CI en docente si existe vínculo
                 if docente_objetivo:
-                    docente_objetivo.ci = ci_normalizado
-                    docente_objetivo.save(update_fields=['ci'])
+                    _actualizar_ci_docente(docente_objetivo, ci_normalizado)
                 
                 # Guardar CI en perfil
                 perfil.ci = ci_normalizado
@@ -2317,7 +2562,12 @@ class ActualizarUsuarioSerializer(serializers.ModelSerializer):
 
         if asignaciones_extra is not None:
             bloques_asignacion = [{'rol': final_rol, 'carrera': perfil.carrera, 'docente': perfil.docente}] + asignaciones_extra
-            _guardar_asignaciones_usuario(instance, bloques_asignacion, docente_por_defecto=perfil.docente)
+            _guardar_asignaciones_usuario(
+                instance,
+                bloques_asignacion,
+                docente_por_defecto=perfil.docente,
+                carreras_gestionables=self.context.get('carreras_gestionables'),
+            )
         
         # 7. Guardar el usuario. La señal post_save se encargará de sincronizar es_active.
         instance.save()

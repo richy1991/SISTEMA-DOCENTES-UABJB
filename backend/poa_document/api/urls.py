@@ -11,6 +11,8 @@ from .views import (
     DirectorCarreraActualView,
     ChatContactosPOAView,
     MensajeChatViewSet,
+    ObservacionDocumentoPOAViewSet,
+    SolicitudCambioPOAViewSet,
     EvidenciaViewSet,
     CurrentUserAPIView,
 )
@@ -25,6 +27,8 @@ router.register('documentos_poa_encabezados', DocumentoPOAReadOnlyViewSet, basen
 # endpoints para objetivos, actividades y detalle de presupuesto
 router.register(r'objetivos-especificos', ObjetivoEspecificoViewSet, basename='objetivos_especificos')
 router.register(r'actividades', ActividadViewSet, basename='actividades')
+router.register(r'observaciones-documento', ObservacionDocumentoPOAViewSet, basename='observaciones_documento')
+router.register(r'solicitudes-cambio', SolicitudCambioPOAViewSet, basename='solicitudes_cambio')
 router.register(r'evidencias', EvidenciaViewSet, basename='evidencias')
 
 # detalle de presupuesto (CRUD estándar): list/create -> /detalle-presupuesto/ ; detail -> /detalle-presupuesto/{pk}/
@@ -40,4 +44,3 @@ urlpatterns = router.urls + [
     path('chat-contactos/', ChatContactosPOAView.as_view(), name='chat-contactos-poa'),
     path('me/', CurrentUserAPIView.as_view(), name='current-user-poa'),
 ]
-

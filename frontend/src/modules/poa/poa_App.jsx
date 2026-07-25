@@ -6,26 +6,12 @@ import './index.css';
 import { useTheme } from '../../useTheme';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
-import ThemeToggle from '../../components/ThemeToggle';
 import ChatFlotantePOA from './components/ChatFlotantePOA';
 import Dialog from './components/base/Dialog';
 import GestionSelectorModal from './components/GestionSelectorModal';
 import NuevoIndicadorModal from './components/NuevoIndicadorModal';
-import POAHomePage from './pages/POAHomePage';
-import AccesosPOAPage from './pages/AccesosPOAPage';
-import DocumentosPOAPage from './pages/DocumentosPOAPage';
-import ActividadesPage from './pages/ActividadesPage';
-import ObjetivosEspecificosPage from './pages/ObjetivosEspecificosPage';
-import CatalogoItems from './pages/CatalogoItems';
-import CatalogosMenu from './pages/CatalogosMenu';
-import Reportes from './pages/Reportes';
-import PresupuestosPage from './pages/PresupuestosPage';
 import { getUsuariosPOA } from '../../apis/poa.api';
-
-const getInitialTheme = () => {
-  if (typeof window === 'undefined') return 'dark';
-  return window.localStorage.getItem('theme') || 'dark';
-};
+import { replacePoaNavigationContext } from './utils/navigationContext';
 
 function POAApp({ user }) {
   const navigate = useNavigate();
@@ -82,9 +68,22 @@ function POAApp({ user }) {
 
   const poaPermissions = {
     canEdit: poaRoles.includes('elaborador'),
-    // Permitir gestionar accesos a elaboradores, a administradores principales y a Directores de Carrera
-    canManageAccess: poaRoles.includes('elaborador') || isAdminPrincipal || Boolean(user?.perfil?.rol === 'director'),
+    // Los accesos POA los gestiona el Director de Carrera o el superusuario.
+    canManageAccess: isAdminPrincipal || Boolean(user?.perfil?.rol === 'director'),
     canReview: Boolean(user?.is_superuser || user?.perfil?.rol === 'director'),
+  };
+
+  const openGestionSelector = () => {
+    setShowGestionModal(true);
+  };
+
+  const openRevisionBoard = () => {
+    const targetPath = '/poa/documentos-revision';
+    const gestion = new Date().getFullYear() + 1;
+    setShowGestionModal(false);
+    navigate(targetPath, {
+      state: replacePoaNavigationContext({ gestion, documentosPath: targetPath }),
+    });
   };
 
   // Control del header por scroll
@@ -201,17 +200,13 @@ function POAApp({ user }) {
       {/* Toast notifications */}
       <Toaster position="top-right" />
 
-      {/* Selector de Tema - Flotante Global */}
-      <ThemeToggle theme={theme} setTheme={setTheme} />
       <ChatFlotantePOA currentUser={user} />
 
       {/* Sidebar */}
       <Sidebar
         theme={theme}
-        onNavigate={navigate}
-        showGestionModal={showGestionModal}
-        setShowGestionModal={setShowGestionModal}
-        sidebarExpanded={sidebarExpanded}
+        onOpenGestionSelector={openGestionSelector}
+        onOpenRevisionBoard={openRevisionBoard}
         setSidebarExpanded={setSidebarExpanded}
         user={user}
         poaPermissions={poaPermissions}
@@ -222,10 +217,18 @@ function POAApp({ user }) {
       {showGestionModal && (
         <GestionSelectorModal
           currentUser={user}
+          poaRoles={poaRoles}
+          canCreateDocument={poaPermissions.canEdit}
           onClose={() => setShowGestionModal(false)}
           onSuccess={({ gestion, documentos }) => {
+            const targetPath = '/poa/documentos';
             setShowGestionModal(false);
-            navigate('/poa/documentos', { state: { gestion, documentos } });
+            navigate(targetPath, {
+              state: {
+                ...replacePoaNavigationContext({ gestion, documentosPath: targetPath }),
+                documentos,
+              },
+            });
           }}
         />
       )}
@@ -252,7 +255,7 @@ function POAApp({ user }) {
           headerSelectedActividad={headerSelectedActividad}
           headerSelectedDireccion={headerSelectedDireccion}
           headerSelectedOperacion={headerSelectedOperacion}
-          onNavigate={navigate}
+          setTheme={setTheme}
           sidebarExpanded={sidebarExpanded}
           poaPermissions={poaPermissions}
         />
@@ -278,5 +281,3 @@ function POAApp({ user }) {
 }
 
 export default POAApp;
-
-

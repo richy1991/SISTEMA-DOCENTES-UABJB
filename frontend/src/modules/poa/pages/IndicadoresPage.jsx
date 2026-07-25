@@ -1,27 +1,29 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { FaEdit, FaPlus, FaSearch, FaTrash } from 'react-icons/fa';
 import toast from 'react-hot-toast';
+import Dialog from '../components/base/Dialog';
 import {
   createIndicadorCatalogo,
   deleteIndicadorCatalogo,
   getIndicadoresCatalogo,
-  importarIndicadoresPdf,
+  importarIndicadoresExcel,
   updateIndicadorCatalogo,
 } from '../../../apis/poa.api';
 
 const IndicadoresPage = () => {
   const inputRef = useRef(null);
-  const pdfInputRef = useRef(null);
+  const excelInputRef = useRef(null);
   const [indicadores, setIndicadores] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
-  const [importingPdf, setImportingPdf] = useState(false);
+  const [importingExcel, setImportingExcel] = useState(false);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [indicador, setIndicador] = useState('');
   const [editingId, setEditingId] = useState(null);
+  const [deleteDialogIndicador, setDeleteDialogIndicador] = useState(null);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearchQuery(searchQuery), 300);
@@ -103,31 +105,34 @@ const IndicadoresPage = () => {
     }
   };
 
-  const handlePdfImport = async (event) => {
+  const handleExcelImport = async (event) => {
     const file = event.target.files?.[0] || null;
     event.target.value = '';
 
     if (!file) return;
 
     const name = String(file.name || '').toLowerCase();
-    const type = String(file.type || '').toLowerCase();
-    if (!name.endsWith('.pdf') && type !== 'application/pdf') {
-      toast.error('Selecciona un archivo PDF.');
+    if (!name.endsWith('.xlsx')) {
+      toast.error('Selecciona un archivo Excel (.xlsx).');
       return;
     }
 
-    setImportingPdf(true);
+    setImportingExcel(true);
     try {
       const formData = new FormData();
       formData.append('archivo', file);
-      const res = await importarIndicadoresPdf(formData);
+      const res = await importarIndicadoresExcel(formData);
       const creados = Number(res?.data?.indicadores_creados || 0);
+      const duplicados = Number(res?.data?.indicadores_duplicados || 0);
       await refreshIndicadores(searchQuery);
-      toast.success(creados > 0 ? `Se importaron ${creados} indicadores.` : 'El PDF ya estaba reflejado en el catálogo.');
+      toast.success(creados > 0 ? `Se importaron ${creados} indicadores.` : 'El Excel ya estaba reflejado en el catalogo.');
+      if (duplicados > 0) {
+        toast(`Duplicados omitidos: ${duplicados}`);
+      }
     } catch (err) {
-      toast.error(err?.response?.data?.detail || err?.response?.data?.sugerencia || err?.message || 'No se pudo importar el PDF.');
+      toast.error(err?.response?.data?.detail || err?.response?.data?.sugerencia || err?.message || 'No se pudo importar el Excel.');
     } finally {
-      setImportingPdf(false);
+      setImportingExcel(false);
     }
   };
 
@@ -137,9 +142,14 @@ const IndicadoresPage = () => {
     requestAnimationFrame(() => inputRef.current?.focus());
   };
 
-  const handleDelete = async (item) => {
+  const handleDelete = (item) => {
     if (!item?.id) return;
-    if (!window.confirm(`Eliminar indicador "${item.indicador || ''}"?`)) return;
+    setDeleteDialogIndicador(item);
+  };
+
+  const confirmDelete = async () => {
+    const item = deleteDialogIndicador;
+    if (!item?.id) return;
 
     setDeletingId(item.id);
     try {
@@ -147,6 +157,7 @@ const IndicadoresPage = () => {
       setIndicadores((prev) => prev.filter((current) => Number(current.id) !== Number(item.id)));
       toast.success('Indicador eliminado.');
       if (Number(editingId) === Number(item.id)) resetForm();
+      setDeleteDialogIndicador(null);
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'No se pudo eliminar el indicador.');
     } finally {
@@ -158,8 +169,20 @@ const IndicadoresPage = () => {
 
   return (
     <section className="flex flex-col items-start justify-start flex-1 pb-6 px-3 md:px-6 py-4 w-full">
+      <Dialog
+        open={Boolean(deleteDialogIndicador)}
+        type="danger"
+        title="Eliminar indicador"
+        message={deleteDialogIndicador ? `¿Confirma eliminar este indicador?\n${deleteDialogIndicador.indicador || ''}` : ''}
+        confirmText={deletingId === deleteDialogIndicador?.id ? 'Eliminando...' : 'Eliminar'}
+        cancelText="Cancelar"
+        confirmDisabled={deletingId === deleteDialogIndicador?.id}
+        onCancel={() => setDeleteDialogIndicador(null)}
+        onClose={() => setDeleteDialogIndicador(null)}
+        onConfirm={confirmDelete}
+      />
       <div className="w-full max-w-[1200px] mx-auto space-y-4">
-        <div className="rounded-2xl border border-blue-200/80 bg-white/75 backdrop-blur-sm p-4 md:p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/55">
+        <div className="poa-mobile-page-card rounded-2xl border border-blue-200/80 bg-white/75 backdrop-blur-sm p-4 md:p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/55">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="space-y-2">
               <p className="text-xs uppercase tracking-[0.18em] font-bold text-blue-700 dark:text-sky-300">Catálogo POA</p>
@@ -169,9 +192,9 @@ const IndicadoresPage = () => {
               </p>
             </div>
 
-            <div className="rounded-2xl border border-blue-200 bg-white/85 px-4 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-900/60 min-w-[190px]">
-              <p className="text-[10px] uppercase tracking-[0.18em] text-blue-700 dark:text-sky-300 font-bold">Indicadores cargados</p>
-              <p className="text-3xl font-black mt-1 text-slate-900 dark:text-white">{totalIndicadores}</p>
+            <div className="poa-mobile-kpi-card rounded-2xl border border-blue-200 bg-white/85 px-4 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-900/60 min-w-[190px]">
+              <p className="poa-kpi-label text-[10px] uppercase tracking-[0.18em] text-blue-700 dark:text-sky-300 font-bold">Indicadores cargados</p>
+              <p className="poa-kpi-value text-3xl font-black mt-1 text-slate-900 dark:text-white">{totalIndicadores}</p>
             </div>
           </div>
         </div>
@@ -233,24 +256,24 @@ const IndicadoresPage = () => {
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white/75 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-950/30">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Importar desde PDF</p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Sube un PDF con texto extraíble. Se guardará una lista de indicadores, uno por línea, sin duplicados.</p>
+              <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Importar desde Excel</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Sube un archivo Excel con una lista de indicadores en la primera columna. Se guardaran sin duplicados.</p>
             </div>
             <div className="flex items-center gap-2">
               <input
-                ref={pdfInputRef}
+                ref={excelInputRef}
                 type="file"
-                accept="application/pdf"
+                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 className="hidden"
-                onChange={handlePdfImport}
+                onChange={handleExcelImport}
               />
               <button
                 type="button"
-                onClick={() => pdfInputRef.current?.click()}
-                disabled={importingPdf}
+                onClick={() => excelInputRef.current?.click()}
+                disabled={importingExcel}
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white shadow hover:bg-emerald-500 transition disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {importingPdf ? 'Importando...' : 'Subir PDF'}
+                {importingExcel ? 'Importando...' : 'Subir Excel'}
               </button>
             </div>
           </div>
@@ -261,8 +284,8 @@ const IndicadoresPage = () => {
 
         {!loading && !error && (
           hasResults ? (
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900/55">
-              <table className="w-full border-collapse text-sm">
+            <div className="poa-table-wrapper overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900/55">
+              <table className="poa-mobile-card-table w-full border-collapse text-sm">
                 <thead className="bg-slate-50 dark:bg-slate-900/70">
                   <tr>
                     <th className="px-4 py-3 text-left font-semibold text-slate-600 dark:text-slate-300">Indicador</th>
@@ -275,8 +298,8 @@ const IndicadoresPage = () => {
                       key={item.id || `${item.indicador}-${index}`}
                       className="border-t border-slate-200 dark:border-slate-800 bg-white odd:bg-slate-50/70 dark:bg-slate-900/30 dark:odd:bg-slate-950/35"
                     >
-                      <td className="px-4 py-3 text-slate-900 dark:text-slate-100 font-medium">{item.indicador}</td>
-                      <td className="px-4 py-3">
+                      <td data-label="Indicador" className="px-4 py-3 text-slate-900 dark:text-slate-100 font-medium">{item.indicador}</td>
+                      <td data-label="Acciones" className="px-4 py-3">
                         <div className="flex items-center justify-end gap-2">
                           <button
                             type="button"

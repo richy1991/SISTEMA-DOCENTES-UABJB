@@ -1,19 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate, useLocation, useOutletContext } from 'react-router-dom';
-import IconButton from '../components/IconButton';
-import { FaArrowLeft, FaTrash } from 'react-icons/fa';
-import { getDetallePresupuestoPorActividad, deleteDetalle, updateActividad } from '../../../apis/poa.api';
+import { useLocation, useOutletContext } from 'react-router-dom';
+import { getDetallePresupuestoPorActividad, deleteDetalle, updateActividad, crearSolicitudCambioPOA } from '../../../apis/poa.api';
 import NuevoPresupuestoModal from '../components/NuevoPresupuestoModal';
+import Dialog from '../components/base/Dialog';
 import toast from 'react-hot-toast';
+import { getPoaNavigationContext, normalizePoaGestion, savePoaNavigationContext } from '../utils/navigationContext';
 
 const PresupuestosPage = () => {
-  const navigate = useNavigate();
   const location = useLocation();
+  const navContext = React.useMemo(() => getPoaNavigationContext(location?.state), [location?.key, location?.state]);
   const outletContext = useOutletContext() || {};
   const poaPermissions = outletContext.poaPermissions || {};
   const canEdit = !!poaPermissions.canEdit;
   // La actividad puede llegar por navigation state desde Activities
-  const actividad = location?.state?.actividad || null;
+  const actividad = location?.state?.actividad || navContext?.actividad || null;
 
   const [detalle, setDetalle] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -21,6 +21,32 @@ const PresupuestosPage = () => {
   const [deletingId, setDeletingId] = useState(null);
   const [selectedDetalle, setSelectedDetalle] = useState(null);
   const [detalleEdit, setDetalleEdit] = useState(null);
+  const [deleteDialogDetalle, setDeleteDialogDetalle] = useState(null);
+  const documentoEstado = String(location?.state?.documentoEstado || navContext?.documentoEstado || actividad?.documento_estado || detalle?.[0]?.documento_estado || '').toLowerCase();
+  const documentoId = location?.state?.documentoId || navContext?.documentoId || actividad?.documento_id || detalle?.[0]?.documento_id || null;
+  const gestionNavegacion = normalizePoaGestion(location?.state?.gestion || navContext?.gestion || actividad?.documento_gestion || detalle?.[0]?.documento_gestion);
+  const objetivoId = location?.state?.objetivoId || navContext?.objetivoId || actividad?.objetivo || actividad?.objetivo_id || null;
+  const canRequestChange = canEdit && ['aprobado', 'ejecucion'].includes(documentoEstado);
+  const canEditDirectly = canEdit && (!documentoEstado || ['elaboracion', 'observado'].includes(documentoEstado));
+
+  useEffect(() => {
+    savePoaNavigationContext({
+      gestion: gestionNavegacion,
+      documentoId,
+      documentoEstado,
+      objetivoId,
+      actividadId: actividad?.id,
+      actividad,
+    });
+  }, [actividad, documentoEstado, documentoId, gestionNavegacion, objetivoId]);
+
+  const openNuevoPresupuesto = () => {
+    if (documentoEstado === 'revision') {
+      toast.error('El documento esta en revision. Espere la observacion o aprobacion del Director.');
+      return;
+    }
+    setShowNuevo(true);
+  };
 
   // Mostrar header al montar el componente
   useEffect(() => {
@@ -34,13 +60,12 @@ const PresupuestosPage = () => {
   useEffect(() => {
     const handler = (e) => {
       if (canEdit && e?.detail?.page === 'presupuestos') {
-        // Abrir modal para nuevo presupuesto
-        setShowNuevo(true);
+        openNuevoPresupuesto();
       }
     };
     window.addEventListener('open-new', handler);
     return () => window.removeEventListener('open-new', handler);
-  }, [canEdit]);
+  }, [canEdit, documentoEstado]);
 
   // Cargar detalle cuando tengamos actividad
   useEffect(() => {
@@ -49,7 +74,7 @@ const PresupuestosPage = () => {
       if (!actividad || !actividad.id) return;
       setLoading(true);
       try {
-        const res = await getDetallePresupuestoPorActividad(Number(actividad.id), location?.state?.documentoId);
+        const res = await getDetallePresupuestoPorActividad(Number(actividad.id), documentoId);
         const list = Array.isArray(res.data) ? res.data : (res.data.results || []);
         if (!mounted) return;
         setDetalle(list || []);
@@ -63,16 +88,14 @@ const PresupuestosPage = () => {
     };
     load();
     return () => { mounted = false; };
-  }, [actividad, location?.state?.documentoId]);
+  }, [actividad, documentoId]);
 
   // Cuando cambia la selección, notificar al header global
   useEffect(() => {
     if (selectedDetalle) {
-      console.log('Dispatching show-global-header with:', selectedDetalle);
       try { window.dispatchEvent(new CustomEvent('show-global-header', { detail: { selectedActividad: selectedDetalle } })); } catch (e) { }
       try { window.dispatchEvent(new CustomEvent('header-actions', { detail: { selectedActividad: selectedDetalle } })); } catch (e) { }
     } else {
-      console.log('Dispatching hide-global-header');
       try { window.dispatchEvent(new CustomEvent('hide-global-header')); } catch (e) { }
     }
   }, [selectedDetalle]);
@@ -85,28 +108,65 @@ const PresupuestosPage = () => {
       const actividad = d.actividad || d.selectedActividad || null;
       if (!action || !actividad) return;
       if (!canEdit) return;
+      if (documentoEstado === 'revision') {
+        toast.error('El documento esta en revision. Espere la observacion o aprobacion del Director.');
+        return;
+      }
       if (action === 'edit') {
         // abrir modal en modo edición
         setDetalleEdit(actividad);
         setShowNuevo(true);
       } else if (action === 'delete') {
-        const ok = confirm('¿Eliminar este ítem de presupuesto?');
-        if (!ok) return;
-        try {
-          await deleteDetalle(actividad.id);
-          setDetalle(prev => (prev || []).filter(it => it.id !== actividad.id));
-          setSelectedDetalle(null);
-          toast.success('Ítem eliminado');
-        } catch (err) {
-          const msg = err?.response?.data || err?.message || String(err);
-          toast.error('Error eliminando: ' + (typeof msg === 'string' ? msg : JSON.stringify(msg)));
-        }
+        setDeleteDialogDetalle(actividad);
       }
     };
     window.addEventListener('header-action', handler);
     return () => window.removeEventListener('header-action', handler);
-  }, [canEdit]);
+  }, [canEdit, documentoEstado]);
 
+  const confirmDeleteDetalle = async () => {
+    const target = deleteDialogDetalle;
+    if (!target?.id) return;
+
+    setDeletingId(target.id);
+    try {
+      if (canRequestChange) {
+        await crearSolicitudCambioPOA({
+          documento: Number(documentoId),
+          tipo_objeto: 'presupuesto',
+          objeto_id: target.id,
+          accion: 'eliminar',
+          payload: {
+            actividad_id: Number(actividad.id),
+            partida: target.partida || '',
+            item: target.item || '',
+            cantidad: target.cantidad || 0,
+            costo_unitario: target.costo_unitario || 0,
+          },
+          descripcion: 'Eliminar item de presupuesto.',
+          resumen: {
+            titulo: 'Eliminar presupuesto',
+            item: target.item || '',
+            partida: target.partida || '',
+          },
+        });
+        setSelectedDetalle(null);
+        setDeleteDialogDetalle(null);
+        toast.success('Solicitud de eliminacion enviada al Director de Carrera');
+        return;
+      }
+      await deleteDetalle(target.id);
+      setDetalle(prev => (prev || []).filter(it => it.id !== target.id));
+      setSelectedDetalle(null);
+      setDeleteDialogDetalle(null);
+      toast.success('Ítem eliminado');
+    } catch (err) {
+      const msg = err?.response?.data || err?.message || String(err);
+      toast.error('Error eliminando: ' + (typeof msg === 'string' ? msg : JSON.stringify(msg)));
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
 
   const formatMoney = (v) => {
@@ -162,7 +222,7 @@ const PresupuestosPage = () => {
 
   // Actualizar los montos en la actividad del backend cuando cambie el detalle
   useEffect(() => {
-    if (!actividad || !actividad.id || !canEdit) return;
+    if (!actividad || !actividad.id || !canEditDirectly) return;
     
     const actualizarMontos = async () => {
       try {
@@ -170,7 +230,6 @@ const PresupuestosPage = () => {
           monto_funcion: montoFuncionamiento,
           monto_inversion: montoInversion
         });
-        console.log('Montos actualizados en actividad:', { monto_funcion: montoFuncionamiento, monto_inversion: montoInversion });
       } catch (err) {
         if (err?.response?.status === 403) {
           return;
@@ -180,11 +239,23 @@ const PresupuestosPage = () => {
     };
 
     actualizarMontos();
-  }, [montoFuncionamiento, montoInversion, actividad, canEdit]);
+  }, [montoFuncionamiento, montoInversion, actividad, canEditDirectly]);
 
   // Si no viene actividad, mostrar explicación
   return (
   <section className="flex flex-col items-start flex-1 pt-0 pb-12 px-0 w-full">
+      <Dialog
+        open={Boolean(deleteDialogDetalle)}
+        type="danger"
+        title="Eliminar presupuesto"
+        message={deleteDialogDetalle ? `¿Confirma eliminar este item de presupuesto?\n${deleteDialogDetalle.item || deleteDialogDetalle.detalle || deleteDialogDetalle.id || ''}` : ''}
+        confirmText={deletingId === deleteDialogDetalle?.id ? 'Eliminando...' : 'Eliminar'}
+        cancelText="Cancelar"
+        confirmDisabled={deletingId === deleteDialogDetalle?.id}
+        onCancel={() => setDeleteDialogDetalle(null)}
+        onClose={() => setDeleteDialogDetalle(null)}
+        onConfirm={confirmDeleteDetalle}
+      />
         <div className="w-full mb-4 flex items-start justify-between">
 
 
@@ -195,7 +266,7 @@ const PresupuestosPage = () => {
       ) : (
         <>
           <div className="w-full mb-4 mt-0">
-            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-100 to-blue-200 dark:from-blue-900 dark:to-blue-800 border border-blue-300 dark:border-blue-700 shadow-2xl dark:shadow-blue-900/50">
+            <div className="poa-mobile-page-card relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-100 to-blue-200 dark:from-blue-900 dark:to-blue-800 border border-blue-300 dark:border-blue-700 shadow-2xl dark:shadow-blue-900/50">
               {/* Decorative background elements */}
               <div className="absolute top-0 right-0 w-40 h-40 bg-blue-200 dark:bg-blue-700/50 rounded-full blur-3xl opacity-50"></div>
               <div className="absolute bottom-0 left-0 w-40 h-40 bg-blue-300 dark:bg-blue-700/50 rounded-full blur-3xl opacity-50"></div>
@@ -211,12 +282,12 @@ const PresupuestosPage = () => {
                   </div>
                 </div>
                 
-                <div className="grid grid-cols-2 gap-4 pt-2">
-                  <div className="flex flex-col bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 backdrop-blur-sm rounded-lg p-4 shadow-xl dark:shadow-2xl dark:shadow-blue-900/50 hover:shadow-2xl transition-shadow transform hover:scale-105">
+                <div className="poa-mobile-kpi-strip poa-mobile-kpi-strip-2 grid grid-cols-2 gap-4 pt-2">
+                  <div className="poa-mobile-kpi-card flex flex-col bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 backdrop-blur-sm rounded-lg p-4 shadow-xl dark:shadow-2xl dark:shadow-blue-900/50 hover:shadow-2xl transition-shadow transform hover:scale-105">
                     <span className="text-xs font-bold uppercase tracking-widest text-blue-100 mb-1">Unidad</span>
                     <span className="text-base font-bold text-white">{actividad.unidad || 'Dirección de Investigación y Extensión'}</span>
                   </div>
-                  <div className="flex flex-col bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 backdrop-blur-sm rounded-lg p-4 shadow-xl dark:shadow-2xl dark:shadow-blue-900/50 hover:shadow-2xl transition-shadow transform hover:scale-105">
+                  <div className="poa-mobile-kpi-card flex flex-col bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 backdrop-blur-sm rounded-lg p-4 shadow-xl dark:shadow-2xl dark:shadow-blue-900/50 hover:shadow-2xl transition-shadow transform hover:scale-105">
                     <span className="text-xs font-bold uppercase tracking-widest text-blue-100 mb-1">Total Ítems</span>
                     <span className="text-5xl font-bold text-white">{Array.isArray(detalle) ? detalle.length : 0}</span>
                   </div>
@@ -227,16 +298,16 @@ const PresupuestosPage = () => {
 
           {/* Bloque de montos rediseñado */}
           <div className="w-full mb-4">
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <div className="flex-1 bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-lg shadow-lg p-4 text-white">
+            <div className="poa-mobile-kpi-strip poa-mobile-kpi-strip-3 flex flex-col gap-3 sm:flex-row">
+              <div className="poa-mobile-kpi-card flex-1 bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-lg shadow-lg p-4 text-white">
                 <p className="text-sm font-bold uppercase tracking-widest opacity-90">Monto total</p>
                 <p className="text-3xl font-bold">Bs. {formatMoney(montoTotal)}</p>
               </div>
-              <div className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg shadow-lg p-4 text-white">
+              <div className="poa-mobile-kpi-card flex-1 bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg shadow-lg p-4 text-white">
                 <p className="text-sm font-bold uppercase tracking-widest opacity-90">Monto inversión</p>
                 <p className="text-3xl font-bold">Bs. {formatMoney(montoInversion)}</p>
               </div>
-              <div className="flex-1 bg-gradient-to-r from-orange-500 to-orange-600 rounded-lg shadow-lg p-4 text-white">
+              <div className="poa-mobile-kpi-card flex-1 bg-gradient-to-r from-orange-500 to-orange-600 rounded-lg shadow-lg p-4 text-white">
                 <p className="text-sm font-bold uppercase tracking-widest opacity-90">Monto funcionamiento</p>
                 <p className="text-3xl font-bold">Bs. {formatMoney(montoFuncionamiento)}</p>
               </div>
@@ -247,7 +318,7 @@ const PresupuestosPage = () => {
 
      
 
-          <table className="min-w-full table-auto border-collapse poa-table poa-border-black poa-border-cyan poa-borders-ultra font-sans text-base leading-snug text-blue-900 dark:text-white">
+          <table className="poa-mobile-card-table min-w-full table-auto border-collapse poa-table poa-border-black poa-border-cyan poa-borders-ultra font-sans text-base leading-snug text-blue-900 dark:text-white">
             <colgroup>
               <col style={{ width: '30%' }} />
               <col style={{ width: '10%' }} />
@@ -259,18 +330,18 @@ const PresupuestosPage = () => {
               <col style={{ width: '6%' }} />
             </colgroup>
             <thead>
-              <tr className="poa-thead text-center font-sans text-base leading-snug bg-gradient-to-r from-blue-500/70 to-blue-600/70 dark:from-blue-700/70 dark:to-blue-800/70 text-white font-bold">
-                <th className="poa-cell font-medium border border-blue-600 dark:border-blue-900" rowSpan={2}>Detalle</th>
-                <th className="poa-cell font-medium border border-blue-600 dark:border-blue-900" rowSpan={2}>Unidad de medida</th>
-                <th className="poa-cell font-medium border border-blue-600 dark:border-blue-900" rowSpan={2}>Características</th>
-                <th className="poa-cell font-medium border border-blue-600 dark:border-blue-900" rowSpan={2}>Partida Presupuestaria</th>
-                <th className="poa-cell font-medium border border-blue-600 dark:border-blue-900" rowSpan={2}>Cantidad Requerida</th>
-                <th className="poa-cell font-medium border border-blue-600 dark:border-blue-900" colSpan={2}>Costo Bs.</th>
-                <th className="poa-cell font-medium border border-blue-600 dark:border-blue-900" rowSpan={2}>Mes de Requerimiento</th>
+              <tr className="poa-thead poa-table-head-formal text-center font-sans text-base leading-snug font-bold">
+                <th className="poa-cell font-medium" rowSpan={2}>Detalle</th>
+                <th className="poa-cell font-medium" rowSpan={2}>Unidad de medida</th>
+                <th className="poa-cell font-medium" rowSpan={2}>Características</th>
+                <th className="poa-cell font-medium" rowSpan={2}>Partida Presupuestaria</th>
+                <th className="poa-cell font-medium" rowSpan={2}>Cantidad Requerida</th>
+                <th className="poa-cell font-medium" colSpan={2}>Costo Bs.</th>
+                <th className="poa-cell font-medium" rowSpan={2}>Mes de Requerimiento</th>
               </tr>
-              <tr className="poa-thead text-center font-sans text-base leading-snug bg-gradient-to-r from-blue-500/70 to-blue-600/70 dark:from-blue-700/70 dark:to-blue-800/70 text-white font-bold">
-                <th className="poa-cell font-medium border border-blue-600 dark:border-blue-900">Unitario</th>
-                <th className="poa-cell font-medium border border-blue-600 dark:border-blue-900">Total</th>
+              <tr className="poa-thead poa-table-head-formal text-center font-sans text-base leading-snug font-bold">
+                <th className="poa-cell font-medium">Unitario</th>
+                <th className="poa-cell font-medium">Total</th>
               </tr>
             </thead>
             <tbody className="font-sans text-base leading-snug">
@@ -290,14 +361,14 @@ const PresupuestosPage = () => {
                         </tr>
                         {g.items.map((it) => (
                           <tr key={it.id} className="align-top poa-row-alt odd:bg-white even:bg-blue-50 text-blue-900 dark:text-white">
-                            <td className="poa-cell align-top border border-blue-300 dark:border-gray-600"><div className="table-cell-clamp">{it.item}</div></td>
-                            <td className="poa-cell align-top text-center border border-blue-300 dark:border-gray-600">{it.unidad_medida || '—'}</td>
-                            <td className="poa-cell align-top border border-blue-300 dark:border-gray-600"><div className="table-cell-clamp">{it.caracteristicas || '—'}</div></td>
-                            <td className="poa-cell align-top text-center border border-blue-300 dark:border-gray-600">{it.partida}</td>
-                            <td className="poa-cell align-top text-center border border-blue-300 dark:border-gray-600">{it.cantidad}</td>
-                            <td className="poa-cell align-top text-right border border-blue-300 dark:border-gray-600">{formatMoney(it.costo_unitario)}</td>
-                            <td className="poa-cell align-top text-right border border-blue-300 dark:border-gray-600">{formatMoney((Number(it.cantidad)||0) * (Number(it.costo_unitario)||0))}</td>
-                            <td className="poa-cell align-top text-center border border-blue-300 dark:border-gray-600">{it.mes_requerimiento || '—'}</td>
+                            <td data-label="Detalle" className="poa-cell align-top border border-blue-300 dark:border-gray-600"><div className="table-cell-clamp">{it.item}</div></td>
+                            <td data-label="Unidad" className="poa-cell align-top text-center border border-blue-300 dark:border-gray-600">{it.unidad_medida || '—'}</td>
+                            <td data-label="Caracteristicas" className="poa-cell align-top border border-blue-300 dark:border-gray-600"><div className="table-cell-clamp">{it.caracteristicas || '—'}</div></td>
+                            <td data-label="Partida" className="poa-cell align-top text-center border border-blue-300 dark:border-gray-600">{it.partida}</td>
+                            <td data-label="Cantidad" className="poa-cell align-top text-center border border-blue-300 dark:border-gray-600">{it.cantidad}</td>
+                            <td data-label="Costo unitario" className="poa-cell align-top text-right border border-blue-300 dark:border-gray-600">{formatMoney(it.costo_unitario)}</td>
+                            <td data-label="Costo total" className="poa-cell align-top text-right border border-blue-300 dark:border-gray-600">{formatMoney((Number(it.cantidad)||0) * (Number(it.costo_unitario)||0))}</td>
+                            <td data-label="Mes" className="poa-cell align-top text-center border border-blue-300 dark:border-gray-600">{it.mes_requerimiento || '—'}</td>
                           </tr>
                         ))}
                         <tr className="bg-blue-100 dark:bg-transparent text-blue-900 dark:text-white">
@@ -316,14 +387,14 @@ const PresupuestosPage = () => {
                       aria-selected={selectedDetalle && selectedDetalle.id === it.id ? 'true' : 'false'}
                       data-selected={selectedDetalle && selectedDetalle.id === it.id ? 'true' : 'false'}
                       className={`align-top transition transform duration-150 cursor-pointer hover:shadow-sm hover:-translate-y-0.5 ${selectedDetalle && selectedDetalle.id === it.id ? 'is-selected font-semibold shadow-md' : 'odd:bg-white even:bg-blue-50 poa-row-alt'} text-blue-900 dark:text-white`}>
-                      <td className="poa-cell align-top border border-blue-300 dark:border-gray-600"><div className="table-cell-clamp">{it.item}</div></td>
-                      <td className="poa-cell align-top text-center border border-blue-300 dark:border-gray-600">{it.unidad_medida || '—'}</td>
-                      <td className="poa-cell align-top border border-blue-300 dark:border-gray-600"><div className="table-cell-clamp">{it.caracteristicas || '—'}</div></td>
-                      <td className="poa-cell align-top text-center border border-blue-300 dark:border-gray-600">{it.partida}</td>
-                      <td className="poa-cell align-top text-center border border-blue-300 dark:border-gray-600">{it.cantidad}</td>
-                      <td className="poa-cell align-top text-right border border-blue-300 dark:border-gray-600">{formatMoney(it.costo_unitario)}</td>
-                      <td className="poa-cell align-top text-right border border-blue-300 dark:border-gray-600">{formatMoney((Number(it.cantidad)||0) * (Number(it.costo_unitario)||0))}</td>
-                      <td className="poa-cell align-top text-center border border-blue-300 dark:border-gray-600">{it.mes_requerimiento || '—'}</td>
+                      <td data-label="Detalle" className="poa-cell align-top border border-blue-300 dark:border-gray-600"><div className="table-cell-clamp">{it.item}</div></td>
+                      <td data-label="Unidad" className="poa-cell align-top text-center border border-blue-300 dark:border-gray-600">{it.unidad_medida || '—'}</td>
+                      <td data-label="Caracteristicas" className="poa-cell align-top border border-blue-300 dark:border-gray-600"><div className="table-cell-clamp">{it.caracteristicas || '—'}</div></td>
+                      <td data-label="Partida" className="poa-cell align-top text-center border border-blue-300 dark:border-gray-600">{it.partida}</td>
+                      <td data-label="Cantidad" className="poa-cell align-top text-center border border-blue-300 dark:border-gray-600">{it.cantidad}</td>
+                      <td data-label="Costo unitario" className="poa-cell align-top text-right border border-blue-300 dark:border-gray-600">{formatMoney(it.costo_unitario)}</td>
+                      <td data-label="Costo total" className="poa-cell align-top text-right border border-blue-300 dark:border-gray-600">{formatMoney((Number(it.cantidad)||0) * (Number(it.costo_unitario)||0))}</td>
+                      <td data-label="Mes" className="poa-cell align-top text-center border border-blue-300 dark:border-gray-600">{it.mes_requerimiento || '—'}</td>
                     </tr>
                   ))
                 )
@@ -335,7 +406,8 @@ const PresupuestosPage = () => {
           {showNuevo && (
             <NuevoPresupuestoModal
               actividadId={actividad.id}
-              documentoId={location?.state?.documentoId}
+              documentoId={documentoId}
+              documentoEstado={documentoEstado}
               detalle={detalleEdit}
               onClose={() => { setShowNuevo(false); setDetalleEdit(null); }}
               onCreated={(created) => {

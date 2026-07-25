@@ -1,19 +1,19 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
+import { useParams, useNavigate, useOutletContext, useLocation } from 'react-router-dom';
 import { getEvidenciasPorActividad, crearEvidencia, updateEvidencia, deleteEvidencia, getActividadPorId } from '../../../apis/poa.api';
 import toast from 'react-hot-toast';
-import { FaArrowLeft, FaEdit, FaTrash, FaChevronLeft, FaChevronRight, FaLink, FaFileDownload } from 'react-icons/fa';
+import { FaEdit, FaTrash, FaChevronLeft, FaChevronRight, FaLink, FaFileDownload } from 'react-icons/fa';
 import Dialog from '../components/base/Dialog';
-import { useTheme } from '../../../useTheme';
+import { buildPoaNavigationState, getPoaNavigationContext, normalizePoaGestion, savePoaNavigationContext } from '../utils/navigationContext';
 
 const EvidenciaPage = () => {
   const { actividadId } = useParams();
   const navigate = useNavigate();
-  const { effectiveTheme } = useTheme();
+  const location = useLocation();
+  const navContext = React.useMemo(() => getPoaNavigationContext(location?.state), [location?.key, location?.state]);
   const outletContext = useOutletContext() || {};
   const poaPermissions = outletContext.poaPermissions || {};
   const canEdit = !!poaPermissions.canEdit;
-  const isDark = effectiveTheme === 'dark';
   const [evidencia, setEvidencia] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actividad, setActividad] = useState(null);
@@ -26,6 +26,11 @@ const EvidenciaPage = () => {
   const [formData, setFormData] = useState({ resultados_logrados: '', programado: 1, ejecutado: 1, grado_cumplimiento: '' });
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const fileInputRef = useRef(null);
+  const documentoEstado = String(location?.state?.documentoEstado || navContext?.documentoEstado || actividad?.documento_estado || '').toLowerCase();
+  const documentoId = location?.state?.documentoId || navContext?.documentoId || actividad?.documento_id || null;
+  const objetivoId = location?.state?.objetivoId || navContext?.objetivoId || actividad?.objetivo || actividad?.objetivo_id || null;
+  const gestionNavegacion = normalizePoaGestion(location?.state?.gestion || navContext?.gestion || actividad?.documento_gestion);
+  const canEditEvidence = canEdit && documentoEstado === 'ejecucion';
 
   const createLinkItem = (url = '') => ({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, url });
   const normalizeCumplimientoInput = (value) => {
@@ -43,7 +48,6 @@ const EvidenciaPage = () => {
   const infoCardClass = 'rounded-2xl border border-slate-200 bg-white/80 p-4 sm:p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900/55';
   const mediaCardClass = 'overflow-hidden rounded-2xl border border-slate-200 bg-white/80 shadow-lg dark:border-slate-700 dark:bg-slate-900/55';
   const chipCardClass = 'rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300';
-  const hasVisibleActions = canEdit;
   const handleFormChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
@@ -73,9 +77,7 @@ const EvidenciaPage = () => {
 
   // Cargar evidencia y actividad al montar / cuando cambia actividadId
   useEffect(() => {
-    console.debug('[EvidenciaPage] useEffect mount/update actividadId', { actividadId });
     if (!actividadId) {
-      console.debug('[EvidenciaPage] actividadId no definido, no se carga evidencia');
       setLoading(false);
       return;
     }
@@ -84,7 +86,6 @@ const EvidenciaPage = () => {
 
     getActividadPorId(actividadId)
       .then(res => {
-        console.debug('[EvidenciaPage] getActividadPorId response', res && res.data);
         setActividad(res.data);
       })
       .catch(err => {
@@ -93,12 +94,39 @@ const EvidenciaPage = () => {
       });
   }, [actividadId]);
 
+  useEffect(() => {
+    savePoaNavigationContext({
+      gestion: gestionNavegacion,
+      documentoId,
+      documentoEstado,
+      objetivoId,
+      actividadId,
+      actividad: actividad || navContext?.actividad,
+    });
+  }, [actividad, actividadId, documentoEstado, documentoId, gestionNavegacion, objetivoId]);
+
+  const returnToActivities = () => {
+    if (objetivoId) {
+      navigate(`/poa/actividades/${objetivoId}`, {
+        replace: true,
+        state: buildPoaNavigationState(location?.state, {
+          gestion: gestionNavegacion,
+          documentoId,
+          documentoEstado,
+          objetivoId,
+          actividadId,
+          actividad: actividad || navContext?.actividad,
+        }),
+      });
+      return;
+    }
+    navigate(-1);
+  };
+
   const loadEvidencia = () => {
-    console.debug('[EvidenciaPage] loadEvidencia start', { actividadId });
     setLoading(true);
     getEvidenciasPorActividad(actividadId)
       .then(res => {
-        console.debug('[EvidenciaPage] getEvidenciasPorActividad response', res && res.data);
         const list = Array.isArray(res.data) ? res.data : (res.data.results || []);
         if (list.length > 0) {
           const ev = list[0];
@@ -128,7 +156,6 @@ const EvidenciaPage = () => {
         toast.error('Error cargando evidencias');
       })
       .finally(() => {
-        console.debug('[EvidenciaPage] loadEvidencia finally - setting loading false');
         setLoading(false);
       });
   };
@@ -213,20 +240,20 @@ const EvidenciaPage = () => {
       return;
     }
 
-    navigate(-1);
+    returnToActivities();
   };
 
   const handleStartEdit = () => {
-    if (!canEdit) {
-      toast.error('No tiene permisos para editar evidencias.');
+    if (!canEditEvidence) {
+      toast.error('Las evidencias solo pueden cargarse cuando el documento esta en ejecucion.');
       return;
     }
     setEditMode(true);
   };
 
   const handleOpenDeleteDialog = () => {
-    if (!canEdit) {
-      toast.error('No tiene permisos para eliminar evidencias.');
+    if (!canEditEvidence) {
+      toast.error('Las evidencias solo pueden modificarse cuando el documento esta en ejecucion.');
       return;
     }
     setShowDeleteDialog(true);
@@ -260,8 +287,8 @@ const EvidenciaPage = () => {
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!actividadId) return;
-    if (!canEdit) {
-      toast.error('No tiene permisos para guardar evidencias.');
+    if (!canEditEvidence) {
+      toast.error('Las evidencias solo pueden guardarse cuando el documento esta en ejecucion.');
       return;
     }
     const isEditingExisting = Boolean(editMode && evidencia?.id);
@@ -368,6 +395,12 @@ const EvidenciaPage = () => {
         </div>
       )}
 
+      {actividad && canEdit && !canEditEvidence && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200">
+          La carga de evidencias se habilita cuando el documento esta en ejecucion.
+        </div>
+      )}
+
       {/* Form Section (centred small card) */}
       {!evidencia && !editMode ? (
         <div className="flex justify-center">
@@ -378,7 +411,7 @@ const EvidenciaPage = () => {
               <div className="mb-4 text-sm text-slate-700 dark:text-slate-300">
                 Al cargar evidencia, la actividad se marcará como <span className="font-semibold">completada</span> para incluirla en el reporte final de evidencias.
               </div>
-              {canEdit && (
+              {canEditEvidence && (
                 <div className="flex justify-center">
                   <button type="button" onClick={handleStartEdit} className="px-4 py-2 rounded-md bg-gradient-to-r from-green-500 to-emerald-600 text-white">Cargar evidencia</button>
                 </div>
@@ -623,7 +656,7 @@ const EvidenciaPage = () => {
                     {actividad?.codigo} - {actividad?.nombre}
                   </p>
                 </div>
-                {canEdit && (
+                {canEditEvidence && (
                   <div className="flex sm:hidden items-center gap-2 ml-3">
                     <button onClick={handleStartEdit} className="p-2 rounded-md bg-blue-500 text-white">
                       <FaEdit size={14} />
@@ -634,7 +667,7 @@ const EvidenciaPage = () => {
                   </div>
                 )}
               </div>
-              {canEdit && (
+              {canEditEvidence && (
                 <div className="hidden sm:flex flex-wrap gap-2">
                   <button
                     onClick={handleStartEdit}
@@ -658,22 +691,22 @@ const EvidenciaPage = () => {
           <div className="p-4 lg:p-6">
             <div className="grid gap-6 xl:grid-cols-[minmax(0,1.12fr)_minmax(360px,0.88fr)]">
               <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-blue-100 p-4 dark:border-blue-500/20 dark:from-blue-500/10 dark:to-blue-950/40">
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">Programado</div>
-                    <div className="mt-2 text-3xl sm:text-4xl font-bold leading-none text-blue-900 dark:text-blue-100">{evidencia.programado}</div>
+                <div className="poa-mobile-kpi-strip poa-mobile-kpi-strip-3 grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="poa-mobile-kpi-card rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-blue-100 p-4 dark:border-blue-500/20 dark:from-blue-500/10 dark:to-blue-950/40">
+                    <div className="poa-kpi-label text-[11px] font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">Programado</div>
+                    <div className="poa-kpi-value mt-2 text-3xl sm:text-4xl font-bold leading-none text-blue-900 dark:text-blue-100">{evidencia.programado}</div>
                     <div className="mt-1 text-xs text-blue-700/80 dark:text-blue-200/80">planificada</div>
                   </div>
 
-                  <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-emerald-100 p-4 dark:border-emerald-500/20 dark:from-emerald-500/10 dark:to-emerald-950/40">
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Ejecutado</div>
-                    <div className="mt-2 text-3xl sm:text-4xl font-bold leading-none text-emerald-900 dark:text-emerald-100">{evidencia.ejecutado}</div>
+                  <div className="poa-mobile-kpi-card rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-emerald-100 p-4 dark:border-emerald-500/20 dark:from-emerald-500/10 dark:to-emerald-950/40">
+                    <div className="poa-kpi-label text-[11px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Ejecutado</div>
+                    <div className="poa-kpi-value mt-2 text-3xl sm:text-4xl font-bold leading-none text-emerald-900 dark:text-emerald-100">{evidencia.ejecutado}</div>
                     <div className="mt-1 text-xs text-emerald-700/80 dark:text-emerald-200/80">completada</div>
                   </div>
 
-                  <div className="rounded-2xl border border-purple-200 bg-gradient-to-br from-purple-50 to-purple-100 p-4 dark:border-purple-500/20 dark:from-purple-500/10 dark:to-purple-950/40">
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-purple-700 dark:text-purple-300">Cumplimiento</div>
-                    <div className="mt-2 text-3xl sm:text-4xl font-bold leading-none text-purple-900 dark:text-purple-100">{evidencia.grado_cumplimiento}%</div>
+                  <div className="poa-mobile-kpi-card rounded-2xl border border-purple-200 bg-gradient-to-br from-purple-50 to-purple-100 p-4 dark:border-purple-500/20 dark:from-purple-500/10 dark:to-purple-950/40">
+                    <div className="poa-kpi-label text-[11px] font-semibold uppercase tracking-wide text-purple-700 dark:text-purple-300">Cumplimiento</div>
+                    <div className="poa-kpi-value mt-2 text-3xl sm:text-4xl font-bold leading-none text-purple-900 dark:text-purple-100">{evidencia.grado_cumplimiento}%</div>
                     <div className="mt-3 h-1.5 sm:h-2 overflow-hidden rounded-full bg-purple-200 dark:bg-white/10">
                       <div
                         className="h-full rounded-full bg-gradient-to-r from-purple-400 to-fuchsia-500"

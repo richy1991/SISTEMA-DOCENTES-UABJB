@@ -15,6 +15,7 @@ import {
   FaExclamationTriangle,
   FaArrowRight,
 } from 'react-icons/fa';
+import { buildPoaNavigationState } from '../utils/navigationContext';
 
 const POAHomePage = () => {
   const [documentos, setDocumentos] = useState([]);
@@ -104,20 +105,20 @@ const POAHomePage = () => {
     const list = Array.isArray(documentos) ? documentos : [];
     const total = list.length;
     const programas = new Set(list.map((d) => String(d?.programa || '').trim()).filter(Boolean)).size;
-    const unidades = new Set(list.map((d) => String(getUnidadSolicitanteLabel(d) || '').trim()).filter(Boolean)).size;
     const observados = list.filter((d) => String(d?.estado || '').toLowerCase() === 'observado').length;
     const enRevision = list.filter((d) => String(d?.estado || '').toLowerCase() === 'revision').length;
-    return { total, programas, unidades, observados, enRevision };
+    return { total, programas, observados, enRevision };
   }, [documentos]);
 
   const handleVerActividades = (doc) => {
     if (!doc?.id) return;
     const gestionValue = getGestionForDoc(doc);
     navigate(`/poa/objetivos-especificos/${doc.id}`, {
-      state: {
+      state: buildPoaNavigationState({}, {
         gestion: gestionValue,
-        gestionState: gestionValue,
-      },
+        documentoId: Number(doc.id),
+        documentoEstado: String(doc?.estado || '').toLowerCase(),
+      }),
     });
   };
 
@@ -146,7 +147,7 @@ const POAHomePage = () => {
         transition={{ duration: 0.35, ease: 'easeOut' }}
         className="w-full max-w-[1500px] mx-auto"
       >
-        <div className="rounded-2xl border border-blue-200/80 bg-white/70 backdrop-blur-sm p-4 md:p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/55">
+        <div className="poa-mobile-page-card poa-home-dashboard-card rounded-2xl border border-blue-200/80 bg-white/70 backdrop-blur-sm p-4 md:p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/55">
           <h2 className="text-2xl md:text-4xl font-extrabold text-blue-900 dark:text-slate-100 leading-tight">
             Dashboard de Documentos POA
           </h2>
@@ -195,19 +196,18 @@ const POAHomePage = () => {
               variants={containerVariants}
               initial="hidden"
               animate="show"
-              className="grid grid-cols-2 lg:grid-cols-5 gap-3 mt-4"
+              className="poa-mobile-kpi-strip poa-mobile-kpi-strip-4 poa-home-stats-strip grid grid-cols-2 lg:grid-cols-4 gap-3 mt-4"
             >
               {[
-                { label: 'Total documentos', value: resumen.total, icon: <FaFileAlt /> },
-                { label: 'Programas', value: resumen.programas, icon: <FaLayerGroup /> },
-                { label: 'Unidades', value: resumen.unidades, icon: <FaBuilding /> },
-                { label: 'En revision', value: resumen.enRevision, icon: <FaClock /> },
-                { label: 'Observados', value: resumen.observados, icon: <FaCheckCircle /> },
+                { label: 'Total documentos', value: resumen.total, icon: <FaFileAlt />, accent: 'poa-kpi-accent-blue' },
+                { label: 'Programas', value: resumen.programas, icon: <FaLayerGroup />, accent: 'poa-kpi-accent-emerald' },
+                { label: 'En revision', value: resumen.enRevision, icon: <FaClock />, accent: 'poa-kpi-accent-amber' },
+                { label: 'Observados', value: resumen.observados, icon: <FaCheckCircle />, accent: 'poa-kpi-accent-orange' },
               ].map((it) => (
                 <motion.div
                   key={it.label}
                   variants={itemVariants}
-                  className="rounded-xl border border-blue-200 bg-white/85 px-3 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-900/60"
+                  className={`poa-summary-stat poa-mobile-kpi-card poa-kpi-formal ${it.accent} poa-home-stat-card rounded-xl border border-blue-200 bg-white/85 px-3 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-900/60`}
                 >
                   <div className="flex items-center justify-between">
                     <p className="text-[11px] uppercase tracking-wider text-slate-600 dark:text-slate-400 font-bold">{it.label}</p>

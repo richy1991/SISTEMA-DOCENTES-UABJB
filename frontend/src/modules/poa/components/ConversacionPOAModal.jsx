@@ -136,7 +136,7 @@ export default function ConversacionPOAModal({
 	if (!open) return null;
 
 	return (
-		<div className="fixed inset-0 z-[70]">
+		<div className="poa-conversation-modal fixed inset-0 z-[70]">
 			{/* Overlay */}
 			<div
 				className={`absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-400 ${
@@ -147,7 +147,7 @@ export default function ConversacionPOAModal({
 
 			{/* Panel */}
 			<div
-				className={`absolute right-4 top-4 bottom-4 w-full max-w-md bg-white dark:bg-slate-800 rounded-3xl shadow-2xl flex flex-col overflow-hidden transition-all duration-400 ease-out ${
+				className={`poa-conversation-panel absolute right-4 top-4 bottom-4 w-full max-w-md bg-white dark:bg-slate-800 rounded-3xl shadow-2xl flex flex-col overflow-hidden transition-all duration-400 ease-out ${
 					animando ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'
 				}`}
 			>

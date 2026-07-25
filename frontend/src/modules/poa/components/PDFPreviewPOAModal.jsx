@@ -79,13 +79,13 @@ const PDFPreviewPOAModal = ({
   };
 
   const modalContent = (
-    <div className="fixed inset-0 z-[220] flex items-center justify-center p-1 md:p-2">
+    <div className="poa-pdf-preview-modal fixed inset-0 z-[220] flex items-center justify-center p-1 md:p-2">
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
         onClick={onClose}
       />
 
-      <div className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-[98vw] max-w-[1500px] h-[98vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
+      <div className="poa-pdf-preview-panel relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-[98vw] max-w-[1500px] h-[98vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
         <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
           <div>
             <h3 className="text-xl font-bold text-slate-800 dark:text-white">{title}</h3>

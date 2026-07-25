@@ -1669,11 +1669,10 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
 
   const esSuperusuario = () => user?.is_superuser === true;
   const rolActual = user?.perfil?.rol;
-  // iiisyp es solo lectura: no puede gestionar carreras ni facultades
-  const esAdminCarrera = () => false; // iiisyp ya no tiene permisos de escritura
-  const puedeEditarLogo = () => esSuperusuario() || ['director', 'jefe_estudios'].includes(rolActual);
+  const esDirectorCarrera = () => rolActual === 'director';
+  const puedeEditarInformacionCarrera = () => esSuperusuario() || esDirectorCarrera();
   const puedeEditarEstructura = () => esSuperusuario();
-  const soloEditarLogo = () => !esSuperusuario() && ['director', 'jefe_estudios'].includes(rolActual);
+  const soloEditarLogo = () => !esSuperusuario() && rolActual === 'jefe_estudios';
   const puedeGestionarFacultades = () => esSuperusuario();
 
   const escapeHtml = (value = '') => String(value)
@@ -2099,7 +2098,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                       <FaEye size={14} />
                     </button>
 
-                    {puedeEditarEstructura() && (
+                    {puedeEditarInformacionCarrera() && (
                       <button
                         onClick={() => abrirModalEditar(carrera)}
                         className="flex items-center justify-center gap-2 px-4 py-2 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-300 dark:border-emerald-700 rounded-lg text-emerald-600 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-all duration-200 hover:shadow-md"
@@ -2303,7 +2302,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
               >
                 Cerrar
               </button>
-              {puedeEditarEstructura() && (
+              {puedeEditarInformacionCarrera() && (
                 <button
                   type="button"
                   onClick={() => setIsViewMode(false)}
@@ -2350,6 +2349,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                       searchable
                       options={facultadOptions}
                       error={errors.facultad}
+                      disabled={!puedeEditarEstructura()}
                       placeholder="Seleccione una facultad..."
                     />
                   </div>
@@ -2398,7 +2398,9 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                   }`}>
                     <div className="mb-3 flex items-center justify-between gap-2">
                       <label className="block text-sm font-semibold text-slate-800 dark:text-slate-300">Logo de Carrera</label>
-                      <ToggleSwitch size="sm" isActive={Boolean(formData.activo)} onChange={handleActivoSwitchChange} />
+                      {puedeEditarEstructura() && (
+                        <ToggleSwitch size="sm" isActive={Boolean(formData.activo)} onChange={handleActivoSwitchChange} />
+                      )}
                     </div>
 
                     <input type="file" accept="image/*" onChange={handleLogoChange} className="hidden" id="editar-logo-carrera-file" />

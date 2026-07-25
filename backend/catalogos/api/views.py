@@ -476,7 +476,7 @@ class IndicadorCatalogoViewSet(viewsets.ModelViewSet):
                 {
                     'detail': 'Importa un archivo Excel con indicadores.',
                     'uso': 'Envíe POST multipart/form-data con el archivo en el campo "archivo".',
-                    'formato_sugerido': 'Un indicador por fila en la primera columna.',
+                    'formato_sugerido': 'Un indicador por fila en la primera columna. Puede incluir encabezado.',
                 },
                 status=200,
             )
@@ -485,17 +485,36 @@ class IndicadorCatalogoViewSet(viewsets.ModelViewSet):
         if not archivo:
             return Response({'detail': 'Debe adjuntar un archivo Excel en el campo "archivo".'}, status=400)
 
+        nombre_archivo = str(getattr(archivo, 'name', '') or '').lower()
+        if not nombre_archivo.endswith('.xlsx'):
+            return Response({'detail': 'El archivo debe ser Excel (.xlsx).'}, status=400)
+
         dry_run = str(request.data.get('dry_run', 'false')).strip().lower() in {'1', 'true', 'si', 'yes'}
 
         try:
             workbook = load_workbook(filename=archivo, data_only=True, read_only=True)
             sheet = workbook.active
             indicadores_detectados = []
-            for row in sheet.iter_rows(min_row=1, max_col=1, values_only=True):
-                if row[0]:
-                    indicador = str(row[0]).strip()
-                    if indicador:
-                        indicadores_detectados.append(indicador)
+            vistos_archivo = set()
+            for fila, row in enumerate(sheet.iter_rows(min_row=1, max_col=1, values_only=True), start=1):
+                indicador = str(row[0] or '').strip() if row else ''
+                if not indicador:
+                    continue
+
+                indicador = unicodedata.normalize('NFKC', indicador)
+                indicador = ' '.join(indicador.split())
+                if not indicador:
+                    continue
+
+                if fila == 1 and indicador.casefold() in {'indicador', 'indicadores'}:
+                    continue
+
+                key = indicador.casefold()
+                if key in vistos_archivo:
+                    continue
+
+                vistos_archivo.add(key)
+                indicadores_detectados.append(indicador[:500])
         except Exception as exc:
             return Response({'detail': f'No se pudo leer el archivo Excel: {str(exc)}'}, status=400)
 
@@ -508,21 +527,28 @@ class IndicadorCatalogoViewSet(viewsets.ModelViewSet):
                 status=400,
             )
 
-        existentes = set(
-            IndicadorCatalogo.objects.filter(indicador__in=indicadores_detectados).values_list('indicador', flat=True)
-        )
-        nuevos = [IndicadorCatalogo(indicador=text) for text in indicadores_detectados if text not in existentes]
+        existentes = {
+            str(value or '').casefold()
+            for value in IndicadorCatalogo.objects.values_list('indicador', flat=True)
+        }
+        nuevos = [
+            IndicadorCatalogo(indicador=text)
+            for text in indicadores_detectados
+            if text.casefold() not in existentes
+        ]
 
         if not dry_run and nuevos:
             with transaction.atomic():
                 IndicadorCatalogo.objects.bulk_create(nuevos, ignore_conflicts=True)
+
+        duplicados = len(indicadores_detectados) - len(nuevos)
 
         return Response(
             {
                 'detail': 'Archivo Excel procesado correctamente.',
                 'dry_run': dry_run,
                 'indicadores_detectados': len(indicadores_detectados),
-                'indicadores_existentes': len(existentes),
+                'indicadores_duplicados': duplicados,
                 'indicadores_creados': 0 if dry_run else len(nuevos),
                 'preview': indicadores_detectados[:50],
             },
@@ -540,5 +566,3 @@ class IndicadorCatalogoReadOnlyViewSet(viewsets.ReadOnlyModelViewSet):
         if search:
             qs = qs.filter(indicador__icontains=search)
         return qs.order_by('indicador')
-
-

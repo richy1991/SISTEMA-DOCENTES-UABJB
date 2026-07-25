@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { createObjetivoEspecifico, updateObjetivo } from '../../../apis/poa.api';
+import { createObjetivoEspecifico, updateObjetivo, crearSolicitudCambioPOA } from '../../../apis/poa.api';
 import IconButton from './IconButton';
 import { FaTimes, FaFileImport, FaSave } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import { Input, Textarea, Modal } from './base';
 import { buildClientErrorMessages, formatApiErrors, mapApiErrorsToFieldErrors, ModalErrorAlert } from './formErrorUtils';
 
-const NuevoObjetivoModal = ({ onClose, onCreated, documentoId, objetivo, existingObjetivos = [], onUpdated, onImport }) => {
+const NuevoObjetivoModal = ({ onClose, onCreated, documentoId, objetivo, existingObjetivos = [], onUpdated, onImport, documentoEstado = '' }) => {
   const isEdit = Boolean(objetivo && objetivo.id !== undefined);
   const defaultCodigo = isEdit ? (objetivo?.codigo || '') : 'OE-';
   const [codigo, setCodigo] = useState(defaultCodigo);
@@ -15,6 +15,7 @@ const NuevoObjetivoModal = ({ onClose, onCreated, documentoId, objetivo, existin
   const [loading, setLoading] = useState(false);
   const [errorMessages, setErrorMessages] = useState([]);
   const [fieldErrors, setFieldErrors] = useState({});
+  const requestChangeMode = ['aprobado', 'ejecucion'].includes(String(documentoEstado || '').toLowerCase());
 
   const focusFirstError = (errors) => {
     const firstKey = Object.keys(errors || {})[0];
@@ -95,6 +96,24 @@ const NuevoObjetivoModal = ({ onClose, onCreated, documentoId, objetivo, existin
         codigo: (codigo === 'OE-') ? '' : (codigo || ''),
         descripcion,
       };
+      if (requestChangeMode) {
+        await crearSolicitudCambioPOA({
+          documento: Number(documentoId),
+          tipo_objeto: 'objetivo',
+          objeto_id: isEdit ? objetivo.id : null,
+          accion: isEdit ? 'editar' : 'crear',
+          payload,
+          descripcion: isEdit ? 'Modificar objetivo especifico.' : 'Crear objetivo especifico.',
+          resumen: {
+            titulo: isEdit ? 'Editar objetivo especifico' : 'Nuevo objetivo especifico',
+            codigo: payload.codigo,
+            descripcion: payload.descripcion,
+          },
+        });
+        toast.success('Solicitud de cambios enviada al Director de Carrera');
+        if (onClose) onClose();
+        return;
+      }
       if (isEdit) {
         const res = await updateObjetivo(objetivo.id, payload);
         if (onUpdated) onUpdated(res.data);
@@ -168,8 +187,8 @@ const NuevoObjetivoModal = ({ onClose, onCreated, documentoId, objetivo, existin
 
             <div className="flex justify-end gap-3 modal-actions">
               <IconButton icon={<FaTimes />} onClick={() => onClose && onClose()} className="btn-cancel border px-3 py-2 rounded" title="Cancelar">Cancelar</IconButton>
-              <IconButton icon={<FaSave />} type="submit" disabled={loading} className="btn-primary px-3 py-2 rounded" title={loading ? 'Guardando...' : (isEdit ? 'Guardar' : 'Crear')}>
-                {loading ? 'Guardando...' : (isEdit ? 'Guardar' : 'Crear')}
+              <IconButton icon={<FaSave />} type="submit" disabled={loading} className="btn-primary px-3 py-2 rounded" title={loading ? 'Guardando...' : (requestChangeMode ? 'Enviar solicitud de cambios' : (isEdit ? 'Guardar' : 'Crear'))}>
+                {loading ? 'Guardando...' : (requestChangeMode ? 'Enviar solicitud de cambios' : (isEdit ? 'Guardar' : 'Crear'))}
               </IconButton>
             </div>
           </form>

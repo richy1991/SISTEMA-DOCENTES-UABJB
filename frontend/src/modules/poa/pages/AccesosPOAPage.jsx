@@ -128,7 +128,7 @@ export default function AccesosPOAPage() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
-      <div className="accesos-panel rounded-3xl border border-slate-200/90 bg-white/80 p-5 shadow-xl backdrop-blur-sm dark:border-sky-900/40 dark:bg-slate-900/65">
+      <div className="poa-mobile-page-card accesos-panel rounded-3xl border border-slate-200/90 bg-white/80 p-5 shadow-xl backdrop-blur-sm dark:border-sky-900/40 dark:bg-slate-900/65">
       {/* Header */}
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div>
@@ -149,31 +149,31 @@ export default function AccesosPOAPage() {
       </div>
 
       {/* Resumen por rol */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mb-6">
+      <div className="poa-mobile-kpi-strip poa-mobile-kpi-strip-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mb-6">
         {/* Card para Elaborador */}
         {elaboradorCount > 0 && activeElaborador ? (
           <div
        
-            className={`accesos-kpi rounded-xl border px-3 py-2.5 text-left transition-all text-xs font-semibold
+            className={`poa-mobile-kpi-card accesos-kpi rounded-xl border px-3 py-2.5 text-left transition-all text-xs font-semibold
               ring-2 ring-blue-500 shadow-md hover:shadow-sm
               ${ROL_COLOR.elaborador} ${ROL_DARK.elaborador}`}
           >
-            <div className="text-lg font-bold flex items-center gap-2">
+            <div className="poa-kpi-label text-lg font-bold flex items-center gap-2">
               <FaUserCheck className="text-green-500" />
               Elaborador Asignado
             </div>
-            <div className="leading-tight mt-0.5 text-blue-900 dark:text-blue-200">
+            <div className="poa-kpi-value leading-tight mt-0.5 text-blue-900 dark:text-blue-200">
               {activeElaborador.nombre_display || activeElaborador.user_detalle?.nombre_completo || 'N/A'}
             </div>
         
           </div>
         ) : (
-          <div className={`accesos-kpi rounded-xl border px-3 py-2.5 text-left text-xs font-semibold
+          <div className={`poa-mobile-kpi-card accesos-kpi rounded-xl border px-3 py-2.5 text-left text-xs font-semibold
             ${ROL_COLOR.elaborador} ${ROL_DARK.elaborador}`}>
-            <div className="text-base font-bold text-blue-800 dark:text-blue-200">
+            <div className="poa-kpi-label text-base font-bold text-blue-800 dark:text-blue-200">
               ¡Atención!
             </div>
-            <div className="leading-tight mt-0.5 text-blue-700 dark:text-blue-300">
+            <div className="poa-kpi-label leading-tight mt-0.5 text-blue-700 dark:text-blue-300">
               Es importante asignar un usuario Elaborador POA para gestionar los documentos.
             </div>
 
@@ -184,12 +184,12 @@ export default function AccesosPOAPage() {
           <button
             key={r.value}
             onClick={() => setFilterRol(prev => prev === r.value ? 'todos' : r.value)}
-            className={`accesos-kpi rounded-xl border px-3 py-2.5 text-left transition-all text-xs font-semibold
+            className={`poa-mobile-kpi-card accesos-kpi rounded-xl border px-3 py-2.5 text-left transition-all text-xs font-semibold
               ${filterRol === r.value ? 'ring-2 ring-blue-500 shadow-md' : 'hover:shadow-sm'}
               ${ROL_COLOR[r.value] || 'bg-gray-100 text-gray-700 border-gray-200'} ${ROL_DARK[r.value] || 'dark:bg-slate-800/50 dark:text-slate-300 dark:border-slate-700'}`}
           >
-            <div className="text-lg font-bold">{r.count}</div>
-            <div className="leading-tight mt-0.5">{r.label}</div>
+            <div className="poa-kpi-value text-lg font-bold">{r.count}</div>
+            <div className="poa-kpi-label leading-tight mt-0.5">{r.label}</div>
           </button>
         ))}
       </div>
@@ -232,7 +232,7 @@ export default function AccesosPOAPage() {
         </div>
       ) : (
         <div className="accesos-table-shell bg-white rounded-2xl shadow border border-gray-100 overflow-hidden dark:border-slate-700 dark:bg-slate-900/70">
-          <table className="accesos-table w-full text-sm">
+          <table className="poa-mobile-card-table accesos-table w-full text-sm">
             <thead>
               <tr className="accesos-table-head text-xs uppercase tracking-wider">
                 <th className="px-4 py-3 text-left">Usuario</th>
@@ -244,25 +244,25 @@ export default function AccesosPOAPage() {
             <tbody>
               {filteredAndSorted.map((a, idx) => (
                 <tr key={a.id} className={`border-t border-gray-100 dark:border-slate-700/70 ${idx % 2 === 0 ? 'bg-white dark:bg-slate-900/55' : 'bg-gray-50/50 dark:bg-slate-800/35'} hover:bg-blue-50/30 dark:hover:bg-sky-900/20 transition`}>
-                  <td className="px-4 py-3 font-semibold text-gray-800 dark:text-slate-100">
+                  <td data-label="Usuario" className="px-4 py-3 font-semibold text-gray-800 dark:text-slate-100">
                     <div>{a.nombre_display || a.user_detalle?.nombre_completo || a.docente_detalle?.nombre_completo || '—'}</div>
                     {a.user_detalle?.username && (
                       <div className="text-xs text-gray-400 dark:text-slate-400 font-normal">@{a.user_detalle.username}</div>
                     )}
                   </td>
-                  <td className="px-4 py-3">
+                  <td data-label="Rol POA" className="px-4 py-3">
                     <span className={`inline-block text-xs font-semibold px-2.5 py-1 rounded-full border ${ROL_COLOR[a.rol] || 'bg-gray-100 text-gray-700 border-gray-200'}`}>
                       {a.rol_display || getRolLabel(a.rol)}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-center">
+                  <td data-label="Estado" className="px-4 py-3 text-center">
                     <button onClick={() => handleToggleActivo(a)} title={a.activo ? 'Desactivar' : 'Activar'}>
                       {a.activo
                         ? <FaToggleOn className="text-green-500 text-xl mx-auto" />
                         : <FaToggleOff className="text-gray-400 dark:text-slate-500 text-xl mx-auto" />}
                     </button>
                   </td>
-                  <td className="px-4 py-3">
+                  <td data-label="Acciones" className="px-4 py-3">
                     <div className="flex items-center justify-center gap-2">
                       <button
                         onClick={() => { setEditTarget(a); setShowModal(true); }}

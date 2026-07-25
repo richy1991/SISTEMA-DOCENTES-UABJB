@@ -1,15 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
+import { useParams, useNavigate, useOutletContext, useLocation } from 'react-router-dom';
 import NuevaActividadModal from '../components/NuevaActividadModal';
 import IconButton from '../components/IconButton';
 import Dialog from '../components/base/Dialog';
 import { FaPlus } from 'react-icons/fa';
 import toast from 'react-hot-toast';
-import { getActividadesPorObjetivo, getObjetivoPorId, deleteActividad } from '../../../apis/poa.api';
+import { getActividadesPorObjetivo, getObjetivoPorId, deleteActividad, crearSolicitudCambioPOA } from '../../../apis/poa.api';
+import { getPoaNavigationContext, normalizePoaGestion, savePoaNavigationContext } from '../utils/navigationContext';
 
 const ActividadesPage = () => {
   const { objetivoEspecificoId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const navContext = React.useMemo(() => getPoaNavigationContext(location?.state), [location?.key, location?.state]);
   const outletContext = useOutletContext() || {};
   const poaPermissions = outletContext.poaPermissions || {};
   const canEdit = !!poaPermissions.canEdit;
@@ -23,6 +26,20 @@ const ActividadesPage = () => {
   const [objetivo, setObjetivo] = useState(null);
   const [objetivoLoading, setObjetivoLoading] = useState(true);
   const [objetivoError, setObjetivoError] = useState(null);
+  const documentoEstado = String(location?.state?.documentoEstado || navContext?.documentoEstado || objetivo?.documento_estado || '').toLowerCase();
+  const documentoId = location?.state?.documentoId || navContext?.documentoId || objetivo?.documento || actividades?.[0]?.documento_id || null;
+  const gestionNavegacion = normalizePoaGestion(location?.state?.gestion || navContext?.gestion || objetivo?.documento_gestion || actividades?.[0]?.documento_gestion);
+  const canRequestChange = canEdit && ['aprobado', 'ejecucion'].includes(documentoEstado);
+
+  const withNavigationData = (actividad) => ({
+    ...(actividad || {}),
+    objetivo: actividad?.objetivo || actividad?.objetivo_id || Number(objetivoEspecificoId),
+    objetivoId: actividad?.objetivo || actividad?.objetivo_id || Number(objetivoEspecificoId),
+    documento_id: actividad?.documento_id || documentoId,
+    documento_estado: actividad?.documento_estado || documentoEstado,
+    documento_gestion: actividad?.documento_gestion || gestionNavegacion,
+    gestion: actividad?.gestion || gestionNavegacion,
+  });
 
   useEffect(() => {
     setLoading(true); setError(null);
@@ -42,7 +59,22 @@ const ActividadesPage = () => {
       .finally(() => setObjetivoLoading(false));
   }, [objetivoEspecificoId]);
 
-  const openNueva = () => setShowNueva(true);
+  useEffect(() => {
+    savePoaNavigationContext({
+      gestion: gestionNavegacion,
+      documentoId,
+      documentoEstado,
+      objetivoId: Number(objetivoEspecificoId),
+    });
+  }, [documentoEstado, documentoId, gestionNavegacion, objetivoEspecificoId]);
+
+  const openNueva = () => {
+    if (documentoEstado === 'revision') {
+      toast.error('El documento esta en revision. Espere la observacion o aprobacion del Director.');
+      return;
+    }
+    setShowNueva(true);
+  };
   const closeNueva = () => setShowNueva(false);
   
 
@@ -62,7 +94,7 @@ const ActividadesPage = () => {
     };
     window.addEventListener('open-new', handler);
     return () => window.removeEventListener('open-new', handler);
-  }, [canEdit]);
+  }, [canEdit, documentoEstado]);
 
   const formatMoney = (v) => {
     if (v === null || v === undefined || v === '') return '—';
@@ -74,15 +106,16 @@ const ActividadesPage = () => {
   // Cuando cambia la selección, notificar al header global
   useEffect(() => {
     if (selectedActividad) {
+      const selectedActividadConContexto = withNavigationData(selectedActividad);
       // No hacer scroll, solo mostrar el header con los botones
-      try { window.dispatchEvent(new CustomEvent('show-global-header', { detail: { selectedActividad } })); } catch (e) { /* silencioso */ }
-      try { window.dispatchEvent(new CustomEvent('header-actions', { detail: { selectedActividad } })); } catch (e) { /* silencioso */ }
+      try { window.dispatchEvent(new CustomEvent('show-global-header', { detail: { selectedActividad: selectedActividadConContexto } })); } catch (e) { /* silencioso */ }
+      try { window.dispatchEvent(new CustomEvent('header-actions', { detail: { selectedActividad: selectedActividadConContexto } })); } catch (e) { /* silencioso */ }
     }
     else {
       // notify header to clear actions but keep header visible
       try { window.dispatchEvent(new CustomEvent('header-actions', { detail: { selectedActividad: null } })); } catch (e) { /* silencioso */ }
     }
-  }, [selectedActividad]);
+  }, [selectedActividad, documentoEstado, documentoId, gestionNavegacion, objetivoEspecificoId]);
 
   // Escuchar acciones iniciadas desde el header (edit/delete)
   useEffect(() => {
@@ -92,6 +125,10 @@ const ActividadesPage = () => {
       const actividad = d.actividad || d.selectedActividad || null;
       if (!action || !actividad) return;
       if (!canEdit) return;
+      if (documentoEstado === 'revision') {
+        toast.error('El documento esta en revision. Espere la observacion o aprobacion del Director.');
+        return;
+      }
       if (action === 'edit') {
         setActividadEdit(actividad);
         setShowNueva(true);
@@ -101,12 +138,34 @@ const ActividadesPage = () => {
     };
     window.addEventListener('header-action', handler);
     return () => window.removeEventListener('header-action', handler);
-  }, [canEdit]);
+  }, [canEdit, documentoEstado]);
 
   const confirmarEliminarActividad = async () => {
     const actividad = deleteDialogActividad;
     if (!actividad) return;
     try {
+      if (canRequestChange) {
+        await crearSolicitudCambioPOA({
+          documento: Number(documentoId),
+          tipo_objeto: 'actividad',
+          objeto_id: actividad.id,
+          accion: 'eliminar',
+          payload: {
+            codigo: actividad.codigo || '',
+            nombre: actividad.nombre || '',
+            objetivo_id: Number(objetivoEspecificoId),
+          },
+          descripcion: 'Eliminar actividad.',
+          resumen: {
+            titulo: 'Eliminar actividad',
+            codigo: actividad.codigo || '',
+            nombre: actividad.nombre || '',
+          },
+        });
+        setDeleteDialogActividad(null);
+        toast.success('Solicitud de eliminacion enviada al Director de Carrera');
+        return;
+      }
       await deleteActividad(actividad.id);
       setActividades(prev => (prev || []).filter(a => a.id !== actividad.id));
       setSelectedActividad(null);
@@ -192,7 +251,7 @@ const ActividadesPage = () => {
         ) : objetivoError ? (
           <div className="text-red-600">{String(objetivoError)}</div>
         ) : objetivo ? (
-          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-100 to-blue-200 dark:from-blue-900 dark:to-blue-800 border border-blue-300 dark:border-blue-700 shadow-2xl dark:shadow-blue-900/50">
+          <div className="poa-mobile-page-card relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-100 to-blue-200 dark:from-blue-900 dark:to-blue-800 border border-blue-300 dark:border-blue-700 shadow-2xl dark:shadow-blue-900/50">
             {/* Decorative background elements */}
             <div className="absolute top-0 right-0 w-40 h-40 bg-blue-200 dark:bg-blue-700/50 rounded-full blur-3xl opacity-50"></div>
             <div className="absolute bottom-0 left-0 w-40 h-40 bg-blue-300 dark:bg-blue-700/50 rounded-full blur-3xl opacity-50"></div>
@@ -208,18 +267,18 @@ const ActividadesPage = () => {
                 </div>
               </div>
               
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
-                <div className="flex flex-col bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 backdrop-blur-sm rounded-lg p-4 shadow-xl dark:shadow-2xl dark:shadow-blue-900/50 hover:shadow-2xl transition-shadow transform hover:scale-105">
-                  <span className="text-xs font-bold uppercase tracking-widest text-blue-100 mb-1">Total Actividades</span>
-                  <span className="text-5xl font-bold text-white">{totalActividades}</span>
+              <div className="poa-mobile-kpi-strip poa-mobile-kpi-strip-3 grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+                <div className="poa-mobile-kpi-card flex flex-col bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 backdrop-blur-sm rounded-lg p-4 shadow-xl dark:shadow-2xl dark:shadow-blue-900/50 hover:shadow-2xl transition-shadow transform hover:scale-105">
+                  <span className="poa-kpi-label text-xs font-bold uppercase tracking-widest text-blue-100 mb-1">Total Actividades</span>
+                  <span className="poa-kpi-value text-5xl font-bold text-white">{totalActividades}</span>
                 </div>
-                <div className="flex flex-col bg-gradient-to-r from-emerald-500 to-emerald-600 dark:from-emerald-600 dark:to-emerald-700 backdrop-blur-sm rounded-lg p-4 shadow-xl dark:shadow-2xl dark:shadow-blue-900/50 hover:shadow-2xl transition-shadow transform hover:scale-105">
-                  <span className="text-xs font-bold uppercase tracking-widest text-emerald-100 mb-1">Actividades Completadas</span>
-                  <span className="text-5xl font-bold text-white">{actividadesCompletadas}</span>
+                <div className="poa-mobile-kpi-card flex flex-col bg-gradient-to-r from-emerald-500 to-emerald-600 dark:from-emerald-600 dark:to-emerald-700 backdrop-blur-sm rounded-lg p-4 shadow-xl dark:shadow-2xl dark:shadow-blue-900/50 hover:shadow-2xl transition-shadow transform hover:scale-105">
+                  <span className="poa-kpi-label text-xs font-bold uppercase tracking-widest text-emerald-100 mb-1">Actividades Completadas</span>
+                  <span className="poa-kpi-value text-5xl font-bold text-white">{actividadesCompletadas}</span>
                 </div>
-                <div className="flex flex-col bg-gradient-to-r from-amber-500 to-orange-500 dark:from-amber-600 dark:to-orange-600 backdrop-blur-sm rounded-lg p-4 shadow-xl dark:shadow-2xl dark:shadow-blue-900/50 hover:shadow-2xl transition-shadow transform hover:scale-105">
-                  <span className="text-xs font-bold uppercase tracking-widest text-amber-100 mb-1">Actividades Programadas</span>
-                  <span className="text-5xl font-bold text-white">{actividadesProgramadas}</span>
+                <div className="poa-mobile-kpi-card flex flex-col bg-gradient-to-r from-amber-500 to-orange-500 dark:from-amber-600 dark:to-orange-600 backdrop-blur-sm rounded-lg p-4 shadow-xl dark:shadow-2xl dark:shadow-blue-900/50 hover:shadow-2xl transition-shadow transform hover:scale-105">
+                  <span className="poa-kpi-label text-xs font-bold uppercase tracking-widest text-amber-100 mb-1">Actividades Programadas</span>
+                  <span className="poa-kpi-value text-5xl font-bold text-white">{actividadesProgramadas}</span>
                 </div>
               </div>
             </div>
@@ -232,18 +291,18 @@ const ActividadesPage = () => {
       {/* Indicadores de montos */}
       {!loading && !error && actividades && actividades.length > 0 && (
         <div className="w-full mb-4">
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <div className="flex-1 bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-lg shadow-lg p-4 text-white">
-              <p className="text-sm font-bold uppercase tracking-widest opacity-90">Monto Total</p>
-              <p className="text-3xl font-bold">Bs. {formatMoney(montoTotal)}</p>
+          <div className="poa-mobile-kpi-strip poa-mobile-kpi-strip-3 flex flex-col gap-3 sm:flex-row">
+            <div className="poa-mobile-kpi-card flex-1 bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-lg shadow-lg p-4 text-white">
+              <p className="poa-kpi-label text-sm font-bold uppercase tracking-widest opacity-90">Monto Total</p>
+              <p className="poa-kpi-value text-3xl font-bold">Bs. {formatMoney(montoTotal)}</p>
             </div>
-            <div className="flex-1 bg-gradient-to-r from-orange-500 to-orange-600 rounded-lg shadow-lg p-4 text-white">
-              <p className="text-sm font-bold uppercase tracking-widest opacity-90">Monto Función</p>
-              <p className="text-3xl font-bold">Bs. {formatMoney(montoTotalFuncion)}</p>
+            <div className="poa-mobile-kpi-card flex-1 bg-gradient-to-r from-orange-500 to-orange-600 rounded-lg shadow-lg p-4 text-white">
+              <p className="poa-kpi-label text-sm font-bold uppercase tracking-widest opacity-90">Monto Función</p>
+              <p className="poa-kpi-value text-3xl font-bold">Bs. {formatMoney(montoTotalFuncion)}</p>
             </div>
-            <div className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg shadow-lg p-4 text-white">
-              <p className="text-sm font-bold uppercase tracking-widest opacity-90">Monto Inversión</p>
-              <p className="text-3xl font-bold">Bs. {formatMoney(montoTotalInversion)}</p>
+            <div className="poa-mobile-kpi-card flex-1 bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg shadow-lg p-4 text-white">
+              <p className="poa-kpi-label text-sm font-bold uppercase tracking-widest opacity-90">Monto Inversión</p>
+              <p className="poa-kpi-value text-3xl font-bold">Bs. {formatMoney(montoTotalInversion)}</p>
             </div>
           </div>
         </div>
@@ -252,6 +311,8 @@ const ActividadesPage = () => {
       {showNueva && (
         <NuevaActividadModal
           objetivoId={objetivoEspecificoId}
+          documentoId={documentoId}
+          documentoEstado={documentoEstado}
           actividad={actividadEdit}
           onClose={() => { setActividadEdit(null); closeNueva(); }}
           onCreated={(a) => { setActividades(prev => [a, ...(prev || [])]); closeNueva(); toast.success('Actividad creada correctamente'); }}
@@ -271,21 +332,21 @@ const ActividadesPage = () => {
       {loading && <div className="text-blue-800">Cargando actividades...</div>}
       {error && <div className="text-red-600">{String(error)}</div>}
 
-      <div className="w-full overflow-auto border rounded shadow-lg">
-        <table className="w-full font-sans text-base leading-snug table-fixed border-collapse text-blue-900 dark:text-white">
+      <div className="poa-table-wrapper w-full overflow-auto border rounded shadow-lg">
+        <table className="poa-mobile-card-table w-full font-sans text-base leading-snug table-fixed border-collapse text-blue-900 dark:text-white">
           <thead>
-            <tr className="text-left font-sans text-base leading-snug bg-gradient-to-r from-blue-500/70 to-blue-600/70 dark:from-blue-700/70 dark:to-blue-800/70 text-white font-bold">
-              <th className="px-2 py-2 border border-blue-600 dark:border-blue-900 font-medium">Actividad o Programa</th>
-              <th className="px-2 py-2 border border-blue-600 dark:border-blue-900 font-medium">Responsable</th>
-              <th className="px-2 py-2 border border-blue-600 dark:border-blue-900 font-medium">Productos Esperados</th>
-              <th className="px-2 py-2 border border-blue-600 dark:border-blue-900 font-medium">Mes inicio</th>
-              <th className="px-2 py-2 border border-blue-600 dark:border-blue-900 font-medium">Mes fin</th>
-              <th className="px-2 py-2 border border-blue-600 dark:border-blue-900 font-medium">Descripcion del Indicador</th>
-              <th className="px-2 py-2 border border-blue-600 dark:border-blue-900 font-medium">Unidad</th>
-              <th className="px-2 py-2 border border-blue-600 dark:border-blue-900 font-medium">Linea Base</th>
-              <th className="px-2 py-2 border border-blue-600 dark:border-blue-900 font-medium">Meta</th>
-              <th className="px-2 py-2 border border-blue-600 dark:border-blue-900 font-medium">Función (Bs.)</th>
-              <th className="px-2 py-2 border border-blue-600 dark:border-blue-900 font-medium">Inversión (Bs.)</th>
+            <tr className="poa-thead poa-table-head-formal text-center font-sans text-base leading-snug font-bold">
+              <th className="px-2 py-2 font-medium">Actividad o Programa</th>
+              <th className="px-2 py-2 font-medium">Responsable</th>
+              <th className="px-2 py-2 font-medium">Productos Esperados</th>
+              <th className="px-2 py-2 font-medium">Mes inicio</th>
+              <th className="px-2 py-2 font-medium">Mes fin</th>
+              <th className="px-2 py-2 font-medium">Descripcion del Indicador</th>
+              <th className="px-2 py-2 font-medium">Unidad</th>
+              <th className="px-2 py-2 font-medium">Linea Base</th>
+              <th className="px-2 py-2 font-medium">Meta</th>
+              <th className="px-2 py-2 font-medium">Función (Bs.)</th>
+              <th className="px-2 py-2 font-medium">Inversión (Bs.)</th>
             </tr>
           </thead>
           <tbody className="font-sans text-base leading-snug">
@@ -306,7 +367,7 @@ const ActividadesPage = () => {
                   aria-selected={selectedActividad && selectedActividad.id === act.id ? 'true' : 'false'}
                   data-selected={selectedActividad && selectedActividad.id === act.id ? 'true' : 'false'}
                   className={`align-top transition transform duration-150 cursor-pointer hover:shadow-sm hover:-translate-y-0.5 ${selectedActividad && selectedActividad.id === act.id ? 'is-selected font-semibold shadow-md bg-blue-100 dark:bg-blue-900' : 'odd:bg-white even:bg-blue-50 dark:odd:bg-gray-800 dark:even:bg-gray-700'} text-blue-900 dark:text-white`}>
-                  <td className="px-2 py-2 border border-blue-300 dark:border-gray-600 align-top font-sans">
+                  <td data-label="Actividad" className="px-2 py-2 border border-blue-300 dark:border-gray-600 align-top font-sans">
                     <div className={`${selectedActividad && selectedActividad.id === act.id ? 'table-cell-expand' : 'table-cell-clamp'}`}>
                       <span className="inline-block px-2 py-0.5 text-xs font-bold bg-blue-500 text-white rounded mr-2">{act.codigo}</span>
                       <span className="font-medium">{act.nombre}</span>
@@ -327,13 +388,13 @@ const ActividadesPage = () => {
                       </div>
                     )}
                   </td>
-                  <td className="px-2 py-2 border border-blue-300 dark:border-gray-600 align-top font-sans">
+                  <td data-label="Responsable" className="px-2 py-2 border border-blue-300 dark:border-gray-600 align-top font-sans">
                     <div className={`${selectedActividad && selectedActividad.id === act.id ? 'table-cell-expand' : 'table-cell-clamp'}`}>
                       {act.responsable || '—'}
                     </div>
                   </td>
-                  <td className="px-2 py-2 border border-blue-300 dark:border-gray-600 align-top font-sans"><div className={`${selectedActividad && selectedActividad.id === act.id ? 'table-cell-expand' : 'table-cell-clamp'}`}>{act.productos_esperados ? (typeof act.productos_esperados === 'object' ? JSON.stringify(act.productos_esperados) : act.productos_esperados) : '—'}</div></td>
-                  <td className="px-2 py-2 border border-blue-300 dark:border-gray-600 align-top font-sans text-center">
+                  <td data-label="Productos" className="px-2 py-2 border border-blue-300 dark:border-gray-600 align-top font-sans"><div className={`${selectedActividad && selectedActividad.id === act.id ? 'table-cell-expand' : 'table-cell-clamp'}`}>{act.productos_esperados ? (typeof act.productos_esperados === 'object' ? JSON.stringify(act.productos_esperados) : act.productos_esperados) : '—'}</div></td>
+                  <td data-label="Mes inicio" className="px-2 py-2 border border-blue-300 dark:border-gray-600 align-top font-sans text-center">
                     <div className={`${selectedActividad && selectedActividad.id === act.id ? 'table-cell-expand' : 'table-cell-clamp'}`}>
                       {mesInicio && mesInicio !== '—' ? (
                         <span className="inline-block px-2 py-1 text-xs font-semibold bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded">
@@ -342,7 +403,7 @@ const ActividadesPage = () => {
                       ) : '—'}
                     </div>
                   </td>
-                  <td className="px-2 py-2 border border-blue-300 dark:border-gray-600 align-top font-sans text-center">
+                  <td data-label="Mes fin" className="px-2 py-2 border border-blue-300 dark:border-gray-600 align-top font-sans text-center">
                     <div className={`${selectedActividad && selectedActividad.id === act.id ? 'table-cell-expand' : 'table-cell-clamp'}`}>
                       {mesFin && mesFin !== '—' ? (
                         <span className="inline-block px-2 py-1 text-xs font-semibold bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200 rounded">
@@ -351,7 +412,7 @@ const ActividadesPage = () => {
                       ) : '—'}
                     </div>
                   </td>
-                  <td className="px-2 py-1 border border-blue-300 dark:border-gray-600 align-top">{
+                  <td data-label="Indicador" className="px-2 py-1 border border-blue-300 dark:border-gray-600 align-top">{
                     // intentar varias claves posibles para la descripción
                     <div className={`${selectedActividad && selectedActividad.id === act.id ? 'table-cell-expand' : 'table-cell-clamp'}`}>{getIndicadorField(act, [
                       'indicador.descripcion',
@@ -362,7 +423,7 @@ const ActividadesPage = () => {
                       'indicador_descripcion_text'
                     ])}</div>
                   }</td>
-                  <td className="px-2 py-1 border border-blue-300 dark:border-gray-600 align-top">{
+                  <td data-label="Unidad" className="px-2 py-1 border border-blue-300 dark:border-gray-600 align-top">{
                     <div className={`${selectedActividad && selectedActividad.id === act.id ? 'table-cell-expand' : 'table-cell-clamp'}`}>{getIndicadorField(act, [
                       'indicador.unidad',
                       'indicador.indicador_unidad',
@@ -371,7 +432,7 @@ const ActividadesPage = () => {
                       'unidad_medida'
                     ])}</div>
                   }</td>
-                  <td className="px-2 py-2 border border-blue-300 dark:border-gray-600 align-top text-center">
+                  <td data-label="Linea base" className="px-2 py-2 border border-blue-300 dark:border-gray-600 align-top text-center">
                     <div className={`${selectedActividad && selectedActividad.id === act.id ? 'table-cell-expand' : 'table-cell-clamp'}`}>
                       {getIndicadorField(act, [
                         'indicador.linea_base',
@@ -382,7 +443,7 @@ const ActividadesPage = () => {
                       ])}
                     </div>
                   </td>
-                  <td className="px-2 py-2 border border-blue-300 dark:border-gray-600 align-top text-center">
+                  <td data-label="Meta" className="px-2 py-2 border border-blue-300 dark:border-gray-600 align-top text-center">
                     <div className={`${selectedActividad && selectedActividad.id === act.id ? 'table-cell-expand' : 'table-cell-clamp'}`}>
                       {getIndicadorField(act, [
                         'indicador.meta',
@@ -392,10 +453,10 @@ const ActividadesPage = () => {
                       ])}
                     </div>
                   </td>
-                  <td className="px-2 py-2 border border-blue-300 dark:border-gray-600 align-top text-right">
+                  <td data-label="Funcion Bs." className="px-2 py-2 border border-blue-300 dark:border-gray-600 align-top text-right">
                     {formatMoney(act.monto_funcion || act.monto_funcion_valor || act.monto_funcion_bs)}
                   </td>
-                  <td className="px-2 py-2 border border-blue-300 dark:border-gray-600 align-top text-right">
+                  <td data-label="Inversion Bs." className="px-2 py-2 border border-blue-300 dark:border-gray-600 align-top text-right">
                     {formatMoney(act.monto_inversion || act.monto_inversion_valor || act.monto_inversion_bs)}
                   </td>
                 </tr>

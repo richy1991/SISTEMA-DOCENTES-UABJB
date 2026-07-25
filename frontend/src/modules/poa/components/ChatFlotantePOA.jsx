@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
-import { MessageCircle, SendHorizontal, X, ChevronDown, Search, Trash2, Ban, MoreVertical } from 'lucide-react';
+import { MessageCircle, SendHorizontal, X, ChevronDown, Search, Trash2, Ban, MoreVertical, Check, CheckCheck } from 'lucide-react';
 import Dialog from './base/Dialog';
 import {
   getChatContactosPOA,
@@ -12,6 +12,7 @@ import {
   getEstadoBloqueoChatPOA,
   bloquearUsuarioChatPOA,
   desbloquearUsuarioChatPOA,
+  getCurrentUserPOA,
 } from '../../../apis/poa.api';
 
 const toNumericId = (value) => {
@@ -41,6 +42,33 @@ const getStoredUser = () => {
 
 const formatNombre = (contacto) => contacto?.nombre_completo || contacto?.nombre || contacto?.username || 'Usuario';
 
+const resolveCount = (value) => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
+};
+
+const getUnreadFromContact = (contacto) => resolveCount(
+  contacto?.no_leidos ?? contacto?.mensajes_no_leidos ?? contacto?.unread_count,
+);
+
+const resolveUnreadTotal = (data) => {
+  const direct = resolveCount(data?.no_leidos_total ?? data?.mensajes_no_leidos_total ?? data?.unread_count);
+  if (direct) return direct;
+
+  const contactos = Array.isArray(data?.contactos) ? data.contactos : [];
+  const recientes = Array.isArray(data?.contactos_recientes) ? data.contactos_recientes : [];
+  const merged = [...contactos, ...recientes];
+  const seen = new Set();
+  return merged.reduce((total, contacto) => {
+    const id = resolveUserId(contacto);
+    if (!id || seen.has(id)) return total;
+    seen.add(id);
+    return total + getUnreadFromContact(contacto);
+  }, 0);
+};
+
+const formatBadgeCount = (count) => (count > 99 ? '99+' : String(count));
+
 const isConnectionRefused = (err) => {
   const code = err?.code || err?.cause?.code;
   const message = String(err?.message || '').toLowerCase();
@@ -61,9 +89,9 @@ function ChatFlotantePOA({ currentUser }) {
   const [contactosSugeridos, setContactosSugeridos] = useState([]);
   const [contactosRecientes, setContactosRecientes] = useState([]);
   const [contactoDefault, setContactoDefault] = useState(null);
-  const [requiereSeleccion, setRequiereSeleccion] = useState(false);
   const [selectedPeer, setSelectedPeer] = useState(null);
   const [mensajes, setMensajes] = useState([]);
+  const [mensajesNoLeidos, setMensajesNoLeidos] = useState(0);
   const [loadingMensajes, setLoadingMensajes] = useState(false);
   const [texto, setTexto] = useState('');
   const [sending, setSending] = useState(false);
@@ -80,6 +108,7 @@ function ChatFlotantePOA({ currentUser }) {
   const searchContainerRef = useRef(null);
   const chatListRef = useRef(null);
   const actionsMenuRef = useRef(null);
+  const searchInputRef = useRef(null);
   const messageInputRef = useRef(null);
   const panelRef = useRef(null);
   const dragStateRef = useRef(null);
@@ -89,10 +118,10 @@ function ChatFlotantePOA({ currentUser }) {
   const [localCurrentUser, setLocalCurrentUser] = useState(currentUserSnapshot);
   const currentUserId = useMemo(() => resolveUserId(localCurrentUser), [localCurrentUser]);
   const currentUsername = useMemo(() => String(localCurrentUser?.username || '').toLowerCase(), [localCurrentUser]);
-  const peerActual = selectedPeer || contactoDefault || (alertaAsignacion ? null : contactosRecientes[0] || contactosSugeridos[0] || null);
+  const peerActual = selectedPeer || contactoDefault || null;
   const peerActualId = resolveUserId(peerActual);
-  const chatsActivos = useMemo(() => {
-    const pool = [...contactosRecientes, ...contactosSugeridos];
+  const chatsConConversacion = useMemo(() => {
+    const pool = contactosRecientes;
     const seen = new Set();
     const unique = [];
     for (const contacto of pool) {
@@ -102,7 +131,7 @@ function ChatFlotantePOA({ currentUser }) {
       unique.push(contacto);
     }
     return unique;
-  }, [contactosRecientes, contactosSugeridos]);
+  }, [contactosRecientes]);
 
   const formatHora = useCallback((fecha) => {
     if (!fecha) return '';
@@ -111,11 +140,57 @@ function ChatFlotantePOA({ currentUser }) {
     return parsed.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' });
   }, []);
 
-  const focusMessageInput = useCallback(() => {
+  const focusMessageInput = useCallback((delay = 0) => {
+    const focus = () => {
+      const input = messageInputRef.current;
+      if (!input || input.disabled) return;
+      input.focus({ preventScroll: true });
+    };
+    window.requestAnimationFrame(focus);
+    if (delay > 0) window.setTimeout(focus, delay);
+  }, []);
+
+  const focusSearchInput = useCallback(() => {
     window.requestAnimationFrame(() => {
-      messageInputRef.current?.focus();
+      searchInputRef.current?.focus({ preventScroll: true });
     });
   }, []);
+
+  const cargarNoLeidos = useCallback(async () => {
+    try {
+      const res = await getChatContactosPOA();
+      setMensajesNoLeidos(resolveUnreadTotal(res?.data || {}));
+    } catch (err) {
+      if (isAuthExpired(err)) setPollingPaused(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (currentUserId) return undefined;
+
+    let active = true;
+    const fetchCurrentUser = async () => {
+      try {
+        const res = await getCurrentUserPOA();
+        if (active) setLocalCurrentUser(res.data || null);
+      } catch {
+        // El chat seguira funcionando cuando exista sesion valida.
+      }
+    };
+
+    fetchCurrentUser();
+    return () => {
+      active = false;
+    };
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (!currentUserId) return undefined;
+
+    cargarNoLeidos();
+    const intervalId = window.setInterval(cargarNoLeidos, open ? 6000 : 10000);
+    return () => window.clearInterval(intervalId);
+  }, [cargarNoLeidos, currentUserId, open]);
 
   const closeChat = useCallback(() => {
     setOpen(false);
@@ -158,6 +233,7 @@ function ChatFlotantePOA({ currentUser }) {
         );
       });
       setMensajes(listFiltered);
+      if (!silent) cargarNoLeidos();
       setPollingPaused(false);
       notifiedConnectionRef.current = false;
     } catch (err) {
@@ -183,7 +259,7 @@ function ChatFlotantePOA({ currentUser }) {
     } finally {
       if (!silent) setLoadingMensajes(false);
     }
-  }, [currentUserId]);
+  }, [cargarNoLeidos, currentUserId]);
 
   const cargarContactos = async () => {
     setLoadingContactos(true);
@@ -192,19 +268,22 @@ function ChatFlotantePOA({ currentUser }) {
       const data = res.data || {};
       const list = Array.isArray(data.contactos) ? data.contactos : [];
       const recientes = Array.isArray(data.contactos_recientes) ? data.contactos_recientes : [];
-      const defaultContact = data.contacto_default || null;
       const alerta = data.alerta_asignacion || null;
+      const mantieneChatDirectorElaborador = ['director', 'elaborador'].includes(data.rol_contactos);
+      const defaultContact = alerta
+        ? null
+        : (mantieneChatDirectorElaborador ? data.contacto_default : recientes[0]) || null;
+      setMensajesNoLeidos(resolveUnreadTotal(data));
       setContactosSugeridos(list);
       setContactosRecientes(recientes);
       setContactoDefault(defaultContact);
-      setRequiereSeleccion(Boolean(data.requiere_seleccion));
       setAlertaAsignacion(alerta);
 
       const autoSelected = alerta
         ? null
         : (defaultContact && resolveUserId(defaultContact)
           ? defaultContact
-          : (recientes.length === 1 ? recientes[0] : (list.length === 1 ? list[0] : null)));
+          : (recientes.length === 1 ? recientes[0] : null));
 
       if (autoSelected && !alerta) {
         setSelectedPeer(autoSelected);
@@ -227,14 +306,13 @@ function ChatFlotantePOA({ currentUser }) {
       setContactosSugeridos([]);
       setContactosRecientes([]);
       setContactoDefault(null);
-      setRequiereSeleccion(false);
       setAlertaAsignacion(null);
       setSelectedPeer(null);
       setMensajes([]);
       if (isConnectionRefused(err)) {
         setPollingPaused(true);
         if (!notifiedConnectionRef.current) {
-          toast.error('Servidor desconectado. Verifica que Django esté ejecutándose en 127.0.0.1:8000.');
+          toast.error('Servidor desconectado. Verifica que Django esté ejecutándose y que la URL del backend sea correcta.');
           notifiedConnectionRef.current = true;
         }
       } else {
@@ -353,11 +431,34 @@ function ChatFlotantePOA({ currentUser }) {
     if (!peerId) return;
     setSelectedPeer(contacto);
     setBloqueoEstado({ bloqueado_por_mi: false, bloqueado_por_peer: false });
+    setShowSearch(false);
     setShowChatList(false);
     setShowActionsMenu(false);
+    setSearch('');
+    setSearchResults([]);
     await fetchEstadoBloqueo(peerId);
     await fetchMensajes(peerId, { silent: false });
-    focusMessageInput();
+    focusMessageInput(80);
+  };
+
+  const registrarChatReciente = (contacto, ultimoMensaje) => {
+    const peerId = resolveUserId(contacto);
+    if (!peerId) return;
+
+    setContactosRecientes((prev) => {
+      const actualizado = {
+        ...contacto,
+        id: peerId,
+        ultimo_mensaje: ultimoMensaje,
+        fecha_ultimo_mensaje: new Date().toISOString(),
+        no_leidos: 0,
+      };
+
+      return [
+        actualizado,
+        ...prev.filter((item) => resolveUserId(item) !== peerId),
+      ];
+    });
   };
 
   useEffect(() => {
@@ -369,6 +470,7 @@ function ChatFlotantePOA({ currentUser }) {
     const peerId = resolveUserId(peerActual);
     if (!peerId) {
       toast.error('Selecciona un contacto.');
+      focusMessageInput(40);
       return;
     }
     try {
@@ -384,27 +486,32 @@ function ChatFlotantePOA({ currentUser }) {
       toast.error(err?.response?.data?.detail || 'No se pudo actualizar el bloqueo.');
     } finally {
       setShowActionsMenu(false);
+      focusMessageInput(80);
     }
   };
 
   const handleEnviar = async () => {
     const textoLimpio = String(texto || '').trim();
-    const peerId = resolveUserId(selectedPeer || contactoDefault || contactosRecientes[0] || contactosSugeridos[0]);
+    const peerId = resolveUserId(selectedPeer || contactoDefault);
 
     if (!peerId) {
       toast.error('No hay un contacto disponible para chat.');
+      focusMessageInput(40);
       return;
     }
     if (bloqueoEstado.bloqueado_por_mi) {
       toast.error('Desbloquea al usuario para enviar mensajes.');
+      focusMessageInput(40);
       return;
     }
     if (bloqueoEstado.bloqueado_por_peer) {
       toast.error('Este usuario te bloqueó y no puede recibir mensajes.');
+      focusMessageInput(40);
       return;
     }
     if (textoLimpio.length < 2) {
       toast.error('Escribe un mensaje valido.');
+      focusMessageInput(40);
       return;
     }
 
@@ -412,11 +519,11 @@ function ChatFlotantePOA({ currentUser }) {
     try {
       await enviarMensajeChatPOA(peerId, textoLimpio);
       setTexto('');
+      const peer = selectedPeer || contactoDefault || null;
       if (!selectedPeer) {
-        const pool = [...contactosRecientes, ...contactosSugeridos];
-        const peer = selectedPeer || contactoDefault || pool.find((c) => resolveUserId(c) === peerId) || null;
         if (peer) setSelectedPeer(peer);
       }
+      registrarChatReciente(peer, textoLimpio);
       await fetchMensajes(peerId, { silent: true });
     } catch (err) {
       if (isConnectionRefused(err)) {
@@ -430,21 +537,22 @@ function ChatFlotantePOA({ currentUser }) {
       toast.error(err?.response?.data?.detail || 'No se pudo enviar el mensaje.');
     } finally {
       setSending(false);
-      focusMessageInput();
+      focusMessageInput(120);
     }
   };
 
   const handleVaciarChat = async () => {
-    const peerId = resolveUserId(selectedPeer || contactoDefault || contactosRecientes[0] || contactosSugeridos[0]);
+    const peerId = resolveUserId(selectedPeer || contactoDefault);
     if (!peerId) {
       toast.error('Selecciona un contacto para vaciar el chat.');
+      focusMessageInput(40);
       return;
     }
     setShowVaciarDialog(true);
   };
 
   const confirmarVaciarChat = async () => {
-    const peerId = resolveUserId(selectedPeer || contactoDefault || contactosRecientes[0] || contactosSugeridos[0]);
+    const peerId = resolveUserId(selectedPeer || contactoDefault);
     if (!peerId) return;
     try {
       await vaciarChatPOA(peerId);
@@ -455,36 +563,57 @@ function ChatFlotantePOA({ currentUser }) {
       toast.error(err?.response?.data?.detail || 'No se pudo vaciar el chat.');
     } finally {
       setShowChatList(false);
+      setShowActionsMenu(false);
+      setShowVaciarDialog(false);
+      focusMessageInput(100);
     }
   };
 
   const listaVisible = search.trim().length >= 2 ? searchResults : null;
+  const totalNoLeidos = resolveCount(mensajesNoLeidos);
+  const badgeNoLeidos = formatBadgeCount(totalNoLeidos);
 
   const renderContacto = (contacto, extraClass = '') => {
     const id = resolveUserId(contacto);
     const activo = id && id === peerActualId;
+    const inicial = formatNombre(contacto).trim().charAt(0).toUpperCase() || '?';
     return (
       <button
         key={id || String(contacto?.username || Math.random())}
         onClick={() => seleccionarContacto(contacto)}
-        className={`w-full text-left px-3 py-2 rounded-xl border transition-all flex items-center justify-between gap-2 ${activo ? 'bg-cyan-700/35 border-cyan-500/60 text-white' : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-100'} ${extraClass}`}
+        className={`poa-chat-contact ${activo ? 'is-active' : ''} ${extraClass}`}
       >
-        <div className="min-w-0">
+        <span className="poa-chat-contact-avatar">{inicial}</span>
+        <div className="poa-chat-contact-body">
           <p className="text-sm font-semibold truncate">{formatNombre(contacto)}</p>
-          <p className="text-[11px] text-slate-400 truncate">@{contacto?.username || 'sin-usuario'}</p>
+          <p className="poa-chat-contact-meta">@{contacto?.username || 'sin-usuario'}</p>
           {contacto?.ultimo_mensaje && (
-            <p className="text-[11px] text-slate-400 truncate mt-1">{contacto.ultimo_mensaje}</p>
+            <p className="poa-chat-contact-meta mt-1">{contacto.ultimo_mensaje}</p>
           )}
         </div>
-        <ChevronDown size={14} className={`shrink-0 ${activo ? 'text-cyan-200 rotate-180' : 'text-slate-500'}`} />
+        <ChevronDown size={14} className={`poa-chat-contact-chevron ${activo ? 'rotate-180' : ''}`} />
       </button>
     );
   };
 
   useEffect(() => {
     if (!open) return;
-    focusMessageInput();
-  }, [open, peerActualId, focusMessageInput]);
+    if (showVaciarDialog) return;
+    if (showSearch) {
+      focusSearchInput();
+      return;
+    }
+    focusMessageInput(120);
+  }, [open, peerActualId, loadingContactos, showSearch, showChatList, showActionsMenu, showVaciarDialog, focusMessageInput, focusSearchInput]);
+
+  const handlePanelClick = useCallback((event) => {
+    if (!open || showVaciarDialog) return;
+    const interactive = event.target.closest('button,input,textarea,select,a,[data-no-refocus="true"]');
+    if (interactive) return;
+    setShowChatList(false);
+    setShowActionsMenu(false);
+    if (!showSearch) focusMessageInput(20);
+  }, [focusMessageInput, open, showSearch, showVaciarDialog]);
 
   const handlePanelPointerDown = (event) => {
     if (event.button !== 0) return;
@@ -515,6 +644,7 @@ function ChatFlotantePOA({ currentUser }) {
     <>
       <button
         onClick={() => {
+          const shouldFocus = !open;
           setOpen((prev) => {
             const next = !prev;
             if (!next) {
@@ -524,22 +654,30 @@ function ChatFlotantePOA({ currentUser }) {
             }
             return next;
           });
+          if (shouldFocus) focusMessageInput(120);
         }}
-        className="fixed bottom-[5.5rem] right-32 w-14 h-14 rounded-full shadow-2xl transition-all duration-300 hover:scale-110 flex items-center justify-center text-white z-[121] bg-gradient-to-br from-cyan-500 via-cyan-600 to-blue-700 border-2 border-white/25"
+        className="poa-chat-button fixed bottom-6 right-6 w-14 h-14 rounded-full transition-all duration-300 hover:scale-110 flex items-center justify-center text-white z-[121]"
         title="Mensajes"
+        aria-label={totalNoLeidos > 0 ? `Mensajes, ${badgeNoLeidos} sin leer` : 'Mensajes'}
       >
         <MessageCircle size={22} />
+        {totalNoLeidos > 0 && (
+          <span className="poa-chat-unread-badge">
+            {badgeNoLeidos}
+          </span>
+        )}
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-[122] pointer-events-none">
+        <div className="poa-chat-layer fixed inset-0 z-[122] pointer-events-none">
           <div
             ref={panelRef}
+            onClick={handlePanelClick}
             onPointerDown={handlePanelPointerDown}
             style={panelPosition ? { left: panelPosition.left, top: panelPosition.top } : undefined}
-            className={`absolute w-[390px] max-w-[calc(100vw-1.5rem)] h-[640px] max-h-[calc(100vh-8rem)] rounded-3xl border border-cyan-300/30 bg-slate-950/95 overflow-hidden shadow-2xl flex flex-col pointer-events-auto ${panelPosition ? '' : 'right-6 bottom-24'}`}
+            className={`poa-chat-panel absolute w-[390px] max-w-[calc(100vw-1.5rem)] h-[640px] max-h-[calc(100vh-8rem)] rounded-3xl overflow-hidden flex flex-col pointer-events-auto ${panelPosition ? '' : 'right-6 bottom-24'}`}
           >
-            <div data-drag-handle="true" className={`relative z-20 border-b border-slate-700 bg-gradient-to-r from-cyan-600 to-teal-600 ${isDraggingPanel ? 'cursor-grabbing' : 'cursor-grab'}`}>
+            <div data-drag-handle="true" className={`poa-chat-header relative z-20 ${isDraggingPanel ? 'cursor-grabbing' : 'cursor-grab'}`}>
               <div data-drag-handle="true" className="px-4 py-3 flex items-center gap-2 select-none">
                 <MessageCircle size={16} className="text-white" />
                 <div className="text-white font-bold text-sm truncate">
@@ -548,10 +686,17 @@ function ChatFlotantePOA({ currentUser }) {
                 <div data-no-drag="true" className="ml-auto flex items-center gap-1">
                   <button
                     onClick={() => {
-                      setShowSearch((prev) => !prev);
+                      setShowSearch((prev) => {
+                        const next = !prev;
+                        window.setTimeout(() => {
+                          if (next) focusSearchInput();
+                          else focusMessageInput(40);
+                        }, 0);
+                        return next;
+                      });
                       setShowChatList(false);
                     }}
-                    className="w-8 h-8 rounded-lg text-white hover:bg-white/20 flex items-center justify-center"
+                    className="poa-chat-header-action"
                     title="Buscar usuario"
                   >
                     <Search size={15} />
@@ -561,19 +706,20 @@ function ChatFlotantePOA({ currentUser }) {
                       onClick={() => {
                         setShowChatList((prev) => !prev);
                         setShowSearch(false);
+                        focusMessageInput(40);
                       }}
-                      className="w-8 h-8 rounded-lg text-white hover:bg-white/20 flex items-center justify-center"
+                      className="poa-chat-header-action"
                       title="Historial de chats"
                     >
                       <ChevronDown size={15} className={showChatList ? 'rotate-180 transition-transform' : 'transition-transform'} />
                     </button>
                     {showChatList && (
-                      <div className="absolute right-0 top-10 w-72 max-h-64 overflow-y-auto rounded-xl border border-slate-700 bg-slate-950 shadow-2xl p-2 space-y-2 z-[140]">
-                        {loadingContactos && <p className="text-xs text-slate-400 px-2 py-1">Cargando chats...</p>}
-                        {!loadingContactos && chatsActivos.length === 0 && (
-                          <p className="text-xs text-slate-400 px-2 py-1">No hay chats activos.</p>
+                      <div className="poa-chat-popover absolute right-0 top-10 w-72 max-h-64 overflow-y-auto rounded-xl p-2 space-y-2 z-[140]">
+                        {loadingContactos && <p className="poa-chat-popover-empty">Cargando chats...</p>}
+                        {!loadingContactos && chatsConConversacion.length === 0 && (
+                          <p className="poa-chat-popover-empty">No hay chats pendientes.</p>
                         )}
-                        {!loadingContactos && chatsActivos.map((contacto) => renderContacto(contacto))}
+                        {!loadingContactos && chatsConConversacion.map((contacto) => renderContacto(contacto))}
                       </div>
                     )}
                   </div>
@@ -583,23 +729,24 @@ function ChatFlotantePOA({ currentUser }) {
                         setShowActionsMenu((prev) => !prev);
                         setShowChatList(false);
                         setShowSearch(false);
+                        focusMessageInput(40);
                       }}
-                      className="w-8 h-8 rounded-lg text-white hover:bg-white/20 flex items-center justify-center"
+                      className="poa-chat-header-action"
                       title="Opciones"
                     >
                       <MoreVertical size={15} />
                     </button>
                     {showActionsMenu && (
-                      <div className="absolute right-0 top-10 w-52 rounded-xl border border-slate-700 bg-slate-950 shadow-2xl overflow-hidden z-[140]">
+                      <div className="poa-chat-popover absolute right-0 top-10 w-52 rounded-xl overflow-hidden z-[140]">
                         <button
                           onClick={handleVaciarChat}
-                          className="w-full px-3 py-2 text-left text-sm text-slate-100 hover:bg-slate-800 flex items-center gap-2"
+                          className="poa-chat-menu-item"
                         >
                           <Trash2 size={14} /> Vaciar chat
                         </button>
                         <button
                           onClick={handleToggleBloqueo}
-                          className="w-full px-3 py-2 text-left text-sm text-amber-300 hover:bg-amber-500/10 flex items-center gap-2"
+                          className="poa-chat-menu-item is-warning"
                         >
                           <Ban size={14} /> {bloqueoEstado.bloqueado_por_mi ? 'Desbloquear usuario' : 'Bloquear usuario'}
                         </button>
@@ -608,7 +755,7 @@ function ChatFlotantePOA({ currentUser }) {
                   </div>
                   <button
                     onClick={closeChat}
-                    className="w-8 h-8 rounded-lg text-white hover:bg-white/20 flex items-center justify-center"
+                    className="poa-chat-header-action"
                     title="Cerrar"
                   >
                     <X size={16} />
@@ -618,13 +765,13 @@ function ChatFlotantePOA({ currentUser }) {
 
               {alertaAsignacion && (
                 <div className="px-3 pb-3">
-                  <div className="rounded-2xl border border-amber-500/40 bg-amber-950/80 px-3 py-3 text-amber-100 shadow-xl">
+                  <div className="poa-chat-alert rounded-2xl px-3 py-3">
                     <p className="text-sm font-bold">{alertaAsignacion.titulo}</p>
-                    <p className="text-xs text-amber-100/85 mt-1 leading-relaxed">{alertaAsignacion.mensaje}</p>
+                    <p className="poa-chat-alert-text mt-1">{alertaAsignacion.mensaje}</p>
                     <button
                       type="button"
                       onClick={() => navigate(alertaAsignacion.link || '/poa/accesos')}
-                      className="mt-3 inline-flex items-center justify-center rounded-xl bg-amber-400 px-3 py-2 text-sm font-bold text-slate-950 hover:bg-amber-300 transition-colors"
+                      className="poa-chat-alert-action"
                     >
                       {alertaAsignacion.texto_link || 'Asignar'}
                     </button>
@@ -635,21 +782,22 @@ function ChatFlotantePOA({ currentUser }) {
               {showSearch && (
                 <div className="px-3 pb-3" ref={searchContainerRef}>
                   <div className="relative">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <Search size={14} className="poa-chat-search-icon absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
+                      ref={searchInputRef}
                       value={search}
                       onChange={(e) => handleBuscar(e.target.value)}
                       placeholder="Buscar usuario por nombre o usuario"
-                      className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-sm outline-none focus:border-cyan-500"
+                      className="poa-chat-search-input"
                     />
                   </div>
-                  {searching && <p className="text-xs text-cyan-100/80 mt-2">Buscando...</p>}
+                  {searching && <p className="poa-chat-search-status mt-2">Buscando...</p>}
                   {search.trim().length >= 2 && (
                     <div className="mt-2 max-h-44 overflow-y-auto pr-1 space-y-2">
                       {listaVisible.length > 0 ? (
                         listaVisible.map((contacto) => renderContacto(contacto))
                       ) : (
-                        <p className="text-xs text-cyan-100/80">Sin resultados.</p>
+                        <p className="poa-chat-search-status">Sin resultados.</p>
                       )}
                     </div>
                   )}
@@ -658,24 +806,34 @@ function ChatFlotantePOA({ currentUser }) {
 
             </div>
 
-            <div className="relative flex-1 overflow-y-auto p-3 bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.14)_1px,transparent_1px)] bg-[size:14px_14px]">
+            <div className="poa-chat-body relative flex-1 overflow-y-auto p-3">
               {!peerActual && !loadingContactos && (
-                <p className="text-xs text-slate-300 bg-slate-900/70 inline-block px-2 py-1 rounded">Selecciona un contacto para ver el chat.</p>
+                <p className="poa-chat-empty">Selecciona un contacto para ver el chat.</p>
               )}
-              {peerActual && loadingMensajes && <p className="text-xs text-slate-300">Cargando mensajes...</p>}
+              {peerActual && loadingMensajes && <p className="poa-chat-empty">Cargando mensajes...</p>}
               {peerActual && !loadingMensajes && mensajes.length === 0 && (
-                <p className="text-xs text-slate-300 bg-slate-900/70 inline-block px-2 py-1 rounded">No hay mensajes todavía.</p>
+                <p className="poa-chat-empty">No hay mensajes todavía.</p>
               )}
               {mensajes.map((msg) => {
                 const autorId = resolveUserId(msg?.emisor || msg?.autor);
                 const autorUsername = String(msg?.emisor_username || msg?.autor_username || '').toLowerCase();
                 const esMio = (currentUserId && autorId === currentUserId) || (!!currentUsername && autorUsername === currentUsername);
+                const mensajeLeido = Boolean(msg?.leido || msg?.leido_en);
+                const mensajeEntregado = msg?.entregado !== false;
                 return (
                   <div key={msg.id} className={`mb-2 flex ${esMio ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[82%] rounded-2xl px-3 py-2 border ${esMio ? 'bg-cyan-600 text-white border-cyan-500' : 'bg-white text-slate-900 border-slate-200'}`}>
+                    <div className={`poa-chat-bubble ${esMio ? 'is-mine' : 'is-peer'}`}>
                       <p className="text-sm break-words">{msg?.texto}</p>
-                      <p className={`text-[10px] mt-1 text-right ${esMio ? 'text-cyan-100/90' : 'text-slate-500'}`}>
+                      <p className="poa-chat-time">
                         {formatHora(msg?.fecha)}
+                        {esMio && (
+                          <span
+                            className={`poa-chat-status ${mensajeLeido ? 'is-read' : ''}`}
+                            title={mensajeLeido ? 'Leido' : 'Entregado'}
+                          >
+                            {mensajeLeido ? <CheckCheck size={13} /> : (mensajeEntregado ? <Check size={13} /> : null)}
+                          </span>
+                        )}
                       </p>
                     </div>
                   </div>
@@ -684,7 +842,7 @@ function ChatFlotantePOA({ currentUser }) {
 
               {peerActual && (bloqueoEstado.bloqueado_por_mi || bloqueoEstado.bloqueado_por_peer) && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none px-6">
-                  <div className="max-w-xs rounded-xl border border-amber-600/50 bg-amber-950/85 text-amber-100 text-center text-sm px-4 py-3 shadow-xl">
+                  <div className="poa-chat-blocked">
                     {bloqueoEstado.bloqueado_por_peer
                       ? `${formatNombre(peerActual)} te bloqueo.`
                       : 'Bloqueado.'}
@@ -693,7 +851,7 @@ function ChatFlotantePOA({ currentUser }) {
               )}
             </div>
 
-            <div className="p-3 border-t border-slate-700 bg-slate-900">
+            <div className="poa-chat-composer p-3">
               <div className="flex items-center gap-2">
                 <input
                   ref={messageInputRef}
@@ -716,9 +874,9 @@ function ChatFlotantePOA({ currentUser }) {
                     sending ||
                     bloqueoEstado.bloqueado_por_mi ||
                     bloqueoEstado.bloqueado_por_peer ||
-                    (!peerActual && contactosSugeridos.length === 0 && contactosRecientes.length === 0)
+                    !peerActual
                   }
-                  className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 text-sm outline-none focus:border-cyan-500 disabled:opacity-50"
+                  className="poa-chat-input"
                 />
                 <button
                   onClick={handleEnviar}
@@ -726,9 +884,9 @@ function ChatFlotantePOA({ currentUser }) {
                     sending ||
                     bloqueoEstado.bloqueado_por_mi ||
                     bloqueoEstado.bloqueado_por_peer ||
-                    (!peerActual && contactosSugeridos.length === 0 && contactosRecientes.length === 0)
+                    !peerActual
                   }
-                  className="w-10 h-10 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white flex items-center justify-center"
+                  className="poa-chat-send"
                 >
                   <SendHorizontal size={16} />
                 </button>
@@ -746,8 +904,14 @@ function ChatFlotantePOA({ currentUser }) {
         confirmText="Aceptar"
         cancelText="Cancelar"
         onConfirm={confirmarVaciarChat}
-        onCancel={() => setShowVaciarDialog(false)}
-        onClose={() => setShowVaciarDialog(false)}
+        onCancel={() => {
+          setShowVaciarDialog(false);
+          focusMessageInput(100);
+        }}
+        onClose={() => {
+          setShowVaciarDialog(false);
+          focusMessageInput(100);
+        }}
       />
     </>
   );

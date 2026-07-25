@@ -1,13 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { getObjetivosEspecificos, deleteObjetivo, getDocumentoPOAPorId, getDocumentosPOAEncabezados, getActividadesPorObjetivo } from '../../../apis/poa.api';
-import { DEFAULT_ENTIDAD } from '../config/defaults';
+import { getObjetivosEspecificos, deleteObjetivo, getDocumentoPOAPorId, getDocumentosPOAEncabezados, getActividadesPorObjetivo, crearSolicitudCambioPOA } from '../../../apis/poa.api';
 import NuevoObjetivoModal from '../components/NuevoObjetivoModal';
 import IconButton from '../components/IconButton';
 import Dialog from '../components/base/Dialog';
-import { FaEdit, FaTrash } from 'react-icons/fa';
-import { FaBullseye, FaCoins, FaTasks } from 'react-icons/fa';
+import { FaBullseye, FaCoins, FaEdit, FaTasks, FaTrash, FaUniversity } from 'react-icons/fa';
 import { useNavigate, useParams, useLocation, useOutletContext } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { buildPoaNavigationState, getPoaNavigationContext, normalizePoaGestion, savePoaNavigationContext } from '../utils/navigationContext';
 
 // Página que muestra los objetivos específicos relacionados a un documento
 const ObjetivosEspecificosPage = () => {
@@ -25,6 +24,7 @@ const ObjetivosEspecificosPage = () => {
   const canEdit = !!poaPermissions.canEdit;
   const [editingObjetivo, setEditingObjetivo] = useState(null);
   const location = useLocation();
+  const navContext = React.useMemo(() => getPoaNavigationContext(location?.state), [location?.key, location?.state]);
   const [recursosPorObjetivo, setRecursosPorObjetivo] = useState({});
   const [actividadesCountPorObjetivo, setActividadesCountPorObjetivo] = useState({});
 
@@ -142,7 +142,7 @@ const ObjetivosEspecificosPage = () => {
         setDocumentHeader(embedded);
       } else {
         // intentar recuperar encabezado: primero si la ubicación tiene `gestion`, pedir el documento completo al backend
-        const gestion = location?.state?.gestion ?? location?.state?.gestionState ?? null;
+        const gestion = navContext?.gestion ?? null;
         if (gestion) {
           setDocLoading(true);
           getDocumentoPOAPorId(Number(documentId), Number(gestion))
@@ -172,7 +172,7 @@ const ObjetivosEspecificosPage = () => {
         setError(err?.response?.data?.detail || err?.message || 'Error al cargar objetivos');
       })
       .finally(() => setLoading(false));
-  }, [documentId]);
+  }, [documentId, navContext?.gestion]);
 
   useEffect(() => {
     if (!objetivos || objetivos.length === 0) {
@@ -213,8 +213,25 @@ const ObjetivosEspecificosPage = () => {
     return () => { mounted = false; };
   }, [objetivos, documentId]);
 
+  const documentoEstado = String(documentHeader?.estado || objetivos?.[0]?.documento_estado || '').toLowerCase();
+  const canRequestChange = canEdit && ['aprobado', 'ejecucion'].includes(documentoEstado);
+  const gestion = documentHeader?.gestion || documentHeader?.gestion_nombre || navContext?.gestion || 'â€”';
+  const gestionNavegacion = normalizePoaGestion(documentHeader?.gestion || navContext?.gestion);
+
+  useEffect(() => {
+    savePoaNavigationContext({
+      gestion: gestionNavegacion,
+      documentoId: Number(documentId),
+      documentoEstado,
+    });
+  }, [documentId, documentoEstado, gestionNavegacion]);
+
   const openNuevo = () => {
     if (!canEdit) return;
+    if (documentoEstado === 'revision') {
+      toast.error('El documento esta en revision. Espere la observacion o aprobacion del Director.');
+      return;
+    }
     setEditingObjetivo(null);
     setShowNuevo(true);
   };
@@ -222,6 +239,10 @@ const ObjetivosEspecificosPage = () => {
 
   const openEdit = (obj) => {
     if (!canEdit) return;
+    if (documentoEstado === 'revision') {
+      toast.error('El documento esta en revision. Espere la observacion o aprobacion del Director.');
+      return;
+    }
     setEditingObjetivo(obj);
     setShowNuevo(true);
   };
@@ -229,6 +250,10 @@ const ObjetivosEspecificosPage = () => {
   const handleDeleted = async (id) => {
     if (!canEdit) {
       toast.error('No tiene permisos para eliminar objetivos.');
+      return;
+    }
+    if (documentoEstado === 'revision') {
+      toast.error('El documento esta en revision. Espere la observacion o aprobacion del Director.');
       return;
     }
     const target = (objetivos || []).find((obj) => Number(obj.id) === Number(id)) || { id };
@@ -239,6 +264,26 @@ const ObjetivosEspecificosPage = () => {
     const target = deleteDialogObjetivo;
     if (!target?.id) return;
     try {
+      if (canRequestChange) {
+        await crearSolicitudCambioPOA({
+          documento: Number(documentId),
+          tipo_objeto: 'objetivo',
+          objeto_id: target.id,
+          accion: 'eliminar',
+          payload: {
+            codigo: target.codigo || '',
+            descripcion: target.descripcion || target.nombre || '',
+          },
+          descripcion: 'Eliminar objetivo especifico.',
+          resumen: {
+            titulo: 'Eliminar objetivo especifico',
+            codigo: target.codigo || '',
+            descripcion: target.descripcion || target.nombre || '',
+          },
+        });
+        toast.success('Solicitud de eliminacion enviada al Director de Carrera');
+        return;
+      }
       await deleteObjetivo(target.id);
       setObjetivos(prev => (prev || []).filter(o => Number(o.id) !== Number(target.id)));
       toast.success('Objetivo eliminado');
@@ -262,19 +307,22 @@ const ObjetivosEspecificosPage = () => {
     };
     window.addEventListener('open-new', handler);
     return () => window.removeEventListener('open-new', handler);
-  }, [canEdit]);
+  }, [canEdit, documentoEstado]);
 
 
-  const handleVerActividades = (objetivoId) => navigate(`/poa/actividades/${objetivoId}`);
+  const handleVerActividades = (objetivoId) => navigate(`/poa/actividades/${objetivoId}`, {
+    state: buildPoaNavigationState(location?.state, {
+      documentoId: Number(documentId),
+      documentoEstado,
+      objetivoId: Number(objetivoId),
+      gestion: gestionNavegacion,
+    }),
+  });
 
   const totalObjetivos = Array.isArray(objetivos) ? objetivos.length : 0;
-  const totalActividades = Object.values(actividadesCountPorObjetivo || {}).reduce((acc, n) => acc + (Number(n) || 0), 0);
   const presupuestoTotal = Object.values(recursosPorObjetivo || {}).reduce((acc, n) => acc + (Number(n) || 0), 0);
   const promedioPorObjetivo = totalObjetivos > 0 ? (presupuestoTotal / totalObjetivos) : 0;
-  const entidad = (typeof documentHeader?.entidad === 'object' ? documentHeader?.entidad?.nombre : documentHeader?.entidad) || DEFAULT_ENTIDAD;
-  const gestion = documentHeader?.gestion || documentHeader?.gestion_nombre || '—';
   const programa = (typeof documentHeader?.programa === 'object' ? documentHeader?.programa?.nombre : documentHeader?.programa) || '—';
-  const unidadSolicitante = (typeof documentHeader?.unidad_solicitante === 'object' ? documentHeader?.unidad_solicitante?.nombre : documentHeader?.unidad_solicitante) || '—';
   const objetivoInstitucional = (typeof documentHeader?.objetivo_gestion_institucional === 'object'
     ? (documentHeader?.objetivo_gestion_institucional?.nombre || documentHeader?.objetivo_gestion_institucional?.descripcion)
     : documentHeader?.objetivo_gestion_institucional) || '—';
@@ -294,38 +342,39 @@ const ObjetivosEspecificosPage = () => {
         {/* Header controls moved to global header; page-level controls removed */}
         {documentHeader && (
           <div className="w-full mb-3 mt-0">
-            <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-blue-600 via-blue-700 to-cyan-700 dark:from-slate-900 dark:via-blue-900 dark:to-cyan-900 border border-blue-400/60 dark:border-cyan-700/70 shadow-xl dark:shadow-cyan-950/40">
+            <div className="poa-mobile-page-card relative overflow-hidden rounded-xl bg-gradient-to-br from-blue-600 via-blue-700 to-cyan-700 dark:from-slate-900 dark:via-blue-900 dark:to-cyan-900 border border-blue-400/60 dark:border-cyan-700/70 shadow-xl dark:shadow-cyan-950/40">
               <div className="absolute -top-10 -right-8 w-40 h-40 bg-cyan-300/30 dark:bg-cyan-400/20 rounded-full blur-3xl" />
               <div className="absolute -bottom-10 -left-8 w-40 h-40 bg-blue-300/25 dark:bg-blue-400/20 rounded-full blur-3xl" />
               <div className="relative p-3 md:p-4 space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="text-lg md:text-xl font-bold tracking-tight text-white">Objetivos Específicos</h3>
+                <div className="flex items-center justify-end gap-2">
                   <span className="inline-flex items-center px-3 py-1 rounded-md text-xs md:text-sm font-bold bg-white/20 border border-white/30 text-white shadow whitespace-nowrap backdrop-blur-sm">
                     Gestión: {gestion}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                  <div className="rounded-lg border border-white/30 bg-white/15 dark:bg-slate-900/35 p-2 backdrop-blur-sm">
-                    <p className="text-[10px] uppercase font-bold tracking-wider text-blue-100">Entidad</p>
-                    <p className="text-sm font-semibold text-white truncate">{entidad}</p>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  <div className="rounded-lg border border-white/30 bg-white/15 dark:bg-slate-900/35 p-2.5 backdrop-blur-sm lg:grid lg:h-full lg:min-h-[4.25rem] lg:grid-cols-[2.75rem_minmax(0,1fr)] lg:items-center lg:gap-3 lg:p-3">
+                    <div className="hidden lg:flex h-11 w-11 items-center justify-center rounded-lg bg-white/20 text-white shadow-inner">
+                      <FaUniversity className="text-xl" />
+                    </div>
+                    <div className="min-w-0 text-left">
+                      <p className="text-[10px] uppercase font-bold tracking-wider text-blue-100">Programa</p>
+                      <p className="text-sm font-semibold text-white leading-snug break-words">{programa}</p>
+                    </div>
                   </div>
-                  <div className="rounded-lg border border-white/30 bg-white/15 dark:bg-slate-900/35 p-2 backdrop-blur-sm">
-                    <p className="text-[10px] uppercase font-bold tracking-wider text-blue-100">Programa</p>
-                    <p className="text-sm font-semibold text-white truncate">{programa}</p>
-                  </div>
-                  <div className="rounded-lg border border-white/30 bg-white/15 dark:bg-slate-900/35 p-2 backdrop-blur-sm">
-                    <p className="text-[10px] uppercase font-bold tracking-wider text-blue-100">Unidad solicitante</p>
-                    <p className="text-sm font-semibold text-white truncate">{unidadSolicitante}</p>
-                  </div>
-                </div>
 
-                <div className="rounded-lg border border-white/30 bg-white/15 dark:bg-slate-900/35 p-2.5 backdrop-blur-sm">
-                  <div className="flex items-center gap-2 mb-1">
-                    <FaBullseye className="text-cyan-100 text-xs" />
-                    <p className="text-[10px] uppercase font-bold tracking-wider text-blue-100">Objetivo de gestión institucional</p>
+                  <div className="rounded-lg border border-white/30 bg-white/15 dark:bg-slate-900/35 p-2.5 backdrop-blur-sm lg:grid lg:h-full lg:min-h-[4.25rem] lg:grid-cols-[2.75rem_minmax(0,1fr)] lg:items-center lg:gap-3 lg:p-3">
+                    <div className="hidden lg:flex h-11 w-11 items-center justify-center rounded-lg bg-white/20 text-white shadow-inner">
+                      <FaBullseye className="text-xl" />
+                    </div>
+                    <div className="min-w-0 text-left">
+                      <div className="flex items-center gap-2 mb-1 lg:mb-0">
+                        <FaBullseye className="text-cyan-100 text-xs lg:hidden" />
+                        <p className="text-[10px] uppercase font-bold tracking-wider text-blue-100">Objetivo de gestión institucional</p>
+                      </div>
+                      <p className="text-sm text-white/95 leading-snug break-words">{objetivoInstitucional}</p>
+                    </div>
                   </div>
-                  <p className="text-sm text-white/95 leading-snug line-clamp-2">{objetivoInstitucional}</p>
                 </div>
               </div>
             </div>
@@ -335,6 +384,7 @@ const ObjetivosEspecificosPage = () => {
         {showNuevo && (
           <NuevoObjetivoModal
             documentoId={documentId}
+            documentoEstado={documentoEstado}
             objetivo={editingObjetivo}
             existingObjetivos={objetivos}
             onClose={closeNuevo}
@@ -353,18 +403,33 @@ const ObjetivosEspecificosPage = () => {
 
       {!loading && !error && totalObjetivos > 0 && (
         <div className="w-full mb-3">
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <div className="flex-1 bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-lg shadow-lg p-3 text-white">
-              <p className="text-xs font-bold uppercase tracking-widest opacity-90">Presupuesto Total</p>
-              <p className="text-2xl font-bold">Bs. {formatMonto(presupuestoTotal)}</p>
+          <div className="poa-mobile-kpi-strip poa-mobile-kpi-strip-3 flex flex-col gap-3 sm:flex-row">
+            <div className="poa-mobile-kpi-card flex-1 bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-lg shadow-lg p-3 text-white lg:grid lg:min-h-[4.6rem] lg:grid-cols-[3rem_minmax(0,1fr)] lg:items-center lg:gap-3">
+              <div className="hidden lg:flex h-12 w-12 items-center justify-center rounded-lg bg-white/20 shadow-inner">
+                <FaCoins className="text-2xl" />
+              </div>
+              <div className="min-w-0">
+                <p className="poa-kpi-label text-center text-xs font-bold uppercase tracking-widest opacity-90">Presupuesto Total</p>
+                <p className="poa-kpi-value poa-money-value w-full text-right text-2xl font-bold">Bs. {formatMonto(presupuestoTotal)}</p>
+              </div>
             </div>
-            <div className="flex-1 bg-gradient-to-r from-orange-500 to-orange-600 rounded-lg shadow-lg p-3 text-white">
-              <p className="text-xs font-bold uppercase tracking-widest opacity-90">Promedio por Objetivo</p>
-              <p className="text-2xl font-bold">Bs. {formatMonto(promedioPorObjetivo)}</p>
+            <div className="poa-mobile-kpi-card flex-1 bg-gradient-to-r from-orange-500 to-orange-600 rounded-lg shadow-lg p-3 text-white lg:grid lg:min-h-[4.6rem] lg:grid-cols-[3rem_minmax(0,1fr)] lg:items-center lg:gap-3">
+              <div className="hidden lg:flex h-12 w-12 items-center justify-center rounded-lg bg-white/20 shadow-inner">
+                <FaCoins className="text-2xl" />
+              </div>
+              <div className="min-w-0">
+                <p className="poa-kpi-label text-center text-xs font-bold uppercase tracking-widest opacity-90">Promedio por Objetivo</p>
+                <p className="poa-kpi-value poa-money-value w-full text-right text-2xl font-bold">Bs. {formatMonto(promedioPorObjetivo)}</p>
+              </div>
             </div>
-            <div className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg shadow-lg p-3 text-white">
-              <p className="text-xs font-bold uppercase tracking-widest opacity-90">Resumen</p>
-              <p className="text-sm md:text-base font-bold truncate">{totalObjetivos} objetivos, {totalActividades} actividades</p>
+            <div className="poa-mobile-kpi-card flex-1 bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg shadow-lg p-3 text-white lg:grid lg:min-h-[4.6rem] lg:grid-cols-[3rem_minmax(0,1fr)] lg:items-center lg:gap-3">
+              <div className="hidden lg:flex h-12 w-12 items-center justify-center rounded-lg bg-white/20 shadow-inner">
+                <FaBullseye className="text-2xl" />
+              </div>
+              <div className="min-w-0">
+                <p className="poa-kpi-label text-center text-xs font-bold uppercase tracking-widest opacity-90">Resumen</p>
+                <p className="poa-kpi-value text-center text-sm md:text-base font-bold truncate">{totalObjetivos} objetivos</p>
+              </div>
             </div>
           </div>
         </div>
@@ -393,21 +458,36 @@ const ObjetivosEspecificosPage = () => {
                     </span>
                   </div>
 
-                  <div className="rounded-lg border border-blue-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/40 p-2 min-h-[5rem]">
-                    <p className="text-[10px] uppercase tracking-wider font-bold text-blue-700 dark:text-cyan-200 mb-1">Objetivo específico</p>
-                    <p className="text-sm text-slate-800 dark:text-slate-200 leading-snug line-clamp-3">
-                      {obj.nombre || obj.descripcion || 'Sin descripción'}
-                    </p>
+                  <div className="rounded-lg border border-blue-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/40 p-2 min-h-[5rem] lg:grid lg:grid-cols-[2.5rem_minmax(0,1fr)] lg:items-center lg:gap-3">
+                    <div className="hidden lg:flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600/10 text-blue-700 dark:bg-cyan-400/10 dark:text-cyan-200">
+                      <FaBullseye className="text-lg" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] uppercase tracking-wider font-bold text-blue-700 dark:text-cyan-200 mb-1">Objetivo específico</p>
+                      <p className="text-sm text-slate-800 dark:text-slate-200 leading-snug line-clamp-3">
+                        {obj.nombre || obj.descripcion || 'Sin descripción'}
+                      </p>
+                    </div>
                   </div>
 
-                  <div className="mt-2 grid grid-cols-2 gap-2">
-                    <div className="rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 text-white p-2 shadow">
-                      <p className="text-[10px] uppercase tracking-wider font-bold opacity-90">Presupuesto</p>
-                      <p className="text-sm font-bold truncate flex items-center gap-1"><FaCoins className="text-[11px]" /> Bs. {formatMonto(total)}</p>
+                  <div className="poa-objective-card-metrics mt-2 grid grid-cols-2 gap-2">
+                    <div className="rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 text-white p-2 shadow lg:grid lg:grid-cols-[2rem_minmax(0,1fr)] lg:items-center lg:gap-2">
+                      <div className="hidden lg:flex h-8 w-8 items-center justify-center rounded-md bg-white/20 shadow-inner">
+                        <FaCoins className="text-base" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-center text-[10px] uppercase tracking-wider font-bold opacity-90">Presupuesto</p>
+                        <p className="poa-money-value w-full text-sm font-bold truncate text-right">Bs. {formatMonto(total)}</p>
+                      </div>
                     </div>
-                    <div className="rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-2 shadow">
-                      <p className="text-[10px] uppercase tracking-wider font-bold opacity-90">Actividades</p>
-                      <p className="text-sm font-bold">{actCount}</p>
+                    <div className="rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-2 shadow lg:grid lg:grid-cols-[2rem_minmax(0,1fr)] lg:items-center lg:gap-2">
+                      <div className="hidden lg:flex h-8 w-8 items-center justify-center rounded-md bg-white/20 shadow-inner">
+                        <FaTasks className="text-base" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-center text-[10px] uppercase tracking-wider font-bold opacity-90">Actividades</p>
+                        <p className="text-center text-sm font-bold">{actCount}</p>
+                      </div>
                     </div>
                   </div>
 

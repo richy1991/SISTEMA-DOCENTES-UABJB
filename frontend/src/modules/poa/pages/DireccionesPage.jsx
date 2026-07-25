@@ -3,6 +3,7 @@ import { getAllDirecciones, deleteDireccion, getOperacionesPorDireccion, deleteC
 import toast from 'react-hot-toast';
 import NuevaDireccionModal from '../components/NuevaDireccionModal';
 import IconButton from '../components/IconButton';
+import Dialog from '../components/base/Dialog';
 import { FaEdit, FaTrash } from 'react-icons/fa';
 
 const DireccionesPage = () => {
@@ -18,6 +19,8 @@ const DireccionesPage = () => {
   const [selectedOperacion, setSelectedOperacion] = useState(null);
   const [opsLoading, setOpsLoading] = useState(false);
   const [opsError, setOpsError] = useState(null);
+  const [deleteDialogDireccion, setDeleteDialogDireccion] = useState(null);
+  const [deletingDireccionId, setDeletingDireccionId] = useState(null);
   const scrollRef = useRef(null);
 
   // Debounce query
@@ -76,21 +79,32 @@ const DireccionesPage = () => {
     setModalOpen(true);
   };
 
-  const handleDelete = async (e, id) => {
+  const handleDelete = (e, dir) => {
     if (e && e.stopPropagation) e.stopPropagation();
-    if (!confirm('¿Eliminar dirección?')) return;
+    if (!dir?.id) return;
+    setDeleteDialogDireccion(dir);
+  };
+
+  const confirmDeleteDireccion = async () => {
+    const dir = deleteDialogDireccion;
+    if (!dir?.id) return;
+
+    setDeletingDireccionId(dir.id);
     try {
-      await deleteDireccion(id);
-      setDirecciones(prev => prev.filter(d => d.id !== id));
+      await deleteDireccion(dir.id);
+      setDirecciones(prev => prev.filter(d => d.id !== dir.id));
       toast.success('Dirección eliminada');
       // si la dirección eliminada estaba seleccionada, limpiarla
-      if (selectedDireccion && selectedDireccion.id === id) {
+      if (selectedDireccion && selectedDireccion.id === dir.id) {
         setSelectedDireccion(null);
         setOperaciones([]);
       }
+      setDeleteDialogDireccion(null);
     } catch (err) {
       console.error('Error eliminando dirección:', err);
       toast.error(err?.response?.data?.detail || 'Error al eliminar dirección');
+    } finally {
+      setDeletingDireccionId(null);
     }
   };
 
@@ -175,8 +189,20 @@ const DireccionesPage = () => {
 
   return (
     <div className=" w-full max-w-screen-xl mx-auto">
+      <Dialog
+        open={Boolean(deleteDialogDireccion)}
+        type="danger"
+        title="Eliminar dirección"
+        message={deleteDialogDireccion ? `¿Confirma eliminar esta dirección?\n${deleteDialogDireccion.nombre || deleteDialogDireccion.descripcion || deleteDialogDireccion.direccion || ''}` : ''}
+        confirmText={deletingDireccionId === deleteDialogDireccion?.id ? 'Eliminando...' : 'Eliminar'}
+        cancelText="Cancelar"
+        confirmDisabled={deletingDireccionId === deleteDialogDireccion?.id}
+        onCancel={() => setDeleteDialogDireccion(null)}
+        onClose={() => setDeleteDialogDireccion(null)}
+        onConfirm={confirmDeleteDireccion}
+      />
       {selectedDireccion && (
-        <div className="-mt-6 mb-4 p-4 bg-white rounded shadow">
+        <div className="poa-mobile-page-card -mt-6 mb-4 p-4 bg-white rounded shadow">
           <div className="flex items-center justify-between">
             <div>
               <div className="font-semibold text-blue-800">{selectedDireccion.nombre || selectedDireccion.descripcion || selectedDireccion.direccion || ' — '}</div>
@@ -193,8 +219,8 @@ const DireccionesPage = () => {
             ) : operaciones && operaciones.length > 0 ? (
               <div className="relative">
                 <div className="flex items-center justify-end mb-2 gap-2"></div>
-                <div ref={scrollRef} className="overflow-x-auto no-scrollbar">
-                  <table className="min-w-full border-collapse leading-6">
+                <div ref={scrollRef} className="poa-table-wrapper overflow-x-auto no-scrollbar">
+                  <table className="poa-mobile-card-table min-w-full border-collapse leading-6">
                     <thead>
                       <tr className="bg-gray-100">
                         <th className="p-3 w-80 border">Servicios</th>
@@ -221,11 +247,11 @@ const DireccionesPage = () => {
                               }
                             }}
                           >
-                            <td className={`p-3 align-top ${isSelected ? 'text-white' : ''}`}>{op.servicio || op.unidad || <span className="text-gray-400">Sin datos</span>}</td>
-                            <td className={`p-3 align-top ${isSelected ? 'text-white' : ''}`}>{op.proceso || op.proceso_nombre || <span className="text-gray-400">Sin datos</span>}</td>
-                            <td className={`p-3 align-top font-medium ${isSelected ? 'text-white' : ''}`}>{op.nombre || op.operacion || op.operaciones || op.descripcion || op.codigo || <span className="text-gray-400">Sin datos</span>}</td>
-                            <td className={`p-3 align-top ${isSelected ? 'text-white' : ''}`}>{op.producto_intermedio || op.producto || <span className="text-gray-400">Sin datos</span>}</td>
-                            <td className={`p-3 align-top ${isSelected ? 'text-white' : ''}`}>{op.indicador || op.indicador_nombre || <span className="text-gray-400">Sin datos</span>}</td>
+                            <td data-label="Servicios" className={`p-3 align-top ${isSelected ? 'text-white' : ''}`}>{op.servicio || op.unidad || <span className="text-gray-400">Sin datos</span>}</td>
+                            <td data-label="Procesos" className={`p-3 align-top ${isSelected ? 'text-white' : ''}`}>{op.proceso || op.proceso_nombre || <span className="text-gray-400">Sin datos</span>}</td>
+                            <td data-label="Operaciones" className={`p-3 align-top font-medium ${isSelected ? 'text-white' : ''}`}>{op.nombre || op.operacion || op.operaciones || op.descripcion || op.codigo || <span className="text-gray-400">Sin datos</span>}</td>
+                            <td data-label="Productos" className={`p-3 align-top ${isSelected ? 'text-white' : ''}`}>{op.producto_intermedio || op.producto || <span className="text-gray-400">Sin datos</span>}</td>
+                            <td data-label="Indicador" className={`p-3 align-top ${isSelected ? 'text-white' : ''}`}>{op.indicador || op.indicador_nombre || <span className="text-gray-400">Sin datos</span>}</td>
                           </tr>
                         );
                       })}
@@ -260,7 +286,7 @@ const DireccionesPage = () => {
                 </div>
                 <div className="flex items-center gap-3 ml-4">
                   <IconButton icon={<FaEdit />} onClick={(e) => openEdit(e, dir)} className="bg-[#f59e0b] text-white rounded shadow hover:bg-[#d97706] p-2" title="Editar" />
-                  <IconButton icon={<FaTrash />} onClick={(e) => handleDelete(e, dir.id)} className="bg-[#ef4444] text-white rounded shadow hover:bg-[#dc2626] p-2" title="Eliminar" />
+                  <IconButton icon={<FaTrash />} onClick={(e) => handleDelete(e, dir)} className="bg-[#ef4444] text-white rounded shadow hover:bg-[#dc2626] p-2" title="Eliminar" />
                 </div>
               </div>
             ))

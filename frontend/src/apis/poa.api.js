@@ -1,7 +1,8 @@
 // API centralizado para POA
 import axios from 'axios';
+import { API_BASE_URL } from './apiConfig';
 
-export const API_BASE = 'http://127.0.0.1:8000';
+export const API_BASE = API_BASE_URL;
 
 // Cliente axios centralizado
 const api = axios.create({ baseURL: API_BASE, withCredentials: true });
@@ -154,6 +155,29 @@ export const observarDocumentoPOA = (id, gestion, observaciones) => {
 	return api.post(`/api/poa/documentos_poa/${id}/observar/`, { observaciones: String(observaciones).trim() }, { params: { gestion: Number(gestion) } });
 };
 
+export const iniciarEjecucionDocumentoPOA = (id, gestion) => {
+	if (gestion === undefined || gestion === null || Number.isNaN(Number(gestion)) ) {
+		return badRequest({ gestion: ['El parametro "gestion" es obligatorio y debe ser un entero.'] });
+	}
+	return api.post(`/api/poa/documentos_poa/${id}/iniciar-ejecucion/`, {}, { params: { gestion: Number(gestion) } });
+};
+
+export const crearSolicitudCambioPOA = (payload) => {
+	if (!payload || payload.documento === undefined || payload.documento === null || Number.isNaN(Number(payload.documento))) {
+		return badRequest({ documento: ['El campo "documento" es obligatorio.'] });
+	}
+	return api.post('/api/poa/solicitudes-cambio/', payload);
+};
+
+export const aprobarSolicitudCambioPOA = (id, respuesta = '') =>
+	api.post(`/api/poa/solicitudes-cambio/${id}/aprobar/`, { respuesta });
+
+export const rechazarSolicitudCambioPOA = (id, respuesta = '') =>
+	api.post(`/api/poa/solicitudes-cambio/${id}/rechazar/`, { respuesta });
+
+export const updateObservacionDocumentoPOA = (id, payload) =>
+	api.patch(`/api/poa/observaciones-documento/${id}/`, payload);
+
 // Reportes POA (mismo patrón que el sistema principal: axios + blob)
 export const descargarReporteGeneralPOA = (gestion) => {
 	if (gestion === undefined || gestion === null || Number.isNaN(Number(gestion))) {
@@ -297,7 +321,7 @@ export const getIndicadorCatalogoPorId = (id) => api.get(`/api/catalogos/indicad
 export const createIndicadorCatalogo = (payload) => api.post('/api/catalogos/indicadores/', payload);
 export const updateIndicadorCatalogo = (id, payload) => api.patch(`/api/catalogos/indicadores/${id}/`, payload);
 export const deleteIndicadorCatalogo = (id) => api.delete(`/api/catalogos/indicadores/${id}/`);
-export const importarIndicadoresPdf = (formData) => api.post('/api/catalogos/indicadores/importar-pdf/', formData);
+export const importarIndicadoresExcel = (formData) => api.post('/api/catalogos/indicadores/importar-excel/', formData);
 export const searchIndicadoresCatalogo = (q) => api.get('/api/catalogos/indicadores-catalogo/', { params: { search: q } });
 
 // Obtener operaciones filtradas por dirección (si el backend soporta ?direccion_id=)
@@ -401,4 +425,3 @@ export const deleteEvidencia = (id) => {
 	}
 	return api.delete(`/api/poa/evidencias/${id}/`);
 };
-
