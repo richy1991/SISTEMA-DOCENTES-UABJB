@@ -12,6 +12,7 @@ backend/venv/
 
 # Database
 backend/db.sqlite3
+backend/dbsss.sqlite3
 backend/backups/
 backend/db_corrupt_*.sqlite3
 
