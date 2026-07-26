@@ -113,6 +113,10 @@ function ChatFlotantePOA({ currentUser }) {
   const panelRef = useRef(null);
   const dragStateRef = useRef(null);
   const notifiedConnectionRef = useRef(false);
+  const unreadRequestRef = useRef(null);
+  const searchTimerRef = useRef(null);
+  const searchSeqRef = useRef(0);
+  const bloqueoPeerFetchedRef = useRef(null);
 
   const currentUserSnapshot = useMemo(() => currentUser || getStoredUser(), [currentUser]);
   const [localCurrentUser, setLocalCurrentUser] = useState(currentUserSnapshot);
@@ -157,12 +161,20 @@ function ChatFlotantePOA({ currentUser }) {
   }, []);
 
   const cargarNoLeidos = useCallback(async () => {
-    try {
-      const res = await getChatContactosPOA();
-      setMensajesNoLeidos(resolveUnreadTotal(res?.data || {}));
-    } catch (err) {
-      if (isAuthExpired(err)) setPollingPaused(true);
-    }
+    if (unreadRequestRef.current) return unreadRequestRef.current;
+
+    unreadRequestRef.current = getChatContactosPOA()
+      .then((res) => {
+        setMensajesNoLeidos(resolveUnreadTotal(res?.data || {}));
+      })
+      .catch((err) => {
+        if (isAuthExpired(err)) setPollingPaused(true);
+      })
+      .finally(() => {
+        unreadRequestRef.current = null;
+      });
+
+    return unreadRequestRef.current;
   }, []);
 
   useEffect(() => {
@@ -286,9 +298,11 @@ function ChatFlotantePOA({ currentUser }) {
           : (recientes.length === 1 ? recientes[0] : null));
 
       if (autoSelected && !alerta) {
+        const autoSelectedId = resolveUserId(autoSelected);
         setSelectedPeer(autoSelected);
-        await fetchEstadoBloqueo(resolveUserId(autoSelected));
-        await fetchMensajes(resolveUserId(autoSelected), { silent: false });
+        bloqueoPeerFetchedRef.current = autoSelectedId;
+        await fetchEstadoBloqueo(autoSelectedId);
+        await fetchMensajes(autoSelectedId, { silent: false });
       } else {
         setSelectedPeer(null);
         setMensajes([]);
@@ -406,24 +420,38 @@ function ChatFlotantePOA({ currentUser }) {
     return () => window.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleBuscar = async (value) => {
+  useEffect(() => () => {
+    if (searchTimerRef.current) window.clearTimeout(searchTimerRef.current);
+  }, []);
+
+  const handleBuscar = (value) => {
     setSearch(value);
     const q = String(value || '').trim();
+    searchSeqRef.current += 1;
+    const requestSeq = searchSeqRef.current;
+
+    if (searchTimerRef.current) window.clearTimeout(searchTimerRef.current);
+
     if (q.length < 2) {
       setSearchResults([]);
+      setSearching(false);
       return;
     }
+
     setSearching(true);
-    try {
-      const res = await buscarUsuariosChatPOA(q);
-      const list = Array.isArray(res.data) ? res.data : (res.data?.results || []);
-      const filtered = list.filter((u) => resolveUserId(u) !== currentUserId);
-      setSearchResults(filtered.slice(0, 10));
-    } catch {
-      setSearchResults([]);
-    } finally {
-      setSearching(false);
-    }
+    searchTimerRef.current = window.setTimeout(async () => {
+      try {
+        const res = await buscarUsuariosChatPOA(q);
+        if (requestSeq !== searchSeqRef.current) return;
+        const list = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+        const filtered = list.filter((u) => resolveUserId(u) !== currentUserId);
+        setSearchResults(filtered.slice(0, 10));
+      } catch {
+        if (requestSeq === searchSeqRef.current) setSearchResults([]);
+      } finally {
+        if (requestSeq === searchSeqRef.current) setSearching(false);
+      }
+    }, 280);
   };
 
   const seleccionarContacto = async (contacto) => {
@@ -436,6 +464,7 @@ function ChatFlotantePOA({ currentUser }) {
     setShowActionsMenu(false);
     setSearch('');
     setSearchResults([]);
+    bloqueoPeerFetchedRef.current = peerId;
     await fetchEstadoBloqueo(peerId);
     await fetchMensajes(peerId, { silent: false });
     focusMessageInput(80);
@@ -463,6 +492,13 @@ function ChatFlotantePOA({ currentUser }) {
 
   useEffect(() => {
     if (!open) return;
+    if (!peerActualId) {
+      bloqueoPeerFetchedRef.current = null;
+      fetchEstadoBloqueo(null);
+      return;
+    }
+    if (bloqueoPeerFetchedRef.current === peerActualId) return;
+    bloqueoPeerFetchedRef.current = peerActualId;
     fetchEstadoBloqueo(peerActualId);
   }, [open, peerActualId, fetchEstadoBloqueo]);
 
@@ -481,6 +517,7 @@ function ChatFlotantePOA({ currentUser }) {
         await bloquearUsuarioChatPOA(peerId);
         toast.success('Usuario bloqueado.');
       }
+      bloqueoPeerFetchedRef.current = peerId;
       await fetchEstadoBloqueo(peerId);
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'No se pudo actualizar el bloqueo.');

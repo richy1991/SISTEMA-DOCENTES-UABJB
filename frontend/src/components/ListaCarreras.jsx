@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { FaEdit, FaTrash, FaEye } from 'react-icons/fa';
+import { FaEdit, FaTrash } from 'react-icons/fa';
 import { getCarreras, getFacultadesCarrera, addFacultadCarrera, deleteFacultadCarrera } from '../apis/api';
 import api from '../apis/api';
 import toast from 'react-hot-toast';
-import html2pdf from 'html2pdf.js';
 import {
   ERROR_FIELD_BORDER_CLASS,
   ERROR_MOTION_CLASS,
@@ -998,8 +997,8 @@ const FilterCarreras = ({ carreras, onSelect, placeholder = 'Buscar carrera...' 
   };
 
   return (
-    <div ref={containerRef} className="relative w-64">
-      <div className={`flex items-center px-4 py-3 rounded-2xl transition-all ${
+    <div ref={containerRef} className="relative w-full md:w-64">
+      <div className={`flex items-center px-3 py-2.5 md:px-4 md:py-3 rounded-lg md:rounded-2xl transition-all ${
         open 
           ? 'border-2 border-[#2C4AAE] bg-slate-50 dark:bg-slate-700' 
           : 'border-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 hover:border-[#2C4AAE]'
@@ -1011,15 +1010,15 @@ const FilterCarreras = ({ carreras, onSelect, placeholder = 'Buscar carrera...' 
           value={searchTerm}
           onChange={handleInputChange}
           onFocus={() => setOpen(true)}
-          className="flex-1 bg-transparent text-slate-800 dark:text-white focus:outline-none text-sm placeholder-slate-400 dark:placeholder-slate-500"
+          className="flex-1 min-w-0 bg-transparent text-slate-800 dark:text-white focus:outline-none text-xs md:text-sm placeholder-slate-400 dark:placeholder-slate-500"
         />
         <button
           type="button"
           onClick={handleButtonClick}
-          className="w-8 h-8 bg-[#2C4AAE] hover:bg-[#1a3a8a] rounded-lg flex items-center justify-center transition-colors flex-shrink-0 ml-2"
+          className="w-7 h-7 md:w-8 md:h-8 bg-[#2C4AAE] hover:bg-[#1a3a8a] rounded-lg flex items-center justify-center transition-colors flex-shrink-0 ml-2"
         >
           <svg
-            className={`w-4 h-4 text-white transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+            className={`w-3.5 h-3.5 md:w-4 md:h-4 text-white transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -1030,14 +1029,14 @@ const FilterCarreras = ({ carreras, onSelect, placeholder = 'Buscar carrera...' 
       </div>
 
       {open && (
-        <div className="absolute z-50 mt-2 w-full rounded-xl border-2 border-[#2C4AAE] bg-white dark:bg-slate-800 shadow-xl max-h-64 overflow-auto">
+        <div className="absolute z-50 mt-2 w-full rounded-xl border-2 border-[#2C4AAE] bg-white dark:bg-slate-800 shadow-xl max-h-56 md:max-h-64 overflow-auto">
           {filteredCarreras.length > 0 ? (
             filteredCarreras.map((carrera) => (
               <button
                 key={carrera.id}
                 type="button"
                 onClick={() => handleSelectCarrera(carrera)}
-                className="w-full text-left px-4 py-3 text-sm transition-colors text-slate-700 dark:text-slate-300 hover:bg-[#2C4AAE] hover:text-white border-b border-slate-200 dark:border-slate-700 last:border-b-0"
+                className="w-full text-left px-3 py-2.5 md:px-4 md:py-3 text-xs md:text-sm transition-colors text-slate-700 dark:text-slate-300 hover:bg-[#2C4AAE] hover:text-white border-b border-slate-200 dark:border-slate-700 last:border-b-0"
               >
                 <div className="font-semibold">{carrera.nombre}</div>
               </button>
@@ -1106,7 +1105,6 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
   const [showDependencyWarningModal, setShowDependencyWarningModal] = useState(false);
   const createLogoInputRef = useRef(null);
   const suppressUpdateToastRef = useRef(false);
-  const carreraContentRef = useRef(null);
 
   // State for inline creation form
   const [isCreating, setIsCreating] = useState(false);
@@ -1602,6 +1600,8 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
 
   const eliminarCarrera = async (carrera) => {
     if (!carrera?.id) return;
+    setShowModal(false);
+    setIsViewMode(false);
     setDeleteConfirmText('');
     try {
       const response = await api.get(`/carreras/${carrera.id}/dependencias/`);
@@ -1675,75 +1675,30 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
   const soloEditarLogo = () => !esSuperusuario() && rolActual === 'jefe_estudios';
   const puedeGestionarFacultades = () => esSuperusuario();
 
-  const escapeHtml = (value = '') => String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+  const handleDescargarFichaPdf = async () => {
+    if (!carreraSeleccionada?.id) return;
 
-  const handleExportarFichaPdf = () => {
-    if (!carreraSeleccionada) return;
-
-    const nombre = escapeHtml(formData.nombre || carreraSeleccionada.nombre || '');
-    const codigo = escapeHtml(formData.codigo || carreraSeleccionada.codigo || '');
-    const facultad = escapeHtml(formData.facultad || carreraSeleccionada.facultad || '');
-    const mision = escapeHtml(formData.mision || carreraSeleccionada.mision || '').replace(/\n/g, '<br/>');
-    const vision = escapeHtml(formData.vision || carreraSeleccionada.vision || '').replace(/\n/g, '<br/>');
-    const logo = logoPreview || carreraSeleccionada.logo_carrera || '';
-
-    const popup = window.open('', '_blank', 'width=1024,height=900');
-    if (!popup) {
-      toast.error('No se pudo abrir la ventana para exportar PDF.');
-      return;
+    try {
+      const response = await api.get(`/carreras/${carreraSeleccionada.id}/pdf-oficial/`, {
+        responseType: 'blob',
+      });
+      const nombreBase = `${formData.nombre || carreraSeleccionada.nombre || 'carrera'}_${formData.codigo || carreraSeleccionada.codigo || ''}`
+        .replace(/[^\w\s-]/g, '')
+        .trim()
+        .replace(/\s+/g, '_');
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Carrera_${nombreBase || carreraSeleccionada.id}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('Carrera descargada en PDF');
+    } catch (error) {
+      console.error('Error al descargar PDF:', error);
+      toast.error('No se pudo descargar el PDF de carrera.');
     }
-
-    popup.document.write(`
-      <!doctype html>
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <title>Ficha de Carrera - ${nombre}</title>
-          <style>
-            body { font-family: 'Segoe UI', Arial, sans-serif; background: #e5e7eb; margin: 0; padding: 32px; }
-            .sheet { background: #fff; max-width: 900px; margin: 0 auto; border: 1px solid #d1d5db; box-shadow: 0 10px 25px rgba(0,0,0,0.12); padding: 36px; }
-            .header { display: flex; justify-content: space-between; gap: 24px; border-bottom: 2px solid #1e3a8a; padding-bottom: 16px; }
-            .title { font-size: 28px; color: #1e3a8a; margin: 0 0 8px 0; }
-            .meta { color: #334155; margin: 4px 0; font-size: 14px; }
-            .logo { width: 96px; height: 96px; object-fit: cover; border: 1px solid #cbd5e1; border-radius: 8px; }
-            .section { margin-top: 22px; }
-            .section h2 { font-size: 16px; color: #1e40af; margin: 0 0 10px 0; text-transform: uppercase; letter-spacing: 0.05em; }
-            .box { border: 1px solid #cbd5e1; background: #f8fafc; padding: 14px; min-height: 70px; color: #0f172a; line-height: 1.5; }
-          </style>
-        </head>
-        <body>
-          <div class="sheet">
-            <div class="header">
-              <div>
-                <h1 class="title">Ficha de Carrera</h1>
-                <p class="meta"><strong>Carrera:</strong> ${nombre}</p>
-                <p class="meta"><strong>Código:</strong> ${codigo}</p>
-                <p class="meta"><strong>Facultad:</strong> ${facultad}</p>
-              </div>
-              ${logo ? `<img class="logo" src="${logo}" alt="Logo carrera" />` : ''}
-            </div>
-
-            <div class="section">
-              <h2>Misión</h2>
-              <div class="box">${mision || '<em>Sin misión registrada.</em>'}</div>
-            </div>
-
-            <div class="section">
-              <h2>Visión</h2>
-              <div class="box">${vision || '<em>Sin visión registrada.</em>'}</div>
-            </div>
-          </div>
-        </body>
-      </html>
-    `);
-    popup.document.close();
-    popup.focus();
-    popup.print();
   };
 
   if (loading) {
@@ -1770,20 +1725,20 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 p-6">
+    <div className="lista-carreras-page min-h-screen bg-slate-50 dark:bg-slate-900 px-3 pb-4 pt-20 md:p-6">
       {/* Header */}
-      <div className="max-w-7xl mx-auto space-y-6">
-        <div className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-600 shadow-lg p-6">
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="max-w-[340px] md:max-w-7xl mx-auto space-y-4 md:space-y-6">
+        <div className="bg-white dark:bg-slate-800 rounded-xl md:rounded-2xl border-2 border-slate-300 dark:border-slate-600 shadow-lg p-4 md:p-6">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 md:gap-4">
             <div>
-              <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent">
+              <h2 className="text-2xl md:text-3xl font-bold leading-none bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent">
                 Carreras
               </h2>
-              <p className="text-sm text-slate-700 dark:text-slate-400 mt-1 italic">
+              <p className="text-xs md:text-sm text-slate-700 dark:text-slate-400 mt-1 italic">
                 Gestión de carreras universitarias
               </p>
             </div>
-            <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
+            <div className="flex flex-col md:flex-row gap-2.5 md:gap-3 w-full md:w-auto">
               {/* Filtro de Carreras */}
               <FilterCarreras 
                 carreras={carreras} 
@@ -1795,7 +1750,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
               {puedeEditarEstructura() && (
                 <button
                   onClick={handleToggleCreateForm}
-                  className="px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center justify-center gap-2 whitespace-nowrap"
+                  className="px-4 py-2.5 md:px-5 md:py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm md:text-base font-semibold rounded-lg md:rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center justify-center gap-2 whitespace-nowrap"
                 >
                   <span>{isCreating ? '➖' : '➕'}</span>
                   {isCreating ? 'Cancelar' : 'Nueva Carrera'}
@@ -2045,27 +2000,29 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
         ), document.body)}
 
         {carrerasMostradas.length > 0 ? (
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-1.5 md:gap-3 md:grid-cols-2 lg:grid-cols-4">
             {carrerasMostradas.map((carrera) => (
-              <div 
+              <button
+                type="button"
                 key={carrera.id} 
-                className={`rounded-xl border shadow-sm hover:shadow-md transition-all duration-200 flex flex-col h-[240px] ${
+                onClick={() => abrirModalVer(carrera)}
+                className={`group text-left rounded-lg md:rounded-xl border shadow-sm hover:shadow-md transition-all duration-200 flex flex-col aspect-square md:aspect-auto md:h-[240px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-50 dark:focus:ring-offset-slate-900 ${
                   carrera.activo
                     ? 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600'
                     : 'bg-red-100 dark:bg-red-900/35 border-red-400 dark:border-red-700'
                 }`}
               >
-                <div className="p-6 flex flex-col flex-1">
+                <div className="p-1.5 md:p-6 flex flex-col flex-1">
                   {/* Contenido horizontal */}
-                  <div className="flex items-start justify-between gap-4 mb-4">
+                  <div className="flex flex-1 flex-col items-center justify-center gap-1 md:flex-row md:items-start md:justify-between md:gap-4 md:mb-4">
                     {/* Info izquierda */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex flex-col gap-1">
-                        <div className="flex items-baseline gap-2 flex-wrap">
-                          <h3 className={`text-base font-bold ${carrera.activo ? 'text-slate-800 dark:text-white' : 'text-red-900 dark:text-red-100'}`}>
+                    <div className="order-2 md:order-1 flex min-w-0 flex-col items-center md:items-start md:flex-1">
+                      <div className="flex flex-col items-center gap-1 md:items-start">
+                        <div className="flex flex-col items-center md:items-start gap-1 md:gap-2 md:flex-wrap">
+                          <h3 className={`text-center md:text-left text-[10px] md:text-base font-bold leading-tight break-words line-clamp-2 md:line-clamp-none ${carrera.activo ? 'text-blue-700 dark:text-blue-300' : 'text-red-900 dark:text-red-100'}`}>
                             {carrera.nombre}
                           </h3>
-                          <p className={`text-sm italic ${carrera.activo ? 'text-slate-600 dark:text-slate-400' : 'text-red-800 dark:text-red-200'}`}>
+                          <p className={`text-center md:text-left text-[8px] md:text-sm italic leading-tight break-words line-clamp-2 md:line-clamp-none ${carrera.activo ? 'text-slate-600 dark:text-slate-400' : 'text-red-800 dark:text-red-200'}`}>
                             {carrera.facultad}
                           </p>
                         </div>
@@ -2073,53 +2030,45 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                     </div>
 
                     {/* Código */}
-                    <div className="px-4 py-3 rounded-md border-2 border-blue-300 dark:border-blue-600 bg-blue-50 dark:bg-blue-900/40">
-                      <div className="text-lg font-extrabold text-blue-700 dark:text-blue-300">
-                        {carrera.codigo}
+                    <div className="order-1 md:order-2 flex shrink-0 flex-col items-center gap-0.5 transition-transform duration-200 group-hover:scale-105">
+                      <div className="flex h-[115px] w-[115px] md:h-20 md:w-20 items-center justify-center overflow-hidden">
+                        {carrera.logo_carrera ? (
+                          <img
+                            src={carrera.logo_carrera}
+                            alt={`Logo de ${carrera.nombre}`}
+                            className="h-full w-full object-contain"
+                          />
+                        ) : (
+                          <span className="text-xs md:text-base font-extrabold text-blue-700 dark:text-blue-300">
+                            {carrera.codigo}
+                          </span>
+                        )}
                       </div>
+                      <span className="hidden md:block text-center text-sm font-extrabold uppercase tracking-wide text-blue-700 dark:text-blue-300">
+                        {carrera.codigo}
+                      </span>
                     </div>
+                    <div className={`order-1 md:hidden h-px w-full ${
+                      carrera.activo ? 'bg-slate-200 dark:bg-slate-700' : 'bg-red-300 dark:bg-red-700/80'
+                    }`} />
                   </div>
 
                   {!carrera.activo && (
-                    <p className="mt-1 mb-2 text-xs font-semibold text-red-800 dark:text-red-200">
+                    <p className="mt-1 mb-2 text-[9px] md:text-xs font-semibold text-red-800 dark:text-red-200">
                       ⚠ Carrera inactiva
                     </p>
                   )}
 
                   {/* Botones de acción - Una línea */}
-                  <div className={`flex gap-2 pt-4 mt-auto border-t justify-center ${
+                  <div className={`hidden md:block pt-2.5 md:pt-4 mt-auto border-t ${
                     carrera.activo ? 'border-slate-200 dark:border-slate-700' : 'border-red-300 dark:border-red-700/80'
                   }`}>
-                    <button
-                      onClick={() => abrirModalVer(carrera)}
-                      className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700 rounded-lg text-blue-600 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-all duration-200 hover:shadow-md"
-                      title="Ver"
-                    >
-                      <FaEye size={14} />
-                    </button>
-
-                    {puedeEditarInformacionCarrera() && (
-                      <button
-                        onClick={() => abrirModalEditar(carrera)}
-                        className="flex items-center justify-center gap-2 px-4 py-2 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-300 dark:border-emerald-700 rounded-lg text-emerald-600 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-all duration-200 hover:shadow-md"
-                        title="Editar"
-                      >
-                        <FaEdit size={14} />
-                      </button>
-                    )}
-
-                    {puedeEditarEstructura() && (
-                      <button
-                        onClick={() => eliminarCarrera(carrera)}
-                        className="flex items-center justify-center gap-2 px-4 py-2 bg-red-50 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded-lg text-red-600 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/50 transition-all duration-200 hover:shadow-md"
-                        title="Eliminar"
-                      >
-                        <FaTrash size={14} />
-                      </button>
-                    )}
+                    <span className="inline-flex items-center text-[9px] md:text-xs font-bold uppercase tracking-wide text-blue-600 transition-colors duration-200 group-hover:text-blue-700 dark:text-blue-300 dark:group-hover:text-blue-200">
+                      Ver detalle
+                    </span>
                   </div>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         ) : (
@@ -2148,48 +2097,50 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
 
       {/* Modal Ver / Editar */}
       {showModal && carreraSeleccionada && isViewMode && createPortal((
-        <div className="fixed top-0 right-0 bottom-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in" style={{ left: hasSidebar ? (sidebarCollapsed ? '5rem' : '18rem') : '0', animationDuration: '160ms' }}>
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-5xl w-full max-h-[92vh] overflow-hidden animate-slide-up flex flex-col" style={{ animationDuration: '180ms' }}>
+        <div className="fixed top-0 right-0 bottom-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-3 md:p-4 animate-fade-in" style={{ left: hasSidebar ? (sidebarCollapsed ? '5rem' : '18rem') : '0', animationDuration: '160ms' }}>
+          <div className="carrera-view-modal bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-5xl w-full max-h-[88vh] md:max-h-[92vh] overflow-hidden animate-slide-up flex flex-col" style={{ animationDuration: '180ms' }}>
             {/* Header */}
-            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700 bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-700 dark:to-blue-800 flex items-center justify-between">
-              <h3 className="text-xl font-bold text-white">Ver Carrera</h3>
+            <div className="px-4 py-3 md:px-6 md:py-4 border-b border-slate-200 dark:border-slate-700 bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-700 dark:to-blue-800 flex items-center justify-between">
+              <h3 className="text-base md:text-xl font-bold text-white">Ver Carrera</h3>
             </div>
 
             {/* Content */}
-            <div className="flex-1 p-5 md:p-6 overflow-y-auto">
-              <div ref={carreraContentRef} className="mx-auto max-w-3xl bg-white text-slate-800 rounded-lg shadow-xl p-6 md:p-8">
-                <div className="flex flex-col items-center justify-center pb-6 border-b border-slate-300">
+            <div className="flex-1 p-3 md:p-6 overflow-y-auto bg-slate-950/5 dark:bg-slate-950">
+              <div className="carrera-view-document mx-auto max-w-3xl bg-blue-50 text-slate-800 rounded-lg border border-blue-100 shadow-xl p-4 md:p-8 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700">
+                <div className="flex items-center gap-3 md:flex-col md:gap-0 md:justify-center pb-4 md:pb-6 border-b border-slate-300 dark:border-slate-600">
                   {logoPreview ? (
-                    <img src={logoPreview} alt="Logo carrera" className="h-52 w-52 object-contain" />
+                    <img src={logoPreview} alt="Logo carrera" className="h-20 w-20 md:h-52 md:w-52 shrink-0 object-contain rounded-2xl md:rounded-none border border-blue-100 bg-white shadow-sm md:border-0 md:bg-transparent md:shadow-none" />
                   ) : (
-                    <div className="h-36 w-36 flex items-center justify-center text-xs text-slate-500">
+                    <div className="h-20 w-20 md:h-36 md:w-36 shrink-0 flex items-center justify-center rounded-2xl border border-blue-100 bg-white text-[10px] md:text-xs text-slate-500 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300">
                       Sin logo
                     </div>
                   )}
 
-                  <h4 className="mt-4 text-2xl font-bold text-blue-800 text-center">
-                    {formData.nombre}
-                  </h4>
-                  <span className="mt-2 inline-flex items-center justify-center text-center px-4 py-1 text-blue-700 font-extrabold tracking-wide leading-none min-w-[64px]">
-                    {formData.codigo}
-                  </span>
+                  <div className="min-w-0 md:text-center">
+                    <h4 className="text-lg md:mt-4 md:text-2xl font-bold text-blue-800 leading-tight break-words dark:text-blue-200">
+                      {formData.nombre}
+                    </h4>
+                    <span className="mt-1 md:mt-2 inline-flex items-center justify-center text-center px-2 md:px-4 py-1 text-sm md:text-base text-blue-700 font-extrabold tracking-wide leading-none min-w-0 md:min-w-[64px] dark:text-blue-300">
+                      {formData.codigo}
+                    </span>
+                  </div>
                 </div>
 
-                <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-3 pb-4 border-b border-slate-200">
+                <div className="mt-4 md:mt-6 grid grid-cols-2 md:grid-cols-3 gap-3 pb-4 border-b border-slate-200 dark:border-slate-700">
                   <div>
-                    <h5 className="text-xs font-bold tracking-widest text-slate-600 uppercase">Facultad</h5>
-                    <p className="mt-1 text-sm font-semibold text-slate-800">{formData.facultad || 'N/A'}</p>
+                    <h5 className="text-[0.64rem] md:text-xs font-bold tracking-widest text-slate-600 uppercase dark:text-slate-300">Facultad</h5>
+                    <p className="mt-1 text-xs md:text-sm font-semibold text-slate-800 break-words leading-snug dark:text-white">{formData.facultad || 'N/A'}</p>
                   </div>
                   {formData.responsable && (
                     <div>
-                      <h5 className="text-xs font-bold tracking-widest text-slate-600 uppercase">Responsable</h5>
-                      <p className="mt-1 text-sm font-semibold text-slate-800">{formData.responsable}</p>
+                      <h5 className="text-[0.64rem] md:text-xs font-bold tracking-widest text-slate-600 uppercase dark:text-slate-300">Responsable</h5>
+                      <p className="mt-1 text-xs md:text-sm font-semibold text-slate-800 break-words leading-snug dark:text-white">{formData.responsable}</p>
                     </div>
                   )}
                   {formData.fecha_actualizacion && (
                     <div>
-                      <h5 className="text-xs font-bold tracking-widest text-slate-600 uppercase">Actualizado</h5>
-                      <p className="mt-1 text-sm font-semibold text-slate-800">
+                      <h5 className="text-[0.64rem] md:text-xs font-bold tracking-widest text-slate-600 uppercase dark:text-slate-300">Actualizado</h5>
+                      <p className="mt-1 text-xs md:text-sm font-semibold text-slate-800 break-words leading-snug dark:text-white">
                         {new Date(formData.fecha_actualizacion).toLocaleDateString('es-ES', { 
                           year: 'numeric', 
                           month: 'long', 
@@ -2200,7 +2151,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                   )}
                 </div>
 
-                <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="carrera-view-text-grid mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <h5 className="text-sm font-bold tracking-wider text-blue-700 uppercase">Misión</h5>
                     <div className="mt-2 rounded-md border border-slate-300 bg-slate-50 p-4 text-sm italic leading-relaxed min-h-[110px] whitespace-pre-line">
@@ -2216,7 +2167,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                   </div>
                 </div>
 
-                <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="carrera-view-text-grid mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <h5 className="text-sm font-bold tracking-wider text-blue-700 uppercase">Perfil Profesional</h5>
                     <div className="mt-2 rounded-md border border-slate-300 bg-slate-50 p-4 text-sm italic leading-relaxed min-h-[110px] whitespace-pre-line">
@@ -2263,30 +2214,13 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                   </div>
                 </div>
               )}
-
-              <div className="mx-auto mt-6 max-w-3xl flex flex-wrap justify-end gap-3">
-              </div>
             </div>
 
             {/* Footer */}
-            <div className="border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-6 py-4 flex gap-3 justify-end">
+            <div className="carrera-view-footer border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-6 py-4 flex gap-3 justify-end">
               <button
                 type="button"
-                onClick={async () => {
-                  if (carreraContentRef.current) {
-                    const element = carreraContentRef.current;
-                    const options = {
-                      margin: [8, 8, 8, 8],
-                      filename: `${formData.nombre}_${formData.codigo}.pdf`,
-                      image: { type: 'jpeg', quality: 0.98 },
-                      html2canvas: { scale: 1.5, allowTaint: true, useCORS: true },
-                      jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4' },
-                      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
-                    };
-                    html2pdf().set(options).from(element).save();
-                    toast.success('Carrera descargada en PDF');
-                  }
-                }}
+                onClick={handleDescargarFichaPdf}
                 className="px-6 py-2.5 bg-slate-300 hover:bg-slate-400 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-lg font-semibold transition-all"
               >
                 ⬇️ Descargar
@@ -2309,6 +2243,16 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                   className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-all shadow-md"
                 >
                   Editar Carrera
+                </button>
+              )}
+              {puedeEditarEstructura() && (
+                <button
+                  type="button"
+                  onClick={() => eliminarCarrera(carreraSeleccionada)}
+                  className="inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-all shadow-md"
+                >
+                  <FaTrash size={14} />
+                  Eliminar
                 </button>
               )}
             </div>
@@ -2357,8 +2301,13 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Código {errors.codigo && <span className="text-red-500">*</span>}</label>
-                      <input type="text" name="codigo" value={formData.codigo} onChange={handleChange} onFocus={() => setErrors(prev => prev.codigo ? ({ ...prev, codigo: undefined }) : prev)} required placeholder="Ej: IS" className={`w-full px-4 py-2.5 rounded-xl border-2 ${errors.codigo ? ERROR_FIELD_BORDER_CLASS : 'border-slate-300 dark:border-slate-600'} bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 placeholder:text-xs placeholder:italic transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:shadow-md`} />
+                      <input type="text" name="codigo" value={formData.codigo} onChange={handleChange} onFocus={() => setErrors(prev => prev.codigo ? ({ ...prev, codigo: undefined }) : prev)} required disabled={!puedeEditarEstructura()} placeholder="Ej: IS" className={`w-full px-4 py-2.5 rounded-xl border-2 ${errors.codigo ? ERROR_FIELD_BORDER_CLASS : 'border-slate-300 dark:border-slate-600'} bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 placeholder:text-xs placeholder:italic transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:shadow-md disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 dark:disabled:bg-slate-800 dark:disabled:text-slate-400`} />
                       {errors.codigo && <p className="text-xs text-red-600 mt-1">{getErrorMessage(errors.codigo)}</p>}
+                      {!puedeEditarEstructura() && (
+                        <p className="mt-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                          Solo el Superusuario puede cambiar el código de carrera.
+                        </p>
+                      )}
                     </div>
 
                     <div>
@@ -2530,6 +2479,9 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
               </p>
               <div className="rounded-lg border border-red-700/70 bg-red-200/70 dark:bg-red-500/10 px-3 py-2 text-sm text-red-900 dark:text-red-200">
                 Carrera objetivo: <strong className="text-red-900 dark:text-red-300">{carreraToDelete?.nombre}</strong>
+              </div>
+              <div className="rounded-lg border-2 border-red-700 bg-red-100 px-3 py-2 text-sm font-bold text-red-950 dark:border-red-600 dark:bg-red-950/35 dark:text-red-100">
+                Advertencia: se borraran semestres, materias, informes de docentes y todos los registros asociados a esta carrera.
               </div>
               <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-100">
                 {deleteImpact.loading && 'Calculando impacto de eliminación...'}

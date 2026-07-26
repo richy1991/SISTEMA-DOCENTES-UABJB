@@ -14,6 +14,7 @@ const PresupuestosPage = () => {
   const canEdit = !!poaPermissions.canEdit;
   // La actividad puede llegar por navigation state desde Activities
   const actividad = location?.state?.actividad || navContext?.actividad || null;
+  const actividadId = actividad?.id || null;
 
   const [detalle, setDetalle] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -35,10 +36,10 @@ const PresupuestosPage = () => {
       documentoId,
       documentoEstado,
       objetivoId,
-      actividadId: actividad?.id,
+      actividadId,
       actividad,
     });
-  }, [actividad, documentoEstado, documentoId, gestionNavegacion, objetivoId]);
+  }, [actividad, actividadId, documentoEstado, documentoId, gestionNavegacion, objetivoId]);
 
   const openNuevoPresupuesto = () => {
     if (documentoEstado === 'revision') {
@@ -71,10 +72,10 @@ const PresupuestosPage = () => {
   useEffect(() => {
     let mounted = true;
     const load = async () => {
-      if (!actividad || !actividad.id) return;
+      if (!actividadId) return;
       setLoading(true);
       try {
-        const res = await getDetallePresupuestoPorActividad(Number(actividad.id), documentoId);
+        const res = await getDetallePresupuestoPorActividad(Number(actividadId), documentoId);
         const list = Array.isArray(res.data) ? res.data : (res.data.results || []);
         if (!mounted) return;
         setDetalle(list || []);
@@ -88,7 +89,7 @@ const PresupuestosPage = () => {
     };
     load();
     return () => { mounted = false; };
-  }, [actividad, documentoId]);
+  }, [actividadId, documentoId]);
 
   // Cuando cambia la selección, notificar al header global
   useEffect(() => {

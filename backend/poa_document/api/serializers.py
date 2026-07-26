@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
+from django.db.models import Sum
 
 # Modelos del paquete
 from poa_document.models import (
@@ -334,10 +335,46 @@ class ObjetivoEspecificoSerializer(serializers.ModelSerializer):
     documento = serializers.IntegerField(source='documento_id', read_only=True)
     documento_estado = serializers.CharField(source='documento.estado', read_only=True)
     documento_gestion = serializers.IntegerField(source='documento.gestion', read_only=True)
+    actividades_count = serializers.SerializerMethodField()
+    monto_funcion_total = serializers.SerializerMethodField()
+    monto_inversion_total = serializers.SerializerMethodField()
+    monto_total = serializers.SerializerMethodField()
 
     class Meta:
         model = ObjetivoEspecifico
-        fields = ['id', 'codigo', 'descripcion', 'documento_id', 'documento', 'documento_estado', 'documento_gestion']
+        fields = [
+            'id', 'codigo', 'descripcion', 'documento_id', 'documento',
+            'documento_estado', 'documento_gestion',
+            'actividades_count', 'monto_funcion_total', 'monto_inversion_total', 'monto_total',
+        ]
+
+    def _decimal_attr(self, obj, attr):
+        value = getattr(obj, attr, None)
+        return value if value is not None else 0
+
+    def _sum_actividades(self, obj, field):
+        return obj.actividades.aggregate(total=Sum(field)).get('total') or 0
+
+    def get_actividades_count(self, obj):
+        annotated = getattr(obj, 'actividades_count', None)
+        if annotated is not None:
+            return annotated
+        return obj.actividades.count()
+
+    def get_monto_funcion_total(self, obj):
+        annotated = getattr(obj, 'monto_funcion_total', None)
+        if annotated is not None:
+            return annotated
+        return self._sum_actividades(obj, 'monto_funcion')
+
+    def get_monto_inversion_total(self, obj):
+        annotated = getattr(obj, 'monto_inversion_total', None)
+        if annotated is not None:
+            return annotated
+        return self._sum_actividades(obj, 'monto_inversion')
+
+    def get_monto_total(self, obj):
+        return self.get_monto_funcion_total(obj) + self.get_monto_inversion_total(obj)
 
 
 class ActividadSerializer(serializers.ModelSerializer):

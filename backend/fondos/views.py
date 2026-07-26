@@ -13,6 +13,7 @@ from django.db.models import Prefetch, ProtectedError, prefetch_related_objects,
 from django.core.exceptions import ValidationError as DjangoValidationError
 from datetime import datetime, date
 from decimal import Decimal, InvalidOperation
+from .utils.carrera_pdf_generator import CarreraPDFGenerator
 from .utils.pdf_generator import FondoPDFGenerator
 from rest_framework_simplejwt.views import TokenObtainPairView
 
@@ -521,6 +522,20 @@ class CarreraViewSet(viewsets.ModelViewSet):
         carrera = self.get_object()
         counts = self._build_dependency_counts(carrera)
         return Response(counts, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated], url_path='pdf-oficial')
+    def generar_pdf_oficial(self, request, pk=None):
+        carrera = self.get_object()
+        if not self._user_can_access_carrera(request.user, carrera):
+            raise PermissionDenied('No tienes acceso a esta carrera.')
+
+        buffer = CarreraPDFGenerator.generar_ficha(carrera)
+        nombre = ''.join(
+            char if char.isalnum() else '_'
+            for char in f"{carrera.nombre}_{carrera.codigo}"
+        ).strip('_')
+        nombre_archivo = f"Carrera_{nombre or carrera.pk}.pdf"
+        return FileResponse(buffer, as_attachment=True, filename=nombre_archivo)
 
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def facultades(self, request):

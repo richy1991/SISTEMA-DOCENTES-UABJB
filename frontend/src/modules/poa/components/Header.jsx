@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { FaArrowLeft, FaPlus, FaEdit, FaTrash, FaFilePdf, FaMoneyBillAlt, FaImage } from 'react-icons/fa';
+import { FaArrowLeft, FaPlus, FaEdit, FaTrash, FaFilePdf, FaMoneyBillAlt, FaImage, FaEllipsisV } from 'react-icons/fa';
 import ThemeToggle from './ThemeToggle';
 import IconButton from './IconButton';
 import Dialog from './base/Dialog';
@@ -50,8 +50,28 @@ const Header = ({
   const canEdit = !!poaPermissions?.canEdit;
   const canManageAccess = !!poaPermissions?.canManageAccess;
   const [deleteOperacionDialog, setDeleteOperacionDialog] = React.useState(null);
+  const [mobileActionsOpen, setMobileActionsOpen] = React.useState(false);
+  const mobileActionsRef = React.useRef(null);
   const navContext = getPoaNavigationContext(location?.state);
   const isPresupuestoPage = location?.pathname === '/poa/presupuestos';
+
+  React.useEffect(() => {
+    const handlePointerDown = (event) => {
+      if (!mobileActionsRef.current || mobileActionsRef.current.contains(event.target)) return;
+      setMobileActionsOpen(false);
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+    };
+  }, []);
+
+  React.useEffect(() => {
+    setMobileActionsOpen(false);
+  }, [location?.pathname, headerSelectedActividad, headerSelectedDireccion, headerSelectedOperacion]);
 
   const getActividadForNavigation = () => (
     isPresupuestoPage
@@ -169,249 +189,273 @@ const Header = ({
     return 'Ingeniería de Sistemas';
   };
 
+  const createHeaderAction = ({ key, label, icon, onClick, title, type = 'selected', className = '' }) => ({
+    key,
+    label,
+    icon,
+    onClick: () => {
+      setMobileActionsOpen(false);
+      onClick?.();
+    },
+    title: title || label,
+    type,
+    className,
+  });
+
+  const renderHeaderButton = (action, extraClassName = '') => (
+    <IconButton
+      key={action.key}
+      showIcon
+      icon={action.icon}
+      onClick={action.onClick}
+      className={`${gradientButtonClasses()} ${action.className || ''} ${extraClassName}`.trim()}
+      title={action.title}
+    >
+      {action.label}
+    </IconButton>
+  );
+
+  const renderMobileActionMenu = (selectedActions) => {
+    if (selectedActions.length === 0) return null;
+
+    return (
+      <div className="poa-mobile-actions-menu" ref={mobileActionsRef}>
+        <button
+          type="button"
+          className={`${gradientButtonClasses()} poa-mobile-actions-trigger`}
+          onClick={() => setMobileActionsOpen((open) => !open)}
+          aria-label="Acciones del elemento seleccionado"
+          aria-haspopup="menu"
+          aria-expanded={mobileActionsOpen}
+          title="Acciones"
+        >
+          <FaEllipsisV />
+        </button>
+        {mobileActionsOpen && (
+          <div className="poa-mobile-actions-dropdown" role="menu">
+            {selectedActions.map((action) => (
+              <button
+                key={action.key}
+                type="button"
+                role="menuitem"
+                onClick={action.onClick}
+                className={action.key.includes('delete') || action.key.includes('eliminar') ? 'is-danger' : ''}
+              >
+                <span>{action.icon}</span>
+                <span>{action.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderActions = (actions) => {
+    if (actions.length === 0) return null;
+
+    const visibleActions = actions.filter((action) => action.type !== 'selected');
+    const selectedActions = actions.filter((action) => action.type === 'selected');
+    const newActions = visibleActions.filter((action) => action.type === 'new');
+    const desktopActions = selectedActions.length > 0
+      ? actions.filter((action) => action.type !== 'new')
+      : actions;
+    const mobilePrimaryActions = selectedActions.length > 0
+      ? []
+      : (newActions.length > 0 ? newActions : visibleActions);
+
+    return (
+      <>
+        <div className="poa-header-actions-desktop">
+          {desktopActions.map((action) => renderHeaderButton(action))}
+        </div>
+        <div className="poa-header-actions-mobile">
+          {mobilePrimaryActions.map((action) => renderHeaderButton(action))}
+          {renderMobileActionMenu(selectedActions)}
+        </div>
+      </>
+    );
+  };
+
   const renderRightActions = () => {
     const p = location?.pathname || '';
     
     if (p.startsWith('/poa/objetivos-especificos')) {
       if (!canEdit) return null;
-      return (
-        <IconButton 
-          showIcon 
-          icon={<FaPlus />} 
-          onClick={() => window.dispatchEvent(new CustomEvent('open-new', { detail: { page: 'objetivos' } }))} 
-          className={gradientButtonClasses()} 
-          title="Nuevo"
-        >
-          Nuevo
-        </IconButton>
-      );
+      return renderActions([
+        createHeaderAction({
+          key: 'new-objetivos',
+          label: 'Nuevo',
+          icon: <FaPlus />,
+          type: 'new',
+          onClick: () => window.dispatchEvent(new CustomEvent('open-new', { detail: { page: 'objetivos' } })),
+        }),
+      ]);
     }
     
     if (p === '/poa/documentos' || p === '/poa/documentos-revision') {
-      return (
-        <>
-          <IconButton 
-            showIcon 
-            icon={<FaFilePdf />} 
-            onClick={() => window.dispatchEvent(new CustomEvent('generate-general-report-poa', { detail: {} }))} 
-            className={`${gradientButtonClasses()} mr-2`} 
-            title="Generar reporte general"
-          >
-            PDF
-          </IconButton>
-          {p === '/poa/documentos' && canEdit && (
-            <IconButton 
-              showIcon 
-              icon={<FaPlus />} 
-              onClick={() => window.dispatchEvent(new CustomEvent('open-new', { detail: { page: 'documentos' } }))} 
-              className={gradientButtonClasses()} 
-              title="Nuevo"
-            >
-              Nuevo
-            </IconButton>
-          )}
-        </>
-      );
+      return renderActions([
+        createHeaderAction({
+          key: 'pdf-documentos',
+          label: 'PDF',
+          icon: <FaFilePdf />,
+          type: 'utility',
+          onClick: () => window.dispatchEvent(new CustomEvent('generate-general-report-poa', { detail: {} })),
+          title: 'Generar reporte general',
+        }),
+        ...(p === '/poa/documentos' && canEdit ? [
+          createHeaderAction({
+            key: 'new-documentos',
+            label: 'Nuevo',
+            icon: <FaPlus />,
+            type: 'new',
+            onClick: () => window.dispatchEvent(new CustomEvent('open-new', { detail: { page: 'documentos' } })),
+          }),
+        ] : []),
+      ]);
     }
     
     if (p === '/poa/personas') {
       if (!canManageAccess) return null;
-      return (
-        <IconButton 
-          showIcon 
-          icon={<FaPlus />} 
-          onClick={() => window.dispatchEvent(new CustomEvent('open-new', { detail: { page: 'personas' } }))} 
-          className={gradientButtonClasses()} 
-          title="Nuevo"
-        >
-          Nuevo
-        </IconButton>
-      );
+      return renderActions([
+        createHeaderAction({
+          key: 'new-personas',
+          label: 'Nuevo',
+          icon: <FaPlus />,
+          type: 'new',
+          onClick: () => window.dispatchEvent(new CustomEvent('open-new', { detail: { page: 'personas' } })),
+        }),
+      ]);
     }
     
     if (p === '/poa/catalogos/indicadores') {
       if (!canEdit) return null;
       if (headerSelectedDireccion) {
-        return (
-          <>
-            {headerSelectedOperacion && (
-              <>
-                <IconButton 
-                  showIcon 
-                  icon={<FaEdit />} 
-                  onClick={() => window.dispatchEvent(new CustomEvent('open-edit-operacion', { detail: headerSelectedOperacion }))} 
-                  className={gradientButtonClasses()} 
-                  title="Editar"
-                >
-                  Editar
-                </IconButton>
-                <IconButton 
-                  showIcon 
-                  icon={<FaTrash />} 
-                  onClick={() => {
-                    setDeleteOperacionDialog(headerSelectedOperacion);
-                  }} 
-                  className={gradientButtonClasses()} 
-                  title="Eliminar"
-                >
-                  Eliminar
-                </IconButton>
-              </>
-            )}
-            <IconButton 
-              showIcon 
-              icon={<FaPlus />} 
-              onClick={() => { 
-                window.dispatchEvent(new CustomEvent('open-new', { detail: { page: 'indicadores' } })); 
-              }} 
-              className={gradientButtonClasses()} 
-              title="Nuevo indicador"
-            >
-              Nuevo indicador
-            </IconButton>
-          </>
-        );
+        return renderActions([
+          ...(headerSelectedOperacion ? [
+            createHeaderAction({
+              key: 'edit-operacion',
+              label: 'Editar',
+              icon: <FaEdit />,
+              onClick: () => window.dispatchEvent(new CustomEvent('open-edit-operacion', { detail: headerSelectedOperacion })),
+            }),
+            createHeaderAction({
+              key: 'delete-operacion',
+              label: 'Eliminar',
+              icon: <FaTrash />,
+              onClick: () => setDeleteOperacionDialog(headerSelectedOperacion),
+            }),
+          ] : []),
+          createHeaderAction({
+            key: 'new-indicador',
+            label: 'Nuevo indicador',
+            icon: <FaPlus />,
+            type: 'new',
+            onClick: () => window.dispatchEvent(new CustomEvent('open-new', { detail: { page: 'indicadores' } })),
+            title: 'Nuevo indicador',
+          }),
+        ]);
       }
-      return (
-        <IconButton 
-          showIcon 
-          icon={<FaPlus />} 
-          onClick={() => window.dispatchEvent(new CustomEvent('open-new', { detail: { page: 'direcciones' } }))} 
-          className={gradientButtonClasses()} 
-          title="Nuevo"
-        >
-          Nuevo
-        </IconButton>
-      );
+      return renderActions([
+        createHeaderAction({
+          key: 'new-direcciones',
+          label: 'Nuevo',
+          icon: <FaPlus />,
+          type: 'new',
+          onClick: () => window.dispatchEvent(new CustomEvent('open-new', { detail: { page: 'direcciones' } })),
+        }),
+      ]);
     }
     
     if (p.startsWith('/poa/actividades')) {
-      return (
-        <>
-          {headerSelectedActividad && (
-            <>
-              {canEdit && (
-                <IconButton 
-                  showIcon 
-                  icon={<FaEdit />} 
-                  onClick={() => window.dispatchEvent(new CustomEvent('header-action', { detail: { action: 'edit', actividad: headerSelectedActividad } }))} 
-                  className={gradientButtonClasses()} 
-                  title="Editar"
-                >
-                  Editar
-                </IconButton>
-              )}
-              <IconButton 
-                showIcon 
-                icon={<FaMoneyBillAlt />} 
-                onClick={() => navigate('/poa/presupuestos', {
-                  state: buildHeaderNavigationState({
-                    actividad: headerSelectedActividad,
-                    actividadId: headerSelectedActividad?.id,
-                    objetivoId: getSelectedObjetivoId(),
-                    documentoId: headerSelectedActividad?.documento_id,
-                    documentoEstado: headerSelectedActividad?.documento_estado,
-                    gestion: headerSelectedActividad?.gestion || headerSelectedActividad?.documento_gestion || navContext?.gestion,
-                  }),
-                })}
-                title="Ver presupuesto" 
-                className={gradientButtonClasses()}
-              >
-                Presupuesto
-              </IconButton>
-                  <IconButton
-                    showIcon
-                    icon={<FaImage />}
-                    onClick={() => navigate(`/poa/actividades/${headerSelectedActividad.id}/evidencias`, {
-                      state: buildHeaderNavigationState({
-                        actividad: headerSelectedActividad,
-                        actividadId: headerSelectedActividad?.id,
-                        objetivoId: getSelectedObjetivoId(),
-                        documentoId: headerSelectedActividad?.documento_id,
-                        documentoEstado: headerSelectedActividad?.documento_estado,
-                        gestion: headerSelectedActividad?.gestion || headerSelectedActividad?.documento_gestion || navContext?.gestion,
-                      }),
-                    })}
-                    title="Evidencias"
-                    className={gradientButtonClasses()}
-                  >
-                    Evidencias
-                  </IconButton>
-              {canEdit && (
-                <IconButton 
-                  showIcon 
-                  icon={<FaTrash />} 
-                  onClick={() => {
-                    window.dispatchEvent(new CustomEvent('header-action', { detail: { action: 'delete', actividad: headerSelectedActividad } }));
-                  }} 
-                  className={gradientButtonClasses()} 
-                  title="Eliminar"
-                >
-                  Eliminar
-                </IconButton>
-              )}
-            </>
-          )}
-          {canEdit && !p.includes('/evidencias') && (
-            <IconButton 
-              showIcon 
-              icon={<FaPlus />} 
-              onClick={() => window.dispatchEvent(new CustomEvent('open-new', { detail: { page: 'actividades' } }))} 
-              className={gradientButtonClasses()} 
-              title="Nuevo"
-            >
-              Nuevo
-            </IconButton>
-          )}
-          
-        </>
-      );
+      return renderActions([
+        ...(headerSelectedActividad ? [
+          ...(canEdit ? [
+            createHeaderAction({
+              key: 'edit-actividad',
+              label: 'Editar',
+              icon: <FaEdit />,
+              onClick: () => window.dispatchEvent(new CustomEvent('header-action', { detail: { action: 'edit', actividad: headerSelectedActividad } })),
+            }),
+          ] : []),
+          createHeaderAction({
+            key: 'presupuesto-actividad',
+            label: 'Presupuesto',
+            icon: <FaMoneyBillAlt />,
+            title: 'Ver presupuesto',
+            onClick: () => navigate('/poa/presupuestos', {
+              state: buildHeaderNavigationState({
+                actividad: headerSelectedActividad,
+                actividadId: headerSelectedActividad?.id,
+                objetivoId: getSelectedObjetivoId(),
+                documentoId: headerSelectedActividad?.documento_id,
+                documentoEstado: headerSelectedActividad?.documento_estado,
+                gestion: headerSelectedActividad?.gestion || headerSelectedActividad?.documento_gestion || navContext?.gestion,
+              }),
+            }),
+          }),
+          createHeaderAction({
+            key: 'evidencias-actividad',
+            label: 'Evidencias',
+            icon: <FaImage />,
+            onClick: () => navigate(`/poa/actividades/${headerSelectedActividad.id}/evidencias`, {
+              state: buildHeaderNavigationState({
+                actividad: headerSelectedActividad,
+                actividadId: headerSelectedActividad?.id,
+                objetivoId: getSelectedObjetivoId(),
+                documentoId: headerSelectedActividad?.documento_id,
+                documentoEstado: headerSelectedActividad?.documento_estado,
+                gestion: headerSelectedActividad?.gestion || headerSelectedActividad?.documento_gestion || navContext?.gestion,
+              }),
+            }),
+          }),
+          ...(canEdit ? [
+            createHeaderAction({
+              key: 'delete-actividad',
+              label: 'Eliminar',
+              icon: <FaTrash />,
+              onClick: () => window.dispatchEvent(new CustomEvent('header-action', { detail: { action: 'delete', actividad: headerSelectedActividad } })),
+            }),
+          ] : []),
+        ] : []),
+        ...(canEdit && !p.includes('/evidencias') ? [
+          createHeaderAction({
+            key: 'new-actividades',
+            label: 'Nuevo',
+            icon: <FaPlus />,
+            type: 'new',
+            onClick: () => window.dispatchEvent(new CustomEvent('open-new', { detail: { page: 'actividades' } })),
+          }),
+        ] : []),
+      ]);
     }
     
     if (p.startsWith('/poa/presupuestos')) {
-      return (
-        <>
-          {headerSelectedActividad && (
-            <>
-              {canEdit && (
-                <>
-                  <IconButton 
-                    showIcon 
-                    icon={<FaEdit />} 
-                    onClick={() => window.dispatchEvent(new CustomEvent('header-action', { detail: { action: 'edit', actividad: headerSelectedActividad } }))} 
-                    className={gradientButtonClasses()} 
-                    title="Editar"
-                  >
-                    Editar
-                  </IconButton>
-                  <IconButton 
-                    showIcon 
-                    icon={<FaTrash />} 
-                    onClick={() => {
-                      window.dispatchEvent(new CustomEvent('header-action', { detail: { action: 'delete', actividad: headerSelectedActividad } }));
-                    }} 
-                    className={gradientButtonClasses()} 
-                    title="Eliminar"
-                  >
-                    Eliminar
-                  </IconButton>
-                </>
-              )}
-            </>
-          )}
-          {canEdit && (
-            <IconButton 
-              showIcon 
-              icon={<FaPlus />} 
-              onClick={() => window.dispatchEvent(new CustomEvent('open-new', { detail: { page: 'presupuestos' } }))} 
-              className={gradientButtonClasses()} 
-              title="Nuevo"
-            >
-              Nuevo
-            </IconButton>
-          )}
-        </>
-      );
+      return renderActions([
+        ...(headerSelectedActividad && canEdit ? [
+          createHeaderAction({
+            key: 'edit-presupuesto',
+            label: 'Editar',
+            icon: <FaEdit />,
+            onClick: () => window.dispatchEvent(new CustomEvent('header-action', { detail: { action: 'edit', actividad: headerSelectedActividad } })),
+          }),
+          createHeaderAction({
+            key: 'delete-presupuesto',
+            label: 'Eliminar',
+            icon: <FaTrash />,
+            onClick: () => window.dispatchEvent(new CustomEvent('header-action', { detail: { action: 'delete', actividad: headerSelectedActividad } })),
+          }),
+        ] : []),
+        ...(canEdit ? [
+          createHeaderAction({
+            key: 'new-presupuestos',
+            label: 'Nuevo',
+            icon: <FaPlus />,
+            type: 'new',
+            onClick: () => window.dispatchEvent(new CustomEvent('open-new', { detail: { page: 'presupuestos' } })),
+          }),
+        ] : []),
+      ]);
     }
     
     return null;
@@ -429,8 +473,8 @@ const Header = ({
     );
   }
 
-  const sidebarOffset = sidebarExpanded ? 'md:left-72' : 'md:left-16';
-  const headerWidthClass = sidebarExpanded ? 'md:w-[calc(100%-18rem)]' : 'md:w-[calc(100%-4rem)]';
+  const sidebarOffset = sidebarExpanded ? 'md:left-72' : 'md:left-20';
+  const headerWidthClass = sidebarExpanded ? 'md:w-[calc(100%-18rem)]' : 'md:w-[calc(100%-5rem)]';
 
   return (
     <>
@@ -460,7 +504,7 @@ const Header = ({
                 showIcon 
                 icon={<FaArrowLeft />} 
                 onClick={handlePoaBack}
-                className={gradientButtonClasses()} 
+                className={`${gradientButtonClasses()} poa-header-back-button`} 
                 title="Volver"
               >
                 Volver

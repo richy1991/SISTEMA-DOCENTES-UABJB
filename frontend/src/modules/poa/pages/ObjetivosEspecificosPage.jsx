@@ -180,6 +180,24 @@ const ObjetivosEspecificosPage = () => {
       setActividadesCountPorObjetivo({});
       return;
     }
+
+    const objetivosConResumen = objetivos.every(obj =>
+      obj?.monto_total !== undefined &&
+      obj?.actividades_count !== undefined
+    );
+
+    if (objetivosConResumen) {
+      const totals = {};
+      const counts = {};
+      objetivos.forEach((obj) => {
+        totals[obj.id] = normalizeMonto(obj.monto_total);
+        counts[obj.id] = Number(obj.actividades_count) || 0;
+      });
+      setRecursosPorObjetivo(totals);
+      setActividadesCountPorObjetivo(counts);
+      return;
+    }
+
     let mounted = true;
 
     const fetchTotals = async () => {

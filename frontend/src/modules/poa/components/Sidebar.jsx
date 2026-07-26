@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { FaChevronDown, FaBars, FaHome, FaUsers, FaFileAlt, FaList, FaFilePdf, FaClipboardCheck } from 'react-icons/fa';
+import { FaBars, FaChevronDown, FaClipboardCheck, FaFileAlt, FaFilePdf, FaHome, FaList, FaUsers } from 'react-icons/fa';
 import CatalogosMenu from '../pages/CatalogosMenu';
 import ProfilePicture from '../../../components/ProfilePicture';
 
@@ -11,14 +11,10 @@ const BackIcon = (props) => (
 );
 
 const getRoleName = (user) => {
-  if (user?.is_superuser) {
-    return 'Super Admin';
-  }
-  if (!user?.perfil?.rol) {
-    return user?.is_staff ? 'Administrador' : 'Usuario';
-  }
+  if (user?.is_superuser) return 'Super Admin';
+  if (!user?.perfil?.rol) return user?.is_staff ? 'Administrador' : 'Usuario';
   const roles = {
-    iiisyp: 'Instituto de investigación',
+    iiisyp: 'Instituto de investigacion',
     director: 'Director de Carrera',
     jefe_estudios: 'Jefe de Estudios',
     docente: 'Docente',
@@ -43,73 +39,45 @@ const getFullName = (user) => {
   return full || user?.username || 'Usuario';
 };
 
-const themeStyles = {
-  dark: {
-    text: 'text-slate-100',
-    // Colores del sistema principal - Sidebar azul
-    sidebarBg: 'bg-gradient-to-b from-blue-900 to-blue-950',
-    sidebarBorder: 'border-blue-800/50',
-    navCardBg: 'bg-blue-800/20',
-    navCardShadow: 'shadow-[0_10px_40px_rgba(0,0,0,0.3)]',
-    navActiveBg: 'bg-gradient-to-r from-blue-500 to-indigo-600',
-    navActiveBorder: 'border-white',
-    navActiveText: 'text-white',
-    navItemHover: 'hover:bg-blue-800/50 hover:text-white',
-    profileText: 'text-blue-200',
-  },
-  light: {
-    text: 'text-slate-900',
-    // Colores del sistema principal - Sidebar azul (mismo en light mode)
-    sidebarBg: 'bg-gradient-to-b from-blue-900 to-blue-950',
-    sidebarBorder: 'border-blue-800/50',
-    navCardBg: 'bg-blue-800/20',
-    navCardShadow: 'shadow-[0_10px_40px_rgba(0,0,0,0.3)]',
-    navActiveBg: 'bg-gradient-to-r from-blue-500 to-indigo-600',
-    navActiveBorder: 'border-white',
-    navActiveText: 'text-white',
-    navItemHover: 'hover:bg-blue-800/50 hover:text-white',
-    profileText: 'text-blue-200',
-  },
-};
-
 const menuItems = [
-  { name: 'Inicio', icon: <FaHome />, path: '/poa' },
-  { name: 'Accesos POA', icon: <FaUsers />, path: '/poa/accesos' },
-  { name: 'Documentos POA', icon: <FaFileAlt />, path: '/poa/documentos' },
-  { name: 'Revisión POA', icon: <FaClipboardCheck />, path: '/poa/documentos-revision' },
-  { name: 'Catálogos', icon: <FaList />, path: '/poa/catalogos' },
-  { name: 'Reportes', icon: <FaFilePdf />, path: '/poa/reportes' },
+  { name: 'Inicio', icon: FaHome, path: '/poa' },
+  { name: 'Accesos POA', icon: FaUsers, path: '/poa/accesos' },
+  { name: 'Documentos POA', icon: FaFileAlt, path: '/poa/documentos' },
+  { name: 'Revision POA', icon: FaClipboardCheck, path: '/poa/documentos-revision' },
+  { name: 'Catalogos', icon: FaList, path: '/poa/catalogos' },
+  { name: 'Reportes', icon: FaFilePdf, path: '/poa/reportes' },
 ];
 
 const DESKTOP_BREAKPOINT = 768;
+const SIDEBAR_STORAGE_KEY = 'poa-sidebar-open';
 
 const getIsDesktopViewport = () => {
   if (typeof window === 'undefined') return true;
   return window.innerWidth >= DESKTOP_BREAKPOINT;
 };
 
-const Sidebar = ({ theme, onOpenGestionSelector, onOpenRevisionBoard, setSidebarExpanded, user, poaPermissions = {}, poaRoles = [] }) => {
+const getStoredSidebarOpen = () => {
+  if (typeof window === 'undefined') return true;
+  if (!getIsDesktopViewport()) return false;
+  return window.localStorage.getItem(SIDEBAR_STORAGE_KEY) !== 'false';
+};
+
+const Sidebar = ({ onOpenGestionSelector, onOpenRevisionBoard, setSidebarExpanded, user, poaPermissions = {}, poaRoles = [] }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [isDesktop, setIsDesktop] = useState(getIsDesktopViewport);
-  const [sidebarOpen, setSidebarOpen] = useState(getIsDesktopViewport);
+  const [sidebarOpen, setSidebarOpen] = useState(getStoredSidebarOpen);
   const [showCatalogos, setShowCatalogos] = useState(false);
+  const [selectedKey, setSelectedKey] = useState(null);
 
-  const isDark = theme === 'dark';
-  const themeConfig = themeStyles[theme];
+  const collapsed = isDesktop ? !sidebarOpen : !sidebarOpen;
   const canManageAccess = !!poaPermissions?.canManageAccess;
-  const expanded = sidebarOpen;
 
   useEffect(() => {
     const handleResize = () => {
       const nextIsDesktop = getIsDesktopViewport();
       setIsDesktop(nextIsDesktop);
-      setSidebarOpen((currentOpen) => {
-        if (nextIsDesktop) {
-          return currentOpen;
-        }
-        return false;
-      });
+      setSidebarOpen(nextIsDesktop ? getStoredSidebarOpen() : false);
     };
 
     handleResize();
@@ -117,204 +85,221 @@ const Sidebar = ({ theme, onOpenGestionSelector, onOpenRevisionBoard, setSidebar
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Notificar al padre solo para layout de escritorio
   useEffect(() => {
-    setSidebarExpanded(isDesktop ? expanded : false);
-  }, [expanded, isDesktop, setSidebarExpanded]);
-  const navSpacing = isDesktop
-    ? (expanded ? 'gap-3 px-6 py-3' : 'justify-center py-3')
-    : 'gap-2 px-3 py-2.5';
-  const navTextClass = 'text-blue-200';
-  const navItemBase = `flex items-center ${navSpacing} rounded-xl border border-transparent font-semibold w-full text-left transition duration-300 ${isDesktop ? '' : 'text-sm'}`;
-  const navActiveShadow = 'shadow-lg';
-  const catalogActiveShadow = 'shadow-[0_0_20px_rgba(59,130,246,0.35)]';
-  const sidebarShadow = 'shadow-2xl';
-  const navIconClass = isDark ? 'text-blue-200' : 'text-blue-200';
-  const chevronColor = isDark ? 'text-blue-300' : 'text-blue-300';
+    setSidebarExpanded(isDesktop ? !collapsed : false);
+  }, [collapsed, isDesktop, setSidebarExpanded]);
 
-  const handleMenuClick = () => {
-    if (!isDesktop) {
-      setSidebarOpen(false);
+  const setManualSidebarOpen = (nextOpen) => {
+    if (typeof window !== 'undefined' && isDesktop) {
+      window.localStorage.setItem(SIDEBAR_STORAGE_KEY, String(nextOpen));
     }
+    setSidebarOpen(nextOpen);
   };
 
   const handleSidebarToggle = () => {
-    setSidebarOpen((currentOpen) => !currentOpen);
+    setManualSidebarOpen(!sidebarOpen);
+  };
+
+  const handleMenuClick = () => {
+    if (!isDesktop) setSidebarOpen(false);
+  };
+
+  const markSelected = (key) => {
+    setSelectedKey(key);
+    window.setTimeout(() => setSelectedKey((current) => (current === key ? null : current)), 360);
   };
 
   const handleDocumentosClick = () => {
+    markSelected('/poa/documentos');
     handleMenuClick();
     onOpenGestionSelector?.();
   };
 
   const handleRevisionClick = () => {
+    markSelected('/poa/documentos-revision');
     handleMenuClick();
     onOpenRevisionBoard?.();
   };
 
-  const showHamburger = !expanded;
-  const showClose = expanded;
-  const sidebarStyle = isDesktop
-    ? { minHeight: '100vh' }
-    : { minHeight: '100vh', width: 'min(74vw, 17rem)', maxWidth: '17rem' };
+  const isActive = (path) => {
+    if (path === '/poa') return location.pathname === path || location.pathname === '/poa/';
+    if (path === '/poa/documentos') return location.pathname === '/poa/documentos';
+    if (path === '/poa/documentos-revision') return location.pathname === '/poa/documentos-revision';
+    return location.pathname.startsWith(path);
+  };
+
+  const getItemClass = (active, key) => (
+    `group flex items-center gap-4 w-full transition-all duration-300 rounded-xl ${
+      collapsed ? 'justify-center h-14' : 'px-4 py-3'
+    } ${
+      active
+        ? 'poa-sidebar-active-pop bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-[inset_4px_0_0_0_#ffffff,0_10px_24px_rgba(0,0,0,0.22)]'
+        : 'text-blue-200 hover:bg-blue-800/50 hover:text-white hover:shadow-[inset_4px_0_0_0_#ffffff]'
+    } ${selectedKey === key ? 'poa-sidebar-click-pop' : ''}`
+  );
 
   return (
     <>
-      {!isDesktop && expanded && (
+      {!isDesktop && sidebarOpen && (
         <div
           className="poa-sidebar-backdrop fixed inset-0 bg-black/50 z-30 md:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
-      {/* Botón hamburguesa flotante */}
-      {showHamburger && (
+      {!isDesktop && !sidebarOpen && (
         <button
           className="poa-sidebar-toggle fixed top-3 left-4 z-50 p-2 text-blue-200 hover:text-white transition-all duration-300"
           onClick={handleSidebarToggle}
-          title="Expandir menú"
+          title="Expandir menu"
         >
           <FaBars size={24} />
         </button>
       )}
 
-      {/* Sidebar */}
-      <aside
-        className={`poa-sidebar fixed left-0 top-0 h-screen overflow-hidden ${isDesktop ? (expanded ? 'w-72' : 'w-16') : ''} ${themeConfig.sidebarBg} ${themeConfig.text} flex flex-col items-center py-4 ${sidebarShadow} ${themeConfig.sidebarBorder} z-40 transition-all duration-300 ${isDesktop ? 'translate-x-0' : expanded ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
-        style={sidebarStyle}
+      <div
+        className={`poa-sidebar fixed left-0 top-0 h-screen bg-gradient-to-b from-blue-900 to-blue-950 text-white shadow-2xl z-40 transition-all duration-300 flex flex-col ${
+          isDesktop ? (collapsed ? 'w-20' : 'w-72') : 'w-[min(82vw,20rem)]'
+        } ${isDesktop || sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
-        {/* Botón para retraer - en flujo normal, no absolute */}
-        <div className="poa-sidebar-close-row w-full flex justify-end px-3 mb-2 min-h-[2rem] shrink-0">
-          {showClose && (
-            <button
-              className="text-blue-200 hover:text-white p-1 rounded transition leading-none"
-              onClick={handleSidebarToggle}
-              title="Ocultar menú"
-            >
+        <div className={`flex mb-1 pt-2 ${collapsed ? 'justify-center' : 'justify-end px-3'}`}>
+          <button
+            onClick={handleSidebarToggle}
+            title={collapsed ? 'Expandir menu' : 'Contraer menu'}
+            className="p-2 text-blue-200 hover:text-white transition-all duration-300"
+          >
+            {collapsed ? (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            ) : (
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
-            </button>
-          )}
+            )}
+          </button>
         </div>
 
-        {/* Avatar header con datos del usuario */}
-        {expanded ? (
-          <div className={`poa-sidebar-profile flex flex-col items-center shrink-0 ${isDesktop ? 'px-4 mb-4' : 'px-3 mb-3'}`}>
-            <div className={`${isDesktop ? 'w-40 h-40 mb-3' : 'w-20 h-20 mb-2'}`}>
+        <div className="px-4 pb-4 border-b border-blue-800/50">
+          <div className="flex flex-col items-center gap-3 p-2 rounded-lg transition-all duration-300">
+            <div className={`transition-all duration-300 ${collapsed ? 'w-12 h-12' : 'w-40 h-40'}`}>
               <ProfilePicture user={user} onUpdate={() => {}} />
             </div>
-            <div className={`${isDesktop ? 'text-base' : 'text-sm'} font-bold ${themeConfig.profileText} text-center leading-tight`}>
-              {getFullName(user)}
-            </div>
-            <div className={`${isDesktop ? 'text-xs' : 'text-[11px]'} text-blue-300 text-center mt-0.5`}>
-              {getRoleName(user)}
-            </div>
-            <div className={`${isDesktop ? 'text-[11px]' : 'text-[10px]'} text-cyan-200 text-center mt-1 font-semibold px-2 leading-tight`}>
-              Rol POA: {getPoaRoleLabel(poaRoles)}
-            </div>
+            {!collapsed && (
+              <div className="flex-1 min-w-0 text-center">
+                <p className="text-sm font-semibold text-white truncate" title={getFullName(user)}>
+                  {getFullName(user)}
+                </p>
+                <p className="text-xs text-blue-300 truncate" title={getRoleName(user)}>
+                  {getRoleName(user)}
+                </p>
+                <p className="text-[11px] text-cyan-200 truncate mt-1 font-semibold" title={getPoaRoleLabel(poaRoles)}>
+                  Rol POA: {getPoaRoleLabel(poaRoles)}
+                </p>
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="mb-10 flex justify-center">
-            <div className="w-12 h-12">
-              <ProfilePicture user={user} onUpdate={() => {}} />
-            </div>
-          </div>
-        )}
+        </div>
 
-        {!expanded && (
-          <div className="mb-6" />
-        )}
+        <nav className="flex-1 py-4 overflow-y-auto">
+          <div className="mb-6">
+            {!collapsed && (
+              <h3 className="px-6 text-xs font-semibold uppercase tracking-wider mb-2 text-blue-400">
+                Principal
+              </h3>
+            )}
+            <div className={collapsed ? 'space-y-2 px-2' : 'space-y-2 px-4'}>
+              {menuItems.filter((item) => (item.path === '/poa/accesos' ? canManageAccess : true)).map((item) => {
+                const Icon = item.icon;
 
-        {/* Navegación */}
-        <nav className={`poa-sidebar-nav w-full min-h-0 flex-1 overflow-y-auto overflow-x-hidden ${isDesktop ? 'mb-6' : 'mb-3'} flex flex-col gap-1 rounded-2xl ${themeConfig.navCardBg} ${themeConfig.navCardShadow} ${expanded ? '' : 'items-center'}`}>
-          {menuItems.filter((item) => (item.path === '/poa/accesos' ? canManageAccess : true)).map(item => {
-            if (item.name === 'Catálogos') {
-              return (
-                <div key={item.name} className="w-full">
-                  <button
-                    className={showCatalogos && expanded ? `${navItemBase} ${themeConfig.navActiveBg} ${themeConfig.navActiveBorder} ${themeConfig.navActiveText} ${catalogActiveShadow}` : `${navItemBase} ${navTextClass} ${themeConfig.navItemHover}`}
+                if (item.path === '/poa/catalogos') {
+                  return (
+                    <div key={item.path}>
+                      <button
+                        className={getItemClass(showCatalogos && !collapsed, item.path)}
+                        onClick={() => {
+                          markSelected(item.path);
+                          if (collapsed) {
+                            handleSidebarToggle();
+                            return;
+                          }
+                          setShowCatalogos(!showCatalogos);
+                        }}
+                        title={item.name}
+                      >
+                        <Icon className="w-6 h-6 flex-shrink-0" />
+                        {!collapsed && <span className="font-semibold text-sm whitespace-nowrap">{item.name}</span>}
+                        {!collapsed && <FaChevronDown className={`ml-auto w-4 h-4 text-blue-300 transition-transform duration-300 ${showCatalogos ? 'rotate-180' : ''}`} />}
+                      </button>
+                      {showCatalogos && !collapsed && (
+                        <CatalogosMenu onMenuClick={() => { setShowCatalogos(false); handleMenuClick(); }} />
+                      )}
+                    </div>
+                  );
+                }
+
+                if (item.path === '/poa/documentos') {
+                  return (
+                    <button
+                      key={item.path}
+                      type="button"
+                      className={getItemClass(isActive(item.path), item.path)}
+                      onClick={handleDocumentosClick}
+                      title={item.name}
+                    >
+                      <Icon className="w-6 h-6 flex-shrink-0" />
+                      {!collapsed && <span className="font-semibold text-sm whitespace-nowrap">{item.name}</span>}
+                    </button>
+                  );
+                }
+
+                if (item.path === '/poa/documentos-revision') {
+                  return (
+                    <button
+                      key={item.path}
+                      type="button"
+                      className={getItemClass(isActive(item.path), item.path)}
+                      onClick={handleRevisionClick}
+                      title={item.name}
+                    >
+                      <Icon className="w-6 h-6 flex-shrink-0" />
+                      {!collapsed && <span className="font-semibold text-sm whitespace-nowrap">{item.name}</span>}
+                    </button>
+                  );
+                }
+
+                return (
+                  <NavLink
+                    key={item.path}
+                    to={item.path}
+                    end={item.path === '/poa'}
+                    className={({ isActive: navActive }) => getItemClass(navActive, item.path)}
                     onClick={() => {
-                      if (!expanded) {
-                        handleSidebarToggle();
-                        return;
-                      }
-                      setShowCatalogos(!showCatalogos);
+                      markSelected(item.path);
+                      handleMenuClick();
                     }}
                     title={item.name}
                   >
-                    <span className={`${isDesktop ? 'text-xl' : 'text-base'} ${navIconClass}`}>{item.icon}</span>
-                    {expanded && <span>{item.name}</span>}
-                    {expanded && <FaChevronDown className={`ml-auto transition-transform duration-300 ${showCatalogos ? 'rotate-180' : ''} ${chevronColor}`} />}
-                  </button>
-                  {showCatalogos && expanded && (
-                    <CatalogosMenu onMenuClick={() => { setShowCatalogos(false); handleMenuClick(); }} />
-                  )}
-                </div>
-              );
-            }
-
-            if (item.path === '/poa/documentos') {
-              const isActive = location?.pathname === item.path;
-              return (
-                <button
-                  key={item.name}
-                  type="button"
-                  className={`${navItemBase} ${isActive ? `${themeConfig.navActiveBg} ${themeConfig.navActiveBorder} ${themeConfig.navActiveText} ${navActiveShadow}` : `${navTextClass} ${themeConfig.navItemHover}`}`}
-                  onClick={handleDocumentosClick}
-                  title={item.name}
-                >
-                  <span className={`${isDesktop ? 'text-xl' : 'text-base'} ${navIconClass}`}>{item.icon}</span>
-                  {expanded && <span>{item.name}</span>}
-                </button>
-              );
-            }
-
-            if (item.path === '/poa/documentos-revision') {
-              const isActive = location?.pathname === item.path;
-              return (
-                <button
-                  key={item.name}
-                  type="button"
-                  className={`${navItemBase} ${isActive ? `${themeConfig.navActiveBg} ${themeConfig.navActiveBorder} ${themeConfig.navActiveText} ${navActiveShadow}` : `${navTextClass} ${themeConfig.navItemHover}`}`}
-                  onClick={handleRevisionClick}
-                  title={item.name}
-                >
-                  <span className={`${isDesktop ? 'text-xl' : 'text-base'} ${navIconClass}`}>{item.icon}</span>
-                  {expanded && <span>{item.name}</span>}
-                </button>
-              );
-            }
-            return (
-              <NavLink
-                key={item.name}
-                to={item.path}
-                end={item.path === '/poa'}
-                className={({ isActive }) =>
-                  `${navItemBase} ${isActive ? `${themeConfig.navActiveBg} ${themeConfig.navActiveBorder} ${themeConfig.navActiveText} ${navActiveShadow}` : `${navTextClass} ${themeConfig.navItemHover}`}`
-                }
-                onClick={handleMenuClick}
-                title={item.name}
-              >
-                <span className={`${isDesktop ? 'text-xl' : 'text-base'} ${navIconClass}`}>{item.icon}</span>
-                {expanded && <span>{item.name}</span>}
-              </NavLink>
-            );
-          })}
+                    <Icon className="w-6 h-6 flex-shrink-0" />
+                    {!collapsed && <span className="font-semibold text-sm whitespace-nowrap">{item.name}</span>}
+                  </NavLink>
+                );
+              })}
+            </div>
+          </div>
         </nav>
 
-        {/* Botón regresar al panel de módulos */}
-        <div className={`poa-sidebar-footer mt-auto w-full shrink-0 border-t border-blue-800/50 ${expanded ? 'px-3 py-3' : 'flex justify-center py-3'}`}>
+        <div className="mt-auto p-4 border-t border-blue-800/50">
           <button
             onClick={() => navigate('/')}
-            title="Panel de Módulos"
-            className={`group flex items-center gap-3 w-full transition-all duration-300 rounded-xl ${expanded ? 'px-4 py-3' : 'justify-center h-12 w-12'} text-blue-200 hover:bg-red-500/80 hover:text-white`}
+            title="Panel de Modulos"
+            className={`group flex items-center gap-4 w-full transition-all duration-300 rounded-lg ${collapsed ? 'justify-center h-14' : 'px-4 py-3'} text-blue-200 hover:bg-red-500/80 hover:text-white border border-transparent hover:border-red-300/30`}
           >
-            <BackIcon className="w-5 h-5 flex-shrink-0" />
-            {expanded && <span className="font-medium text-sm whitespace-nowrap">Panel de Módulos</span>}
+            <BackIcon className="w-6 h-6 flex-shrink-0" />
+            {!collapsed && <span className="font-medium text-sm whitespace-nowrap">Panel de Modulos</span>}
           </button>
         </div>
-      </aside>
+      </div>
     </>
   );
 };

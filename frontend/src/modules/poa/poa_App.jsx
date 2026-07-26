@@ -246,7 +246,7 @@ function POAApp({ user }) {
       )}
 
       {/* Main Content */}
-      <main className={`flex-1 flex flex-col transition-all duration-300 ml-0 ${sidebarExpanded ? 'md:ml-72' : 'md:ml-16'}`}>
+      <main className={`flex-1 flex flex-col transition-all duration-300 ml-0 ${sidebarExpanded ? 'md:ml-72' : 'md:ml-20'}`}>
         {/* Header */}
         <Header 
           theme={theme}

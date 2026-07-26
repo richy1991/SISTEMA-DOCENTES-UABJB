@@ -42,7 +42,7 @@ const Dialog = ({
 
   const confirmButtonClass =
     type === 'danger'
-      ? 'bg-red-300 hover:bg-red-200 text-slate-950 border border-red-200'
+      ? 'btn-danger'
       : type === 'warning'
         ? 'bg-amber-300 hover:bg-amber-200 text-slate-950 border border-amber-200'
         : 'btn-primary text-white';

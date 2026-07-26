@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Calendar, Download, FileText, Sparkles, TrendingUp, Layers3 } from 'lucide-react';
 import { useOutletContext } from 'react-router-dom';
@@ -48,6 +48,7 @@ const Reportes = () => {
   const [pdfPreviewTitle, setPdfPreviewTitle] = useState('Vista Previa PDF');
   const [pdfDownloadFileName, setPdfDownloadFileName] = useState('reporte.pdf');
   const [activeSection, setActiveSection] = useState('general');
+  const skipNextDocumentsFetchRef = useRef(null);
 
   const gestionValida = /^[0-9]{4}$/.test(String(gestion).trim());
 
@@ -57,6 +58,10 @@ const Reportes = () => {
     const year = String(gestion).trim();
     if (!gestionValida) {
       setDocuments([]);
+      return;
+    }
+    if (skipNextDocumentsFetchRef.current === year) {
+      skipNextDocumentsFetchRef.current = null;
       return;
     }
 
@@ -106,6 +111,7 @@ const Reportes = () => {
     const nextGestion = String(gestionSeleccionada || new Date().getFullYear());
     const rawDocs = Array.isArray(documentosSeleccionados) ? documentosSeleccionados : [];
     const filteredDocs = rawDocs.filter((doc) => doc && doc.id && matchesCareer(doc, careerId));
+    skipNextDocumentsFetchRef.current = nextGestion;
     setGestion(nextGestion);
     setDocuments(filteredDocs);
     setSelectedDocumentoId(filteredDocs[0]?.id ? String(filteredDocs[0].id) : '');
@@ -260,7 +266,7 @@ const Reportes = () => {
                 onChange={(e) => setSelectedDocumentoId(e.target.value)}
                 className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-950/60 px-4 py-3 text-sm font-semibold text-slate-800 dark:text-slate-100 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15"
               >
-                <option value="">Selecciona un documento para descargar</option>
+                <option value="">Seleccionar documento</option>
                 {documents.map((doc) => {
                   const programa = getProgramaLabel(doc) || 'Sin programa';
                   return (
@@ -312,7 +318,7 @@ const Reportes = () => {
                 onChange={(e) => setSelectedSeguimientoId(e.target.value)}
                 className="w-full rounded-xl border border-amber-200 dark:border-slate-700 bg-white/90 dark:bg-slate-950/60 px-4 py-3 text-sm font-semibold text-slate-800 dark:text-slate-100 shadow-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/15"
               >
-                <option value="">Selecciona un documento para seguimiento</option>
+                <option value="">Seleccionar documento</option>
                 {documents.map((doc) => {
                   const programa = getProgramaLabel(doc) || 'Sin programa';
                   return (

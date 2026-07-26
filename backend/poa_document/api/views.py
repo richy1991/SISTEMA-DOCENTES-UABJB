@@ -11,7 +11,8 @@ from rest_framework.views import APIView
 from django.http import FileResponse, HttpResponse
 from django.utils import timezone
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Count, DecimalField, Prefetch, Q, Sum
+from django.db.models.functions import Coalesce
 from django.core.exceptions import ObjectDoesNotExist
 from rest_framework.exceptions import PermissionDenied
 from reportlab.lib import colors
@@ -415,9 +416,25 @@ def _aplicar_solicitud_cambio(solicitud):
     raise PermissionDenied('La solicitud de cambio no es valida.')
 
 
+def _objetivos_con_resumen_queryset():
+    return ObjetivoEspecifico.objects.select_related('documento').annotate(
+        actividades_count=Count('actividades', distinct=True),
+        monto_funcion_total=Coalesce(
+            Sum('actividades__monto_funcion'),
+            Decimal('0'),
+            output_field=DecimalField(max_digits=14, decimal_places=2),
+        ),
+        monto_inversion_total=Coalesce(
+            Sum('actividades__monto_inversion'),
+            Decimal('0'),
+            output_field=DecimalField(max_digits=14, decimal_places=2),
+        ),
+    )
+
+
 def _documentos_queryset():
     return DocumentoPOA.objects.prefetch_related(
-        'objetivos',
+        Prefetch('objetivos', queryset=_objetivos_con_resumen_queryset()),
         'revisiones__revisor__user',
         'historial__usuario',
         'observaciones_checklist__creado_por',
@@ -1746,7 +1763,7 @@ class ObjetivoEspecificoViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = ObjetivoEspecifico.objects.select_related('documento').all()
+        qs = _objetivos_con_resumen_queryset()
         documento_id = self.request.query_params.get('documento_id')
         if documento_id:
             documento = _obtener_documento_accesible(self.request.user, documento_id)

@@ -1004,7 +1004,7 @@ const SearchInput = ({ value, onChange, placeholder = 'Buscar por nombre o C.I..
   };
 
   return (
-    <div className="flex items-center gap-2 flex-row-reverse">
+    <div className="gestion-usuarios-search flex items-center gap-2 flex-row-reverse">
       <button
         onClick={() => setIsExpanded(!isExpanded)}
         className={`p-2.5 bg-[#2C4AAE] hover:bg-[#1a3a8a] text-white rounded-xl transition-all duration-300 hover:scale-110 ${isExpanded ? 'rotate-0' : 'rotate-0'}`}
@@ -1139,6 +1139,7 @@ function GestionUsuarios({ isDark, sidebarCollapsed = false, user, hasSidebar = 
 
   const [showToggleModal, setShowToggleModal] = useState(false);
   const [usuarioToToggle, setUsuarioToToggle] = useState(null);
+  const [usuarioDetalle, setUsuarioDetalle] = useState(null);
   const [showOnlyOrphans, setShowOnlyOrphans] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCarrera, setSelectedCarrera] = useState('');
@@ -1498,6 +1499,26 @@ const initialData = {
     setUsuarioEditando(usuario);
     setShowModal(true);
     setIsCreating(false); // Hide create form if it was open
+  };
+
+  const abrirDetalleUsuario = (usuario) => {
+    setUsuarioDetalle(usuario);
+  };
+
+  const cerrarDetalleUsuario = () => setUsuarioDetalle(null);
+
+  const editarDesdeDetalle = () => {
+    if (!usuarioDetalle || !puedeEditarUsuario(usuarioDetalle)) return;
+    const usuario = usuarioDetalle;
+    cerrarDetalleUsuario();
+    abrirModalEditar(usuario);
+  };
+
+  const eliminarDesdeDetalle = () => {
+    if (!usuarioDetalle || !puedeEliminarUsuarios() || usuarioDetalle.is_superuser) return;
+    const usuario = usuarioDetalle;
+    cerrarDetalleUsuario();
+    handleEliminar(usuario);
   };
 
   const handleToggleActivo = (usuario) => {
@@ -2356,24 +2377,63 @@ const initialData = {
     return !obtenerRolesUsuario(usuario).includes('director');
   };
   const puedeCambiarEstadoUsuario = (usuario) => puedeEditarUsuario(usuario);
+  const obtenerNombreUsuario = (usuario) => ((usuario?.first_name || usuario?.last_name)
+    ? `${(usuario.first_name || '').trim()} ${(usuario.last_name || '').trim()}`.trim()
+    : (usuario?.nombre_completo || '-'));
+  const obtenerEstadoUsuario = (usuario) => {
+    if (!usuario) return '-';
+    const docenteSinVinculo = usuarioEsDocenteSinVinculo(usuario);
+    if (usuario.is_superuser) return 'Protegido';
+    if (docenteSinVinculo) return 'Sin vinculo docente';
+    return usuario.is_active ? 'Activo' : 'Inactivo';
+  };
+  const obtenerTextoCarrerasDetalleUsuario = (usuario) => {
+    if (!usuario) return 'Sin carrera';
+
+    const nombres = [];
+    const agregarCarrera = (nombre, id, codigo) => {
+      const carreraCatalogo = id
+        ? carreras.find((carrera) => String(carrera.id) === String(id))
+        : carreras.find((carrera) => String(carrera.codigo) === String(codigo));
+      const texto = String(nombre || carreraCatalogo?.nombre || codigo || '').trim();
+      if (texto) nombres.push(texto);
+    };
+
+    agregarCarrera(
+      usuario?.perfil?.carrera_nombre || usuario?.perfil?.carrera?.nombre,
+      usuario?.perfil?.carrera,
+      usuario?.perfil?.carrera?.codigo || usuario?.carrera_codigo
+    );
+
+    if (Array.isArray(usuario.asignaciones)) {
+      usuario.asignaciones
+        .filter((item) => item?.activo !== false)
+        .forEach((item) => {
+          agregarCarrera(item?.carrera_nombre, item?.carrera, item?.carrera_codigo);
+        });
+    }
+
+    const carrerasUnicas = [...new Set(nombres)];
+    return carrerasUnicas.length > 0 ? carrerasUnicas.join(' / ') : 'Sin carrera';
+  };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className="gestion-usuarios-page min-h-screen bg-slate-50 dark:bg-slate-900 p-6">
+      <div className="gestion-usuarios-shell max-w-7xl mx-auto space-y-6">
         {/* Header */}
-        <div className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-lg p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent">
+        <div className="gestion-usuarios-header bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-lg p-6">
+          <div className="gestion-usuarios-header-row flex items-center justify-between">
+            <div className="gestion-usuarios-title-block">
+              <h1 className="gestion-usuarios-title text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent">
                 Gestión de Usuarios
               </h1>
-              <p className="text-slate-700 dark:text-slate-300 mt-1 italic">
+              <p className="gestion-usuarios-subtitle text-slate-700 dark:text-slate-300 mt-1 italic">
                 Administración de cuentas y permisos
               </p>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="gestion-usuarios-controls flex items-center gap-4">
               <SearchInput value={searchTerm} onChange={setSearchTerm} />
-              <div className="w-48">
+              <div className="gestion-usuarios-filter w-48">
                 <SimpleDropdown
                   label=""
                   value={selectedCarrera}
@@ -2386,7 +2446,7 @@ const initialData = {
               {puedeGestionarUsuarios() && (
                 <button
                   onClick={handleToggleCreateForm}
-                  className="px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center gap-2"
+                  className="gestion-usuarios-create-btn px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center gap-2"
                 >
                   <span>{isCreating ? '➖' : '➕'}</span>
                   {isCreating ? 'Cancelar Creación' : 'Crear Usuario'}
@@ -2695,7 +2755,7 @@ const initialData = {
         </div>
         
         {/* Tabla de usuarios */}
-        <div id="fondo-usuarios-tabla" className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-lg overflow-hidden">
+        <div id="fondo-usuarios-tabla" className="gestion-usuarios-table bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-lg overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y-2 divide-slate-300 dark:divide-slate-700">
               <thead className="bg-blue-800 dark:bg-blue-900">
@@ -2734,13 +2794,22 @@ const initialData = {
                     return (
                   <tr
                     key={usuario.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => abrirDetalleUsuario(usuario)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        abrirDetalleUsuario(usuario);
+                      }
+                    }}
                     className={`transition-colors ${
                       !filaInactiva
                         ? 'hover:bg-slate-50 dark:hover:bg-slate-700/30'
                         : 'bg-red-200/90 dark:bg-red-950/35 hover:bg-red-300/80 dark:hover:bg-red-900/45'
                     }`}
                   >
-                    <td className={`px-6 py-4 whitespace-nowrap ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
+                    <td data-label="Usuario" className={`px-6 py-4 whitespace-nowrap ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
                       <div className="space-y-1">
                         <div className={`flex items-center gap-2 ${textoPrincipal}`}>
                           <span>{usuario.username}</span>
@@ -2768,24 +2837,22 @@ const initialData = {
                         )}
                       </div>
                     </td>
-                    <td className={`px-6 py-4 whitespace-nowrap ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
+                    <td data-label="Nombre" className={`px-6 py-4 whitespace-nowrap ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
                       <div className={`text-sm ${textoFila}`}>
-                        {((usuario.first_name || usuario.last_name)
-                          ? `${(usuario.first_name || '').trim()} ${(usuario.last_name || '').trim()}`.trim()
-                          : (usuario.nombre_completo || '-'))}
+                        {obtenerNombreUsuario(usuario)}
                       </div>
                     </td>
-                    <td className={`px-6 py-4 whitespace-nowrap ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
+                    <td data-label="C.I." className={`px-6 py-4 whitespace-nowrap ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
                       <div className={`text-sm font-mono ${textoFila}`}>
                         {usuario.ci || '-'}
                       </div>
                     </td>
-                    <td className={`px-6 py-4 whitespace-nowrap text-center ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
+                    <td data-label="Carrera" className={`px-6 py-4 whitespace-nowrap text-center ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
                       <div className={`text-sm font-bold ${textoFila}`}>
                         {obtenerTextoCarrerasUsuario(usuario) || '-'}
                       </div>
                     </td>
-                    <td className={`px-6 py-4 whitespace-nowrap ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
+                    <td data-label="Rol" className={`px-6 py-4 whitespace-nowrap ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
                       {(() => {
                         const docenteInactivo = usuarioTieneDocenteInactivo(usuario);
                         const rolesUsuario = obtenerRolesUsuario(usuario);
@@ -2823,7 +2890,7 @@ const initialData = {
                         );
                       })()}
                     </td>
-                    <td className={`px-6 py-4 whitespace-nowrap ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
+                    <td data-label="Estado" className={`px-6 py-4 whitespace-nowrap ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
                       <div className="flex items-center justify-center gap-3">
                         {!usuario.is_superuser && (
                           <ToggleSwitch
@@ -2844,7 +2911,7 @@ const initialData = {
                         </span>
                       </div>
                     </td>
-                    <td className={`px-6 py-4 whitespace-nowrap text-center ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
+                    <td data-label="Acciones" className={`px-6 py-4 whitespace-nowrap text-center ${filaInactiva ? 'bg-red-200/90 dark:bg-red-950/35' : ''}`}>
                       {puedeGestionarUsuarios() && (() => {
                         const blockedBtn = !puedeEditarUsuario(usuario);
                         const canDelete = puedeEliminarUsuarios() && !usuario.is_superuser;
@@ -2852,7 +2919,10 @@ const initialData = {
                         return (
                           <div className="flex justify-center gap-3">
                             <button
-                              onClick={() => !blockedBtn && abrirModalEditar(usuario)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                if (!blockedBtn) abrirModalEditar(usuario);
+                              }}
                               disabled={blockedBtn}
                               className={`text-blue-500 ${blockedBtn ? 'opacity-50 cursor-not-allowed' : 'hover:text-blue-400 dark:text-blue-400 dark:hover:text-blue-300'} transition-all duration-200 ${blockedBtn ? '' : 'hover:scale-110'}`}
                               title={titleMsg || 'Editar'}
@@ -2861,7 +2931,10 @@ const initialData = {
                             </button>
                             {puedeEliminarUsuarios() && (
                               <button
-                                onClick={() => canDelete && handleEliminar(usuario)}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  if (canDelete) handleEliminar(usuario);
+                                }}
                                 disabled={!canDelete}
                                 className={`text-red-500 ${!canDelete ? 'opacity-50 cursor-not-allowed' : 'hover:text-red-400 dark:text-red-400 dark:hover:text-red-300'} transition-all duration-200 ${!canDelete ? '' : 'hover:scale-110'}`}
                                 title={titleMsg || 'Eliminar'}
@@ -2887,6 +2960,147 @@ const initialData = {
             )}
           </div>
         </div>
+
+        {/* Modal de detalle de usuario */}
+        {usuarioDetalle && createPortal((() => {
+          const rolesDetalle = obtenerRolesUsuario(usuarioDetalle);
+          const puedeEditarDetalle = puedeEditarUsuario(usuarioDetalle);
+          const puedeEliminarDetalle = puedeEliminarUsuarios() && !usuarioDetalle.is_superuser;
+          const docenteSinVinculoDetalle = usuarioEsDocenteSinVinculo(usuarioDetalle);
+          const perfilDocentePendienteDetalle = usuarioTienePerfilDocentePendiente(usuarioDetalle);
+          const docenteInactivoDetalle = usuarioTieneDocenteInactivo(usuarioDetalle);
+          const correoDetalle = usuarioDetalle.email || usuarioDetalle.correo || '-';
+          const fotoPerfilDetalle = usuarioDetalle?.perfil?.foto_perfil;
+          const inicialDetalle = (obtenerNombreUsuario(usuarioDetalle) || usuarioDetalle.username || 'U').trim().charAt(0).toUpperCase();
+          const filasDetalle = [
+            ['Usuario', usuarioDetalle.username || '-'],
+            ['Nombre completo', obtenerNombreUsuario(usuarioDetalle)],
+            ['C.I.', usuarioDetalle.ci || '-'],
+            ['Correo', correoDetalle],
+            ['Carrera', obtenerTextoCarrerasDetalleUsuario(usuarioDetalle)],
+            ['Estado', obtenerEstadoUsuario(usuarioDetalle)],
+          ];
+
+          return (
+            <div
+              className="fixed top-0 right-0 bottom-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[90] p-3 md:p-4 animate-fade-in"
+              style={{ left: hasSidebar ? (sidebarCollapsed ? '5rem' : '18rem') : '0', animationDuration: '160ms' }}
+              onClick={cerrarDetalleUsuario}
+            >
+              <div
+                className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-5xl w-full max-h-[88vh] md:max-h-[92vh] overflow-hidden animate-slide-up flex flex-col"
+                style={{ animationDuration: '180ms' }}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="px-4 py-3 md:px-6 md:py-4 border-b border-slate-200 dark:border-slate-700 bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-700 dark:to-blue-800 flex items-center justify-between">
+                  <h3 className="text-base md:text-xl font-bold text-white">Ver Usuario</h3>
+                  <button
+                    type="button"
+                    onClick={cerrarDetalleUsuario}
+                    className="flex h-8 w-8 md:h-9 md:w-9 items-center justify-center rounded-full border border-white/25 bg-white/10 text-base md:text-lg font-black text-white transition hover:bg-white/20"
+                    aria-label="Cerrar detalle"
+                  >
+                    X
+                  </button>
+                </div>
+
+                <div className="flex-1 p-3 md:p-6 overflow-y-auto bg-slate-950/5 dark:bg-slate-950">
+                  <div className="mx-auto max-w-3xl bg-blue-50 text-slate-800 rounded-lg border border-blue-100 shadow-xl p-4 md:p-8 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700">
+                    <div className="flex items-center gap-3 md:flex-col md:gap-0 md:justify-center pb-4 md:pb-6 border-b border-slate-300">
+                      <div className="h-20 w-20 md:h-40 md:w-40 shrink-0 overflow-hidden rounded-2xl md:rounded-full border-[3px] md:border-4 border-white bg-blue-100 shadow-md dark:border-slate-600 dark:bg-slate-700">
+                        {fotoPerfilDetalle ? (
+                          <img src={fotoPerfilDetalle} alt="Foto de perfil" className="h-full w-full object-cover" />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center bg-blue-700 text-3xl md:text-5xl font-black text-white dark:bg-blue-600">
+                            {inicialDetalle}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="min-w-0 md:text-center">
+                        <h4 className="text-lg md:mt-4 md:text-2xl font-bold text-blue-800 leading-tight break-words dark:text-blue-200">
+                          {obtenerNombreUsuario(usuarioDetalle)}
+                        </h4>
+                        <span className="mt-1 md:mt-2 inline-flex items-center justify-center text-center px-2 md:px-4 py-1 text-sm md:text-base text-blue-700 font-extrabold tracking-wide leading-none min-w-0 md:min-w-[64px] dark:text-blue-300">
+                          {usuarioDetalle.username || 'Usuario'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 md:mt-6 grid grid-cols-2 md:grid-cols-3 gap-3 pb-4 border-b border-slate-200">
+                      {filasDetalle.slice(2, 6).map(([label, value]) => (
+                        <div key={label} className={label === 'Correo' ? 'col-span-2 md:col-span-1' : ''}>
+                          <h5 className="text-[0.64rem] md:text-xs font-bold tracking-widest text-slate-600 uppercase dark:text-slate-300">{label}</h5>
+                          <p className="mt-1 text-xs md:text-sm font-semibold text-slate-800 break-words leading-snug dark:text-white">{value}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-4 md:mt-6">
+                      <h5 className="text-xs md:text-sm font-bold tracking-wider text-blue-700 uppercase dark:text-blue-300">Roles</h5>
+                      <div className="mt-2 rounded-md border border-blue-200 bg-white/70 p-3 md:p-4 min-h-[58px] md:min-h-[86px] dark:border-slate-600 dark:bg-slate-900/45">
+                        <div className="flex flex-wrap gap-2">
+                          {usuarioDetalle.is_superuser ? (
+                            <span className="inline-flex items-center rounded-lg border-2 border-amber-500 bg-amber-100 px-2.5 py-1 text-[0.68rem] md:px-3 md:py-1.5 md:text-xs font-bold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">Super Admin</span>
+                          ) : rolesDetalle.length > 0 ? (
+                            rolesDetalle.map((rol) => (
+                              <span key={rol} className={`inline-flex items-center rounded-lg border-2 px-2.5 py-1 text-[0.68rem] md:px-3 md:py-1.5 md:text-xs font-bold ${ROL_STYLES[rol] || 'bg-green-100 text-green-700 border-green-500'}`}>
+                                {ROL_LABELS[rol] || rol}
+                                {docenteInactivoDetalle && rol === 'docente' ? ' (inactivo)' : ''}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-sm font-semibold text-slate-500">Sin rol</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {(!usuarioDetalle.perfil || perfilDocentePendienteDetalle || docenteSinVinculoDetalle) && (
+                      <div className="mt-4 md:mt-6 rounded-md border border-amber-300 bg-amber-50 p-3 md:p-4 text-xs md:text-sm font-semibold text-amber-900 dark:border-amber-700 dark:bg-amber-900/25 dark:text-amber-100">
+                        {!usuarioDetalle.perfil && <p>Sin perfil asignado.</p>}
+                        {perfilDocentePendienteDetalle && <p>Perfil docente pendiente de vincular.</p>}
+                        {docenteSinVinculoDetalle && !perfilDocentePendienteDetalle && <p>Sin perfil docente vinculado.</p>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="px-3 py-3 md:px-6 md:py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 grid grid-cols-3 gap-2 md:flex md:flex-wrap md:justify-end md:gap-3">
+                  <button
+                    type="button"
+                    onClick={cerrarDetalleUsuario}
+                    className="px-2 md:px-6 py-2 md:py-2.5 min-w-0 md:min-w-[120px] rounded-lg md:rounded-xl text-xs md:text-sm font-semibold text-slate-700 dark:text-slate-200 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 transition-all"
+                  >
+                    Cerrar
+                  </button>
+                  {puedeGestionarUsuarios() && (
+                    <button
+                      type="button"
+                      onClick={editarDesdeDetalle}
+                      disabled={!puedeEditarDetalle}
+                      className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2 md:px-6 py-2 md:py-2.5 min-w-0 md:min-w-[120px] rounded-lg md:rounded-xl bg-blue-600 text-xs md:text-sm text-white font-bold transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+                    >
+                      <FaEdit size={14} />
+                      Editar
+                    </button>
+                  )}
+                  {puedeEliminarUsuarios() && (
+                    <button
+                      type="button"
+                      onClick={eliminarDesdeDetalle}
+                      disabled={!puedeEliminarDetalle}
+                      className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2 md:px-6 py-2 md:py-2.5 min-w-0 md:min-w-[120px] rounded-lg md:rounded-xl bg-red-600 text-xs md:text-sm text-white font-bold transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+                    >
+                      <FaTrash size={14} />
+                      Eliminar
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })(), document.body)}
 
         {/* Modal de Confirmación de Toggle Estado */}
         {showToggleModal && usuarioToToggle && createPortal((
