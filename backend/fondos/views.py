@@ -850,14 +850,16 @@ class CargaHorariaViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         """
-        Solo Jefes de Estudio pueden crear, editar o borrar.
+        Super Admin y Jefes de Estudio pueden crear, editar o borrar.
         """
         if self._usuario_carrera_inactiva():
             raise PermissionDenied('Acceso bloqueado: tu carrera está inactiva.')
 
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            if not hasattr(self.request.user, 'perfil') or self.request.user.perfil.rol != 'jefe_estudios':
-                raise PermissionDenied("Solo Jefes de Estudio pueden modificar cargas horarias.")
+            user = self.request.user
+            if not user.is_superuser:
+                if not hasattr(user, 'perfil') or user.perfil.rol != 'jefe_estudios':
+                    raise PermissionDenied("Solo Jefes de Estudio pueden modificar cargas horarias.")
         
         return super().get_permissions()
 

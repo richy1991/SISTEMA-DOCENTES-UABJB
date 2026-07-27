@@ -610,8 +610,8 @@ class CargaHorariaSerializer(serializers.ModelSerializer):
         if hora_inicio and hora_fin and hora_fin <= hora_inicio:
             raise serializers.ValidationError({'hora_fin': 'La hora de fin debe ser mayor que la hora de inicio.'})
 
-        # Tope de plan por materia (horas/semana): 20 semanas por periodo.
-        horas_asignadas_semana = Decimal(horas_nuevas or 0) / Decimal('20')
+        # Tope de plan por materia (horas/semana): horas anuales prorrateadas.
+        horas_asignadas_semana = Decimal(horas_nuevas or 0) / Decimal('52')
         horas_plan_semana = Decimal((materia.horas_totales or 0))
         if horas_asignadas_semana > horas_plan_semana:
             raise serializers.ValidationError({
@@ -1403,19 +1403,19 @@ class CategoriaFuncionSerializer(serializers.ModelSerializer):
     # total_horas se elimina como SerializerMethodField para permitir escritura (guardado en BD)
     porcentaje = serializers.SerializerMethodField()
     detalles_carga = serializers.SerializerMethodField()
+    total_carga_horaria = serializers.SerializerMethodField()
     
     class Meta:
         model = CategoriaFuncion
         fields = ['id', 'fondo_tiempo', 'tipo', 'tipo_display', 'total_horas', 
-                  'porcentaje', 'actividades', 'detalles_carga']
+                  'porcentaje', 'actividades', 'detalles_carga', 'total_carga_horaria']
 
-    def _get_horas_reales(self, obj):
-        """Helper para calcular horas efectivas (Jefatura > Manual)"""
+    def get_total_carga_horaria(self, obj):
+        """Total de asignaciones micro registradas en CargaHoraria para esta categoria."""
         # obj is CategoriaFuncion
         fondo = obj.fondo_tiempo
-        horas_manuales = obj.total_horas
         if not fondo.docente or not fondo.calendario_academico:
-            return horas_manuales
+            return 0
 
         # Usar el contexto para evitar recalcular para cada categoría del mismo fondo.
         context = self.context
@@ -1431,20 +1431,10 @@ class CategoriaFuncionSerializer(serializers.ModelSerializer):
             context[cache_key] = {item['categoria']: item['total'] for item in cargas}
 
         horas_jefatura = context[cache_key].get(obj.tipo, 0) or 0
-        
-        if horas_jefatura > 0:
-            return horas_jefatura
-            
-        return horas_manuales
-
-    def to_representation(self, instance):
-        """Sobrescribimos la salida para mostrar las horas calculadas, pero permitimos guardar las manuales."""
-        ret = super().to_representation(instance)
-        ret['total_horas'] = self._get_horas_reales(instance)
-        return ret
+        return horas_jefatura
 
     def get_porcentaje(self, obj):
-        total_horas_categoria = self._get_horas_reales(obj)
+        total_horas_categoria = obj.total_horas or 0
         fondo = obj.fondo_tiempo
         if not fondo.horas_efectivas or fondo.horas_efectivas == 0:
             return 0
@@ -1474,6 +1464,7 @@ class CategoriaFuncionSerializer(serializers.ModelSerializer):
                 
                 detalles_map[carga.categoria].append({
                     "id": carga.id,
+                    "materia_id": carga.materia_id,
                     "titulo_actividad": (
                         f"{carga.materia.sigla} - {carga.materia.nombre} ({carga.paralelo})"
                         if carga.materia else "Sin materia"
@@ -1537,7 +1528,7 @@ class FondoTiempoSerializer(serializers.ModelSerializer):
                 for cat in obj.categorias.all():
                     horas_jefatura = cargas_map.get(cat.tipo, 0)
                     # Si hay horas de jefatura (>0), se usan esas. Si no, las manuales.
-                    total_calculado += horas_jefatura if horas_jefatura > 0 else cat.total_horas
+                    total_calculado += cat.total_horas
                 
                 total = total_calculado
             obj._total_asignado_calculado = total
@@ -1645,7 +1636,7 @@ class FondoTiempoListSerializer(serializers.ModelSerializer):
                 total_calculado = 0
                 for cat in obj.categorias.all():
                     horas_jefatura = cargas_map.get(cat.tipo, 0)
-                    total_calculado += horas_jefatura if horas_jefatura > 0 else cat.total_horas
+                    total_calculado += cat.total_horas
                 
                 total = total_calculado
             obj._total_asignado_calculado = total
@@ -1765,7 +1756,7 @@ class UsuarioSerializer(serializers.ModelSerializer):
         if hasattr(obj, 'perfil'):
             data = PerfilUsuarioSerializer(obj.perfil, context=self.context).data
             request = self.context.get('request')
-            perfil_efectivo = get_effective_profile(obj, request)
+            perfil_efectivo = get_effective_profile(obj, request) if request and request.user.id == obj.id else None
 
             if perfil_efectivo and perfil_efectivo is not obj.perfil:
                 data['rol'] = perfil_efectivo.rol
@@ -2994,7 +2985,7 @@ class FondoTiempoDetalleSerializer(serializers.ModelSerializer):
                 total_calculado = 0
                 for cat in obj.categorias.all():
                     horas_jefatura = cargas_map.get(cat.tipo, 0) or 0
-                    total_calculado += horas_jefatura if horas_jefatura > 0 else cat.total_horas
+                    total_calculado += cat.total_horas
                 
                 total = total_calculado
             obj._total_asignado_calculado = total

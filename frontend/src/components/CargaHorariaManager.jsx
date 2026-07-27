@@ -129,6 +129,29 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
     const [semestre, setSemestre] = useState('');
     const [materias, setMaterias] = useState([]);
     const [loadingMaterias, setLoadingMaterias] = useState(false);
+    const FIELD_LABELS = {
+        materia: 'Materia',
+        docente: 'Docente',
+        calendario: 'Calendario academico',
+        categoria: 'Categoria',
+        horas: 'Horas anuales',
+        documento_respaldo: 'Respaldo',
+        hora_inicio: 'Hora de inicio',
+        hora_fin: 'Hora de fin',
+        aula: 'Aula',
+        paralelo: 'Paralelo',
+        dia_semana: 'Dia de la semana'
+    };
+    const formatFieldError = (field, value) => {
+        const label = FIELD_LABELS[field] || field;
+        if (Array.isArray(value) && value.length > 0) return `${label}: ${value[0]}`;
+        if (typeof value === 'string') return `${label}: ${value}`;
+        if (typeof value === 'object' && value !== null) {
+            const nestedKey = Object.keys(value)[0];
+            if (nestedKey) return `${label}: ${formatFieldError(nestedKey, value[nestedKey])}`;
+        }
+        return `${label}: Datos invalidos.`;
+    };
     const extractValidationMessage = (data) => {
         if (!data) return 'Datos inválidos.';
         if (typeof data === 'string') return data;
@@ -141,13 +164,7 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
         if (typeof data === 'object') {
             const firstKey = Object.keys(data)[0];
             const firstValue = data[firstKey];
-            if (Array.isArray(firstValue) && firstValue.length > 0) return String(firstValue[0]);
-            if (typeof firstValue === 'string') return firstValue;
-            if (typeof firstValue === 'object' && firstValue !== null) {
-                const nested = Object.values(firstValue)[0];
-                if (Array.isArray(nested) && nested.length > 0) return String(nested[0]);
-                if (typeof nested === 'string') return nested;
-            }
+            if (firstKey) return formatFieldError(firstKey, firstValue);
         }
 
         return 'Datos inválidos.';
@@ -156,6 +173,7 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
     const [semestresDisponibles, setSemestresDisponibles] = useState([]);
     const [formData, setFormData] = useState({
         categoria: 'academica',
+        materia: '',
         titulo_actividad: '',
         horas: '',
         documento_respaldo: ''
@@ -181,12 +199,13 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
         if (cargaEdicion) {
             setFormData({
                 categoria: cargaEdicion.categoria || 'academica',
+                materia: cargaEdicion.materia || cargaEdicion.materia_id || '',
                 titulo_actividad: cargaEdicion.titulo_actividad,
                 horas: cargaEdicion.horas,
                 documento_respaldo: cargaEdicion.respaldo || ''
             });
         } else {
-            setFormData({ categoria: 'academica', titulo_actividad: '', horas: '', documento_respaldo: '' });
+            setFormData({ categoria: 'academica', materia: '', titulo_actividad: '', horas: '', documento_respaldo: '' });
         }
     }, [cargaEdicion]);
 
@@ -246,8 +265,8 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (isReadOnly) return;
-        if (!formData.titulo_actividad || !formData.horas) {
-            toast.error("Complete los campos obligatorios");
+        if (!formData.materia || !formData.titulo_actividad || !formData.horas) {
+            toast.error("Seleccione una materia y verifique las horas anuales");
             return;
         }
         if (formData.categoria !== 'academica' && !formData.documento_respaldo?.trim()) {
@@ -268,7 +287,7 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
                 });
                 toast.success("Asignación agregada");
             }
-            setFormData({ categoria: 'academica', titulo_actividad: '', horas: '', documento_respaldo: '' });
+            setFormData({ categoria: 'academica', materia: '', titulo_actividad: '', horas: '', documento_respaldo: '' });
             setSemestre('');
             cargarCargas();
             if (onCargaUpdate) onCargaUpdate();
@@ -311,7 +330,7 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
         const materia = materias.find(m => m.id.toString() === materiaId);
         if (materia) {
             const horasAnuales = Math.round((materia.horas_totales || 0) * SEMANAS_GESTION);
-            setFormData({ ...formData, titulo_actividad: materia.nombre, horas: horasAnuales });
+            setFormData({ ...formData, materia: materiaId, titulo_actividad: materia.nombre, horas: horasAnuales });
         }
     };
 
@@ -321,10 +340,10 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
         value: m.id.toString(),
         label: `${m.nombre} (${m.horas_teoricas} HT / ${m.horas_practicas} HP - Total: ${m.horas_totales} hrs/sem)`
     }));
-    const selectedMateriaId = materias.find(m => m.nombre === formData.titulo_actividad)?.id?.toString() || '';
+    const selectedMateriaId = formData.materia?.toString() || '';
     const respaldoRequerido = formData.categoria !== 'academica';
     const respaldoInvalido = respaldoRequerido && !formData.documento_respaldo?.trim();
-    const submitDisabled = isSubmitting || !formData.titulo_actividad || !formData.horas || respaldoInvalido;
+    const submitDisabled = isSubmitting || !formData.materia || !formData.titulo_actividad || !formData.horas || respaldoInvalido;
 
     const inputCls = "w-full px-3 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-400 dark:focus:ring-blue-600 focus:border-transparent transition-all";
     const labelCls = "block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5";
@@ -386,7 +405,10 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
                                 <CustomSelect
                                     value={semestre}
                                     options={semestreOptions}
-                                    onChange={(newValue) => setSemestre(newValue)}
+                                    onChange={(newValue) => {
+                                        setSemestre(newValue);
+                                        setFormData(prev => ({ ...prev, materia: '', titulo_actividad: '', horas: '' }));
+                                    }}
                                     placeholder={loadingMaterias ? 'Cargando…' : '-- Nivel --'}
                                     disabled={loadingMaterias || isReadOnly}
                                     emptyText={loadingMaterias ? 'Cargando niveles…' : 'No hay niveles disponibles'}

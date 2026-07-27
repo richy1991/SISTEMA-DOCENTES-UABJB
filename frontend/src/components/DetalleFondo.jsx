@@ -199,12 +199,12 @@ function DetalleFondo({ isDark }) {
   const esAdmin = false;
   const esJefeEstudios = usuarioActual?.perfil?.rol === 'jefe_estudios';
   const puedeGestionarDistribucion = esSuperAdmin || esJefeEstudios;
-  const puedeGestionarCarga = esJefeEstudios;
-  const soloLecturaPorRol = !esJefeEstudios;
+  const puedeGestionarCarga = esSuperAdmin || esJefeEstudios;
+  const soloLecturaPorRol = !puedeGestionarCarga;
 
   useEffect(() => {
     // Define panel inicial por rol al entrar a la vista.
-    setPanelCentral(puedeGestionarCarga ? 'carga' : 'resumen');
+    setPanelCentral('resumen');
   }, [puedeGestionarCarga]);
 
   const abrirModalPresentacion = () => {
@@ -425,7 +425,6 @@ function DetalleFondo({ isDark }) {
         : window.scrollY;
 
       await crearActividad(actividadData);
-      await api.post('/actividades/', actividadData);
       toast.success('✅ Actividad agregada exitosamente');
       cerrarFormularioActividad();
       await cargarDetalle();
@@ -889,6 +888,15 @@ function DetalleFondo({ isDark }) {
   const puedeEditarDistribucion = puedeEditarDocente && ['borrador', 'observado'].includes(fondo.estado);
 
   const mostrarCargaAcademica = panelCentral === 'carga';
+  const panelCentralInfo = mostrarCargaAcademica
+    ? {
+        titulo: 'Asignacion de Carga Especifica (Micro)',
+        descripcion: 'Detalle las materias, paralelos y horarios que sustentan la categoria Academica.'
+      }
+    : {
+        titulo: 'Distribucion de Horas (Macro)',
+        descripcion: `Asigne las ${Math.round(Number(fondo.horas_semana || 40))} horas semanales en las 7 categorias reglamentarias.`
+      };
 
   const desplazarDerecha = () => {
     if (!puedeGestionarCarga) return;
@@ -1262,7 +1270,7 @@ function DetalleFondo({ isDark }) {
                       <button
                         onClick={desplazarIzquierda}
                         className="fondo-central-nav-btn btn-left"
-                        title="Desplazar a la izquierda"
+                        title={mostrarCargaAcademica ? 'Ver distribucion macro' : 'Ver asignacion micro'}
                       >
                         <ChevronLeft className="w-4 h-4" />
                       </button>
@@ -1270,7 +1278,7 @@ function DetalleFondo({ isDark }) {
                       <button
                         onClick={desplazarDerecha}
                         className="fondo-central-nav-btn btn-right"
-                        title="Desplazar a la derecha"
+                        title={mostrarCargaAcademica ? 'Ver distribucion macro' : 'Ver asignacion micro'}
                       >
                         <ChevronRight className="w-4 h-4" />
                       </button>
@@ -1279,6 +1287,16 @@ function DetalleFondo({ isDark }) {
                 ) : null}
 
                 <div className="p-5 flex-1 min-h-0">
+                  {puedeGestionarCarga && (
+                    <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50/80 px-4 py-3 text-center dark:border-blue-900/40 dark:bg-blue-950/20">
+                      <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                        {panelCentralInfo.titulo}
+                      </h2>
+                      <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+                        {panelCentralInfo.descripcion}
+                      </p>
+                    </div>
+                  )}
                   <div className="fondo-central-flex h-full gap-4">
                     <div className="fondo-central-stage">
                       {puedeGestionarCarga && mostrarCargaAcademica ? (
@@ -1492,6 +1510,7 @@ function DetalleFondo({ isDark }) {
                       const Icon = CATEGORY_ICONS[categoria.tipo] || DocumentTextIcon;
                       const color = COLORS[idx % COLORS.length];
                       const totalActual = Number(categoria.total_horas || 0);
+                      const totalCargaHoraria = Number(categoria.total_carga_horaria || 0);
                       const totalPrevio = Number(prevTotalesCategoriasRef.current[categoria.id] || 0);
                       const aparecioRecien = totalPrevio <= 0 && totalActual > 0;
 
@@ -1514,8 +1533,13 @@ function DetalleFondo({ isDark }) {
                                   </h3>
                                   <div className="flex items-center gap-3 text-xs font-medium text-slate-500 dark:text-slate-400 mt-1">
                                     <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600">
-                                      <span className="font-bold" style={{ color: color }}>{categoria.total_horas}</span> hrs asignadas
+                                      Presupuesto: <span className="font-bold" style={{ color: color }}>{categoria.total_horas}</span> hrs/sem
                                     </span>
+                                    {totalCargaHoraria > 0 && (
+                                      <span className="px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border border-blue-100 dark:border-blue-800/50">
+                                        Detalle de carga: <span className="font-bold">{totalCargaHoraria}</span> hrs/anio
+                                      </span>
+                                    )}
                                     <span className="text-slate-300 dark:text-slate-600">|</span>
                                     <span>{parseFloat(categoria.porcentaje).toFixed(1)}% del total</span>
                                   </div>
@@ -1670,31 +1694,37 @@ function DetalleFondo({ isDark }) {
                                     </table>
                                   </div>
                                 ) : categoria.detalles_carga && categoria.detalles_carga.length > 0 ? (
-                                  <div className="overflow-x-auto">
-                                    <table className="min-w-full">
-                                      <thead>
-                                        <tr className="bg-slate-50/30 dark:bg-slate-800/30 border-b border-slate-300 dark:border-slate-700">
-                                          <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                                            Actividad Asignada
-                                          </th>
-                                          <th className="px-6 py-3 text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                                            Horas
-                                          </th>
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {categoria.detalles_carga.map((detalle, dIdx) => (
-                                          <tr key={dIdx} className="border-b border-slate-200 dark:border-slate-800/50 last:border-b-0 hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
-                                            <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-300 font-medium">
-                                              {detalle.titulo_actividad}
-                                            </td>
-                                            <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-300 text-right font-semibold">
-                                              {detalle.horas}
-                                            </td>
+                                  <div>
+                                    <div className="px-6 py-2 bg-blue-50/40 dark:bg-blue-900/10 text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider border-b border-blue-100 dark:border-blue-800/30 flex items-center gap-2">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                                      Detalle de la carga
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                      <table className="min-w-full">
+                                        <thead>
+                                          <tr className="bg-slate-50/30 dark:bg-slate-800/30 border-b border-slate-300 dark:border-slate-700">
+                                            <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                                              Actividad Asignada
+                                            </th>
+                                            <th className="px-6 py-3 text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                                              Horas
+                                            </th>
                                           </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
+                                        </thead>
+                                        <tbody>
+                                          {categoria.detalles_carga.map((detalle, dIdx) => (
+                                            <tr key={dIdx} className="border-b border-slate-200 dark:border-slate-800/50 last:border-b-0 hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
+                                              <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-300 font-medium">
+                                                {detalle.titulo_actividad}
+                                              </td>
+                                              <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-300 text-right font-semibold">
+                                                {detalle.horas}
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
                                   </div>
                                 ) : (
                                   <div className="text-center py-8 bg-slate-50/30 dark:bg-slate-800/30">
