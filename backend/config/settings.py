@@ -164,6 +164,9 @@ CORS_ALLOW_HEADERS = [            # ← AGREGAR TODO ESTO
     'dnt',
     'origin',
     'user-agent',
+    'x-active-assignment',
+    'x-active-carrera',
+    'x-active-role',
     'x-csrftoken',
     'x-requested-with',
 ]

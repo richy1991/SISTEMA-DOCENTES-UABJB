@@ -5,6 +5,7 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .models import Docente, DocenteCarrera, Carrera, Materia, FondoTiempo, CategoriaFuncion, Actividad, PerfilUsuario, AsignacionCarrera, InformeFondo, ObservacionFondo, MensajeObservacion, HistorialFondo, CargaHoraria, SaldoVacacionesGestion, DatosLaborales
+from .role_context import get_active_assignment, get_effective_profile, serialize_assignment
 from django.db.models import Sum
 from django.db import transaction
 from decimal import Decimal
@@ -1501,7 +1502,8 @@ class FondoTiempoSerializer(serializers.ModelSerializer):
         super().__init__(*args, **kwargs)
         request = self.context.get('request')
         # Para docentes, la URL del programa analítico es de solo lectura (ver/clic pero no editar)
-        if request and hasattr(request.user, 'perfil') and request.user.perfil.rol == 'docente':
+        perfil = get_effective_profile(request.user, request) if request else None
+        if perfil and perfil.rol == 'docente':
             self.fields['programa_analitico_url'].read_only = True
     # Aseguramos que se devuelva la URL como string explícito
     programa_analitico_url = serializers.URLField(required=False, allow_blank=True)
@@ -1744,12 +1746,15 @@ class UsuarioSerializer(serializers.ModelSerializer):
     carrera_codigo = serializers.SerializerMethodField()
     telefono = serializers.SerializerMethodField()
     asignaciones = serializers.SerializerMethodField()
+    asignaciones_activas = serializers.SerializerMethodField()
+    asignacion_activa = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = ['id', 'username', 'email', 'first_name', 'last_name', 'nombre_completo',
               'is_staff', 'is_superuser', 'is_active', 'date_joined', 'perfil',
-              'ci', 'carrera_codigo', 'telefono', 'asignaciones']
+              'ci', 'carrera_codigo', 'telefono', 'asignaciones',
+              'asignaciones_activas', 'asignacion_activa']
         read_only_fields = ['id', 'date_joined']
 
     def get_perfil(self, obj):
@@ -1759,6 +1764,18 @@ class UsuarioSerializer(serializers.ModelSerializer):
         """
         if hasattr(obj, 'perfil'):
             data = PerfilUsuarioSerializer(obj.perfil, context=self.context).data
+            request = self.context.get('request')
+            perfil_efectivo = get_effective_profile(obj, request)
+
+            if perfil_efectivo and perfil_efectivo is not obj.perfil:
+                data['rol'] = perfil_efectivo.rol
+                data['rol_display'] = dict(PerfilUsuario.ROLES).get(perfil_efectivo.rol, perfil_efectivo.rol)
+                data['carrera'] = perfil_efectivo.carrera_id
+                data['carrera_nombre'] = perfil_efectivo.carrera.nombre if perfil_efectivo.carrera else None
+                data['carrera_codigo'] = perfil_efectivo.carrera.codigo if perfil_efectivo.carrera else None
+                data['docente'] = perfil_efectivo.docente_id
+                data['docente_id'] = perfil_efectivo.docente_id
+                data['docente_nombre'] = perfil_efectivo.docente.nombre_completo if perfil_efectivo.docente else None
 
             # 🔒 PROTECCIÓN INTEGRAL: Validar vínculo docente
             # GARANTÍA DE ACCESO: Si es superusuario, el frontend SIEMPRE debe verlo como iiisyp
@@ -1845,6 +1862,13 @@ class UsuarioSerializer(serializers.ModelSerializer):
                 'activo': asignacion.activo,
             })
         return resultado
+
+    def get_asignaciones_activas(self, obj):
+        return [item for item in self.get_asignaciones(obj) if item.get('activo') is not False]
+
+    def get_asignacion_activa(self, obj):
+        request = self.context.get('request')
+        return serialize_assignment(get_active_assignment(request))
 
 
 class CrearUsuarioSerializer(serializers.ModelSerializer):
@@ -2994,6 +3018,15 @@ class FondoTiempoDetalleSerializer(serializers.ModelSerializer):
     def get_puede_editar(self, obj):
         request = self.context.get('request')
         if request and hasattr(request, 'user'):
+            perfil = get_effective_profile(request.user, request)
+            if request.user.is_superuser:
+                return True
+            if obj.estado not in ['borrador', 'observado']:
+                return False
+            if perfil and perfil.rol in ['director', 'jefe_estudios'] and request.user.is_staff:
+                return perfil.carrera_id == obj.carrera_id
+            if perfil and perfil.rol == 'docente' and perfil.docente:
+                return obj.docente_id == perfil.docente.id
             return obj.puede_editar(request.user)
         return False
     

@@ -1,7 +1,6 @@
 ﻿import { Routes, Route, Outlet } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Toaster } from 'react-hot-toast';
 import './index.css';
 import { useTheme } from '../../useTheme';
 import Sidebar from './components/Sidebar';
@@ -197,9 +196,6 @@ function POAApp({ user }) {
 
   return (
     <div className={`poa-app flex h-screen overflow-hidden transition-colors duration-500`}>
-      {/* Toast notifications */}
-      <Toaster position="top-right" />
-
       <ChatFlotantePOA currentUser={user} />
 
       {/* Sidebar */}

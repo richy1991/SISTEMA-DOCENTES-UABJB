@@ -67,6 +67,24 @@ export const getBackendErrorMessage = (apiErrors, fallback = 'Ocurrió un error 
   return fallback;
 };
 
+export const getApiErrorMessage = (error, fallback = 'Ocurrio un error inesperado.') => {
+  if (!error) return fallback;
+
+  if (error.response?.data) {
+    return getBackendErrorMessage(error.response.data, fallback);
+  }
+
+  if (error.request) {
+    return 'No se pudo conectar con el servidor. Verifica que el backend este encendido y la URL de la API sea correcta.';
+  }
+
+  if (error.message) {
+    return getBackendErrorMessage(error.message, fallback);
+  }
+
+  return getBackendErrorMessage(error, fallback);
+};
+
 /**
  * Recorre un objeto de errores del backend y sanitiza cada mensaje,
  * reemplazando los textos confusos de "opción no válida" por el mensaje

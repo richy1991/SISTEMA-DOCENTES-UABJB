@@ -140,6 +140,7 @@ const VerticalSemesterWheelPicker = ({
   const [centerFloatIndex, setCenterFloatIndex] = useState(initialIndex);
   const centeredIndexRef = useRef(initialIndex);
   const centerFloatRef = useRef(initialIndex);
+  const isIntroAnimatingRef = useRef(true);
   const lastInternalSemesterRef = useRef(null);
   const wheelDeltaAccumRef = useRef(0);
   const wheelLastStepAtRef = useRef(0);
@@ -166,6 +167,23 @@ const VerticalSemesterWheelPicker = ({
   const targetY = (centerOffset - targetDisplayIndex) * itemHeight;
   const clampedFloatIndex = Math.max(0, Math.min(semesters.length - 1, centerFloatIndex));
   const visualDisplayIndex = clampedFloatIndex + padSlots;
+  const centeredDisplayIndex = centeredIndex + padSlots;
+  const lowerFloatIndex = Math.floor(clampedFloatIndex);
+  const upperFloatIndex = Math.ceil(clampedFloatIndex);
+  const centerProgress = clampedFloatIndex - lowerFloatIndex;
+
+  const getOverlayStyle = (offsetY) => {
+    const ratio = Math.max(0, 1 - Math.abs(offsetY) / itemHeight);
+    const eased = ratio * ratio;
+    const scale = 0.92 + 0.48 * eased;
+    const opacity = 0.22 + 0.78 * ratio;
+    const brightness = 0.85 + 0.25 * eased;
+    return {
+      transform: `translateY(${offsetY}px) scale(${scale})`,
+      opacity,
+      filter: `brightness(${brightness})`,
+    };
+  };
 
   const stepSelection = (steps) => {
     if (!semesters.length || steps === 0) return;
@@ -191,13 +209,12 @@ const VerticalSemesterWheelPicker = ({
     const syncSemester = semesters[syncIndex];
 
     // Evitar sincronización si ya estamos en el mismo semestre (previene rebote)
-    if (semesters[centeredIndexRef.current] === syncSemester) return;
-
     setTargetIndex(syncIndex);
     setCenteredIndex(syncIndex);
     setCenterFloatIndex(syncIndex);
     centeredIndexRef.current = syncIndex;
     centerFloatRef.current = syncIndex;
+    isIntroAnimatingRef.current = true;
     if (syncSemester !== undefined) {
       lastInternalSemesterRef.current = Number(syncSemester);
     }
@@ -282,12 +299,34 @@ const VerticalSemesterWheelPicker = ({
     >
       {/* Franja central de selección */}
       <div
-        className="pointer-events-none absolute inset-x-0 z-10 border-y-2 border-[#3D6DE0]/60 dark:border-[#6B86DE]/70 bg-gradient-to-r from-[#3D6DE0]/15 to-[#3D6DE0]/15"
+        className="pointer-events-none absolute inset-x-0 z-10 border-y-2 border-[#3D6DE0]/60 dark:border-[#6B86DE]/70 bg-gradient-to-r from-[#3D6DE0]/15 to-[#3D6DE0]/15 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.35),inset_0_-1px_0_0_rgba(255,255,255,0.25)]"
         style={{
           top: `${centerOffset * itemHeight}px`,
           height: `${itemHeight}px`,
         }}
-      />
+      >
+        <div className="absolute inset-0 overflow-hidden">
+          <div className="relative h-full w-full flex items-center justify-center">
+            {semesters[lowerFloatIndex] !== undefined && (
+              <span
+                className="absolute tracking-wide font-extrabold text-[#1F3274] dark:text-white text-base drop-shadow-[0_1px_2px_rgba(255,255,255,0.35)] dark:drop-shadow-lg"
+                style={getOverlayStyle(-centerProgress * itemHeight)}
+              >
+                {semesters[lowerFloatIndex]}° Semestre
+              </span>
+            )}
+
+            {upperFloatIndex !== lowerFloatIndex && semesters[upperFloatIndex] !== undefined && (
+              <span
+                className="absolute tracking-wide font-extrabold text-[#1F3274] dark:text-white text-base drop-shadow-[0_1px_2px_rgba(255,255,255,0.35)] dark:drop-shadow-lg"
+                style={getOverlayStyle((1 - centerProgress) * itemHeight)}
+              >
+                {semesters[upperFloatIndex]}° Semestre
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
 
       {/* Gradientes superior e inferior */}
       <div className="pointer-events-none absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-white/70 via-white/30 to-transparent dark:from-slate-900/70 dark:via-slate-900/25 z-10" />
@@ -324,7 +363,7 @@ const VerticalSemesterWheelPicker = ({
       >
         <motion.div
           className="flex flex-col"
-          initial={{ y: targetY }}
+          initial={{ y: targetY + itemHeight * 2 }}
           animate={{ y: targetY }}
           transition={iosWheelTransition}
           style={{ willChange: 'transform' }}
@@ -340,6 +379,8 @@ const VerticalSemesterWheelPicker = ({
               setCenterFloatIndex(boundedFloat);
             }
 
+            if (isIntroAnimatingRef.current) return;
+
             const displayIndex = Math.round(centerOffset - y / itemHeight);
             const idx = clampIndex(displayIndex - padSlots);
             if (idx === centeredIndexRef.current) return;
@@ -352,6 +393,11 @@ const VerticalSemesterWheelPicker = ({
 
             centeredIndexRef.current = idx;
             setCenteredIndex(idx);
+          }}
+          onAnimationComplete={() => {
+            if (!isIntroAnimatingRef.current) return;
+            isIntroAnimatingRef.current = false;
+            setCenterFloatIndex(centeredIndexRef.current);
           }}
         >
           {displaySemesters.map((sem, idx) => {
@@ -385,11 +431,11 @@ const VerticalSemesterWheelPicker = ({
               >
                 {isTopBottomPlaceholder ? null : (
                   abs < 0.35 ? (
-                    <span className="tracking-wide font-extrabold text-[#1F3274] dark:text-white text-lg">
+                    <span className="tracking-wide font-extrabold text-transparent text-base scale-125 select-none">
                       {sem}º Semestre
                     </span>
                   ) : (
-                    <span className="tracking-wide font-semibold text-slate-700 dark:text-slate-300 text-sm" style={{ opacity: 1 }}>
+                    <span className="tracking-wide font-semibold text-slate-700 dark:text-slate-300 text-base" style={{ opacity: 1 }}>
                       {sem}º
                     </span>
                   )

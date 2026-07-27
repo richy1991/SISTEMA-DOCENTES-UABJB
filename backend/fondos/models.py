@@ -826,7 +826,10 @@ class FondoTiempo(models.Model):
     
     def puede_editar(self, usuario):
         """Determina si un usuario puede editar este fondo"""
-        estados_editables = ['borrador', 'observado', 'en_ejecucion']
+        if usuario.is_superuser:
+            return True
+
+        estados_editables = ['borrador', 'observado']
 
         # Solo el staff con rol de gestión real puede editar.
         if usuario.is_staff and hasattr(usuario, 'perfil') and usuario.perfil.rol in ['director', 'jefe_estudios']:

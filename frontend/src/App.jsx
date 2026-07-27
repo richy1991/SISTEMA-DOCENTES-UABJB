@@ -46,6 +46,7 @@ import CambiarPassword from './components/CambiarPassword';
 import CargaHorariaGeneral from './components/CargaHorariaGeneral';
 import FondoTiempoDocente from './components/FondoTiempoDocente';
 import ErrorVinculoDocente from './components/common/ErrorVinculoDocente';
+import { ActiveRoleProvider } from './contexts/ActiveRoleContext';
 import './App.css';
 
 // Componente wrapper para aplicar una animación de entrada a las páginas
@@ -70,6 +71,10 @@ function App() {
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('user');
+    localStorage.removeItem('active_assignment_id');
+    localStorage.removeItem('active_role');
+    localStorage.removeItem('active_carrera_id');
+    localStorage.removeItem('carrera_activa_id');
     sessionStorage.removeItem('last_activity');
     setUser(null);
   };
@@ -223,6 +228,7 @@ function App() {
   }
 
   return (
+    <ActiveRoleProvider user={user} setUser={setUser}>
     <Router>
       <Toaster
         position="top-right"
@@ -235,6 +241,7 @@ function App() {
             fontFamily: "'Inter', system-ui, sans-serif",
             fontSize: '14px',
             fontWeight: '500',
+            zIndex: 1000001,
           },
           success: { 
             style: { 
@@ -383,6 +390,7 @@ function App() {
         )}
       </Routes>
     </Router>
+    </ActiveRoleProvider>
   );
 }
 

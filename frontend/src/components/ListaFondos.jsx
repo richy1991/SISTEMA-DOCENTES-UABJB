@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { eliminarFondoTiempo, generarFondosTiempoMasivo, getFondosTiempo } from '../apis/api';
 import { puedeCrearFondoTiempo } from '../utils/fondoTiempoPermissions';
+import { useActiveRole } from '../contexts/ActiveRoleContext';
 
 // --- ICONOS ---
 const EyeIcon = (props) => (
@@ -36,6 +37,7 @@ const SparklesIcon = (props) => (
 );
 
 function ListaFondos({ isDark }) {
+  const { effectiveUser, activeAssignment } = useActiveRole();
   const [fondos, setFondos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -45,9 +47,14 @@ function ListaFondos({ isDark }) {
   
   useEffect(() => {
     cargarFondos();
-    const userData = JSON.parse(localStorage.getItem('user') || 'null');
-    setUser(userData);
-  }, []);
+    setUser(effectiveUser || JSON.parse(localStorage.getItem('user') || 'null'));
+  }, [activeAssignment?.id]);
+
+  useEffect(() => {
+    if (effectiveUser) {
+      setUser(effectiveUser);
+    }
+  }, [effectiveUser]);
 
   const cargarFondos = async () => {
     try {
@@ -79,7 +86,7 @@ function ListaFondos({ isDark }) {
   };
 
   const puedeEditar = (fondo) => {
-    return puedeCrearFondoTiempo(user) && fondo.estado === 'borrador';
+    return puedeCrearFondoTiempo(user) && ['borrador', 'observado'].includes(fondo.estado);
   };
 
   // iiisyp es solo lectura: solo superuser puede archivar fondos
@@ -163,10 +170,10 @@ function ListaFondos({ isDark }) {
                   </button>
                   <Link
                     to="/fondo-tiempo/nuevo-fondo"
-                    className="inline-flex items-center gap-2 px-5 py-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl shadow-md hover:shadow-lg transition-all"
+                    className="inline-flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105"
                   >
                     <PlusIcon className="w-5 h-5" />
-                    <span>Crear Fondo de Tiempo</span>
+                    <span>Nuevo Fondo de Tiempo</span>
                   </Link>
                 </>
               )}
@@ -273,22 +280,13 @@ function ListaFondos({ isDark }) {
                       </Link>
 
                       {puedeEditar(fondo) && (
-                        <>
-                          <Link
-                            to={`/fondo-tiempo/fondo/${fondo.id}`}
-                            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg transition duration-300 hover:scale-105 shadow-md hover:shadow-lg"
-                          >
-                            <PencilIcon className="w-5 h-5" />
-                            <span>Distribuir Horas</span>
-                          </Link>
-                          <Link
-                            to={`/fondo-tiempo/editar-fondo/${fondo.id}`}
-                            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg transition duration-300 hover:scale-105 shadow-md hover:shadow-lg"
-                          >
-                            <PencilIcon className="w-5 h-5" />
-                            <span>Editar</span>
-                          </Link>
-                        </>
+                        <Link
+                          to={`/fondo-tiempo/editar-fondo/${fondo.id}`}
+                          className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg transition duration-300 hover:scale-105 shadow-md hover:shadow-lg"
+                        >
+                          <PencilIcon className="w-5 h-5" />
+                          <span>Editar</span>
+                        </Link>
                       )}
 
                       {esAdmin() && ['aprobado_director', 'finalizado', 'rechazado', 'aprobado', 'anulado'].includes(fondo.estado) && (
@@ -329,10 +327,10 @@ function ListaFondos({ isDark }) {
                 </button>
                 <Link
                   to="/fondo-tiempo/nuevo-fondo"
-                  className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl shadow-md hover:shadow-lg transition-all"
+                  className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105"
                 >
                   <PlusIcon className="w-5 h-5" />
-                  <span>Crear Fondo de Tiempo</span>
+                  <span>Nuevo Fondo de Tiempo</span>
                 </Link>
               </div>
             )}
@@ -381,4 +379,3 @@ function ListaFondos({ isDark }) {
 }
 
 export default ListaFondos;
-

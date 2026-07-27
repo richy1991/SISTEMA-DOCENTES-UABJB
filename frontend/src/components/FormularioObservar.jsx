@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { observarFondo } from '../apis/api';
 import toast from 'react-hot-toast';
+import { getApiErrorMessage } from '../utils/formErrors';
 
 const PaperAirplaneIcon = (props) => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
@@ -44,11 +45,7 @@ function FormularioObservar({ fondo, onObservar, onCancelar }) {
     
   } catch (err) {
     console.error('Error al observar:', err);
-    if (err.response?.data?.error) {
-      toast.error(`❌ ${err.response.data.error}`);
-    } else {
-      toast.error('❌ Error al enviar la observación');
-    }
+    toast.error(getApiErrorMessage(err, 'Error al enviar la observacion'));
     setEnviando(false);
   }
 };

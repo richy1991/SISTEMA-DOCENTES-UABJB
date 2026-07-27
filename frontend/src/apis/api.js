@@ -17,6 +17,19 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    const activeAssignmentId = localStorage.getItem('active_assignment_id');
+    const activeRole = localStorage.getItem('active_role');
+    const activeCareerId = localStorage.getItem('active_carrera_id');
+
+    if (activeAssignmentId) {
+      config.headers['X-Active-Assignment'] = activeAssignmentId;
+    }
+    if (activeRole) {
+      config.headers['X-Active-Role'] = activeRole;
+    }
+    if (activeCareerId) {
+      config.headers['X-Active-Carrera'] = activeCareerId;
+    }
     return config;
   },
   (error) => {
@@ -104,8 +117,9 @@ export const restaurarFondo = (id) => api.post(`/fondos-tiempo/${id}/restaurar/`
 // ===================================
 // ENDPOINTS - DOCENTES Y CARRERAS
 // ===================================
-export const getDocentes = () => api.get('/docentes/');
+export const getDocentes = (params) => api.get('/docentes/', { params });
 export const getCarreras = () => api.get('/carreras/');
+export const getMaterias = (params) => api.get('/materias/', { params });
 export const getFacultadesCarrera = () => api.get('/carreras/facultades/');
 export const addFacultadCarrera = (value) => api.post('/carreras/facultades/agregar/', { value });
 export const deleteFacultadCarrera = (value) => api.post('/carreras/facultades/eliminar/', { value });

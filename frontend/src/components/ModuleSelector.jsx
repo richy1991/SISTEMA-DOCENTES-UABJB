@@ -1,8 +1,6 @@
-import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import ThemeToggle from './ThemeToggle';
-import api from '../apis/api';
-import toast from 'react-hot-toast';
+import { useActiveRole } from '../contexts/ActiveRoleContext';
 
 // --- ICONOS ---
 // Se mantienen los mismos iconos, pero ahora se pueden personalizar más fácilmente.
@@ -57,10 +55,20 @@ const BuildingIcon = (props) => (
 // --- COMPONENTE PRINCIPAL ---
 const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
     const navigate = useNavigate();
+    const activeRoleContext = useActiveRole();
+    const {
+        activeAssignment,
+        effectiveUser,
+        hasMultipleAssignments,
+        assignments,
+        selectAssignment,
+        getRoleLabel,
+    } = activeRoleContext;
+    const currentUser = effectiveUser || user;
 
     // Lógica para obtener el nombre a mostrar (corregida)
-    const fullName = `${user?.first_name || ''} ${user?.last_name || ''}`.trim();
-    const displayName = fullName || user?.username || 'Usuario';
+    const fullName = `${currentUser?.first_name || ''} ${currentUser?.last_name || ''}`.trim();
+    const displayName = fullName || currentUser?.username || 'Usuario';
 
     const handleLogoutClick = () => {
         onLogout();
@@ -103,9 +111,9 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
     ];
 
     // iiisyp es solo lectura: no puede acceder a herramientas globales de administracion
-    const esDirectorCarrera = user?.perfil?.rol === 'director';
-    const mostrarHerramientasGestion = user?.is_superuser || esDirectorCarrera;
-    const tituloHerramientasGestion = user?.is_superuser ? 'Herramientas Globales' : 'Herramientas de Carrera';
+    const esDirectorCarrera = currentUser?.perfil?.rol === 'director';
+    const mostrarHerramientasGestion = currentUser?.is_superuser || esDirectorCarrera;
+    const tituloHerramientasGestion = currentUser?.is_superuser ? 'Herramientas Globales' : 'Herramientas de Carrera';
     const herramientasGlobales = [
         {
             name: 'Usuarios del Sistema',
@@ -124,7 +132,7 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
             enabled: true,
         },
     ];
-    const herramientasVisibles = user?.is_superuser
+    const herramientasVisibles = currentUser?.is_superuser
         ? herramientasGlobales
         : herramientasGlobales.map((tool) => ({
             ...tool,
@@ -318,7 +326,6 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
 
             {/* Contenido Principal */}
             <div className="module-selector-content relative min-h-screen flex flex-col items-center justify-center p-4 z-10">
-                
                 {/* Header */}
                 <header className="module-selector-header absolute top-0 left-0 right-0 p-6 flex justify-between items-center">
                     {/* Lado Izquierdo: Mensaje de Bienvenida */}
@@ -367,18 +374,31 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
                     })}
                 </div>
 
-                {mostrarHerramientasGestion && (
+                {(mostrarHerramientasGestion || hasMultipleAssignments) && (
                     <aside className="module-tools-panel tools-floating-enter lg:fixed lg:right-8 lg:top-[calc(50%-152px)] lg:-translate-y-1/2 mt-10 lg:mt-0 w-full max-w-sm lg:w-80">
                         <div className="module-tools-card relative rounded-2xl border border-white/35 dark:border-white/20 bg-white/5 dark:bg-slate-900/10 backdrop-blur-md shadow-2xl p-4">
                             <div className="absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/70 to-transparent" />
-                            <p className="module-tools-title text-xs uppercase tracking-[0.22em] text-cyan-200/90 dark:text-cyan-300/80 mb-3 text-center">
-                                {tituloHerramientasGestion}
-                            </p>
-                            <div className="space-y-3">
-                                {herramientasVisibles.map((tool) => (
-                                    <FloatingToolButton key={tool.name} {...tool} />
-                                ))}
-                            </div>
+                            {mostrarHerramientasGestion && (
+                                <>
+                                    <p className="module-tools-title text-xs uppercase tracking-[0.22em] text-cyan-200/90 dark:text-cyan-300/80 mb-3 text-center">
+                                        {tituloHerramientasGestion}
+                                    </p>
+                                    <div className="space-y-3">
+                                        {herramientasVisibles.map((tool) => (
+                                            <FloatingToolButton key={tool.name} {...tool} />
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+                            {hasMultipleAssignments && (
+                                <RoleInlineSelector
+                                    assignments={assignments}
+                                    activeAssignment={activeAssignment}
+                                    onSelect={selectAssignment}
+                                    getRoleLabel={getRoleLabel}
+                                    compactTop={mostrarHerramientasGestion}
+                                />
+                            )}
                         </div>
                     </aside>
                 )}
@@ -386,6 +406,36 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
         </div>
     );
 };
+
+const RoleInlineSelector = ({ assignments, activeAssignment, onSelect, getRoleLabel, compactTop }) => (
+    <div className={`${compactTop ? 'mt-4 pt-4 border-t border-white/20 dark:border-white/10' : ''}`}>
+        <p className="module-tools-title text-xs uppercase tracking-[0.22em] text-cyan-200/90 dark:text-cyan-300/80 mb-3 text-center">
+            Rol de Ingreso
+        </p>
+        <div className="space-y-2">
+            {assignments.map((assignment) => {
+                const selected = String(activeAssignment?.id || '') === String(assignment.id);
+                return (
+                    <button
+                        key={assignment.id}
+                        type="button"
+                        onClick={() => onSelect(assignment)}
+                        className={`w-full rounded-xl border px-3 py-3 text-left transition-all duration-300 ${
+                            selected
+                                ? 'border-blue-300 bg-blue-600/90 text-white shadow-lg shadow-blue-900/20'
+                                : 'border-white/30 bg-white/20 text-slate-900 hover:border-blue-300 hover:bg-white/35 dark:border-white/15 dark:bg-slate-800/35 dark:text-slate-100 dark:hover:bg-slate-800/55'
+                        }`}
+                    >
+                        <span className="block text-sm font-bold">{getRoleLabel(assignment.rol)}</span>
+                        <span className={`block text-xs truncate ${selected ? 'text-blue-100' : 'text-slate-600 dark:text-slate-300'}`}>
+                            {assignment.carrera_nombre || 'Sin carrera'}
+                        </span>
+                    </button>
+                );
+            })}
+        </div>
+    </div>
+);
 
 const FloatingToolButton = ({ name, description, path, icon: Icon, color }) => {
     const colorClasses = {

@@ -35,6 +35,7 @@ urlpatterns = [
     
     # Endpoint para obtener el usuario actual
     path('usuario/', views.usuario_actual, name='usuario-actual'),
+    path('perfil/', views.perfil_actual, name='perfil-actual'),
     
     # Endpoint para las estadísticas del dashboard (¡ESTE ES EL QUE FALTABA!)
     path('dashboard-stats/', views.dashboard_stats, name='dashboard-stats'),

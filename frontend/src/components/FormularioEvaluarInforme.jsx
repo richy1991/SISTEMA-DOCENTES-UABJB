@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import api from '../apis/api';
 import toast from 'react-hot-toast';
+import { getApiErrorMessage } from '../utils/formErrors';
 
 function FormularioEvaluarInforme({ fondoId, onInformeEvaluado, onCancelar }) {
   const [loading, setLoading] = useState(false);
@@ -56,11 +57,7 @@ function FormularioEvaluarInforme({ fondoId, onInformeEvaluado, onCancelar }) {
       onInformeEvaluado();
     } catch (err) {
       console.error('Error al evaluar informe:', err);
-      if (err.response?.data?.error) {
-        toast.error(`❌ ${err.response.data.error}`);
-      } else {
-        toast.error('❌ Error al evaluar el informe');
-      }
+      toast.error(getApiErrorMessage(err, 'Error al evaluar el informe'));
     } finally {
       setLoading(false);
     }

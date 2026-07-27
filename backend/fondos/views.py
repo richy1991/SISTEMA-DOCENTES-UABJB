@@ -26,7 +26,7 @@ from .serializers import (
     DocenteSerializer, CarreraSerializer, MateriaSerializer, FondoTiempoSerializer,
     FondoTiempoListSerializer, CategoriaFuncionSerializer, ActividadSerializer, CargaHorariaSerializer,
     UsuarioSerializer, CrearUsuarioSerializer, ActualizarUsuarioSerializer,
-    FotoPerfilSerializer,
+    FotoPerfilSerializer, PerfilUsuarioSerializer,
     CalendarioAcademicoSerializer, ProyectoSerializer, ProyectoListSerializer,
     InformeFondoSerializer, InformeFondoListSerializer,
     ObservacionFondoSerializer, MensajeObservacionSerializer,
@@ -39,6 +39,7 @@ from .serializers import (
     validar_unicidad_cargo_por_carrera,
     _validar_fondo_tiempo_contractual_doble_rol,
 )
+from .role_context import get_effective_profile, get_active_careers_for_user
 
 
 def _obtener_perfil_usuario(user):
@@ -47,33 +48,20 @@ def _obtener_perfil_usuario(user):
     return getattr(user, 'perfil', None)
 
 
-def _obtener_carreras_activas_usuario(user):
-    if not user or not user.is_authenticated:
-        return Carrera.objects.none()
-
-    if user.is_superuser:
-        return Carrera.objects.filter(activo=True)
-
-    perfil = _obtener_perfil_usuario(user)
-    if not perfil:
-        return Carrera.objects.none()
-
-    carreras = perfil.get_carreras_activas() if hasattr(perfil, 'get_carreras_activas') else Carrera.objects.none()
-    if carreras.exists():
-        return carreras
-
-    if perfil.carrera_id:
-        return Carrera.objects.filter(id=perfil.carrera_id)
-
-    return Carrera.objects.none()
+def _obtener_perfil_efectivo(user, request=None):
+    return get_effective_profile(user, request)
 
 
-def _usuario_tiene_acceso_a_carrera(user, carrera):
+def _obtener_carreras_activas_usuario(user, request=None):
+    return get_active_careers_for_user(user, request)
+
+
+def _usuario_tiene_acceso_a_carrera(user, carrera, request=None):
     if not user or not user.is_authenticated or not carrera:
         return False
     if user.is_superuser:
         return True
-    carreras = _obtener_carreras_activas_usuario(user)
+    carreras = _obtener_carreras_activas_usuario(user, request)
     return carreras.filter(id=carrera.id).exists()
 
 
@@ -179,7 +167,7 @@ class DocenteViewSet(viewsets.ModelViewSet):
         
         # Admin y Director de carrera ven docentes de sus carreras activas
         if hasattr(user, 'perfil') and user.perfil.rol in ['iiisyp', 'director']:
-            carreras_activas = _obtener_carreras_activas_usuario(user)
+            carreras_activas = _obtener_carreras_activas_usuario(user, self.request)
             if carreras_activas.exists():
                 return _docentes_por_carreras(carreras_activas)
             return Docente.objects.none()
@@ -779,7 +767,7 @@ class MateriaViewSet(viewsets.ModelViewSet):
         if user.is_superuser:
             return False
         if hasattr(user, 'perfil') and user.perfil:
-            carreras_activas = _obtener_carreras_activas_usuario(user)
+            carreras_activas = _obtener_carreras_activas_usuario(user, self.request)
             return carreras_activas.exists() and not carreras_activas.filter(activo=True).exists()
         return False
 
@@ -796,7 +784,7 @@ class MateriaViewSet(viewsets.ModelViewSet):
         
         # Jefe de Estudios y Director ven materias de su carrera
         if hasattr(user, 'perfil') and user.perfil.rol in ['jefe_estudios', 'director']:
-            carreras_activas = _obtener_carreras_activas_usuario(user)
+            carreras_activas = _obtener_carreras_activas_usuario(user, self.request)
             if carreras_activas.exists():
                 queryset = queryset.filter(carrera__in=carreras_activas)
             else:
@@ -856,7 +844,7 @@ class CargaHorariaViewSet(viewsets.ModelViewSet):
         if user.is_superuser:
             return False
         if hasattr(user, 'perfil') and user.perfil:
-            carreras_activas = _obtener_carreras_activas_usuario(user)
+            carreras_activas = _obtener_carreras_activas_usuario(user, self.request)
             return carreras_activas.exists() and not carreras_activas.filter(activo=True).exists()
         return False
 
@@ -879,7 +867,7 @@ class CargaHorariaViewSet(viewsets.ModelViewSet):
         """
         user = self.request.user
         try:
-            perfil = user.perfil
+            perfil = _obtener_perfil_efectivo(user, self.request)
         except Exception:
             perfil = None
         queryset = super().get_queryset()
@@ -891,7 +879,7 @@ class CargaHorariaViewSet(viewsets.ModelViewSet):
             return queryset
 
         if perfil.rol in ['director', 'jefe_estudios']:
-            carreras_activas = _obtener_carreras_activas_usuario(user)
+            carreras_activas = _obtener_carreras_activas_usuario(user, self.request)
             if carreras_activas.exists():
                 docentes_carrera = _docentes_por_carreras(carreras_activas)
                 return queryset.filter(docente__in=docentes_carrera)
@@ -1060,7 +1048,7 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         if user.is_superuser:
             return False
         if hasattr(user, 'perfil') and user.perfil:
-            carreras_activas = _obtener_carreras_activas_usuario(user)
+            carreras_activas = _obtener_carreras_activas_usuario(user, self.request)
             return carreras_activas.exists() and not carreras_activas.filter(activo=True).exists()
         return False
     
@@ -1074,7 +1062,7 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         queryset = super().get_queryset().filter(archivado=False)
         user = self.request.user
         try:
-            perfil = user.perfil
+            perfil = _obtener_perfil_efectivo(user, self.request)
         except Exception:
             perfil = None
 
@@ -1090,7 +1078,7 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
 
         # Director y Jefe de Estudios ven los de sus carreras activas
         if perfil.rol in ['director', 'jefe_estudios']:
-            carreras_activas = _obtener_carreras_activas_usuario(user)
+            carreras_activas = _obtener_carreras_activas_usuario(user, self.request)
             if carreras_activas.exists():
                 return queryset.filter(carrera__in=carreras_activas)
             return queryset.none()
@@ -1120,8 +1108,12 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         if self.action in ['retrieve', 'restaurar', 'destroy', 'generar_pdf_oficial']:
             # Acciones que permiten ver archivados (con validación de dueño)
             if not self.request.user.is_superuser:
-                if hasattr(self.request.user, 'perfil') and self.request.user.perfil.docente:
-                    queryset = queryset.filter(docente=self.request.user.perfil.docente)
+                perfil = _obtener_perfil_efectivo(self.request.user, self.request)
+                if perfil and perfil.rol in ['director', 'jefe_estudios']:
+                    carreras_activas = _obtener_carreras_activas_usuario(self.request.user, self.request)
+                    queryset = queryset.filter(carrera__in=carreras_activas) if carreras_activas.exists() else queryset.none()
+                elif perfil and perfil.rol == 'docente' and perfil.docente:
+                    queryset = queryset.filter(docente=perfil.docente)
                 else:
                     queryset = queryset.none()
         else:
@@ -1131,14 +1123,14 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
             # Replicar lógica de permisos de get_queryset para consistencia
             user = self.request.user
             try:
-                perfil = user.perfil
+                perfil = _obtener_perfil_efectivo(user, self.request)
             except Exception:
                 perfil = None
 
             if not perfil:
                 queryset = queryset.none()
             elif perfil.rol in ['director', 'jefe_estudios']:
-                carreras_activas = _obtener_carreras_activas_usuario(user)
+                carreras_activas = _obtener_carreras_activas_usuario(user, self.request)
                 if carreras_activas.exists():
                     queryset = queryset.filter(carrera__in=carreras_activas)
                 else:
@@ -1212,12 +1204,12 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
 
     def _validar_permiso_distribucion(self, fondo):
         user = self.request.user
-        perfil = _obtener_perfil_usuario(user)
+        perfil = _obtener_perfil_efectivo(user, self.request)
 
         if not user.is_superuser:
             if not perfil or perfil.rol != 'jefe_estudios':
                 raise PermissionDenied("Solo Jefes de Estudio pueden modificar la distribucion de horas.")
-            if not _usuario_tiene_acceso_a_carrera(user, fondo.carrera):
+            if not _usuario_tiene_acceso_a_carrera(user, fondo.carrera, self.request):
                 raise PermissionDenied("No tienes acceso a la carrera de este Fondo de Tiempo.")
 
         if fondo.carrera and not fondo.carrera.activo:
@@ -1225,6 +1217,26 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
 
         if fondo.estado not in ['borrador', 'observado']:
             raise PermissionDenied(f"No se puede modificar la distribucion. El fondo esta en estado '{fondo.get_estado_display()}'.")
+
+    def _puede_editar_fondo(self, fondo):
+        user = self.request.user
+        if user.is_superuser:
+            return True
+
+        if fondo.estado not in ['borrador', 'observado']:
+            return False
+
+        perfil = _obtener_perfil_efectivo(user, self.request)
+        if not perfil:
+            return False
+
+        if perfil.rol in ['director', 'jefe_estudios'] and user.is_staff:
+            return _usuario_tiene_acceso_a_carrera(user, fondo.carrera, self.request)
+
+        if perfil.rol == 'docente' and perfil.docente:
+            return fondo.docente_id == perfil.docente.id
+
+        return False
 
     def _normalizar_horas_distribucion(self, raw_categorias):
         if not isinstance(raw_categorias, dict):
@@ -1282,7 +1294,7 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
 
         user = self.request.user
         try:
-            perfil = user.perfil
+            perfil = _obtener_perfil_efectivo(user, request)
         except Exception:
             perfil = None
 
@@ -1369,7 +1381,7 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         accesibles al usuario, omitiendo dedicacion exclusiva y fondos existentes.
         """
         user = request.user
-        perfil = _obtener_perfil_usuario(user)
+        perfil = _obtener_perfil_efectivo(user, request)
 
         if not user.is_superuser and (not perfil or perfil.rol not in ['director', 'jefe_estudios']):
             raise PermissionDenied("No tienes permisos para generar Fondos de Tiempo masivamente.")
@@ -1381,7 +1393,7 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        carreras_activas = _obtener_carreras_activas_usuario(user)
+        carreras_activas = _obtener_carreras_activas_usuario(user, request)
         if not carreras_activas.exists():
             return Response(
                 {'error': 'No tienes carreras activas disponibles para generar Fondos de Tiempo.'},
@@ -1442,9 +1454,9 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         """Verificar permisos de edición"""
         instance = self.get_object()
         
-        if not instance.puede_editar(request.user):
+        if not self._puede_editar_fondo(instance):
             raise PermissionDenied(
-                "Acción no permitida. Solo el docente dueño (en estado borrador/observado/en_ejecucion) o un administrador pueden editar."
+                "Acción no permitida. Solo se pueden editar fondos en estado borrador u observado."
             )
         
         partial = kwargs.pop('partial', False)
@@ -1466,9 +1478,9 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         """Verificar permisos de edición parcial"""
         instance = self.get_object()
         
-        if not instance.puede_editar(request.user):
+        if not self._puede_editar_fondo(instance):
             raise PermissionDenied(
-                "Acción no permitida. Solo el docente dueño (en estado borrador/observado/en_ejecucion) o un administrador pueden editar."
+                "Acción no permitida. Solo se pueden editar fondos en estado borrador u observado."
             )
         
         kwargs['partial'] = True
@@ -1594,14 +1606,15 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         """
         queryset = FondoTiempo.objects.filter(archivado=True).select_related('docente', 'carrera')
 
-        if not request.user.is_staff:
-            if hasattr(request.user, 'perfil') and request.user.perfil.docente:
-                queryset = queryset.filter(docente=request.user.perfil.docente)
+        if not request.user.is_superuser:
+            perfil = _obtener_perfil_efectivo(request.user, request)
+            if perfil and perfil.rol in ['director', 'jefe_estudios']:
+                carreras_activas = _obtener_carreras_activas_usuario(request.user, request)
+                queryset = queryset.filter(carrera__in=carreras_activas) if carreras_activas.exists() else queryset.none()
+            elif perfil and perfil.rol == 'docente' and perfil.docente:
+                queryset = queryset.filter(docente=perfil.docente)
             else:
-                # If user is not staff and not a teacher, they see no archived funds.
                 queryset = queryset.none()
-        
-        # Admins will see the full queryset
         
         serializer = FondoTiempoListSerializer(queryset, many=True, context={'request': request})
         return Response(serializer.data)
@@ -1648,12 +1661,10 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         fondo = self.get_object()
         
         # Verificar que sea el docente dueño del fondo
-        if not self.request.user.is_staff:
-            if hasattr(self.request.user, 'perfil') and self.request.user.perfil.docente:
-                if fondo.docente != self.request.user.perfil.docente:
-                    raise PermissionDenied("No puede presentar fondos de otros docentes")
-            else:
-                raise PermissionDenied("Usuario no tiene docente asignado")
+        perfil = _obtener_perfil_efectivo(request.user, request)
+        if not request.user.is_superuser and perfil and perfil.rol == 'docente':
+            if not perfil.docente or fondo.docente != perfil.docente:
+                raise PermissionDenied("No puede presentar fondos de otros docentes")
         
         # LÓGICA FLEXIBLE: Manejo de estados
         if fondo.estado == 'en_ejecucion':
@@ -1735,11 +1746,11 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
     @transaction.atomic
     def aprobar(self, request, pk=None):
         """Aprobar fondo (Director)"""
-        # MEJORA: Solo un Director debería poder aprobar, no un Admin genérico.
-        if not (hasattr(request.user, 'perfil') and request.user.perfil.rol == 'director'):
-            raise PermissionDenied("Solo los Directores de Carrera pueden aprobar fondos.")
-
         fondo = self.get_object()
+        # MEJORA: Solo un Director debería poder aprobar, no un Admin genérico.
+        perfil = _obtener_perfil_efectivo(request.user, request)
+        if not (perfil and perfil.rol == 'director' and _usuario_tiene_acceso_a_carrera(request.user, fondo.carrera, request)):
+            raise PermissionDenied("Solo los Directores de Carrera pueden aprobar fondos.")
         
         # Un director puede aprobar fondos presentados o que él mismo haya observado y el docente corrigió.
         if fondo.estado != 'presentado_director':
@@ -1784,11 +1795,11 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
     def observar(self, request, pk=None):
         """Observar o rechazar fondo (Director)"""
         try:
-            # MEJORA: Solo un Director debería poder observar, no un Admin genérico.
-            if not (hasattr(request.user, 'perfil') and request.user.perfil.rol == 'director'):
-                raise PermissionDenied("Solo los Directores de Carrera pueden observar fondos.")
-
             fondo = self.get_object()
+            # MEJORA: Solo un Director debería poder observar, no un Admin genérico.
+            perfil = _obtener_perfil_efectivo(request.user, request)
+            if not (perfil and perfil.rol == 'director' and _usuario_tiene_acceso_a_carrera(request.user, fondo.carrera, request)):
+                raise PermissionDenied("Solo los Directores de Carrera pueden observar fondos.")
 
             if fondo.estado != 'presentado_director':
                 return Response(
@@ -1859,12 +1870,12 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         fondo = self.get_object()
         user = request.user
         try:
-            perfil = user.perfil
+            perfil = _obtener_perfil_efectivo(user, request)
         except Exception:
             perfil = None
 
         # Permission check
-        if not (perfil and perfil.rol == 'jefe_estudios' and _usuario_tiene_acceso_a_carrera(user, fondo.carrera)):
+        if not (perfil and perfil.rol == 'jefe_estudios' and _usuario_tiene_acceso_a_carrera(user, fondo.carrera, request)):
             raise PermissionDenied("Solo el Jefe de Estudios de la carrera puede validar este fondo.")
 
         if fondo.estado != 'presentado_jefe':
@@ -1900,12 +1911,12 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         fondo = self.get_object()
         user = request.user
         try:
-            perfil = user.perfil
+            perfil = _obtener_perfil_efectivo(user, request)
         except Exception:
             perfil = None
 
         # Permission check
-        if not (perfil and perfil.rol == 'jefe_estudios' and _usuario_tiene_acceso_a_carrera(user, fondo.carrera)):
+        if not (perfil and perfil.rol == 'jefe_estudios' and _usuario_tiene_acceso_a_carrera(user, fondo.carrera, request)):
             raise PermissionDenied("Solo el Jefe de Estudios de la carrera puede observar este fondo.")
 
         if fondo.estado != 'presentado_jefe':
@@ -2078,12 +2089,12 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         fondo = self.get_object()
         user = request.user
         try:
-            perfil = user.perfil
+            perfil = _obtener_perfil_efectivo(user, request)
         except Exception:
             perfil = None
 
         # REGLA: Solo el Director de la carrera correspondiente puede evaluar.
-        if not (perfil and perfil.rol == 'director' and _usuario_tiene_acceso_a_carrera(user, fondo.carrera)):
+        if not (perfil and perfil.rol == 'director' and _usuario_tiene_acceso_a_carrera(user, fondo.carrera, request)):
             raise PermissionDenied("Solo el Director de la carrera correspondiente puede evaluar y finalizar el fondo.")
         
         # Validar estado actual
@@ -2337,7 +2348,7 @@ class FondoTiempoDistribucionAccessMixin:
 
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
             user = self.request.user
-            perfil = _obtener_perfil_usuario(user)
+            perfil = _obtener_perfil_efectivo(user, self.request)
             if not user.is_superuser and (not perfil or perfil.rol != 'jefe_estudios'):
                 raise PermissionDenied("Solo Jefes de Estudio pueden modificar la distribución de horas.")
 
@@ -2345,7 +2356,7 @@ class FondoTiempoDistribucionAccessMixin:
 
     def _validar_fondo_modificable(self, fondo):
         user = self.request.user
-        perfil = _obtener_perfil_usuario(user)
+        perfil = _obtener_perfil_efectivo(user, self.request)
 
         if not fondo:
             raise PermissionDenied("No se pudo identificar el Fondo de Tiempo asociado.")
@@ -2353,7 +2364,7 @@ class FondoTiempoDistribucionAccessMixin:
         if not user.is_superuser:
             if not perfil or perfil.rol != 'jefe_estudios':
                 raise PermissionDenied("Solo Jefes de Estudio pueden modificar la distribución de horas.")
-            if not _usuario_tiene_acceso_a_carrera(user, fondo.carrera):
+            if not _usuario_tiene_acceso_a_carrera(user, fondo.carrera, self.request):
                 raise PermissionDenied("No tienes acceso a la carrera de este Fondo de Tiempo.")
 
         if fondo.carrera and not fondo.carrera.activo:
@@ -2364,7 +2375,7 @@ class FondoTiempoDistribucionAccessMixin:
 
     def _filtrar_por_rol(self, queryset, fondo_path):
         user = self.request.user
-        perfil = _obtener_perfil_usuario(user)
+        perfil = _obtener_perfil_efectivo(user, self.request)
 
         if self._usuario_carrera_inactiva():
             return queryset.none()
@@ -2376,7 +2387,7 @@ class FondoTiempoDistribucionAccessMixin:
             return queryset.none()
 
         if perfil.rol in ['director', 'jefe_estudios']:
-            carreras_activas = _obtener_carreras_activas_usuario(user)
+            carreras_activas = _obtener_carreras_activas_usuario(user, self.request)
             if carreras_activas.exists():
                 return queryset.filter(**{f'{fondo_path}__carrera__in': carreras_activas})
             return queryset.none()
@@ -3226,6 +3237,17 @@ def usuario_actual(request):
     """Retorna la información completa del usuario actual"""
     user = request.user
     serializer = UsuarioSerializer(user, context={'request': request})
+    return Response(serializer.data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def perfil_actual(request):
+    """Retorna el perfil del usuario actual."""
+    perfil = getattr(request.user, 'perfil', None)
+    if not perfil:
+        return Response({'detail': 'El usuario no tiene perfil asignado.'}, status=status.HTTP_404_NOT_FOUND)
+    serializer = PerfilUsuarioSerializer(perfil, context={'request': request})
     return Response(serializer.data)
 
 

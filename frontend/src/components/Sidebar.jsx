@@ -1,5 +1,6 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import ProfilePicture from './ProfilePicture';
+import { useActiveRole } from '../contexts/ActiveRoleContext';
 
 // --- ICONOS ---
 const DashboardIcon = (props) => (
@@ -71,6 +72,10 @@ const BookOpenIcon = (props) => (
 function Sidebar({ user, onLogout, collapsed, setCollapsed, theme, setTheme, onProfileUpdate, onCarreraActivaChange }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const {
+    effectiveUser,
+  } = useActiveRole();
+  const currentUser = effectiveUser || user;
 
   const isActive = (path) => {
     if (path === '/fondo-tiempo') {
@@ -112,18 +117,16 @@ function Sidebar({ user, onLogout, collapsed, setCollapsed, theme, setTheme, onP
   };
 
   // Determina el rol del usuario actual.
-  const userRole = user?.perfil?.rol;
+  const userRole = currentUser?.perfil?.rol;
 
   // Función helper para filtrar items
   const filterItems = (items) => items.filter(item => (
     (item.roles && userRole && item.roles.includes(userRole))
-    || (item.superuser && user?.is_superuser)
+    || (item.superuser && currentUser?.is_superuser)
   ));
 
   const visiblePrincipal = filterItems(menuItems.principal);
   const visibleAdmin = filterItems(menuItems.administracion);
-  const carrerasDisponibles = Array.isArray(user?.asignaciones) ? user.asignaciones : [];
-  const mostrarSelectorCarrera = carrerasDisponibles.length > 1;
 
   return (
     <>
@@ -157,37 +160,19 @@ function Sidebar({ user, onLogout, collapsed, setCollapsed, theme, setTheme, onP
           {/* Perfil de usuario */}
           <div className={`flex flex-col items-center gap-3 p-2 rounded-lg transition-all duration-300`}>
             <div className={`transition-all duration-300 ${collapsed ? 'w-12 h-12' : 'w-40 h-40'}`}>
-              <ProfilePicture user={user} onUpdate={onProfileUpdate} />
+              <ProfilePicture user={currentUser} onUpdate={onProfileUpdate} />
             </div>
             {/* Nombre y Rol (visible solo si no está colapsado) */}
             {!collapsed && (
               <div className="flex-1 min-w-0 text-center">
-                <p className="text-sm font-semibold text-white truncate" title={user?.first_name || user?.username}>
-                  {user?.first_name || user?.username}
+                <p className="text-sm font-semibold text-white truncate" title={currentUser?.first_name || currentUser?.username}>
+                  {currentUser?.first_name || currentUser?.username}
                 </p>
-                <p className="text-xs text-blue-300 truncate" title={getRoleName(user)}>{getRoleName(user)}</p>
+                <p className="text-xs text-blue-300 truncate" title={getRoleName(currentUser)}>{getRoleName(currentUser)}</p>
               </div>
             )}
           </div>
 
-          {!collapsed && mostrarSelectorCarrera && (
-            <div className="mt-4 pt-4 border-t border-blue-800/40">
-              <label className="block text-xs font-semibold uppercase tracking-wider text-blue-300 mb-2">
-                Carrera Activa
-              </label>
-              <select
-                value={user?.perfil?.carrera || ''}
-                onChange={(e) => onCarreraActivaChange?.(e.target.value)}
-                className="w-full rounded-xl bg-blue-950/80 border border-blue-700 text-white text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
-              >
-                {carrerasDisponibles.map((asignacion) => (
-                  <option key={asignacion.id} value={asignacion.carrera}>
-                    {asignacion.carrera_nombre}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
         </div>
 
         {/* --- 2. NAVEGACIÓN PRINCIPAL (CON SCROLL) --- */}

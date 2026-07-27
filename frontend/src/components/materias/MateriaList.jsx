@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { FaEdit, FaTrash } from 'react-icons/fa';
+import { X } from 'lucide-react';
 import api from '../../apis/api';
 import { Link, Outlet } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
 // Componente Select con diseÃ±o personalizado (mismo estilo que ListaDocentes)
-const SelectConDropdown = ({ label, value, onChange, options, name, placeholder = 'Buscar...', emptyText = 'Sin resultados' }) => {
+const SelectConDropdown = ({ label, value, onChange, options, name, placeholder = 'Buscar...', emptyText = 'Sin resultados', hideSelectedOption = false }) => {
   const [open, setOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const containerRef = React.useRef(null);
@@ -27,9 +28,12 @@ const SelectConDropdown = ({ label, value, onChange, options, name, placeholder 
 
   const selectedLabel = value && options.find(opt => opt.value === value)?.label;
   const query = searchTerm.trim().toLowerCase();
+  const menuOptions = hideSelectedOption
+    ? options.filter((option) => option.value !== value)
+    : options;
   const visibleOptions = query
-    ? options.filter((option) => option.label.toLowerCase().includes(query))
-    : options.slice(0, 5);
+    ? menuOptions.filter((option) => option.label.toLowerCase().includes(query))
+    : menuOptions;
 
   const handleSelect = (optionValue) => {
     onChange({ target: { name, value: optionValue } });
@@ -72,7 +76,7 @@ const SelectConDropdown = ({ label, value, onChange, options, name, placeholder 
               className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-slate-600 dark:hover:text-white"
               title="Limpiar filtro"
             >
-              Ã—
+              <X className="h-3.5 w-3.5" />
             </button>
           )}
           <span className="flex items-center justify-center h-6 w-6 rounded-md bg-[#2C4AAE] ring-1 ring-[#2C4AAE]">
@@ -149,6 +153,22 @@ const TrashIcon = (props) => (
     </svg>
 );
 
+const getSemestreLabel = (semestre) => {
+    const labels = {
+        1: '1er Semestre',
+        2: '2do Semestre',
+        3: '3er Semestre',
+        4: '4to Semestre',
+        5: '5to Semestre',
+        6: '6to Semestre',
+        7: '7mo Semestre',
+        8: '8vo Semestre',
+        9: '9no Semestre',
+        10: '10mo Semestre',
+    };
+    return labels[Number(semestre)] || `${semestre} Semestre`;
+};
+
 const MateriaList = ({ isDark, sidebarCollapsed = false }) => {
     const [materias, setMaterias] = useState([]);
     const [carreras, setCarreras] = useState([]);
@@ -159,23 +179,57 @@ const MateriaList = ({ isDark, sidebarCollapsed = false }) => {
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [materiaToDelete, setMateriaToDelete] = useState(null);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
+    const [perfil, setPerfil] = useState(null);
+
+    const obtenerId = (valor) => {
+        if (valor === null || valor === undefined || valor === '') return '';
+        if (typeof valor === 'object') return valor.id?.toString?.() || valor.pk?.toString?.() || '';
+        return valor.toString();
+    };
+
+    const obtenerCarreraPerfil = (perfilData, userData) => (
+        obtenerId(perfilData?.carrera)
+        || obtenerId(userData?.perfil?.carrera)
+        || obtenerId(userData?.carrera)
+        || obtenerId(localStorage.getItem('carrera_activa_id'))
+    );
+
+    const normalizarLista = (data) => data?.results || data || [];
 
     useEffect(() => {
-        const userData = JSON.parse(localStorage.getItem('user') || 'null');
-        setUser(userData);
         const fetchDatos = async () => {
             try {
-                // Cargar carreras
-                const resCarreras = await api.get('/carreras/');
-                const carrerasData = resCarreras.data.results || resCarreras.data || [];
+                const localUser = JSON.parse(localStorage.getItem('user') || 'null');
+                const [usuarioRes, perfilRes, resCarreras] = await Promise.all([
+                    api.get('/usuario/').catch(() => ({ data: localUser })),
+                    api.get('/perfil/').catch(() => null),
+                    api.get('/carreras/'),
+                ]);
+
+                const userData = usuarioRes?.data || localUser;
+                const perfilData = perfilRes?.data || userData?.perfil || null;
+                const isSuperAdmin = userData?.is_superuser === true;
+                const carreraPerfilId = obtenerCarreraPerfil(perfilData, userData);
+
+                setUser(userData);
+                setPerfil(perfilData);
+
+                const carrerasData = normalizarLista(resCarreras.data);
                 setCarreras(carrerasData);
-                
+
+                if (!isSuperAdmin && carreraPerfilId) {
+                    setCarreraSeleccionada(carreraPerfilId);
+                }
+
                 // Cargar materias
                 let allMaterias = [];
+                const params = !isSuperAdmin && carreraPerfilId ? { carrera: carreraPerfilId } : {};
                 let nextUrl = '/materias/';
+                let firstRequest = true;
 
                 while (nextUrl) {
-                    const res = await api.get(nextUrl);
+                    const res = firstRequest ? await api.get(nextUrl, { params }) : await api.get(nextUrl);
+                    firstRequest = false;
                     const data = res.data;
                     if (data.results) {
                         allMaterias = [...allMaterias, ...data.results];
@@ -225,22 +279,33 @@ const MateriaList = ({ isDark, sidebarCollapsed = false }) => {
         }
     };
 
-    // iiisyp es solo lectura: solo superuser y director pueden editar/eliminar materias
-    const canEdit = user?.is_superuser || user?.perfil?.rol === 'director';
+    const isSuperAdmin = user?.is_superuser === true;
+    const rolActual = perfil?.rol || user?.perfil?.rol || user?.rol;
+    // iiisyp es solo lectura: solo superuser, director y jefe de estudios gestionan materias.
+    const canEdit = isSuperAdmin || ['director', 'jefe_estudios'].includes(rolActual);
+    const carreraPerfilId = obtenerCarreraPerfil(perfil, user);
+    const debeOcultarFiltroCarrera = !isSuperAdmin && (['director', 'jefe_estudios'].includes(rolActual) || Boolean(carreraPerfilId));
 
     const carreraOptions = [...carreras]
         .sort((a, b) => Number(b.id || 0) - Number(a.id || 0))
         .map(c => ({ value: c.id?.toString() || c.codigo, label: c.nombre || c.nombre_corto || c.codigo }));
 
-    const semestresDisponibles = [...new Set(materias.map(m => m.semestre))].sort((a, b) => b - a);
-    const semestreOptions = semestresDisponibles.map(s => ({ value: s.toString(), label: `${s}º Semestre` }));
+    const semestreOptions = [
+        { value: 'todos', label: 'Todos los semestres' },
+        ...Array.from({ length: 10 }, (_, index) => {
+            const semestre = index + 1;
+            return { value: semestre.toString(), label: getSemestreLabel(semestre) };
+        }),
+    ];
 
     // Filtrar materias por semestre y carrera seleccionada
     const materiasFiltradas = materias.filter(m => {
         const coincideSemestre = semestreSeleccionado === 'todos' || m.semestre.toString() === semestreSeleccionado;
-        const coincideCarrera = carreraSeleccionada === 'todas' || 
-                                m.carrera?.toString() === carreraSeleccionada || 
-                                m.carrera_id?.toString() === carreraSeleccionada;
+        const carreraFiltro = debeOcultarFiltroCarrera ? carreraPerfilId : carreraSeleccionada;
+        const coincideCarrera = carreraFiltro === 'todas' ||
+                                !carreraFiltro ||
+                                obtenerId(m.carrera) === carreraFiltro ||
+                                m.carrera_id?.toString() === carreraFiltro;
         return coincideSemestre && coincideCarrera;
     });
 
@@ -273,16 +338,19 @@ const MateriaList = ({ isDark, sidebarCollapsed = false }) => {
                         
                         <div className="flex flex-col sm:flex-row gap-3 items-center">
                             {/* Filtro por Carrera */}
-                            <div className="w-full sm:flex-1">
-                                <SelectConDropdown
-                                  name="carrera"
-                                  value={carreraSeleccionada}
-                                  onChange={(e) => setCarreraSeleccionada(e.target.value)}
-                                  options={carreraOptions}
-                                  placeholder="Buscar carrera..."
-                                  emptyText="No hay carreras"
-                                />
-                            </div>
+                            {isSuperAdmin && (
+                                <div className="w-full sm:flex-1">
+                                    <SelectConDropdown
+                                      name="carrera"
+                                      value={carreraSeleccionada}
+                                      onChange={(e) => setCarreraSeleccionada(e.target.value)}
+                                      options={[{ value: 'todas', label: 'Todas las carreras' }, ...carreraOptions]}
+                                      placeholder="Buscar carrera..."
+                                      emptyText="No hay carreras"
+                                      hideSelectedOption
+                                    />
+                                </div>
+                            )}
 
                             {/* Filtro por Semestre */}
                             <div className="w-full sm:w-auto">
@@ -293,6 +361,7 @@ const MateriaList = ({ isDark, sidebarCollapsed = false }) => {
                                   options={semestreOptions}
                                   placeholder="Buscar semestre..."
                                   emptyText="No hay semestres"
+                                  hideSelectedOption
                                 />
                             </div>
 
@@ -324,7 +393,7 @@ const MateriaList = ({ isDark, sidebarCollapsed = false }) => {
                                             {materia.sigla}
                                         </span>
                                         <span className="px-3 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600">
-                                            {materia.semestre}Âº Semestre
+                                            {getSemestreLabel(materia.semestre)}
                                         </span>
                                     </div>
                                     

@@ -6,6 +6,7 @@ import api from '../apis/api';
 import { API_URL } from '../apis/apiConfig';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
 import DistribuirHoras from './DistribuirHoras';
+import { useActiveRole } from '../contexts/ActiveRoleContext';
 import FormularioActividad from './FormularioActividad';
 import FormularioObservar from './FormularioObservar';
 import BotonFlotanteObservaciones from './BotonFlotanteObservaciones';
@@ -19,6 +20,7 @@ import FormularioPresentarInforme from './FormularioPresentarInforme';
 import FormularioEvaluarInforme from './FormularioEvaluarInforme';
 import ThemeToggle from './ThemeToggle';
 import CargaHorariaManager from './CargaHorariaManager';
+import { getApiErrorMessage } from '../utils/formErrors';
 import { FileText as ArchivoIcon, Check as CheckIcon, Trash2 as TrashIcon, AlertTriangle as AlertTriangleIcon, Info as InfoIcon, Send as SendIcon, EyeOff as EyeOffIcon, X as XIcon, Plus as PlusIcon, ChevronDown as ChevronDownIcon, ChevronUp as ChevronUpIcon, Pencil as PencilIcon, Calendar as CalendarIcon, User as UserIcon } from 'lucide-react';
 import { Eye, CheckCircle2, FileDown, ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -141,6 +143,7 @@ const CATEGORY_ICONS = {
 };
 
 function DetalleFondo({ isDark }) {
+  const { activeAssignment } = useActiveRole();
   const { id } = useParams();
   const navigate = useNavigate();
   const [fondo, setFondo] = useState(null);
@@ -230,11 +233,7 @@ function DetalleFondo({ isDark }) {
     } catch (err) {
       toast.dismiss();
       console.error('Error al presentar informe:', err);
-      if (err.response?.data?.error) {
-        toast.error(`❌ ${err.response.data.error}`);
-      } else {
-        toast.error('❌ Error al presentar el informe');
-      }
+      toast.error(getApiErrorMessage(err, 'Error al presentar el informe'));
     } finally {
       setEnviandoInforme(false);
     }
@@ -243,7 +242,7 @@ function DetalleFondo({ isDark }) {
 
   useEffect(() => {
     cargarDetalle();
-  }, [id]);
+  }, [id, activeAssignment?.id]);
 
   // Guarda el ultimo total por categoria para detectar aparicion de tarjetas (0 -> >0)
   useEffect(() => {
@@ -285,7 +284,7 @@ function DetalleFondo({ isDark }) {
       setMostrarModalPDF(false);
       setActividadAEliminar(null);
     };
-  }, []);
+  }, [activeAssignment?.id]);
 
   // Sincronizar altura de Acciones y CargaHoraria con el grupo Balance+Distribución
   useEffect(() => {
@@ -320,7 +319,7 @@ function DetalleFondo({ isDark }) {
     };
 
     cargarUsuario();
-  }, []);
+  }, [activeAssignment?.id]);
 
   // Timer automático del carrusel de gráfica (avanza cada 5 seg)
   useEffect(() => {
@@ -441,12 +440,7 @@ function DetalleFondo({ isDark }) {
       }, 300);
     } catch (err) {
       console.error('Error al guardar actividad:', err);
-      if (err.response?.data) {
-        const errorMsg = JSON.stringify(err.response.data);
-        toast.error(`❌ Error: ${errorMsg}`);
-      } else {
-        toast.error('❌ Error al guardar la actividad');
-      }
+      toast.error(getApiErrorMessage(err, 'Error al guardar la actividad'));
     }
   };
 
@@ -490,12 +484,7 @@ function DetalleFondo({ isDark }) {
       }, 300);
     } catch (err) {
       console.error('Error al actualizar actividad:', err);
-      if (err.response?.data) {
-        const errorMsg = JSON.stringify(err.response.data);
-        toast.error(`❌ Error: ${errorMsg}`);
-      } else {
-        toast.error('❌ Error al actualizar la actividad');
-      }
+      toast.error(getApiErrorMessage(err, 'Error al actualizar la actividad'));
     }
   };
 
@@ -556,13 +545,7 @@ function DetalleFondo({ isDark }) {
       console.error('Error response:', err.response?.data);
       console.error('Error status:', err.response?.status);
 
-      if (err.response?.data?.error) {
-        toast.error(`❌ ${err.response.data.error}`);
-      } else if (err.response?.data) {
-        toast.error(`❌ Error: ${JSON.stringify(err.response.data)}`);
-      } else {
-        toast.error('❌ Error al presentar el fondo');
-      }
+      toast.error(getApiErrorMessage(err, 'Error al presentar el fondo'));
     }
   };
 
@@ -574,11 +557,7 @@ function DetalleFondo({ isDark }) {
       await cargarDetalle();
     } catch (err) {
       console.error('Error al aprobar:', err);
-      if (err.response?.data?.error) {
-        toast.error(`❌ ${err.response.data.error}`);
-      } else {
-        toast.error('❌ Error al aprobar el fondo');
-      }
+      toast.error(getApiErrorMessage(err, 'Error al aprobar el fondo'));
     }
   };
 
@@ -626,11 +605,7 @@ function DetalleFondo({ isDark }) {
       await cargarDetalle();
     } catch (err) {
       console.error('Error al iniciar ejecución:', err);
-      if (err.response?.data?.error) {
-        toast.error(`❌ ${err.response.data.error}`);
-      } else {
-        toast.error('❌ Error al iniciar la ejecución');
-      }
+      toast.error(getApiErrorMessage(err, 'Error al iniciar la ejecucion'));
     }
   };
 

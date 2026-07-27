@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import api from '../apis/api';
 import toast from 'react-hot-toast';
+import { getApiErrorMessage } from '../utils/formErrors';
 
 const DocumentTextIcon = (props) => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
@@ -64,11 +65,7 @@ function FormularioPresentarInforme({ fondoId, onInformePresentado, onCancelar }
       onInformePresentado();
     } catch (err) {
       console.error('Error al presentar informe:', err);
-      if (err.response?.data?.error) {
-        toast.error(`❌ ${err.response.data.error}`);
-      } else {
-        toast.error('❌ Error al presentar el informe');
-      }
+      toast.error(getApiErrorMessage(err, 'Error al presentar el informe'));
     } finally {
       setLoading(false);
     }
