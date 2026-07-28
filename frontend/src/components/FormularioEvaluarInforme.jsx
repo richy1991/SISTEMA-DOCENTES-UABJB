@@ -53,7 +53,7 @@ function FormularioEvaluarInforme({ fondoId, onInformeEvaluado, onCancelar }) {
 
     try {
       await api.post(`/fondos-tiempo/${fondoId}/evaluar-y-finalizar/`, formData);
-      toast.success('✅ Informe evaluado y fondo finalizado exitosamente');
+      toast.success('Informe evaluado y fondo finalizado exitosamente');
       onInformeEvaluado();
     } catch (err) {
       console.error('Error al evaluar informe:', err);

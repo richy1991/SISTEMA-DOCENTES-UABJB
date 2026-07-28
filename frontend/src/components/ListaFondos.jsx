@@ -95,6 +95,7 @@ function ListaFondos({ isDark }) {
   };
 
   const puedeCrear = puedeCrearFondoTiempo(user);
+  const esIisyp = user?.perfil?.rol === 'iiisyp' && user?.is_superuser !== true;
 
   const generarFondosMasivamente = async () => {
     setGenerandoMasivo(true);
@@ -154,6 +155,11 @@ function ListaFondos({ isDark }) {
               <p className="text-sm text-slate-700 dark:text-slate-400 mt-1">
                 Gestión del Fondo de Tiempo Docente
               </p>
+              {esIisyp && (
+                <span className="mt-3 inline-flex items-center px-3 py-1.5 rounded-lg border-2 border-cyan-300 bg-cyan-50 text-xs font-bold text-cyan-700 dark:border-cyan-700 dark:bg-cyan-900/20 dark:text-cyan-300">
+                  Vista de Investigación - Solo Lectura
+                </span>
+              )}
             </div>
 
             {/* Contador y Botón */}

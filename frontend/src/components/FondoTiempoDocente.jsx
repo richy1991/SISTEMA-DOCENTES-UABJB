@@ -26,25 +26,58 @@ const FondoTiempoDocente = ({ isDark }) => {
     const [fondos, setFondos] = useState([]);
     const [loading, setLoading] = useState(true);
     const [user, setUser] = useState(null);
+    const [calendarioActivo, setCalendarioActivo] = useState(null);
 
     useEffect(() => {
+        let cancelado = false;
+
         const fetchData = async () => {
             try {
                 setLoading(true);
-                // Obtener datos del docente
-                const docenteRes = await api.get(`/docentes/${id}/`);
-                setDocente(docenteRes.data);
+                setDocente(null);
+                setFondos([]);
+                setCalendarioActivo(null);
 
-                // Obtener fondos del docente
-                // Asumiendo que tu API soporta filtrar por ?docente=ID
-                const fondosRes = await api.get(`/fondos-tiempo/`, {
-                    params: { docente: id }
-                });
+                const docenteRes = await api.get(`/docentes/${id}/`);
+
+                if (cancelado) return;
+
+                const docenteData = docenteRes.data;
+                const carreraId = docenteData?.vinculos?.find((vinculo) => vinculo?.activo)?.carrera
+                    || docenteData?.vinculos?.[0]?.carrera;
+
+                let calendarioData = null;
+                if (carreraId) {
+                    try {
+                        const calendarioRes = await api.get('/calendarios/activo/', {
+                            params: { carrera: carreraId },
+                        });
+                        calendarioData = calendarioRes.data || null;
+                    } catch (calendarioError) {
+                        if (calendarioError.response?.status !== 404) {
+                            throw calendarioError;
+                        }
+                    }
+                }
+
+                if (cancelado) return;
+
+                const fondosParams = calendarioData?.id
+                    ? { docente: id, calendario: calendarioData.id }
+                    : { docente: id };
+                const fondosRes = await api.get('/fondos-tiempo/', { params: fondosParams });
+
+                if (cancelado) return;
+
+                setDocente(docenteData);
+                setCalendarioActivo(calendarioData);
                 setFondos(fondosRes.data.results || fondosRes.data);
             } catch (error) {
+                if (cancelado) return;
                 console.error("Error al cargar datos:", error);
                 toast.error("Error al cargar la información del docente.");
             } finally {
+                if (cancelado) return;
                 setLoading(false);
             }
         };
@@ -55,6 +88,10 @@ const FondoTiempoDocente = ({ isDark }) => {
         if (id) {
             fetchData();
         }
+
+        return () => {
+            cancelado = true;
+        };
     }, [id]);
 
     const getInitials = (name) => {
@@ -102,6 +139,8 @@ const FondoTiempoDocente = ({ isDark }) => {
     const dedicacion = primerVinculo?.dedicacion || 'N/A';
     const dedicacionLabel = dedicacionLabels[dedicacion] || dedicacion;
     const puedeCrear = puedeCrearFondoTiempo(user);
+    const tieneFondoPeriodoActivo = Boolean(calendarioActivo?.id && fondos.length > 0);
+    const puedeCrearNuevoFondo = puedeCrear && !tieneFondoPeriodoActivo;
 
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
@@ -139,7 +178,7 @@ const FondoTiempoDocente = ({ isDark }) => {
                         </div>
 
                         {/* Botón Acción */}
-                        {puedeCrear && (
+                        {puedeCrearNuevoFondo && (
                             <button
                                 onClick={() => navigate('/fondo-tiempo/nuevo-fondo', { state: { docenteId: docente?.id, docenteNombre: nombreCompleto || 'Sin nombre' } })}
                                 className="w-full sm:w-auto px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2"
@@ -216,7 +255,7 @@ const FondoTiempoDocente = ({ isDark }) => {
                                 <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                             </div>
                             <p className="text-slate-500 dark:text-slate-400 font-medium">No hay fondos registrados para este docente.</p>
-                            {puedeCrear && (
+                            {puedeCrearNuevoFondo && (
                                 <button
                                     onClick={() => navigate('/fondo-tiempo/nuevo-fondo', { state: { docenteId: docente.id, docenteNombre: docente.nombre_completo || docente.nombres } })}
                                     className="mt-4 px-5 py-2 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg text-sm font-semibold hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"

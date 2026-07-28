@@ -634,15 +634,23 @@ function FormularioFondo({ isDark, editar = false }) {
 
   const esSuperAdmin = usuarioActual?.is_superuser === true;
   const rolActual = esSuperAdmin ? 'iiisyp' : perfilActual?.rol;
+  const docenteBloqueadoPorNavegacion = !editar && Boolean(location.state?.docenteId);
   const docenteSeleccionado = docentes.find((docente) => String(docente.id) === String(formData.docente || ''));
   const vinculoDocenteSeleccionado = obtenerVinculoActivo(docenteSeleccionado);
   const docenteDedicacionExclusiva = vinculoDocenteSeleccionado?.dedicacion === 'dedicacion_exclusiva';
 
-  const obtenerSemestresPorPeriodo = (periodo) => {
+  const obtenerSemestrePorPeriodo = (periodo) => {
     const valor = String(periodo || '').toLowerCase();
-    if (['1', '1s', 'primer_semestre'].includes(valor)) return [1, 3, 5, 7, 9];
-    if (['2', '2s', 'segundo_semestre'].includes(valor)) return [2, 4, 6, 8, 10];
-    return [];
+    if (['1', '1s', 'primer_semestre'].includes(valor)) return 1;
+    if (['2', '2s', 'segundo_semestre'].includes(valor)) return 2;
+    return null;
+  };
+
+  const obtenerSemestreMateria = (materia) => {
+    const sigla = String(materia?.sigla || '');
+    const match = sigla.match(/o\d(\d)/i);
+    if (match) return Number(match[1]);
+    return Number(materia?.semestre || 0);
   };
 
   const formatearMateria = (materia) => {
@@ -654,7 +662,7 @@ function FormularioFondo({ isDark, editar = false }) {
     materias.some((materia) => materia.nombre === asignatura)
   );
 
-  const cargarMateriasFiltradas = async ({ carreraId, semestre = '', periodo = formData.periodo, superAdmin = esSuperAdmin } = {}) => {
+  const cargarMateriasFiltradas = async ({ carreraId, periodo = formData.periodo } = {}) => {
     if (!carreraId) {
       setMaterias([]);
       return [];
@@ -663,18 +671,13 @@ function FormularioFondo({ isDark, editar = false }) {
     try {
       setCargandoMaterias(true);
       const params = { carrera: carreraId };
-      if (superAdmin && semestre) {
-        params.semestre = semestre;
-      }
 
       const response = await getMaterias(params);
       let lista = normalizarLista(response.data);
 
-      if (!superAdmin) {
-        const semestresPeriodo = obtenerSemestresPorPeriodo(periodo);
-        if (semestresPeriodo.length > 0) {
-          lista = lista.filter((materia) => semestresPeriodo.includes(Number(materia.semestre)));
-        }
+      const semestrePeriodo = obtenerSemestrePorPeriodo(periodo);
+      if (semestrePeriodo) {
+        lista = lista.filter((materia) => obtenerSemestreMateria(materia) === semestrePeriodo);
       }
 
       setMaterias(lista);
@@ -693,7 +696,11 @@ function FormularioFondo({ isDark, editar = false }) {
     cargarDatosPorRol();
   }, [id, editar]);
 
-  const cargarDocentesPorCarrera = async (carreraId, docenteActual = '') => {
+  const cargarDocentesPorCarrera = async (
+    carreraId,
+    docenteActual = '',
+    calendarioId = formData.calendario_academico
+  ) => {
     if (!carreraId) {
       setDocentes([]);
       if (!docenteActual) {
@@ -704,7 +711,11 @@ function FormularioFondo({ isDark, editar = false }) {
 
     try {
       setCargandoDocentes(true);
-      const response = await getDocentes({ carrera: carreraId });
+      const params = { carrera: carreraId };
+      if (calendarioId && !editar) {
+        params.calendario = calendarioId;
+      }
+      const response = await getDocentes(params);
       const lista = normalizarLista(response.data);
       const filtrados = lista.filter((docente) => docentePerteneceACarrera(docente, carreraId));
       setDocentes(filtrados);
@@ -739,10 +750,11 @@ function FormularioFondo({ isDark, editar = false }) {
       ]);
 
       const userData = userResponse.data;
-      const perfilData = perfilResponse?.data || userData.perfil || null;
+      const perfilData = userData.perfil || perfilResponse?.data || null;
       const carreraPerfilId = obtenerCarreraPerfil(perfilData, userData);
       const bloquearCarrera = !userData.is_superuser && ['director', 'jefe_estudios'].includes(perfilData?.rol);
       const docenteDesdeNavegacion = location.state?.docenteId || '';
+      const carreraInicial = bloquearCarrera ? carreraPerfilId : '';
 
       setUsuarioActual(userData);
       setPerfilActual(perfilData);
@@ -750,12 +762,28 @@ function FormularioFondo({ isDark, editar = false }) {
       setCarreras(normalizarLista(carrerasRes.data));
       setCalendarios(normalizarLista(calendariosRes.data));
 
+      if (!editar) {
+        setFormData(prev => ({
+          ...prev,
+          carrera: carreraInicial,
+          docente: docenteDesdeNavegacion,
+          calendario_academico: '',
+          semestre: '',
+          asignatura: '',
+        }));
+
+        if (carreraInicial) {
+          await cargarDocentesPorCarrera(carreraInicial, docenteDesdeNavegacion, '');
+        } else {
+          setDocentes([]);
+        }
+      }
+
       try {
         const calendarioActivoRes = await getCalendarioActivo();
         setCalendarioActivo(calendarioActivoRes.data);
 
         if (!editar && calendarioActivoRes.data) {
-          const carreraInicial = bloquearCarrera ? carreraPerfilId : '';
           setFormData(prev => ({
             ...prev,
             calendario_academico: calendarioActivoRes.data.id,
@@ -768,11 +796,10 @@ function FormularioFondo({ isDark, editar = false }) {
           }));
 
           if (carreraInicial) {
-            await cargarDocentesPorCarrera(carreraInicial, docenteDesdeNavegacion);
+            await cargarDocentesPorCarrera(carreraInicial, docenteDesdeNavegacion, calendarioActivoRes.data.id);
             await cargarMateriasFiltradas({
               carreraId: carreraInicial,
               periodo: calendarioActivoRes.data.periodo,
-              superAdmin: userData.is_superuser,
             });
           } else {
             setDocentes([]);
@@ -816,11 +843,10 @@ function FormularioFondo({ isDark, editar = false }) {
         estado: fondo.estado,
       });
       if (carreraId) {
-        await cargarDocentesPorCarrera(carreraId, docenteId);
+        await cargarDocentesPorCarrera(carreraId, docenteId, calendarioId);
         const listaMaterias = await cargarMateriasFiltradas({
           carreraId,
           periodo: fondo.periodo || '',
-          superAdmin,
         });
         const materiaFondo = listaMaterias.find((materia) => materia.nombre === fondo.asignatura);
         if (materiaFondo) {
@@ -850,8 +876,9 @@ function FormularioFondo({ isDark, editar = false }) {
         if (calendarioSeleccionado) {
           updated.gestion = calendarioSeleccionado.gestion;
           updated.periodo = calendarioSeleccionado.periodo;
-          if (!esSuperAdmin) {
-            updated.asignatura = '';
+          updated.asignatura = '';
+          if (!docenteBloqueadoPorNavegacion) {
+            updated.docente = '';
           }
         }
       }
@@ -870,16 +897,13 @@ function FormularioFondo({ isDark, editar = false }) {
     });
 
     if (name === 'carrera') {
-      cargarDocentesPorCarrera(value);
-      cargarMateriasFiltradas({ carreraId: value, semestre: '' });
+      cargarDocentesPorCarrera(value, '', formData.calendario_academico);
+      cargarMateriasFiltradas({ carreraId: value, periodo: formData.periodo });
     }
 
-    if (name === 'semestre') {
-      cargarMateriasFiltradas({ carreraId: formData.carrera, semestre: value });
-    }
-
-    if (name === 'calendario_academico' && value && !esSuperAdmin) {
+    if (name === 'calendario_academico' && value) {
       const calendarioSeleccionado = calendarios.find(c => c.id === parseInt(value));
+      cargarDocentesPorCarrera(formData.carrera, '', value);
       cargarMateriasFiltradas({
         carreraId: formData.carrera,
         periodo: calendarioSeleccionado?.periodo || '',
@@ -956,9 +980,6 @@ function FormularioFondo({ isDark, editar = false }) {
     }
     if (!formData.periodo) {
       errores.periodo = 'Por favor, seleccione una opción.';
-    }
-    if (esSuperAdmin && !formData.semestre) {
-      errores.semestre = 'Debe seleccionar un semestre.';
     }
     if (!formData.asignatura || !materiaExisteEnLista(formData.asignatura)) {
       errores.asignatura = 'Debe seleccionar una asignatura registrada.';
@@ -1126,10 +1147,10 @@ function FormularioFondo({ isDark, editar = false }) {
       
       if (editar && id) {
         await api.put(`/fondos-tiempo/${id}/`, payload);
-        toast.success('✅ Fondo de tiempo actualizado exitosamente');
+        toast.success('Fondo de tiempo actualizado exitosamente');
       } else {
         await crearFondoTiempo(payload);
-        toast.success('✅ Fondo de tiempo creado exitosamente');
+        toast.success('Fondo de tiempo creado exitosamente');
       }
       
       setTimeout(() => {
@@ -1284,13 +1305,28 @@ function FormularioFondo({ isDark, editar = false }) {
                           value={formData.docente}
                           onChange={handleDocenteChange}
                           onFocus={() => handleFieldFocus({ target: { name: 'docente' } })}
-                          disabled={editar}
+                          disabled={editar || docenteBloqueadoPorNavegacion || !formData.calendario_academico}
                           options={docenteOptions}
-                          placeholder={!formData.carrera ? 'Seleccione una carrera primero' : cargandoDocentes ? 'Cargando docentes...' : 'Seleccione un docente'}
+                          placeholder={
+                            !formData.carrera
+                              ? 'Seleccione una carrera primero'
+                              : !formData.calendario_academico
+                                ? 'Seleccione un calendario primero'
+                                : cargandoDocentes
+                                  ? 'Cargando docentes...'
+                                  : docenteOptions.length === 0
+                                    ? 'Todos los docentes tienen fondo de tiempo para este periodo'
+                                    : 'Seleccione un docente'
+                          }
                           error={erroresCampos.docente}
                         />
                         {erroresCampos.docente && (
                           <p className="text-xs text-red-600 dark:text-red-400 mt-1">{erroresCampos.docente}</p>
+                        )}
+                        {formData.carrera && formData.calendario_academico && !cargandoDocentes && docenteOptions.length === 0 && (
+                          <p className="text-xs text-amber-600 dark:text-amber-300 mt-1">
+                            Todos los docentes tienen fondo de tiempo para este periodo
+                          </p>
                         )}
                         {docenteDedicacionExclusiva && (
                           <div className="mt-2 rounded-xl border-2 border-red-300 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-700 dark:bg-red-900/20 dark:text-red-300">
@@ -1349,24 +1385,8 @@ function FormularioFondo({ isDark, editar = false }) {
                         )}
                       </div>
 
-                      {/* Semestre */}
-                      {esSuperAdmin && (
-                        <div className={`${shakingFields.semestre ? ERROR_MOTION_CLASS : ''} order-4`}>
-                          <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
-                            Semestre {erroresCampos.semestre && <span className="text-red-500">*</span>}
-                          </label>
-                          <SemesterPicker
-                            value={formData.semestre}
-                            onChange={handleChange}
-                            error={erroresCampos.semestre}
-                            onClearError={() => handleFieldFocus({ target: { name: 'semestre' } })}
-                            disabled={loading || editar || !formData.carrera}
-                          />
-                        </div>
-                      )}
-
                       {/* Asignatura */}
-                      <div className={`${shakingFields.asignatura ? ERROR_MOTION_CLASS : ''} ${esSuperAdmin ? 'order-5' : 'order-4'}`}>
+                      <div className={`${shakingFields.asignatura ? ERROR_MOTION_CLASS : ''} order-4`}>
                         <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
                           Nombre de la Asignatura {erroresCampos.asignatura && <span className="text-red-500">*</span>}
                         </label>
@@ -1376,14 +1396,12 @@ function FormularioFondo({ isDark, editar = false }) {
                           value={formData.asignatura}
                           onChange={handleChange}
                           onFocus={() => handleFieldFocus({ target: { name: 'asignatura' } })}
-                          disabled={loading || editar || !formData.carrera || (esSuperAdmin && !formData.semestre) || cargandoMaterias}
+                          disabled={loading || editar || !formData.carrera || cargandoMaterias}
                           options={materiaOptions}
                           placeholder={
                             !formData.carrera
                               ? 'Seleccione una carrera primero'
-                              : esSuperAdmin && !formData.semestre
-                                ? 'Seleccione un semestre primero'
-                                : cargandoMaterias
+                              : cargandoMaterias
                                   ? 'Cargando materias...'
                                   : materiaOptions.length === 0
                                     ? 'No hay materias registradas'

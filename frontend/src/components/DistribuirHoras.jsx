@@ -18,6 +18,7 @@ function DistribuirHoras({
   horasObjetivo = null,
   editable = false,
   onActualizar,
+  onGuardarExitoso,
   onAgregarActividad,
   hideActionButtons = false,
   canAddActivity = false
@@ -33,9 +34,9 @@ function DistribuirHoras({
     cargarCategorias();
   }, [fondoId]);
 
-  const cargarCategorias = async () => {
+  const cargarCategorias = async ({ silencioso = false } = {}) => {
     try {
-      setLoading(true);
+      if (!silencioso) setLoading(true);
       const response = await getCategoriasPorFondo(fondoId);
       const categoriasArray = response.data.results || response.data;
 
@@ -70,7 +71,7 @@ function DistribuirHoras({
         toast.error('Error al cargar la distribución');
       }
     } finally {
-      setLoading(false);
+      if (!silencioso) setLoading(false);
     }
   };
 
@@ -120,9 +121,12 @@ function DistribuirHoras({
         ])
       );
       await distribuirHorasFondoTiempo(fondoId, { categorias: categoriasPayload });
-
-      toast.success('Distribución de horas guardada correctamente');
-      await cargarCategorias();
+      if (onGuardarExitoso) {
+        onGuardarExitoso();
+      } else {
+        toast.success('Distribución de horas guardada correctamente');
+      }
+      await cargarCategorias({ silencioso: true });
       if (onActualizar) onActualizar();
     } catch (err) {
       console.error('Error al guardar distribución:', err);

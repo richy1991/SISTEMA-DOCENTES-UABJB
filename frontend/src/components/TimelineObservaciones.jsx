@@ -33,7 +33,7 @@ function TimelineObservaciones({ fondoId, puedeResponder = false }) {
 
     try {
       await responderObservacion(observacionId, respuestaTexto);
-      toast.success('✅ Respuesta enviada');
+      toast.success('Respuesta enviada');
       setRespondiendo(null);
       setRespuestaTexto('');
       await cargarObservaciones();

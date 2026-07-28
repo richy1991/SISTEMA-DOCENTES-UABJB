@@ -613,6 +613,12 @@ class CalendarioAcademico(models.Model):
         validators=[MinValueValidator(2020), MaxValueValidator(2100)],
         help_text="Año académico"
     )
+    carrera = models.ForeignKey(
+        Carrera,
+        on_delete=models.PROTECT,
+        related_name='calendarios_academicos',
+        help_text="Carrera a la que pertenece este calendario academico"
+    )
     periodo = models.CharField(max_length=10, choices=PERIODO_CHOICES)
     fecha_inicio = models.DateField(help_text="Inicio del periodo académico")
     fecha_fin = models.DateField(help_text="Fin del periodo académico")
@@ -650,10 +656,11 @@ class CalendarioAcademico(models.Model):
         verbose_name = "Calendario Académico"
         verbose_name_plural = "Calendarios Académicos"
         ordering = ['-gestion', '-periodo']
-        unique_together = ['gestion', 'periodo']
+        unique_together = ['carrera', 'gestion', 'periodo']
     
     def __str__(self):
-        return f"Gestión {self.gestion} - {self.get_periodo_display()}"
+        carrera = self.carrera.nombre if self.carrera else 'Sin carrera'
+        return f"{carrera} - Gestión {self.gestion} - {self.get_periodo_display()}"
     
     def save(self, *args, **kwargs):
         """Al guardar, si este calendario está activo, desactiva cualquier otro."""
@@ -661,7 +668,7 @@ class CalendarioAcademico(models.Model):
             # Desactiva todos los demás calendarios que estén activos.
             # El .exclude(pk=self.pk) es crucial para no desactivarse a sí mismo
             # antes de guardar, especialmente al editar un calendario ya activo.
-            CalendarioAcademico.objects.filter(activo=True).exclude(pk=self.pk).update(activo=False)
+            CalendarioAcademico.objects.filter(activo=True, carrera=self.carrera).exclude(pk=self.pk).update(activo=False)
         super().save(*args, **kwargs)
 
 

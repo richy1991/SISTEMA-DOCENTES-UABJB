@@ -27,6 +27,72 @@ import { Eye, CheckCircle2, FileDown, ChevronLeft, ChevronRight } from 'lucide-r
 // Alias for template consistency
 const EyeIcon = Eye;
 
+const ToastDistribucionGuardada = ({ t, onHidden }) => {
+  const onHiddenCalledRef = useRef(false);
+
+  useEffect(() => {
+    if (!t.visible && !onHiddenCalledRef.current) {
+      onHiddenCalledRef.current = true;
+      const timeoutId = setTimeout(onHidden, 180);
+      return () => clearTimeout(timeoutId);
+    }
+    return undefined;
+  }, [t.visible, onHidden]);
+
+  return (
+    <div
+      className={`pointer-events-auto flex items-center gap-3 rounded-xl border border-emerald-400/70 bg-emerald-700 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-950/25 transition-all duration-200 ${
+        t.visible ? 'translate-y-0 opacity-100' : '-translate-y-2 opacity-0'
+      }`}
+    >
+      <span className="inline-flex h-4 w-4 items-center justify-center rounded bg-emerald-300 text-[11px] font-black text-emerald-950">✓</span>
+      <span>✅ Distribución guardada correctamente</span>
+      <button
+        type="button"
+        onClick={() => toast.dismiss(t.id)}
+        className="ml-2 rounded-lg p-1 text-green-50/80 transition-colors hover:bg-white/15 hover:text-white"
+        aria-label="Cerrar notificación"
+      >
+        <XIcon className="h-4 w-4" />
+      </button>
+    </div>
+  );
+};
+
+const ToastDistribucionGuardadaSimple = ({ t, onHidden }) => {
+  const onHiddenCalledRef = useRef(false);
+
+  useEffect(() => {
+    if (!t.visible && !onHiddenCalledRef.current) {
+      onHiddenCalledRef.current = true;
+      const timeoutId = setTimeout(onHidden, 180);
+      return () => clearTimeout(timeoutId);
+    }
+    return undefined;
+  }, [t.visible, onHidden]);
+
+  return (
+    <div
+      className={`pointer-events-auto flex items-center gap-3 rounded-xl border border-emerald-400/70 bg-emerald-700 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-950/25 transition-all duration-200 ${
+        t.visible ? 'translate-y-0 opacity-100' : '-translate-y-2 opacity-0'
+      }`}
+    >
+      <span className="inline-flex h-4 w-4 items-center justify-center rounded bg-emerald-300 text-emerald-950">
+        <CheckIcon className="h-3 w-3" strokeWidth={3} />
+      </span>
+      <span>Distribución guardada correctamente</span>
+      <button
+        type="button"
+        onClick={() => toast.dismiss(t.id)}
+        className="ml-2 rounded-lg p-1 text-emerald-50/80 transition-colors hover:bg-white/15 hover:text-white"
+        aria-label="Cerrar notificacion"
+      >
+        <XIcon className="h-4 w-4" />
+      </button>
+    </div>
+  );
+};
+
 // --- Iconos SVG personalizados ---
 const PaperAirplaneIcon = (props) => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
@@ -183,6 +249,18 @@ function DetalleFondo({ isDark }) {
   const slideGraficoRef = useRef(0);
   const timerGraficoRef = useRef(null);
   const prevTotalesCategoriasRef = useRef({});
+  const [animarTransicionMacroMicro, setAnimarTransicionMacroMicro] = useState(false);
+  const secuenciaGuardadoTimeoutsRef = useRef([]);
+  const limpiarSecuenciaGuardado = () => {
+    secuenciaGuardadoTimeoutsRef.current.forEach((timeoutId) => clearTimeout(timeoutId));
+    secuenciaGuardadoTimeoutsRef.current = [];
+  };
+  const [secuenciaGuardado, setSecuenciaGuardado] = useState({
+    activa: false,
+    balance: false,
+    distribucion: false,
+    acciones: false,
+  });
 
   // ESTADOS PARA MODAL DE INFORME FINAL
   const [mostrarModalPresentacion, setMostrarModalPresentacion] = useState(false);
@@ -197,7 +275,9 @@ function DetalleFondo({ isDark }) {
   // iiisyp es solo lectura: no puede aprobar ni gestionar fondos
   const esSuperAdmin = usuarioActual?.is_superuser === true;
   const esAdmin = false;
+  const esDirector = usuarioActual?.perfil?.rol === 'director';
   const esJefeEstudios = usuarioActual?.perfil?.rol === 'jefe_estudios';
+  const esIisyp = usuarioActual?.perfil?.rol === 'iiisyp';
   const puedeGestionarDistribucion = esSuperAdmin || esJefeEstudios;
   const puedeGestionarCarga = esSuperAdmin || esJefeEstudios;
   const soloLecturaPorRol = !puedeGestionarCarga;
@@ -227,7 +307,7 @@ function DetalleFondo({ isDark }) {
       toast.loading('Enviando Informe Final...');
       await api.post(`/fondos-tiempo/${fondo.id}/presentar/`, informeData);
       toast.dismiss();
-      toast.success('✅ Informe Final enviado exitosamente');
+      toast.success('Informe Final enviado exitosamente');
       setMostrarModalPresentacion(false);
       await cargarDetalle();
     } catch (err) {
@@ -272,6 +352,7 @@ function DetalleFondo({ isDark }) {
   // Limpiar todos los modales al desmontar el componente
   useEffect(() => {
     return () => {
+      limpiarSecuenciaGuardado();
       setMostrarFormActividad(false);
       setMostrarFormEditar(false);
       setMostrarFormObservar(false);
@@ -333,9 +414,9 @@ function DetalleFondo({ isDark }) {
     };
   }, []);
 
-  const cargarDetalle = async () => {
+  const cargarDetalle = async ({ silencioso = false } = {}) => {
     try {
-      setLoading(true);
+      if (!silencioso) setLoading(true);
       setError(null);
       const response = await getFondoTiempoDetalle(id);
       setFondo(response.data);
@@ -351,7 +432,7 @@ function DetalleFondo({ isDark }) {
         setEsStaff(false);
       }
 
-      setLoading(false);
+      if (!silencioso) setLoading(false);
     } catch (err) {
       console.error('Error al cargar detalle:', err);
 
@@ -360,12 +441,12 @@ function DetalleFondo({ isDark }) {
       } else {
         setError('Error al cargar el detalle del fondo');
       }
-      setLoading(false);
+      if (!silencioso) setLoading(false);
     }
   };
 
   const handleActualizacionHoras = () => {
-    cargarDetalle();
+    cargarDetalle({ silencioso: true });
   };
 
   const cerrarPanel = () => {
@@ -425,7 +506,7 @@ function DetalleFondo({ isDark }) {
         : window.scrollY;
 
       await crearActividad(actividadData);
-      toast.success('✅ Actividad agregada exitosamente');
+      toast.success('Actividad agregada exitosamente');
       cerrarFormularioActividad();
       await cargarDetalle();
 
@@ -468,7 +549,7 @@ function DetalleFondo({ isDark }) {
         : window.scrollY;
 
       await api.put(`/actividades/${actividadAEditar.id}/`, actividadData);
-      toast.success('✅ Actividad actualizada exitosamente');
+      toast.success('Actividad actualizada exitosamente');
       setMostrarFormEditar(false);
       setActividadAEditar(null);
       await cargarDetalle();
@@ -501,7 +582,7 @@ function DetalleFondo({ isDark }) {
         : window.scrollY;
 
       await eliminarActividad(actividadAEliminar);
-      toast.success('✅ Actividad eliminada');
+      toast.success('Actividad eliminada');
       setActividadAEliminar(null);
       await cargarDetalle();
 
@@ -528,7 +609,7 @@ function DetalleFondo({ isDark }) {
 
         if (observacionActiva) {
           await api.post(`/observaciones/${observacionActiva.id}/marcar-resuelta/`);
-          toast.success('✅ Correcciones enviadas y fondo presentado nuevamente');
+          toast.success('Correcciones enviadas y fondo presentado nuevamente');
         } else {
           toast.error('No se encontró la observación activa para resolver.');
           return;
@@ -536,7 +617,7 @@ function DetalleFondo({ isDark }) {
       } else {
         // Flujo normal: Borrador -> Presentado
         await presentarFondoADirector(fondo.id);
-        toast.success('✅ Fondo presentado al Director exitosamente');
+        toast.success('Fondo presentado al Director exitosamente');
       }
       await cargarDetalle();
     } catch (err) {
@@ -551,7 +632,7 @@ function DetalleFondo({ isDark }) {
   const aprobarFondoHandler = async () => {
     try {
       const response = await aprobarFondo(fondo.id);
-      toast.success('✅ Fondo aprobado exitosamente');
+      toast.success('Fondo aprobado exitosamente');
       setMostrarModalAprobar(false);
       await cargarDetalle();
     } catch (err) {
@@ -599,7 +680,7 @@ function DetalleFondo({ isDark }) {
   const iniciarEjecucionHandler = async () => {
     try {
       await api.post(`/fondos-tiempo/${fondo.id}/iniciar_ejecucion/`);
-      toast.success('✅ Ejecución iniciada exitosamente');
+      toast.success('Ejecución iniciada exitosamente');
       setMostrarModalIniciarEjecucion(false);
       await cargarDetalle();
     } catch (err) {
@@ -881,6 +962,10 @@ function DetalleFondo({ isDark }) {
       value: parseFloat(cat.total_horas),
       porcentaje: parseFloat(cat.porcentaje)
     })) || [];
+  const tieneDistribucionGuardada = Number(fondo.total_asignado || 0) > 0 || datosGrafico.length > 0;
+  const mostrarBalanceWidget = secuenciaGuardado.activa ? secuenciaGuardado.balance : tieneDistribucionGuardada;
+  const mostrarDistribucionWidget = secuenciaGuardado.activa ? secuenciaGuardado.distribucion : tieneDistribucionGuardada;
+  const mostrarAccionesWidget = secuenciaGuardado.activa ? secuenciaGuardado.acciones : tieneDistribucionGuardada;
 
   const puedeEditar = fondo.puede_editar;
   const requisitos = validarRequisitos();
@@ -908,6 +993,61 @@ function DetalleFondo({ isDark }) {
     if (!puedeGestionarCarga) return;
     setDireccionPanel('izquierda');
     setPanelCentral((prev) => (prev === 'resumen' ? 'carga' : 'resumen'));
+  };
+
+  const iniciarSecuenciaGuardado = () => {
+    limpiarSecuenciaGuardado();
+    setPanelCentral('resumen');
+    setAnimarTransicionMacroMicro(false);
+    setSecuenciaGuardado({
+      activa: true,
+      balance: false,
+      distribucion: false,
+      acciones: false,
+    });
+
+    secuenciaGuardadoTimeoutsRef.current = [
+      setTimeout(() => {
+        setAnimarTransicionMacroMicro(true);
+        setSecuenciaGuardado((prev) => ({ ...prev, balance: true }));
+      }, 0),
+      setTimeout(() => {
+        setSecuenciaGuardado((prev) => ({ ...prev, distribucion: true }));
+      }, 750),
+      setTimeout(() => {
+        setSecuenciaGuardado((prev) => ({ ...prev, acciones: true }));
+      }, 1500),
+      setTimeout(() => {
+        setDireccionPanel('derecha');
+        setPanelCentral('carga');
+      }, 2250),
+      setTimeout(() => {
+        setAnimarTransicionMacroMicro(false);
+        setSecuenciaGuardado({
+          activa: false,
+          balance: true,
+          distribucion: true,
+          acciones: true,
+        });
+      }, 3000),
+    ];
+  };
+
+  const handleDistribucionGuardada = () => {
+    limpiarSecuenciaGuardado();
+    setPanelCentral('resumen');
+    setAnimarTransicionMacroMicro(false);
+    setSecuenciaGuardado({
+      activa: true,
+      balance: false,
+      distribucion: false,
+      acciones: false,
+    });
+
+    toast.success('Distribución guardada correctamente');
+    secuenciaGuardadoTimeoutsRef.current.push(
+      setTimeout(iniciarSecuenciaGuardado, 1000)
+    );
   };
 
   return (
@@ -1057,7 +1197,10 @@ function DetalleFondo({ isDark }) {
               <div ref={refWidgetReferencia} className="flex flex-col gap-6 sticky top-24">
 
                 {/* Widget Balance de Horas */}
-                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-300 dark:border-slate-700 shadow-sm p-6 relative overflow-hidden">
+                <div
+                  className={`bg-white dark:bg-slate-800 rounded-2xl border border-slate-300 dark:border-slate-700 shadow-sm p-6 relative overflow-hidden ${!mostrarBalanceWidget ? 'hidden' : ''} ${animarTransicionMacroMicro ? 'animate-slide-up' : ''}`}
+                  style={animarTransicionMacroMicro ? { animationDuration: '180ms', animationFillMode: 'both' } : undefined}
+                >
                   <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-blue-500 to-indigo-600"></div>
                   <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-5 flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-blue-500"></span>
@@ -1082,7 +1225,7 @@ function DetalleFondo({ isDark }) {
                 </div>
 
                 {/* Widget Gráfico Distribución - Carrusel */}
-                {datosGrafico.length > 0 && (() => {
+                {mostrarDistribucionWidget && datosGrafico.length > 0 && (() => {
                   const totalHoras = datosGrafico.reduce((s, d) => s + d.value, 0);
                   const maxVal = Math.max(...datosGrafico.map(d => d.value));
 
@@ -1099,7 +1242,10 @@ function DetalleFondo({ isDark }) {
                   };
 
                   return (
-                    <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-300 dark:border-slate-700 shadow-sm p-6 relative overflow-hidden">
+                    <div
+                      className={`bg-white dark:bg-slate-800 rounded-2xl border border-slate-300 dark:border-slate-700 shadow-sm p-6 relative overflow-hidden ${animarTransicionMacroMicro ? 'animate-slide-up' : ''}`}
+                      style={animarTransicionMacroMicro ? { animationDuration: '180ms', animationFillMode: 'both' } : undefined}
+                    >
                       <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-blue-500 to-indigo-600"></div>
                       <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-blue-500"></span>
@@ -1321,6 +1467,7 @@ function DetalleFondo({ isDark }) {
                               horasObjetivo={fondo.horas_semana}
                               editable={puedeEditarDistribucion}
                               onActualizar={handleActualizacionHoras}
+                              onGuardarExitoso={handleDistribucionGuardada}
                               onAgregarActividad={puedeGestionarDistribucion ? abrirFormularioActividadGlobal : undefined}
                               canAddActivity={puedeGestionarDistribucion}
                               hideActionButtons={esAdmin || !puedeEditarDistribucion}
@@ -1344,7 +1491,11 @@ function DetalleFondo({ isDark }) {
               <div className="sticky top-24 space-y-6">
 
                 {/* Widget Acciones - alineado con Balance de Horas (top) y Distribución (bottom) */}
-                <div ref={refWidgetAcciones} className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-300 dark:border-slate-700 shadow-sm p-5 relative overflow-hidden flex flex-col">
+                <div
+                  ref={refWidgetAcciones}
+                  className={`bg-white dark:bg-slate-800 rounded-2xl border border-slate-300 dark:border-slate-700 shadow-sm p-5 relative overflow-hidden flex flex-col ${!mostrarAccionesWidget ? 'hidden' : ''} ${animarTransicionMacroMicro ? 'animate-slide-up' : ''}`}
+                  style={animarTransicionMacroMicro ? { animationDuration: '180ms', animationFillMode: 'both' } : undefined}
+                >
                   <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-blue-500 to-indigo-600"></div>
 
                   <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2">
@@ -1397,7 +1548,7 @@ function DetalleFondo({ isDark }) {
                     )}
 
                     {/* ADMIN/DIRECTOR: Revisar */}
-                    {fondo.estado === 'presentado_director' && esStaff && (
+                    {fondo.estado === 'presentado_director' && esDirector && !esIisyp && (
                       <div className="grid grid-cols-2 gap-1.5">
                         <button
                           onClick={abrirFormularioObservar}
@@ -1429,7 +1580,7 @@ function DetalleFondo({ isDark }) {
                     )}
 
                     {/* ADMIN: Iniciar Ejecución */}
-                    {fondo.estado === 'aprobado_director' && esStaff && !esAdmin && (
+                    {fondo.estado === 'aprobado_director' && esDirector && !esIisyp && (
                       <button
                         onClick={() => setMostrarModalIniciarEjecucion(true)}
                         className="w-full py-2 rounded-xl font-bold text-white bg-purple-600 hover:bg-purple-700 shadow-lg shadow-purple-500/30 flex justify-center items-center gap-2 transition-all hover:scale-[1.02] text-xs"
@@ -1451,7 +1602,7 @@ function DetalleFondo({ isDark }) {
                     )}
 
                     {/* ADMIN: Evaluar Informe */}
-                    {fondo.estado === 'informe_presentado' && esStaff && !esAdmin && (
+                    {fondo.estado === 'informe_presentado' && esDirector && !esIisyp && (
                       <div className="space-y-1.5">
                         <button
                           onClick={() => setMostrarModalInforme(true)}

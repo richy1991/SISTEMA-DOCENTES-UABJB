@@ -40,7 +40,7 @@ function ObservacionesSection({ fondoId, estadoFondo, usuarioActual }) {
     try {
       setEnviando(true);
       await agregarMensajeObservacion(observacionId, mensajeTexto);
-      toast.success('✅ Mensaje enviado');
+      toast.success('Mensaje enviado');
       setRespondiendo(null);
       setMensajeTexto('');
       await cargarObservaciones();

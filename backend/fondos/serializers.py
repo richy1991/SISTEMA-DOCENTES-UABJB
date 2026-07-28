@@ -12,6 +12,28 @@ from decimal import Decimal
 from django.utils import timezone
     
 
+def _usuario_es_iisyp_solo_lectura(context):
+    request = context.get('request') if context else None
+    if not request or not getattr(request, 'user', None) or request.user.is_superuser:
+        return False
+    perfil = get_effective_profile(request.user, request)
+    return bool(perfil and perfil.rol == 'iiisyp')
+
+
+def _filtrar_categorias_investigacion_para_iisyp(data, context):
+    if not _usuario_es_iisyp_solo_lectura(context):
+        return data
+
+    for field_name in ('categorias', 'requerimientos'):
+        categorias = data.get(field_name)
+        if isinstance(categorias, list):
+            data[field_name] = [
+                categoria for categoria in categorias
+                if categoria.get('tipo') == 'investigacion'
+            ]
+    return data
+
+
 def _obtener_docente_para_validacion_fondo(bloques, docente_por_defecto=None):
     if isinstance(docente_por_defecto, Docente):
         return docente_por_defecto
@@ -1506,6 +1528,10 @@ class FondoTiempoSerializer(serializers.ModelSerializer):
             'estado', 'horas_efectivas', 'fecha_aprobacion', 
             'fecha_validacion', 'fecha_inicio_ejecucion', 'fecha_informe', 'fecha_finalizacion'
         ]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        return _filtrar_categorias_investigacion_para_iisyp(data, self.context)
     
     def get_proyectos(self, obj):
         """Devuelve los proyectos asociados usando el serializer de lista definido más abajo."""
@@ -1557,6 +1583,24 @@ class FondoTiempoSerializer(serializers.ModelSerializer):
         primer_vinculo = DocenteCarrera.objects.filter(
             docente=docente, activo=True
         ).first()
+        calendario = data.get('calendario_academico')
+        if not calendario and hasattr(self, 'instance') and self.instance:
+            calendario = self.instance.calendario_academico
+
+        tipo_fondo = data.get('tipo_fondo', self.instance.tipo_fondo if self.instance else 'semestral')
+        if calendario and tipo_fondo == 'semestral':
+            duplicado_qs = FondoTiempo.objects.filter(
+                docente=docente,
+                calendario_academico=calendario,
+                tipo_fondo='semestral',
+            )
+            if self.instance:
+                duplicado_qs = duplicado_qs.exclude(pk=self.instance.pk)
+            if duplicado_qs.exists():
+                raise serializers.ValidationError({
+                    'docente': 'Este docente ya tiene un fondo de tiempo registrado para el periodo seleccionado'
+                })
+
         horas_maximas_semanales = primer_vinculo.horas_semanales_maximas if primer_vinculo else 0
         
         # Calcular total de horas asignadas en este fondo de tiempo
@@ -1608,6 +1652,7 @@ class FondoTiempoListSerializer(serializers.ModelSerializer):
     """Serializer simplificado para listados"""
     docente_nombre = serializers.CharField(source='docente.nombre_completo', read_only=True)
     carrera_nombre = serializers.CharField(source='carrera.nombre', read_only=True)
+    periodo_display = serializers.CharField(source='get_periodo_display', read_only=True)
     porcentaje_completado = serializers.SerializerMethodField()
     total_asignado = serializers.SerializerMethodField()
     # Aseguramos que se devuelva la URL como string explícito
@@ -1616,7 +1661,8 @@ class FondoTiempoListSerializer(serializers.ModelSerializer):
     class Meta:
         model = FondoTiempo
         fields = ['id', 'docente', 'docente_nombre', 'carrera', 'carrera_nombre', 
-                  'gestion', 'asignatura', 'total_asignado', 'horas_efectivas', 
+                  'calendario_academico', 'gestion', 'periodo', 'periodo_display',
+                  'asignatura', 'total_asignado', 'horas_efectivas',
                   'porcentaje_completado', 'estado', 'programa_analitico_url']
 
     def get_total_asignado(self, obj):
@@ -2607,11 +2653,12 @@ from .models import CalendarioAcademico, Proyecto, InformeFondo, ObservacionFond
 
 class CalendarioAcademicoSerializer(serializers.ModelSerializer):
     periodo_display = serializers.CharField(source='get_periodo_display', read_only=True)
+    carrera_nombre = serializers.CharField(source='carrera.nombre', read_only=True)
     
     class Meta:
         model = CalendarioAcademico
         fields = [
-            'id', 'gestion', 'periodo', 'periodo_display',
+            'id', 'carrera', 'carrera_nombre', 'gestion', 'periodo', 'periodo_display',
             'fecha_inicio', 'fecha_fin',
             'fecha_inicio_presentacion_proyectos',
             'fecha_limite_presentacion_proyectos',
@@ -2624,6 +2671,7 @@ class CalendarioAcademicoSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         instance = getattr(self, 'instance', None)
 
+        carrera = attrs.get('carrera', getattr(instance, 'carrera', None))
         fecha_inicio = attrs.get('fecha_inicio', getattr(instance, 'fecha_inicio', None))
         fecha_fin = attrs.get('fecha_fin', getattr(instance, 'fecha_fin', None))
         fecha_inicio_proy = attrs.get(
@@ -2647,6 +2695,26 @@ class CalendarioAcademicoSerializer(serializers.ModelSerializer):
             getattr(instance, 'fecha_fin_receso', None)
         )
         semanas_efectivas = attrs.get('semanas_efectivas', getattr(instance, 'semanas_efectivas', None))
+        gestion = attrs.get('gestion', getattr(instance, 'gestion', None))
+        periodo = attrs.get('periodo', getattr(instance, 'periodo', None))
+
+        if not carrera:
+            raise serializers.ValidationError({
+                'carrera': 'Debe seleccionar una carrera.'
+            })
+
+        if carrera and gestion and periodo:
+            duplicados = CalendarioAcademico.objects.filter(
+                carrera=carrera,
+                gestion=gestion,
+                periodo=periodo,
+            )
+            if instance:
+                duplicados = duplicados.exclude(pk=instance.pk)
+            if duplicados.exists():
+                raise serializers.ValidationError({
+                    'non_field_errors': ['Ya existe un calendario para esta carrera, gestion y periodo.']
+                })
 
         if fecha_inicio and fecha_fin and fecha_fin < fecha_inicio:
             raise serializers.ValidationError({
@@ -2655,6 +2723,7 @@ class CalendarioAcademicoSerializer(serializers.ModelSerializer):
 
         if fecha_inicio and fecha_fin:
             calendarios_solapados = CalendarioAcademico.objects.filter(
+                carrera=carrera,
                 fecha_inicio__lte=fecha_fin,
                 fecha_fin__gte=fecha_inicio,
             )
@@ -3023,6 +3092,10 @@ class FondoTiempoDetalleSerializer(serializers.ModelSerializer):
     
     def get_puede_presentar(self, obj):
         return obj.puede_presentar()
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        return _filtrar_categorias_investigacion_para_iisyp(data, self.context)
     
     def get_informe_actual(self, obj):
         """Obtiene el informe más reciente del fondo"""

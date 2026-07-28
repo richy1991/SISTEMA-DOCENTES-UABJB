@@ -61,7 +61,7 @@ function FormularioPresentarInforme({ fondoId, onInformePresentado, onCancelar }
 
     try {
       await api.post(`/fondos-tiempo/${fondoId}/presentar-informe/`, formData);
-      toast.success('✅ Informe presentado exitosamente');
+      toast.success('Informe presentado exitosamente');
       onInformePresentado();
     } catch (err) {
       console.error('Error al presentar informe:', err);

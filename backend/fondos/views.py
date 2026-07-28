@@ -160,26 +160,45 @@ class DocenteViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
+        carrera_id = self.request.query_params.get('carrera')
+        calendario_id = self.request.query_params.get('calendario')
+
+        def aplicar_filtros_selector(qs):
+            if carrera_id:
+                qs = qs.filter(
+                    vinculos_carrera__carrera_id=carrera_id,
+                    vinculos_carrera__activo=True,
+                )
+
+            if calendario_id:
+                docentes_con_fondo = FondoTiempo.objects.filter(
+                    calendario_academico_id=calendario_id,
+                    tipo_fondo='semestral',
+                    archivado=False,
+                ).values_list('docente_id', flat=True)
+                qs = qs.exclude(id__in=docentes_con_fondo)
+
+            return qs.distinct()
         
         # Superusuario ve todos los docentes sin restricciones
         if user.is_superuser:
-            return Docente.objects.all()
+            return aplicar_filtros_selector(Docente.objects.all())
         
         # Admin y Director de carrera ven docentes de sus carreras activas
         if hasattr(user, 'perfil') and user.perfil.rol in ['iiisyp', 'director']:
             carreras_activas = _obtener_carreras_activas_usuario(user, self.request)
             if carreras_activas.exists():
-                return _docentes_por_carreras(carreras_activas)
+                return aplicar_filtros_selector(_docentes_por_carreras(carreras_activas))
             return Docente.objects.none()
         
         # Jefe de Estudios ve todos los docentes (para gestión general)
         es_jefe_estudios = hasattr(user, 'perfil') and user.perfil.rol == 'jefe_estudios'
         if es_jefe_estudios:
-            return Docente.objects.all()
+            return aplicar_filtros_selector(Docente.objects.all())
 
         # Docente normal solo ve su propio perfil
         if hasattr(user, 'perfil') and user.perfil.docente:
-            return Docente.objects.filter(id=user.perfil.docente.id)
+            return aplicar_filtros_selector(Docente.objects.filter(id=user.perfil.docente.id))
 
         return Docente.objects.none()
 
@@ -930,12 +949,26 @@ class CargaHorariaViewSet(viewsets.ModelViewSet):
 
 class CalendarioAcademicoViewSet(viewsets.ModelViewSet):
     """ViewSet para gestionar calendarios académicos"""
-    queryset = CalendarioAcademico.objects.all()
+    queryset = CalendarioAcademico.objects.select_related('carrera').all()
     serializer_class = CalendarioAcademicoSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [filters.OrderingFilter]
     ordering_fields = ['gestion', 'periodo']
     ordering = ['-gestion', '-periodo']
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+
+        if not user.is_superuser:
+            carreras_activas = _obtener_carreras_activas_usuario(user, self.request)
+            queryset = queryset.filter(carrera__in=carreras_activas) if carreras_activas.exists() else queryset.none()
+
+        carrera_id = self.request.query_params.get('carrera')
+        if carrera_id:
+            queryset = queryset.filter(carrera_id=carrera_id)
+
+        return queryset
     
     def get_permissions(self):
         """Superusuario, Director y Jefe de Estudios pueden gestionar calendarios."""
@@ -1024,7 +1057,11 @@ class CalendarioAcademicoViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def activo(self, request):
         """Obtener el calendario académico activo"""
-        calendario = CalendarioAcademico.objects.filter(activo=True).first()
+        queryset = self.get_queryset().filter(activo=True)
+        carrera_id = request.query_params.get('carrera')
+        if carrera_id:
+            queryset = queryset.filter(carrera_id=carrera_id)
+        calendario = queryset.first()
         if calendario:
             serializer = self.get_serializer(calendario)
             return Response(serializer.data)
@@ -1071,27 +1108,39 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         if self._usuario_carrera_inactiva(user):
             return queryset.none()
 
+        def aplicar_filtros_query_params(qs):
+            docente_id = self.request.query_params.get('docente')
+            calendario_id = (
+                self.request.query_params.get('calendario')
+                or self.request.query_params.get('calendario_academico')
+            )
+            if docente_id:
+                qs = qs.filter(docente_id=docente_id)
+            if calendario_id:
+                qs = qs.filter(calendario_academico_id=calendario_id)
+            return qs
+
         # Permitir que superusuarios vean todo siempre (evita problemas si su rol es 'docente' por defecto)
         if user.is_superuser:
-            return queryset
+            return aplicar_filtros_query_params(queryset)
 
         if not perfil:
             return queryset.none()
 
-        # Director y Jefe de Estudios ven los de sus carreras activas
-        if perfil.rol in ['director', 'jefe_estudios']:
+        # Director, Jefe de Estudios e IIISYP ven los fondos de sus carreras activas
+        if perfil.rol in ['director', 'jefe_estudios', 'iiisyp']:
             carreras_activas = _obtener_carreras_activas_usuario(user, self.request)
             if carreras_activas.exists():
-                return queryset.filter(carrera__in=carreras_activas)
+                return aplicar_filtros_query_params(queryset.filter(carrera__in=carreras_activas))
             return queryset.none()
 
         # Docente ve solo los suyos
         if perfil.rol == 'docente':
             if perfil.docente:
-                return queryset.filter(docente=perfil.docente)
+                return aplicar_filtros_query_params(queryset.filter(docente=perfil.docente))
             return queryset.none()
 
-        return queryset
+        return aplicar_filtros_query_params(queryset)
     
     def get_object(self):
         """
@@ -1111,7 +1160,7 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
             # Acciones que permiten ver archivados (con validación de dueño)
             if not self.request.user.is_superuser:
                 perfil = _obtener_perfil_efectivo(self.request.user, self.request)
-                if perfil and perfil.rol in ['director', 'jefe_estudios']:
+                if perfil and perfil.rol in ['director', 'jefe_estudios', 'iiisyp']:
                     carreras_activas = _obtener_carreras_activas_usuario(self.request.user, self.request)
                     queryset = queryset.filter(carrera__in=carreras_activas) if carreras_activas.exists() else queryset.none()
                 elif perfil and perfil.rol == 'docente' and perfil.docente:
@@ -1131,7 +1180,7 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
 
             if not perfil:
                 queryset = queryset.none()
-            elif perfil.rol in ['director', 'jefe_estudios']:
+            elif perfil.rol in ['director', 'jefe_estudios', 'iiisyp']:
                 carreras_activas = _obtener_carreras_activas_usuario(user, self.request)
                 if carreras_activas.exists():
                     queryset = queryset.filter(carrera__in=carreras_activas)
@@ -1306,6 +1355,9 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         # 2. Bloquear a Docentes
         elif perfil and perfil.rol == 'docente':
              raise PermissionDenied("Los docentes no pueden crear Fondos de Tiempo. Esta tarea corresponde a Jefatura de Estudios.")
+        # 3. IIISYP solo tiene acceso de lectura para fiscalizacion de investigacion.
+        elif perfil and perfil.rol == 'iiisyp':
+             raise PermissionDenied("IIISYP solo tiene acceso de lectura a los Fondos de Tiempo.")
         # 3. Bloquear usuarios sin perfil
         elif not perfil:
              raise PermissionDenied("El usuario no tiene un perfil asignado.")
@@ -1334,10 +1386,25 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         """Al crear un fondo, se asocia al calendario activo. El docente viene en el payload."""
-        calendario_activo = CalendarioAcademico.objects.get(activo=True)
         docente = serializer.validated_data.get('docente')
         carrera = serializer.validated_data.get('carrera')
         self._validar_docente_no_exclusivo(docente, carrera)
+        calendario_activo = serializer.validated_data.get('calendario_academico')
+        if not calendario_activo:
+            calendario_activo = CalendarioAcademico.objects.filter(activo=True, carrera=carrera).first()
+        if not calendario_activo:
+            raise drf_serializers.ValidationError({
+                'calendario_academico': 'No existe un periodo academico activo para esta carrera.'
+            })
+        tipo_fondo = serializer.validated_data.get('tipo_fondo', 'semestral')
+        if tipo_fondo == 'semestral' and FondoTiempo.objects.filter(
+            docente=docente,
+            calendario_academico=calendario_activo,
+            tipo_fondo='semestral',
+        ).exists():
+            raise drf_serializers.ValidationError({
+                'docente': 'Este docente ya tiene un fondo de tiempo registrado para el periodo seleccionado'
+            })
         
         # Ya no forzamos el docente del usuario logueado.
         # El serializer valida que 'docente' venga en el request.
@@ -1388,13 +1455,6 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         if not user.is_superuser and (not perfil or perfil.rol not in ['director', 'jefe_estudios']):
             raise PermissionDenied("No tienes permisos para generar Fondos de Tiempo masivamente.")
 
-        calendario_activo = CalendarioAcademico.objects.filter(activo=True).first()
-        if not calendario_activo:
-            return Response(
-                {'error': 'No existe un periodo academico activo para iniciar la planificacion.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
         carreras_activas = _obtener_carreras_activas_usuario(user, request)
         if not carreras_activas.exists():
             return Response(
@@ -1416,6 +1476,11 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
 
         with transaction.atomic():
             for vinculo in vinculos:
+                calendario_activo = CalendarioAcademico.objects.filter(activo=True, carrera=vinculo.carrera).first()
+                if not calendario_activo:
+                    omitidos_ya_existentes += 1
+                    continue
+
                 if vinculo.dedicacion == 'dedicacion_exclusiva':
                     omitidos_exclusiva += 1
                     continue
@@ -1610,7 +1675,7 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
 
         if not request.user.is_superuser:
             perfil = _obtener_perfil_efectivo(request.user, request)
-            if perfil and perfil.rol in ['director', 'jefe_estudios']:
+            if perfil and perfil.rol in ['director', 'jefe_estudios', 'iiisyp']:
                 carreras_activas = _obtener_carreras_activas_usuario(request.user, request)
                 queryset = queryset.filter(carrera__in=carreras_activas) if carreras_activas.exists() else queryset.none()
             elif perfil and perfil.rol == 'docente' and perfil.docente:
@@ -2823,7 +2888,9 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         """
         Superusuario gestiona todo. Director gestiona usuarios dentro de su carrera.
         """
-        if self.action in ['list', 'create', 'update', 'partial_update', 'toggle_activo', 'cambiar_password', 'resetear_password']:
+        if self.action == 'list':
+            return [IsAuthenticated()]
+        if self.action in ['create', 'update', 'partial_update', 'toggle_activo', 'cambiar_password', 'resetear_password']:
             return [IsFullAdminOrDirectorCarrera()]
         if self.action in ['destroy']:
             return [IsFullAdmin()]
@@ -2832,24 +2899,15 @@ class UsuarioViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         queryset = User.objects.select_related('perfil').all()
+        perfil = _obtener_perfil_efectivo(user, self.request)
 
         # Superusuario ve todos los usuarios sin restricciones
         if user.is_superuser:
             return queryset
 
         # IIISYP de carrera solo ve usuarios de su misma carrera
-        if hasattr(user, 'perfil') and user.perfil.rol == 'iiisyp':
-            carreras_activas = _obtener_carreras_activas_usuario(user)
-            if carreras_activas.exists():
-                return queryset.filter(
-                    Q(perfil__carrera__in=carreras_activas)
-                    | Q(asignaciones_carrera__carrera__in=carreras_activas, asignaciones_carrera__activo=True)
-                ).distinct()
-            return queryset.none()
-
-        # Director de carrera solo ve usuarios de su misma carrera
-        if hasattr(user, 'perfil') and user.perfil.rol == 'director':
-            carreras_activas = _obtener_carreras_activas_usuario(user)
+        if perfil and perfil.rol in ['iiisyp', 'director', 'jefe_estudios']:
+            carreras_activas = _obtener_carreras_activas_usuario(user, self.request)
             if carreras_activas.exists():
                 return queryset.filter(
                     Q(perfil__carrera__in=carreras_activas)

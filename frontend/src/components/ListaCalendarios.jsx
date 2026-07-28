@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { FaEdit, FaTrash } from 'react-icons/fa';
+import { X } from 'lucide-react';
 import api from '../apis/api';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -9,6 +10,157 @@ import {
   sanitizeApiErrors,
   useErrorPulse,
 } from '../utils/formErrors';
+
+const SelectConDropdown = ({
+  label,
+  value,
+  onChange,
+  options,
+  name,
+  placeholder = 'Buscar...',
+  emptyText = 'Sin resultados',
+  hideSelectedOption = false,
+  disabled = false,
+  error,
+  errorPulse = 0,
+  onClearError,
+  clearValue = 'todas',
+}) => {
+  const [open, setOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const containerRef = useRef(null);
+  const errorMessage = getErrorMessage(error);
+  const { motionClass } = useErrorPulse(errorMessage, errorPulse);
+
+  useEffect(() => {
+    const handleOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setOpen(false);
+        setSearchTerm('');
+      }
+    };
+    if (open) {
+      document.addEventListener('mousedown', handleOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+    };
+  }, [open]);
+
+  const selectedLabel = value && options.find((opt) => String(opt.value) === String(value))?.label;
+  const query = searchTerm.trim().toLowerCase();
+  const menuOptions = hideSelectedOption
+    ? options.filter((option) => String(option.value) !== String(value))
+    : options;
+  const visibleOptions = query
+    ? menuOptions.filter((option) => option.label.toLowerCase().includes(query))
+    : menuOptions;
+
+  const handleSelect = (optionValue) => {
+    if (disabled) return;
+    onClearError?.();
+    onChange({ target: { name, value: optionValue } });
+    setSearchTerm('');
+    setOpen(false);
+  };
+
+  const clearSelection = (event) => {
+    event.stopPropagation();
+    if (disabled) return;
+    onClearError?.();
+    onChange({ target: { name, value: clearValue } });
+    setSearchTerm('');
+    setOpen(false);
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      {label && (
+        <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">
+          {label} {errorMessage && <span className="text-red-500">*</span>}
+        </label>
+      )}
+
+      <div className={`relative w-full min-w-[200px] rounded-xl border-2 bg-slate-50 dark:bg-slate-700 shadow-sm ${
+        errorMessage ? `${ERROR_FIELD_BORDER_CLASS} ${motionClass}` : 'border-slate-300 dark:border-slate-600'
+      } ${disabled ? 'opacity-70' : ''}`}>
+        <div className="flex items-center gap-2 px-4 py-2.5">
+          <input
+            type="text"
+            value={open ? searchTerm : (selectedLabel || '')}
+            onChange={(event) => {
+              if (disabled) return;
+              onClearError?.();
+              setSearchTerm(event.target.value);
+              setOpen(true);
+            }}
+            onFocus={() => {
+              if (disabled) return;
+              onClearError?.();
+              setSearchTerm('');
+              setOpen(true);
+            }}
+            disabled={disabled}
+            placeholder={placeholder}
+            className="w-full bg-transparent text-slate-800 dark:text-white placeholder-slate-400/70 dark:placeholder-slate-400/60 focus:outline-none disabled:cursor-not-allowed"
+          />
+          {selectedLabel && !disabled && (
+            <button
+              type="button"
+              onClick={clearSelection}
+              className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-slate-600 dark:hover:text-white"
+              title="Limpiar filtro"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={(event) => {
+              event.preventDefault();
+              if (disabled) return;
+              onClearError?.();
+              setSearchTerm('');
+              setOpen((prev) => !prev);
+            }}
+            className="flex items-center justify-center h-6 w-6 rounded-md bg-[#2C4AAE] ring-1 ring-[#2C4AAE] disabled:bg-slate-500 disabled:ring-slate-500"
+          >
+            <svg className={`w-3.5 h-3.5 text-white transition-transform duration-200 ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {open && !disabled && (
+        <div className="absolute z-50 mt-2 w-full rounded-xl border-2 border-[#3A56AF] bg-white dark:bg-slate-900 shadow-xl">
+          <div className="max-h-40 overflow-auto p-2">
+            {visibleOptions.length > 0 ? (
+              visibleOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => handleSelect(option.value)}
+                  className={`w-full text-left px-3 py-1.5 text-xs rounded-lg transition-colors ${
+                    String(option.value) === String(value)
+                      ? 'bg-cyan-50 dark:bg-cyan-900/30 text-cyan-800 dark:text-cyan-200 font-semibold'
+                      : 'bg-transparent text-slate-700 dark:text-slate-200 hover:bg-[#2C4AAE] hover:text-white dark:hover:bg-[#2C4AAE]'
+                  }`}
+                >
+                  <span className="block truncate">{option.label}</span>
+                </button>
+              ))
+            ) : (
+              <div className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{emptyText}</div>
+            )}
+          </div>
+        </div>
+      )}
+      {errorMessage && <p className={`text-xs text-red-600 dark:text-red-400 mt-1 ${motionClass}`}>{errorMessage}</p>}
+    </div>
+  );
+};
 
 const PauseIcon = (props) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
@@ -1380,6 +1532,8 @@ function ListaCalendarios() {
   const lastProjectRangeInvalidRef = useRef(false);
   const lastProjectOrderInvalidRef = useRef(false);
   const [calendarios, setCalendarios] = useState([]);
+  const [carreras, setCarreras] = useState([]);
+  const [carreraFiltro, setCarreraFiltro] = useState('todas');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -1412,10 +1566,27 @@ function ListaCalendarios() {
     { value: '2', label: 'Segundo Semestre' },
     { value: 'anual', label: 'Anual' },
   ];
+  const usuarioActual = useMemo(() => {
+    try {
+      return JSON.parse(localStorage.getItem('user') || 'null');
+    } catch {
+      return null;
+    }
+  }, []);
+  const esSuperAdmin = usuarioActual?.is_superuser === true;
+  const hayUnaSolaCarrera = carreras.length === 1;
+  const carreraOptions = carreras.map((carrera) => ({
+    value: String(carrera.id),
+    label: carrera.nombre,
+  }));
+  const calendariosFiltrados = esSuperAdmin && carreraFiltro && carreraFiltro !== 'todas'
+    ? calendarios.filter((cal) => String(cal.carrera) === String(carreraFiltro))
+    : calendarios;
 
   const currentYear = new Date().getFullYear();
 
   const buildInitialFormData = () => ({
+    carrera: hayUnaSolaCarrera ? carreras[0].id : '',
     gestion: new Date().getFullYear(),
     periodo: '1',
     fecha_inicio: '',
@@ -1575,7 +1746,8 @@ function ListaCalendarios() {
   );
   const semanasEfectivasErrorMessage = 'Las semanas efectivas no pueden exceder las semanas calendario del periodo.';
   const isFormReady = Boolean(
-    formData.gestion
+    formData.carrera
+    && formData.gestion
     && formData.periodo
     && formData.fecha_inicio
     && formData.fecha_fin
@@ -1605,8 +1777,19 @@ function ListaCalendarios() {
   const cargarCalendarios = async () => {
     setLoading(true);
     try {
-      const response = await api.get('/calendarios/');
-      const data = response.data.results || response.data;
+      const [calendariosRes, carrerasRes] = await Promise.all([
+        api.get('/calendarios/'),
+        api.get('/carreras/'),
+      ]);
+      const data = calendariosRes.data.results || calendariosRes.data;
+      const carrerasData = carrerasRes.data.results || carrerasRes.data;
+      const carrerasLista = Array.isArray(carrerasData) ? carrerasData : [];
+      setCarreras(carrerasLista);
+      if (carrerasLista.length === 1) {
+        setCarreraFiltro(String(carrerasLista[0].id));
+      } else {
+        setCarreraFiltro('todas');
+      }
       setCalendarios(Array.isArray(data) ? data.sort((a, b) => b.gestion - a.gestion || b.periodo.localeCompare(a.periodo)) : []);
     } catch (err) {
       setError('Error al cargar los calendarios académicos.');
@@ -1619,6 +1802,7 @@ function ListaCalendarios() {
   const abrirModal = (calendario = null) => {
     setCalendarioSeleccionado(calendario);
     setFormData(calendario ? {
+      carrera: calendario.carrera || '',
       gestion: calendario.gestion,
       periodo: calendario.periodo,
       fecha_inicio: calendario.fecha_inicio,
@@ -1645,6 +1829,11 @@ function ListaCalendarios() {
       ...prev,
       [name]: type === 'checkbox' ? checked : nextValue
     }));
+  };
+
+  const handleCarreraChange = (e) => {
+    clearFieldError('carrera');
+    setFormData((prev) => ({ ...prev, carrera: e.target.value }));
   };
 
   const handlePeriodoChange = (periodo) => {
@@ -1787,6 +1976,7 @@ function ListaCalendarios() {
     e.preventDefault();
 
     const requiredErrors = {};
+    if (!formData.carrera) requiredErrors.carrera = 'Este campo es obligatorio.';
     if (!formData.gestion) requiredErrors.gestion = 'Este campo es obligatorio.';
     if (!formData.periodo) requiredErrors.periodo = 'Este campo es obligatorio.';
     if (!formData.fecha_inicio) requiredErrors.fecha_inicio = 'Este campo es obligatorio.';
@@ -1855,6 +2045,7 @@ function ListaCalendarios() {
     
     const payload = {
       ...formData,
+      carrera: Number(formData.carrera),
       gestion: parseInt(formData.gestion),
       semanas_efectivas: parseInt(formData.semanas_efectivas),
       fecha_limite_programas_analiticos: formData.fecha_limite_programas_analiticos || null,
@@ -1863,14 +2054,15 @@ function ListaCalendarios() {
     };
 
     const duplicateExists = calendarios.some((cal) => (
-      Number(cal.gestion) === Number(payload.gestion)
+      Number(cal.carrera) === Number(payload.carrera)
+      && Number(cal.gestion) === Number(payload.gestion)
       && String(cal.periodo) === String(payload.periodo)
       && Number(cal.id) !== Number(calendarioSeleccionado?.id || 0)
     ));
 
     if (duplicateExists) {
-      const duplicateMsg = 'Ya existe un calendario para este periodo';
-      applyErrors({ ...errors, gestion: duplicateMsg, periodo: duplicateMsg });
+      const duplicateMsg = 'Ya existe un calendario para esta carrera, gestion y periodo';
+      applyErrors({ ...errors, carrera: duplicateMsg, gestion: duplicateMsg, periodo: duplicateMsg });
       toast.error(duplicateMsg);
       setIsSubmitting(false);
       return;
@@ -1897,8 +2089,8 @@ function ListaCalendarios() {
           const validationMessage = extractValidationMessage(apiErrors);
           const duplicateText = validationMessage.toLowerCase();
           if (duplicateText.includes('unique') || duplicateText.includes('already exists') || duplicateText.includes('ya existe')) {
-            const duplicateMsg = 'Ya existe un calendario para este periodo';
-            applyErrors({ ...errors, gestion: duplicateMsg, periodo: duplicateMsg });
+            const duplicateMsg = 'Ya existe un calendario para esta carrera, gestion y periodo';
+            applyErrors({ ...errors, carrera: duplicateMsg, gestion: duplicateMsg, periodo: duplicateMsg });
             toast.error(`ERROR DE VALIDACIÓN: ${duplicateMsg}`);
             return;
           }
@@ -2053,7 +2245,7 @@ function ListaCalendarios() {
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         <div className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-lg p-6">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent">
                 🗓️ Calendarios Académicos
@@ -2062,18 +2254,33 @@ function ListaCalendarios() {
                 Gestión de periodos, gestiones y fechas importantes.
               </p>
             </div>
+            <div className="flex flex-col sm:flex-row gap-3 items-center">
+              {esSuperAdmin && (
+                <div className="w-full sm:flex-1">
+                  <SelectConDropdown
+                    name="carrera"
+                    value={carreraFiltro}
+                    onChange={(event) => setCarreraFiltro(event.target.value)}
+                    options={[{ value: 'todas', label: 'Todas las carreras' }, ...carreraOptions]}
+                    placeholder="Buscar carrera..."
+                    emptyText="No hay carreras"
+                    hideSelectedOption
+                  />
+                </div>
+              )}
             <button
               onClick={() => abrirModal()}
-              className="px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center gap-2"
+              className="w-full sm:w-auto px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 flex items-center justify-center gap-2"
             >
               <span>➕</span>
               Nuevo Calendario
             </button>
+            </div>
           </div>
         </div>
 
         <div className="space-y-4">
-          {calendarios.map((cal) => (
+          {calendariosFiltrados.map((cal) => (
             <div key={cal.id} className={`rounded-2xl border backdrop-blur-sm shadow-md transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl ${cal.activo ? 'bg-white/90 dark:bg-slate-800/85 border-green-400/70 dark:border-green-500/70 ring-2 ring-green-400/30' : 'bg-white/80 dark:bg-slate-800/75 border-slate-300/80 dark:border-slate-700/70 hover:border-[#3D6DE0]/45'}`}>
               <div className="p-5">
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -2092,6 +2299,9 @@ function ListaCalendarios() {
                           </span>
                         )}
                       </div>
+                      <p className="mt-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                        {cal.carrera_nombre || 'Sin carrera'}
+                      </p>
                       <div className="flex flex-wrap items-center gap-2 mt-2 text-sm text-slate-600 dark:text-slate-400">
                         <span>🗓️ {new Date(cal.fecha_inicio).toLocaleDateString()} - {new Date(cal.fecha_fin).toLocaleDateString()}</span>
                         <span>|</span>
@@ -2150,6 +2360,22 @@ function ListaCalendarios() {
               )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
+                <div className="md:col-span-2">
+                  <SelectConDropdown
+                    label="Carrera"
+                    name="carrera"
+                    value={formData.carrera || ''}
+                    onChange={handleCarreraChange}
+                    disabled={hayUnaSolaCarrera || Boolean(calendarioSeleccionado)}
+                    options={carreraOptions}
+                    placeholder="Seleccione una carrera"
+                    emptyText="No hay carreras"
+                    error={errors.carrera}
+                    errorPulse={errorPulse}
+                    onClearError={() => clearFieldError('carrera')}
+                    clearValue=""
+                  />
+                </div>
                 <div>
                   <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Gestión (Año)</label>
                   <YearPickerField

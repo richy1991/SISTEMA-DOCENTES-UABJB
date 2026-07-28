@@ -37,7 +37,7 @@ function FormularioObservar({ fondo, onObservar, onCancelar }) {
     onObservar();
     
     // Mostrar toast y recargar después
-    toast.success('✅ Observación enviada al docente');
+    toast.success('Observación enviada al docente');
     
     // Esperar un poco y recargar
     setTimeout(() => {
