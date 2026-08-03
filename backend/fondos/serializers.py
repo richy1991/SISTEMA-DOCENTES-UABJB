@@ -607,6 +607,7 @@ class CargaHorariaSerializer(serializers.ModelSerializer):
         model = CargaHoraria
         fields = '__all__'
         read_only_fields = ['creado_por']
+        validators = []
 
     def validate(self, data):
         from .models import DocenteCarrera
@@ -615,33 +616,121 @@ class CargaHorariaSerializer(serializers.ModelSerializer):
         materia = data.get('materia', self.instance.materia if self.instance else None)
         calendario = data.get('calendario', self.instance.calendario if self.instance else None)
         categoria = data.get('categoria', self.instance.categoria if self.instance else None)
+        titulo_actividad = data.get('titulo_actividad', self.instance.titulo_actividad if self.instance else '')
+        paralelo = data.get('paralelo', self.instance.paralelo if self.instance else 'A')
         dia_semana = data.get('dia_semana', self.instance.dia_semana if self.instance else None)
         hora_inicio = data.get('hora_inicio', self.instance.hora_inicio if self.instance else None)
         hora_fin = data.get('hora_fin', self.instance.hora_fin if self.instance else None)
         aula = data.get('aula', self.instance.aula if self.instance else None)
         horas_nuevas = data.get('horas', self.instance.horas if self.instance else 0)
 
-        if not materia:
-            raise serializers.ValidationError({'materia': 'Debe seleccionar una materia para registrar la asignación.'})
-
         if docente and docente.activo is False:
             raise serializers.ValidationError({
                 'docente': 'No se puede asignar carga horaria o materia a un docente inactivo.'
             })
 
+        fondo = None
+        categoria_macro = None
+        semanas = Decimal('45.8')
+        if docente and calendario:
+            fondo = FondoTiempo.objects.filter(
+                docente=docente,
+                calendario_academico=calendario,
+                archivado=False,
+            ).first()
+            if fondo:
+                semanas = Decimal(str(fondo.semanas_año or '45.8'))
+                if semanas <= 0:
+                    semanas = Decimal('45.8')
+                categoria_macro = CategoriaFuncion.objects.filter(
+                    fondo_tiempo=fondo,
+                    tipo=categoria,
+                ).first()
+
+        if categoria == 'academica':
+            if not materia:
+                raise serializers.ValidationError({'materia': 'Debe seleccionar una materia del plan de estudios para la categoría Académica.'})
+            data['titulo_actividad'] = materia.nombre
+        else:
+            if materia:
+                raise serializers.ValidationError({
+                    'materia': 'Las materias del plan de estudios solo pueden asignarse en la categoría Académica.'
+                })
+            if not str(titulo_actividad or '').strip():
+                raise serializers.ValidationError({
+                    'titulo_actividad': 'Debe ingresar una descripción de la actividad para esta categoría.'
+                })
+            data['titulo_actividad'] = str(titulo_actividad).strip()
+
+        vinculo = None
+        if docente and fondo and fondo.carrera:
+            vinculo = DocenteCarrera.objects.filter(
+                docente=docente,
+                carrera=fondo.carrera,
+                activo=True,
+            ).first()
+            if not vinculo or vinculo.horas_semanales_maximas <= 0:
+                raise serializers.ValidationError({
+                    'docente': 'El docente no tiene una dedicación activa válida para esta carrera.'
+                })
+
+        if materia and fondo and materia.carrera_id != fondo.carrera_id:
+            raise serializers.ValidationError({
+                'materia': 'La materia seleccionada no pertenece a la carrera del Fondo de Tiempo.'
+            })
+
+        if categoria == 'academica' and docente and calendario and materia:
+            materia_duplicada = CargaHoraria.objects.filter(
+                docente=docente,
+                calendario=calendario,
+                materia=materia,
+            )
+            if self.instance:
+                materia_duplicada = materia_duplicada.exclude(pk=self.instance.pk)
+            if materia_duplicada.exists():
+                raise serializers.ValidationError({
+                    'materia': f'La materia {materia.nombre} ya fue asignada a este docente en este periodo'
+                })
+
         if hora_inicio and hora_fin and hora_fin <= hora_inicio:
             raise serializers.ValidationError({'hora_fin': 'La hora de fin debe ser mayor que la hora de inicio.'})
 
         # Tope de plan por materia (horas/semana): horas anuales prorrateadas.
-        horas_asignadas_semana = Decimal(horas_nuevas or 0) / Decimal('52')
-        horas_plan_semana = Decimal((materia.horas_totales or 0))
-        if horas_asignadas_semana > horas_plan_semana:
+        horas_asignadas_semana = Decimal(horas_nuevas or 0) / semanas
+        horas_plan_semana = Decimal((materia.horas_totales or 0)) if materia else Decimal('0')
+        tolerancia_redondeo_anual = Decimal('0.5') / semanas
+        if materia and horas_asignadas_semana > (horas_plan_semana + tolerancia_redondeo_anual):
+            exceso_semana = horas_asignadas_semana - horas_plan_semana
             raise serializers.ValidationError({
                 'horas': (
-                    f'La asignación ({horas_asignadas_semana:.2f} hrs/semana) supera el '
-                    f'Plan de Estudios de la materia ({horas_plan_semana:.2f} hrs/semana).'
+                    f'La asignación equivale a {horas_asignadas_semana:.3f} hrs/semana y supera el '
+                    f'Plan de Estudios de la materia ({horas_plan_semana:.2f} hrs/semana) '
+                    f'por {exceso_semana:.3f} hrs/semana.'
                 )
             })
+
+        if categoria_macro:
+            cargas_categoria = CargaHoraria.objects.filter(
+                docente=docente,
+                calendario=calendario,
+                categoria=categoria,
+            )
+            if self.instance:
+                cargas_categoria = cargas_categoria.exclude(pk=self.instance.pk)
+
+            horas_existentes_anuales = Decimal(cargas_categoria.aggregate(total=Sum('horas'))['total'] or 0)
+            total_categoria_semana = (horas_existentes_anuales + Decimal(horas_nuevas or 0)) / semanas
+            presupuesto_semana = Decimal(str(categoria_macro.total_horas or 0))
+            if total_categoria_semana > (presupuesto_semana + tolerancia_redondeo_anual):
+                categoria_label = dict(CategoriaFuncion.TIPO_CHOICES).get(categoria, categoria)
+                exceso_semana = total_categoria_semana - presupuesto_semana
+                raise serializers.ValidationError({
+                    'horas': (
+                        f'Las horas asignadas en la categoría {categoria_label} exceden el presupuesto de '
+                        f'{presupuesto_semana:g} hrs/sem establecido en la distribución Macro '
+                        f'por {exceso_semana:.3f} hrs/sem.'
+                    )
+                })
 
         # Validación de cruces de horario para el mismo calendario.
         if docente and calendario and dia_semana and hora_inicio and hora_fin:
@@ -674,6 +763,22 @@ class CargaHorariaSerializer(serializers.ModelSerializer):
                         'aula': 'Choque de aula: el ambiente ya está ocupado en ese horario.'
                     })
 
+        if docente and calendario and materia and paralelo and dia_semana and hora_inicio:
+            duplicados = CargaHoraria.objects.filter(
+                docente=docente,
+                calendario=calendario,
+                materia=materia,
+                paralelo=paralelo,
+                dia_semana=dia_semana,
+                hora_inicio=hora_inicio,
+            )
+            if self.instance:
+                duplicados = duplicados.exclude(pk=self.instance.pk)
+            if duplicados.exists():
+                raise serializers.ValidationError({
+                    'hora_inicio': 'Ya existe una asignación para esa materia, paralelo, día y hora de inicio.'
+                })
+
         # Esta regla aplica a la carga docente (materias), no a otras categorías.
         if not docente or not calendario or categoria != 'academica':
             return data
@@ -690,13 +795,9 @@ class CargaHorariaSerializer(serializers.ModelSerializer):
 
         horas_existentes = cargas_existentes.aggregate(total=Sum('horas'))['total'] or 0
         total_horas_anuales = Decimal(horas_existentes) + Decimal(horas_nuevas or 0)
-        total_horas_semanales = total_horas_anuales / Decimal('52')
+        total_horas_semanales = total_horas_anuales / semanas
 
-        # Obtener horas semanales del primer vínculo activo del docente
-        primer_vinculo = DocenteCarrera.objects.filter(
-            docente=docente, activo=True
-        ).first()
-        horas_maximas = Decimal(str(primer_vinculo.horas_semanales_maximas if primer_vinculo else 0))
+        horas_maximas = Decimal(str(vinculo.horas_semanales_maximas if vinculo else 0))
 
         if total_horas_semanales > horas_maximas:
             raise serializers.ValidationError(
@@ -1489,7 +1590,7 @@ class CategoriaFuncionSerializer(serializers.ModelSerializer):
                     "materia_id": carga.materia_id,
                     "titulo_actividad": (
                         f"{carga.materia.sigla} - {carga.materia.nombre} ({carga.paralelo})"
-                        if carga.materia else "Sin materia"
+                        if carga.materia else carga.titulo_actividad
                     ),
                     "horas": carga.horas,
                     "respaldo": carga.documento_respaldo
@@ -2884,20 +2985,50 @@ class InformeFondoListSerializer(serializers.ModelSerializer):
 class MensajeObservacionSerializer(serializers.ModelSerializer):
     """Serializer para mensajes individuales"""
     autor_nombre = serializers.SerializerMethodField()
+    leido = serializers.SerializerMethodField()
+    entregado = serializers.SerializerMethodField()
+    responde_a_detalle = serializers.SerializerMethodField()
+
     def get_autor_nombre(self, obj):
         nombre_completo = f"{obj.autor.first_name} {obj.autor.last_name}".strip()
         if nombre_completo:
             return nombre_completo
         return obj.autor.username
+
     autor_username = serializers.CharField(source='autor.username', read_only=True)
+
+    def get_leido(self, obj):
+        return bool(obj.leido_en)
+
+    def get_entregado(self, obj):
+        return bool(obj.pk)
+
+    def get_responde_a_detalle(self, obj):
+        if not obj.responde_a_id:
+            return None
+
+        mensaje = obj.responde_a
+        nombre_completo = f"{mensaje.autor.first_name} {mensaje.autor.last_name}".strip()
+        return {
+            'id': mensaje.id,
+            'autor': mensaje.autor_id,
+            'autor_nombre': nombre_completo or mensaje.autor.username,
+            'autor_username': mensaje.autor.username,
+            'texto': mensaje.texto,
+            'fecha': mensaje.fecha,
+        }
     
     class Meta:
         model = MensajeObservacion
         fields = [
             'id', 'observacion', 'autor', 'autor_nombre', 'autor_username',
-            'texto', 'fecha', 'es_admin'
+            'responde_a', 'responde_a_detalle', 'texto', 'fecha',
+            'leido_en', 'leido', 'entregado', 'es_admin'
         ]
-        read_only_fields = ['id', 'autor', 'fecha', 'es_admin']
+        read_only_fields = [
+            'id', 'autor', 'fecha', 'responde_a_detalle', 'leido_en',
+            'leido', 'entregado', 'es_admin'
+        ]
 
 
 class ObservacionFondoSerializer(serializers.ModelSerializer):

@@ -135,6 +135,7 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
         calendario: 'Calendario academico',
         categoria: 'Categoria',
         horas: 'Horas anuales',
+        titulo_actividad: 'Actividad',
         documento_respaldo: 'Respaldo',
         hora_inicio: 'Hora de inicio',
         hora_fin: 'Hora de fin',
@@ -171,6 +172,7 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
     };
     const [allMaterias, setAllMaterias] = useState([]);
     const [semestresDisponibles, setSemestresDisponibles] = useState([]);
+    const [fondoDetalle, setFondoDetalle] = useState(null);
     const [formData, setFormData] = useState({
         categoria: 'academica',
         materia: '',
@@ -192,7 +194,10 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
     ];
 
     useEffect(() => {
-        if (docenteId && calendarioId) cargarCargas();
+        if (docenteId && calendarioId) {
+            cargarCargas();
+            cargarFondoDetalle();
+        }
     }, [docenteId, calendarioId]);
 
     useEffect(() => {
@@ -200,7 +205,7 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
             setFormData({
                 categoria: cargaEdicion.categoria || 'academica',
                 materia: cargaEdicion.materia || cargaEdicion.materia_id || '',
-                titulo_actividad: cargaEdicion.titulo_actividad,
+                titulo_actividad: cargaEdicion.titulo_actividad || '',
                 horas: cargaEdicion.horas,
                 documento_respaldo: cargaEdicion.respaldo || ''
             });
@@ -262,34 +267,62 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
         }
     };
 
+    const cargarFondoDetalle = async () => {
+        try {
+            const response = await api.get('/fondos-tiempo/', {
+                params: { docente: docenteId, calendario: calendarioId }
+            });
+            const fondos = response.data.results || response.data;
+            const fondo = Array.isArray(fondos) ? fondos[0] : null;
+            if (!fondo?.id) {
+                setFondoDetalle(null);
+                return;
+            }
+            const detalle = await api.get(`/fondos-tiempo/${fondo.id}/`);
+            setFondoDetalle(detalle.data);
+        } catch (error) {
+            console.error("Error al cargar presupuesto macro:", error);
+            setFondoDetalle(null);
+        }
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (isReadOnly) return;
-        if (!formData.materia || !formData.titulo_actividad || !formData.horas) {
-            toast.error("Seleccione una materia y verifique las horas anuales");
+        const esAcademica = formData.categoria === 'academica';
+        if (esAcademica && !formData.materia) {
+            toast.error("Seleccione una materia del plan de estudios");
             return;
         }
-        if (formData.categoria !== 'academica' && !formData.documento_respaldo?.trim()) {
-            toast.error("El campo de respaldo es obligatorio para categorías distintas a Académica");
+        if (!esAcademica && !formData.titulo_actividad?.trim()) {
+            toast.error("Ingrese una descripción de la actividad");
+            return;
+        }
+        if (!formData.horas || Number(formData.horas) <= 0) {
+            toast.error("Verifique las horas anuales");
             return;
         }
         setIsSubmitting(true);
+        const payload = {
+            ...formData,
+            materia: esAcademica ? formData.materia : null,
+            titulo_actividad: esAcademica ? formData.titulo_actividad : formData.titulo_actividad.trim(),
+            docente: docenteId,
+            calendario: calendarioId
+        };
         try {
             if (cargaEdicion) {
-                await api.put(`/cargas-horarias/${cargaEdicion.id}/`, {
-                    ...formData, docente: docenteId, calendario: calendarioId
-                });
+                await api.put(`/cargas-horarias/${cargaEdicion.id}/`, payload);
                 toast.success("Asignación actualizada");
                 if (onCancelarEdicion) onCancelarEdicion();
             } else {
-                await api.post('/cargas-horarias/', {
-                    ...formData, docente: docenteId, calendario: calendarioId
-                });
+                await api.post('/cargas-horarias/', payload);
                 toast.success("Asignación agregada");
             }
             setFormData({ categoria: 'academica', materia: '', titulo_actividad: '', horas: '', documento_respaldo: '' });
             setSemestre('');
             cargarCargas();
+            cargarFondoDetalle();
             if (onCargaUpdate) onCargaUpdate();
         } catch (error) {
             console.error(error);
@@ -312,6 +345,7 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
             await api.delete(`/cargas-horarias/${id}/`);
             toast.success("Eliminado");
             cargarCargas();
+            cargarFondoDetalle();
             if (onCargaUpdate) onCargaUpdate();
         } catch (error) {
             console.error(error);
@@ -334,6 +368,17 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
         }
     };
 
+    const handleCategoriaChange = (categoria) => {
+        setSemestre('');
+        setFormData({
+            categoria,
+            materia: '',
+            titulo_actividad: '',
+            horas: '',
+            documento_respaldo: formData.documento_respaldo || ''
+        });
+    };
+
     const categoriaOptions = CATEGORIA_OPCIONES.map(opt => ({ value: opt.value, label: opt.label }));
     const semestreOptions = semestresDisponibles.map(s => ({ value: s.toString(), label: `${s}° Semestre` }));
     const materiaOptions = materias.map(m => ({
@@ -341,9 +386,21 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
         label: `${m.nombre} (${m.horas_teoricas} HT / ${m.horas_practicas} HP - Total: ${m.horas_totales} hrs/sem)`
     }));
     const selectedMateriaId = formData.materia?.toString() || '';
-    const respaldoRequerido = formData.categoria !== 'academica';
+    const esAcademica = formData.categoria === 'academica';
+    const semanasPresupuesto = Number(fondoDetalle?.semanas_año || SEMANAS_GESTION);
+    const categoriaPresupuesto = fondoDetalle?.categorias?.find(cat => cat.tipo === formData.categoria);
+    const presupuestoSemana = Number(categoriaPresupuesto?.total_horas || 0);
+    const asignadoSemana = cargas
+        .filter(carga => carga.categoria === formData.categoria && carga.id !== cargaEdicion?.id)
+        .reduce((total, carga) => total + (Number(carga.horas || 0) / semanasPresupuesto), 0);
+    const disponibleSemana = presupuestoSemana - asignadoSemana;
+    const respaldoRequerido = false;
     const respaldoInvalido = respaldoRequerido && !formData.documento_respaldo?.trim();
-    const submitDisabled = isSubmitting || !formData.materia || !formData.titulo_actividad || !formData.horas || respaldoInvalido;
+    const submitDisabled = isSubmitting
+        || (esAcademica ? !formData.materia : !formData.titulo_actividad?.trim())
+        || !formData.horas
+        || Number(formData.horas) <= 0
+        || respaldoInvalido;
 
     const inputCls = "w-full px-3 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-400 dark:focus:ring-blue-600 focus:border-transparent transition-all";
     const labelCls = "block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5";
@@ -395,40 +452,60 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
                                 <CustomSelect
                                     value={formData.categoria}
                                     options={categoriaOptions}
-                                    onChange={(newValue) => setFormData({ ...formData, categoria: newValue })}
+                                    onChange={handleCategoriaChange}
                                     placeholder="Seleccionar categoría"
                                     disabled={isReadOnly}
                                 />
                             </div>
-                            <div>
-                                <label className={labelCls}>Semestre / Nivel</label>
-                                <CustomSelect
-                                    value={semestre}
-                                    options={semestreOptions}
-                                    onChange={(newValue) => {
-                                        setSemestre(newValue);
-                                        setFormData(prev => ({ ...prev, materia: '', titulo_actividad: '', horas: '' }));
-                                    }}
-                                    placeholder={loadingMaterias ? 'Cargando…' : '-- Nivel --'}
-                                    disabled={loadingMaterias || isReadOnly}
-                                    emptyText={loadingMaterias ? 'Cargando niveles…' : 'No hay niveles disponibles'}
-                                />
-                            </div>
+                            {esAcademica && (
+                                <div>
+                                    <label className={labelCls}>Semestre / Nivel</label>
+                                    <CustomSelect
+                                        value={semestre}
+                                        options={semestreOptions}
+                                        onChange={(newValue) => {
+                                            setSemestre(newValue);
+                                            setFormData(prev => ({ ...prev, materia: '', titulo_actividad: '', horas: '' }));
+                                        }}
+                                        placeholder={loadingMaterias ? 'Cargando...' : '-- Nivel --'}
+                                        disabled={loadingMaterias || isReadOnly}
+                                        emptyText={loadingMaterias ? 'Cargando niveles...' : 'No hay niveles disponibles'}
+                                    />
+                                </div>
+                            )}
                         </div>
 
-                        {/* Fila 2: Materia */}
-                        <div>
-                            <label className={labelCls}>Materia (Malla curricular)</label>
-                            <CustomSelect
-                                value={selectedMateriaId}
-                                options={materiaOptions}
-                                onChange={handleMateriaChange}
-                                placeholder={!semestre ? '← Seleccione un nivel primero' : '-- Seleccionar Materia --'}
-                                disabled={!semestre || isReadOnly}
-                                emptyText={!semestre ? 'Selecciona primero un nivel' : 'No hay materias en este nivel'}
-                                menuMaxHeight="max-h-64"
-                            />
+                        <div className="rounded-lg border border-cyan-200 bg-cyan-50/70 px-3 py-2 text-[11px] font-semibold text-cyan-800 dark:border-cyan-800/70 dark:bg-cyan-950/25 dark:text-cyan-200">
+                            Presupuesto: {presupuestoSemana.toFixed(2)} hrs/sem | Asignado: {asignadoSemana.toFixed(2)} hrs/sem | Disponible: {disponibleSemana.toFixed(2)} hrs/sem
                         </div>
+
+                        {/* Fila 2: Materia o actividad */}
+                        {esAcademica ? (
+                            <div>
+                                <label className={labelCls}>Materia (Malla curricular)</label>
+                                <CustomSelect
+                                    value={selectedMateriaId}
+                                    options={materiaOptions}
+                                    onChange={handleMateriaChange}
+                                    placeholder={!semestre ? 'Seleccione un nivel primero' : '-- Seleccionar Materia --'}
+                                    disabled={!semestre || isReadOnly}
+                                    emptyText={!semestre ? 'Selecciona primero un nivel' : 'No hay materias en este nivel'}
+                                    menuMaxHeight="max-h-64"
+                                />
+                            </div>
+                        ) : (
+                            <div>
+                                <label className={labelCls}>Descripción de actividad</label>
+                                <input
+                                    type="text"
+                                    className={inputCls}
+                                    placeholder="Ej: Proyecto de investigación, extensión o gestión"
+                                    value={formData.titulo_actividad}
+                                    onChange={e => setFormData({ ...formData, titulo_actividad: e.target.value })}
+                                    disabled={isReadOnly}
+                                />
+                            </div>
+                        )}
 
                         {/* Fila 3: Horas calculadas — tarjeta destacada */}
                         <div className={`rounded-xl border-2 transition-all p-4 ${formData.horas
@@ -436,7 +513,7 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
                             : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30'}`}>
                             <div className="flex items-center justify-between mb-1">
                                 <span className={`text-xs font-bold uppercase tracking-wider ${formData.horas ? 'text-blue-500 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500'}`}>
-                                    Horas Anuales <span className="font-normal normal-case opacity-70">(auto)</span>
+                                    Horas Anuales <span className="font-normal normal-case opacity-70">({esAcademica ? 'auto' : 'manual'})</span>
                                 </span>
                                 {formData.horas && (
                                     <span className="text-[10px] font-bold bg-blue-500 text-white px-2 py-0.5 rounded-full">
@@ -445,15 +522,29 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
                                 )}
                             </div>
                             <div className="flex items-baseline gap-2">
-                                <span className={`text-3xl font-black leading-none ${formData.horas ? 'text-blue-600 dark:text-blue-400' : 'text-slate-300 dark:text-slate-600'}`}>
-                                    {formData.horas || '0'}
-                                </span>
+                                {esAcademica ? (
+                                    <span className={`text-3xl font-black leading-none ${formData.horas ? 'text-blue-600 dark:text-blue-400' : 'text-slate-300 dark:text-slate-600'}`}>
+                                        {formData.horas || '0'}
+                                    </span>
+                                ) : (
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        step="1"
+                                        className="w-32 rounded-lg border border-blue-200 bg-white px-3 py-2 text-2xl font-black leading-none text-blue-600 outline-none focus:ring-2 focus:ring-blue-400 dark:border-blue-700 dark:bg-slate-800 dark:text-blue-400"
+                                        value={formData.horas}
+                                        onChange={e => setFormData({ ...formData, horas: e.target.value })}
+                                        disabled={isReadOnly}
+                                    />
+                                )}
                                 <span className={`text-sm font-bold ${formData.horas ? 'text-blue-400 dark:text-blue-500' : 'text-slate-300 dark:text-slate-600'}`}>
                                     hrs/año
                                 </span>
                             </div>
                             <p className="text-[9px] text-slate-400 dark:text-slate-500 mt-1.5 leading-tight">
-                                Total horas anuales = (HT + HP) × {SEMANAS_GESTION} semanas
+                                {esAcademica
+                                    ? `Total horas anuales = (HT + HP) x ${SEMANAS_GESTION} semanas`
+                                    : `Equivalencia semanal aproximada = horas anuales / ${semanasPresupuesto}`}
                             </p>
                         </div>
 
@@ -461,7 +552,7 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
                         <div>
                             <label className={labelCls}>
                                 Respaldo <span className={`font-normal normal-case ${respaldoInvalido ? 'text-red-500 dark:text-red-400' : 'text-slate-400 dark:text-slate-500'}`}>
-                                    ({respaldoRequerido ? 'OBLIGATORIO' : 'opcional'})
+                                    (opcional)
                                 </span>
                             </label>
                             <input type="text" className={`${inputCls} ${respaldoInvalido ? 'border-red-500 dark:border-red-400 focus:ring-red-400 dark:focus:ring-red-500' : ''}`} placeholder="Ej: Memo #123"

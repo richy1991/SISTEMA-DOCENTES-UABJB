@@ -1,6 +1,6 @@
 import React from 'react';
 
-const EstadoTimeline = ({ estado, tieneObservaciones = false }) => {
+const EstadoTimeline = ({ estado, tieneObservaciones = false, observacionesPendientes = 0 }) => {
   // Mapeo de estados a etapas del proceso
   const ETAPAS = [
     { key: 'borrador', label: 'Borrador', colorActivo: 'bg-slate-500', colorCompleto: 'bg-slate-400' },
@@ -34,7 +34,7 @@ const EstadoTimeline = ({ estado, tieneObservaciones = false }) => {
     const labels = {
       'borrador': 'Borrador',
       'presentado_jefe': 'Presentado a Jefe',
-      'observado': 'Con Observaciones',
+      'observado': observacionesPendientes > 0 ? `Con Observaciones (${observacionesPendientes})` : 'Con Observaciones',
       'presentado_director': 'Presentado a Director',
       'aprobado_director': 'Aprobado por Director',
       'en_ejecucion': 'En Ejecución',
@@ -72,7 +72,7 @@ const EstadoTimeline = ({ estado, tieneObservaciones = false }) => {
           <p className="text-sm font-black mb-1">{getEstadoLabel(estado)}</p>
           {estado === 'observado' && tieneObservaciones && (
             <p className="text-xs opacity-75 mt-2">
-              💬 Hay observaciones pendientes
+              Hay {observacionesPendientes} hilo{observacionesPendientes === 1 ? '' : 's'} pendiente{observacionesPendientes === 1 ? '' : 's'}
             </p>
           )}
         </div>

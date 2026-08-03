@@ -192,7 +192,6 @@ const ExternalLinkIcon = (props) => (
 );
 import toast from 'react-hot-toast';
 import EstadoTimeline from './fondos/EstadoTimeline';
-import TimelineObservaciones from './fondos/TimelineObservaciones';
 import PDFPreviewModal from './PDFPreviewModal';
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4'];
@@ -244,6 +243,7 @@ function DetalleFondo({ isDark }) {
   const [cargaParaEditar, setCargaParaEditar] = useState(null);
   const [panelCentral, setPanelCentral] = useState('resumen');
   const [direccionPanel, setDireccionPanel] = useState('derecha');
+  const [animarPanelCentral, setAnimarPanelCentral] = useState(false);
   const [slideGrafico, setSlideGrafico] = useState(0);
   const vistaActual = 'docente';
   const slideGraficoRef = useRef(0);
@@ -257,10 +257,49 @@ function DetalleFondo({ isDark }) {
   };
   const [secuenciaGuardado, setSecuenciaGuardado] = useState({
     activa: false,
-    balance: false,
-    distribucion: false,
-    acciones: false,
+    balance: true,
+    distribucion: true,
+    acciones: true,
   });
+  const iniciarSecuenciaGuardado = () => {
+    limpiarSecuenciaGuardado();
+    setAnimarPanelCentral(false);
+    setPanelCentral('resumen');
+    setAnimarTransicionMacroMicro(false);
+    setSecuenciaGuardado({
+      activa: true,
+      balance: false,
+      distribucion: false,
+      acciones: false,
+    });
+
+    secuenciaGuardadoTimeoutsRef.current = [
+      setTimeout(() => {
+        setAnimarTransicionMacroMicro(true);
+        setSecuenciaGuardado((prev) => ({ ...prev, balance: true }));
+      }, 0),
+      setTimeout(() => {
+        setSecuenciaGuardado((prev) => ({ ...prev, distribucion: true }));
+      }, 500),
+      setTimeout(() => {
+        setSecuenciaGuardado((prev) => ({ ...prev, acciones: true }));
+      }, 1000),
+      setTimeout(() => {
+        setDireccionPanel('derecha');
+        setAnimarPanelCentral(true);
+        setPanelCentral('carga');
+      }, 1500),
+      setTimeout(() => {
+        setAnimarTransicionMacroMicro(false);
+        setSecuenciaGuardado({
+          activa: false,
+          balance: true,
+          distribucion: true,
+          acciones: true,
+        });
+      }, 2250),
+    ];
+  };
 
   // ESTADOS PARA MODAL DE INFORME FINAL
   const [mostrarModalPresentacion, setMostrarModalPresentacion] = useState(false);
@@ -284,6 +323,7 @@ function DetalleFondo({ isDark }) {
 
   useEffect(() => {
     // Define panel inicial por rol al entrar a la vista.
+    setAnimarPanelCentral(false);
     setPanelCentral('resumen');
   }, [puedeGestionarCarga]);
 
@@ -602,23 +642,18 @@ function DetalleFondo({ isDark }) {
 
   const presentarADirector = async () => {
     try {
-      if (fondo.estado === 'observado') {
-        // Lógica inteligente: Si está observado, buscamos la observación activa y la resolvemos
-        // Esto dispara el cambio de estado en el backend (marcar_resuelta -> presentado)
-        const observacionActiva = fondo.observaciones_detalladas?.find(obs => !obs.resuelta);
-
-        if (observacionActiva) {
-          await api.post(`/observaciones/${observacionActiva.id}/marcar-resuelta/`);
-          toast.success('Correcciones enviadas y fondo presentado nuevamente');
-        } else {
-          toast.error('No se encontró la observación activa para resolver.');
-          return;
-        }
-      } else {
-        // Flujo normal: Borrador -> Presentado
-        await presentarFondoADirector(fondo.id);
-        toast.success('Fondo presentado al Director exitosamente');
+      const requisitosPresentacion = validarRequisitos();
+      if (!requisitosPresentacion.total) {
+        toast.error('Complete la distribución de horas y asigne al menos una materia antes de presentar');
+        return;
       }
+
+      await presentarFondoADirector(fondo.id);
+      toast.success(
+        fondo.estado === 'observado'
+          ? 'Correcciones enviadas y fondo presentado nuevamente'
+          : 'Fondo presentado al Director exitosamente'
+      );
       await cargarDetalle();
     } catch (err) {
       console.error('Error al presentar:', err);
@@ -702,11 +737,8 @@ function DetalleFondo({ isDark }) {
     cerrarFormularioObservar();
     await cargarDetalle();
 
-    // Actualizar las observaciones en el chat flotante
     if (observacionesRef.current) {
       await observacionesRef.current.actualizarObservaciones();
-      const pendientes = observacionesRef.current.obtenerPendientes();
-      setObservacionesPendientes(pendientes);
     }
   };
 
@@ -797,17 +829,17 @@ function DetalleFondo({ isDark }) {
   };
 
   const validarRequisitos = () => {
-    if (!fondo) return { horas: false, docencia: false, docs: false, total: false };
+    if (!fondo) return { horas: false, micro: false, total: false };
 
-    const horas = Math.abs(fondo.total_asignado - fondo.horas_efectivas) < 0.1;
-    const docencia = fondo.categorias?.some(c => c.tipo === 'academica' && parseFloat(c.total_horas) > 0);
-    const docs = fondo.tiene_programa_analitico;
+    const totalAsignado = Number(fondo.total_asignado || 0);
+    const horasObjetivo = Number(fondo.horas_semana || 0);
+    const horas = horasObjetivo > 0 && Math.abs(totalAsignado - horasObjetivo) < 0.1;
+    const micro = fondo.categorias?.some(c => Array.isArray(c.detalles_carga) && c.detalles_carga.length > 0);
 
     return {
       horas,
-      docencia,
-      docs,
-      total: horas && docencia && docs
+      micro,
+      total: horas && micro
     };
   };
 
@@ -968,7 +1000,6 @@ function DetalleFondo({ isDark }) {
   const mostrarAccionesWidget = secuenciaGuardado.activa ? secuenciaGuardado.acciones : tieneDistribucionGuardada;
 
   const puedeEditar = fondo.puede_editar;
-  const requisitos = validarRequisitos();
   const puedeEditarDocente = (Boolean(puedeEditar) || esSuperAdmin) && !esAdmin && puedeGestionarDistribucion;
   const puedeEditarDistribucion = puedeEditarDocente && ['borrador', 'observado'].includes(fondo.estado);
 
@@ -986,51 +1017,15 @@ function DetalleFondo({ isDark }) {
   const desplazarDerecha = () => {
     if (!puedeGestionarCarga) return;
     setDireccionPanel('derecha');
+    setAnimarPanelCentral(true);
     setPanelCentral((prev) => (prev === 'resumen' ? 'carga' : 'resumen'));
   };
 
   const desplazarIzquierda = () => {
     if (!puedeGestionarCarga) return;
     setDireccionPanel('izquierda');
+    setAnimarPanelCentral(true);
     setPanelCentral((prev) => (prev === 'resumen' ? 'carga' : 'resumen'));
-  };
-
-  const iniciarSecuenciaGuardado = () => {
-    limpiarSecuenciaGuardado();
-    setPanelCentral('resumen');
-    setAnimarTransicionMacroMicro(false);
-    setSecuenciaGuardado({
-      activa: true,
-      balance: false,
-      distribucion: false,
-      acciones: false,
-    });
-
-    secuenciaGuardadoTimeoutsRef.current = [
-      setTimeout(() => {
-        setAnimarTransicionMacroMicro(true);
-        setSecuenciaGuardado((prev) => ({ ...prev, balance: true }));
-      }, 0),
-      setTimeout(() => {
-        setSecuenciaGuardado((prev) => ({ ...prev, distribucion: true }));
-      }, 750),
-      setTimeout(() => {
-        setSecuenciaGuardado((prev) => ({ ...prev, acciones: true }));
-      }, 1500),
-      setTimeout(() => {
-        setDireccionPanel('derecha');
-        setPanelCentral('carga');
-      }, 2250),
-      setTimeout(() => {
-        setAnimarTransicionMacroMicro(false);
-        setSecuenciaGuardado({
-          activa: false,
-          balance: true,
-          distribucion: true,
-          acciones: true,
-        });
-      }, 3000),
-    ];
   };
 
   const handleDistribucionGuardada = () => {
@@ -1199,7 +1194,7 @@ function DetalleFondo({ isDark }) {
                 {/* Widget Balance de Horas */}
                 <div
                   className={`bg-white dark:bg-slate-800 rounded-2xl border border-slate-300 dark:border-slate-700 shadow-sm p-6 relative overflow-hidden ${!mostrarBalanceWidget ? 'hidden' : ''} ${animarTransicionMacroMicro ? 'animate-slide-up' : ''}`}
-                  style={animarTransicionMacroMicro ? { animationDuration: '180ms', animationFillMode: 'both' } : undefined}
+                  style={animarTransicionMacroMicro ? { animationDuration: '140ms', animationFillMode: 'both' } : undefined}
                 >
                   <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-blue-500 to-indigo-600"></div>
                   <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-5 flex items-center gap-2">
@@ -1244,7 +1239,7 @@ function DetalleFondo({ isDark }) {
                   return (
                     <div
                       className={`bg-white dark:bg-slate-800 rounded-2xl border border-slate-300 dark:border-slate-700 shadow-sm p-6 relative overflow-hidden ${animarTransicionMacroMicro ? 'animate-slide-up' : ''}`}
-                      style={animarTransicionMacroMicro ? { animationDuration: '180ms', animationFillMode: 'both' } : undefined}
+                      style={animarTransicionMacroMicro ? { animationDuration: '140ms', animationFillMode: 'both' } : undefined}
                     >
                       <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-blue-500 to-indigo-600"></div>
                       <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2">
@@ -1375,7 +1370,7 @@ function DetalleFondo({ isDark }) {
               )}
 
               {/* Widget Observaciones Pendientes */}
-              {observacionesPendientes > 0 && (
+              {false && observacionesPendientes > 0 && (
                 <div className="bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-200 dark:border-amber-800 rounded-2xl p-6 relative overflow-hidden">
                   <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-amber-500 to-orange-600"></div>
 
@@ -1389,14 +1384,6 @@ function DetalleFondo({ isDark }) {
                     </div>
                   </div>
                 </div>
-              )}
-
-              {/* Widget Observaciones para Docente */}
-              {fondo.estado === 'observado' && !esStaff && (
-                <TimelineObservaciones 
-                  fondoId={fondo.id}
-                  puedeResponder={true}
-                />
               )}
 
             </div>
@@ -1432,51 +1419,56 @@ function DetalleFondo({ isDark }) {
                   </div>
                 ) : null}
 
-                <div className="p-5 flex-1 min-h-0">
-                  {puedeGestionarCarga && (
-                    <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50/80 px-4 py-3 text-center dark:border-blue-900/40 dark:bg-blue-950/20">
-                      <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100">
-                        {panelCentralInfo.titulo}
-                      </h2>
-                      <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">
-                        {panelCentralInfo.descripcion}
-                      </p>
-                    </div>
-                  )}
-                  <div className="fondo-central-flex h-full gap-4">
-                    <div className="fondo-central-stage">
-                      {puedeGestionarCarga && mostrarCargaAcademica ? (
-                        <div key="panel-carga" className={`fondo-panel-anim ${direccionPanel === 'derecha' ? 'fondo-panel-enter-right' : 'fondo-panel-enter-left'}`}>
-                          <div className="h-full overflow-y-auto pr-1">
-                            <CargaHorariaManager
-                              docenteId={fondo.docente?.id}
-                              calendarioId={fondo.calendario_academico?.id}
-                              onCargaUpdate={handleActualizacionHoras}
-                              cargaEdicion={cargaParaEditar}
-                              onCancelarEdicion={() => setCargaParaEditar(null)}
-                              readOnly={soloLecturaPorRol}
-                            />
+                <div className="p-5 flex-1 min-h-0 overflow-hidden">
+                  <div
+                    key={panelCentral}
+                    className={`fondo-panel-shell ${animarPanelCentral ? (direccionPanel === 'derecha' ? 'fondo-panel-enter-right' : 'fondo-panel-enter-left') : ''}`}
+                  >
+                    {puedeGestionarCarga && (
+                      <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50/80 px-4 py-3 text-center dark:border-blue-900/40 dark:bg-blue-950/20">
+                        <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                          {panelCentralInfo.titulo}
+                        </h2>
+                        <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+                          {panelCentralInfo.descripcion}
+                        </p>
+                      </div>
+                    )}
+                    <div className="fondo-central-flex flex-1 min-h-0 gap-4">
+                      <div className="fondo-central-stage">
+                        {puedeGestionarCarga && mostrarCargaAcademica ? (
+                          <div key="panel-carga" className="fondo-panel-anim">
+                            <div className="h-full overflow-y-auto pr-1">
+                              <CargaHorariaManager
+                                docenteId={fondo.docente?.id}
+                                calendarioId={fondo.calendario_academico?.id}
+                                onCargaUpdate={handleActualizacionHoras}
+                                cargaEdicion={cargaParaEditar}
+                                onCancelarEdicion={() => setCargaParaEditar(null)}
+                                readOnly={soloLecturaPorRol}
+                              />
+                            </div>
                           </div>
-                        </div>
-                      ) : (
-                        <div key="panel-resumen" className={`fondo-panel-anim ${direccionPanel === 'derecha' ? 'fondo-panel-enter-right' : 'fondo-panel-enter-left'} fondo-distribucion-grow`}>
-                          <div className="h-full flex flex-col justify-center">
-                            <DistribuirHoras
-                              fondoId={fondo.id}
-                              horasEfectivas={fondo.horas_efectivas}
-                              horasObjetivo={fondo.horas_semana}
-                              editable={puedeEditarDistribucion}
-                              onActualizar={handleActualizacionHoras}
-                              onGuardarExitoso={handleDistribucionGuardada}
-                              onAgregarActividad={puedeGestionarDistribucion ? abrirFormularioActividadGlobal : undefined}
-                              canAddActivity={puedeGestionarDistribucion}
-                              hideActionButtons={esAdmin || !puedeEditarDistribucion}
-                            />
+                        ) : (
+                          <div key="panel-resumen" className="fondo-panel-anim fondo-distribucion-grow">
+                            <div className="h-full flex flex-col justify-center">
+                              <DistribuirHoras
+                                fondoId={fondo.id}
+                                horasEfectivas={fondo.horas_efectivas}
+                                horasObjetivo={fondo.horas_semana}
+                                editable={puedeEditarDistribucion}
+                                onActualizar={handleActualizacionHoras}
+                                onGuardarExitoso={handleDistribucionGuardada}
+                                onAgregarActividad={puedeGestionarDistribucion ? abrirFormularioActividadGlobal : undefined}
+                                canAddActivity={puedeGestionarDistribucion}
+                                hideActionButtons={esAdmin || !puedeEditarDistribucion}
+                              />
+                            </div>
                           </div>
-                        </div>
-                      )}
-                    </div>
+                        )}
+                      </div>
 
+                    </div>
                   </div>
                 </div>
 
@@ -1494,7 +1486,7 @@ function DetalleFondo({ isDark }) {
                 <div
                   ref={refWidgetAcciones}
                   className={`bg-white dark:bg-slate-800 rounded-2xl border border-slate-300 dark:border-slate-700 shadow-sm p-5 relative overflow-hidden flex flex-col ${!mostrarAccionesWidget ? 'hidden' : ''} ${animarTransicionMacroMicro ? 'animate-slide-up' : ''}`}
-                  style={animarTransicionMacroMicro ? { animationDuration: '180ms', animationFillMode: 'both' } : undefined}
+                  style={animarTransicionMacroMicro ? { animationDuration: '140ms', animationFillMode: 'both' } : undefined}
                 >
                   <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-blue-500 to-indigo-600"></div>
 
@@ -1507,6 +1499,7 @@ function DetalleFondo({ isDark }) {
                     <EstadoTimeline 
                       estado={fondo.estado}
                       tieneObservaciones={observacionesPendientes > 0}
+                      observacionesPendientes={observacionesPendientes}
                     />
                   </div>
 
@@ -1535,12 +1528,11 @@ function DetalleFondo({ isDark }) {
 
                     </div>
 
-                    {/* DOCENTE: Presentar */}
-                    {fondo.estado === 'borrador' && !esStaff && (
+                    {/* JEFATURA: Presentar a Director */}
+                    {fondo.estado === 'borrador' && (esJefeEstudios || esSuperAdmin) && (
                       <button
                         onClick={presentarADirector}
-                        disabled={!requisitos.total}
-                        className="w-full py-2 rounded-xl font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg shadow-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2 transition-all hover:scale-[1.02] text-xs"
+                        className="w-full py-2 rounded-xl font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg shadow-blue-500/30 flex justify-center items-center gap-2 transition-all hover:scale-[1.02] text-xs"
                       >
                         <PaperAirplaneIcon className="w-3.5 h-3.5" />
                         Presentar
@@ -1567,12 +1559,11 @@ function DetalleFondo({ isDark }) {
                       </div>
                     )}
 
-                    {/* DOCENTE: Volver a Presentar */}
-                    {fondo.estado === 'observado' && !esStaff && (
+                    {/* JEFATURA: Volver a presentar a Director */}
+                    {fondo.estado === 'observado' && (esJefeEstudios || esSuperAdmin) && (
                       <button
                         onClick={presentarADirector}
-                        disabled={!requisitos.total}
-                        className="w-full py-2 rounded-xl font-bold text-white bg-orange-500 hover:bg-orange-600 shadow-lg shadow-orange-500/30 flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:scale-[1.02] text-xs"
+                        className="w-full py-2 rounded-xl font-bold text-white bg-orange-500 hover:bg-orange-600 shadow-lg shadow-orange-500/30 flex justify-center items-center gap-2 transition-all hover:scale-[1.02] text-xs"
                       >
                         <ArrowPathIcon className="w-3.5 h-3.5" />
                         Reenviar
@@ -1908,13 +1899,9 @@ function DetalleFondo({ isDark }) {
           <BotonFlotanteObservaciones
             ref={observacionesRef}
             fondoId={fondo.id}
-            estadoFondo={fondo.estado_display}
+            estadoFondo={fondo.estado}
             onObservacionCambiada={async () => {
               await cargarDetalle();
-              if (observacionesRef.current) {
-                const pendientes = observacionesRef.current.obtenerPendientes();
-                setObservacionesPendientes(pendientes);
-              }
             }}
           />
         </div>,

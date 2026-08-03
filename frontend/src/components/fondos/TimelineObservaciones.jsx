@@ -1,18 +1,18 @@
-import { useState, useEffect } from 'react';
-import { getObservacionesPorFondo, responderObservacion } from '../../apis/api';
+import { useEffect, useMemo, useState } from 'react';
+import { getObservacionesPorFondo } from '../../apis/api';
 import toast from 'react-hot-toast';
 
-function TimelineObservaciones({ fondoId, puedeResponder = false }) {
+function TimelineObservaciones({ fondoId }) {
   const [observaciones, setObservaciones] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [respondiendo, setRespondiendo] = useState(null);
-  const [respuestaTexto, setRespuestaTexto] = useState('');
 
   useEffect(() => {
     cargarObservaciones();
   }, [fondoId]);
 
   const cargarObservaciones = async () => {
+    if (!fondoId) return;
+
     try {
       setLoading(true);
       const response = await getObservacionesPorFondo(fondoId);
@@ -25,182 +25,170 @@ function TimelineObservaciones({ fondoId, puedeResponder = false }) {
     }
   };
 
-  const handleResponder = async (observacionId) => {
-    if (!respuestaTexto.trim()) {
-      toast.error('La respuesta no puede estar vacía');
-      return;
-    }
-
-    try {
-      await responderObservacion(observacionId, respuestaTexto);
-      toast.success('Respuesta enviada');
-      setRespondiendo(null);
-      setRespuestaTexto('');
-      await cargarObservaciones();
-    } catch (err) {
-      console.error('Error al responder:', err);
-      toast.error('Error al enviar respuesta');
-    }
-  };
+  const observacionesOrdenadas = useMemo(() => {
+    return [...observaciones].sort(
+      (a, b) => new Date(a.fecha_creacion) - new Date(b.fecha_creacion)
+    );
+  }, [observaciones]);
 
   const formatearFecha = (fecha) => {
+    if (!fecha) return 'Sin fecha';
+
     return new Date(fecha).toLocaleString('es-ES', {
       year: 'numeric',
-      month: 'long',
-      day: 'numeric',
+      month: 'short',
+      day: '2-digit',
       hour: '2-digit',
       minute: '2-digit'
     });
   };
 
+  const obtenerMensajeInicial = (observacion) => {
+    return observacion.mensajes?.[0] || observacion.ultimo_mensaje || null;
+  };
+
+  const obtenerAutorInicial = (observacion) => {
+    const inicial = obtenerMensajeInicial(observacion);
+    return inicial?.autor_nombre || inicial?.autor_username || 'Sin autor';
+  };
+
+  const obtenerMensajesOrdenados = (observacion) => {
+    return [...(observacion.mensajes || [])].sort(
+      (a, b) => new Date(a.fecha) - new Date(b.fecha)
+    );
+  };
+
   if (loading) {
     return (
-      <div className="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 p-6">
+      <section className="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 p-6">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-4 border-blue-600 mx-auto"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-4 border-orange-500 mx-auto"></div>
           <p className="mt-3 text-slate-600 dark:text-slate-400 text-sm">Cargando observaciones...</p>
         </div>
-      </div>
+      </section>
     );
   }
 
-  if (observaciones.length === 0) {
+  if (observacionesOrdenadas.length === 0) {
     return (
-      <div className="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 p-6">
+      <section className="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 p-6">
         <div className="text-center py-4">
-          <span className="text-4xl mb-3 block">📭</span>
+          <span className="text-3xl mb-3 block">!</span>
           <p className="text-slate-600 dark:text-slate-400">No hay observaciones registradas</p>
         </div>
-      </div>
+      </section>
     );
   }
 
   return (
-    <div className="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
-      {/* Header */}
+    <section className="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
       <div className="bg-gradient-to-r from-orange-500 to-red-600 px-5 py-3">
-        <h2 className="text-lg font-bold text-white flex items-center gap-2">
-          <span>💬</span> Observaciones y Respuestas
-        </h2>
+        <h2 className="text-lg font-bold text-white">Timeline de Observaciones</h2>
+        <p className="text-xs text-orange-100 mt-1">
+          Registro formal de observaciones y mensajes vinculados al fondo
+        </p>
       </div>
 
-      {/* Timeline */}
       <div className="p-5">
-        <div className="space-y-4">
-          {observaciones.map((obs, index) => (
-            <div key={obs.id} className="relative">
-              {/* Línea vertical del timeline */}
-              {index < observaciones.length - 1 && (
-                <div className="absolute left-4 top-12 bottom-0 w-0.5 bg-slate-200 dark:bg-slate-700"></div>
-              )}
+        <div className="relative border-l-2 border-slate-200 dark:border-slate-700 ml-4 space-y-6">
+          {observacionesOrdenadas.map((observacion, index) => {
+            const mensajes = obtenerMensajesOrdenados(observacion);
+            const pendiente = !observacion.resuelta;
 
-              {/* Observación */}
-              <div className="relative">
-                {/* Avatar/Icono */}
-                <div className="absolute left-0 top-0 w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center border-2 border-orange-500">
-                  <span className="text-orange-600 dark:text-orange-400 text-sm font-bold">
-                    {obs.rol === 'director' ? '👔' : '📋'}
-                  </span>
-                </div>
+            return (
+              <article key={observacion.id} className="relative pl-8">
+                <span
+                  className={`absolute -left-[0.72rem] top-1 w-5 h-5 rounded-full border-4 ${
+                    pendiente
+                      ? 'bg-orange-500 border-orange-100 dark:border-orange-900'
+                      : 'bg-green-500 border-green-100 dark:border-green-900'
+                  }`}
+                />
 
-                {/* Contenido */}
-                <div className="ml-12">
-                  {/* Header de la observación */}
-                  <div className="flex items-start justify-between mb-2">
+                <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <span className="font-bold text-slate-800 dark:text-white">
-                        {obs.autor_nombre || 'Usuario'}
-                      </span>
-                      <span className="mx-2 text-slate-400">•</span>
-                      <span className="text-sm text-orange-600 dark:text-orange-400 font-semibold">
-                        {obs.rol_display || 'Director'}
-                      </span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="font-bold text-slate-800 dark:text-white">
+                          Observacion #{index + 1}
+                        </h3>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                            pendiente
+                              ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
+                              : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                          }`}
+                        >
+                          {pendiente ? 'Pendiente' : 'Resuelta'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        Creada por {obtenerAutorInicial(observacion)} el {formatearFecha(observacion.fecha_creacion)}
+                      </p>
                     </div>
-                    <span className="text-xs text-slate-500 dark:text-slate-400">
-                      {formatearFecha(obs.fecha)}
-                    </span>
+
+                    {observacion.resuelta && (
+                      <div className="text-xs text-green-700 dark:text-green-300 sm:text-right">
+                        <p className="font-semibold">Resuelta</p>
+                        <p>{formatearFecha(observacion.fecha_resolucion)}</p>
+                        {observacion.resuelta_por_nombre && <p>Por {observacion.resuelta_por_nombre}</p>}
+                      </div>
+                    )}
                   </div>
 
-                  {/* Texto de la observación */}
-                  <div className="bg-orange-50 dark:bg-orange-900/20 border-l-4 border-orange-500 rounded-lg p-4 mb-3">
-                    <p className="text-slate-700 dark:text-slate-300 whitespace-pre-wrap">
-                      {obs.observacion}
-                    </p>
-                  </div>
+                  <div className="p-4 space-y-3">
+                    {mensajes.length === 0 ? (
+                      <p className="text-sm text-slate-500 dark:text-slate-400">
+                        Este hilo no tiene mensajes registrados.
+                      </p>
+                    ) : (
+                      mensajes.map((mensaje, mensajeIndex) => {
+                        const esInicial = mensajeIndex === 0;
 
-                  {/* Respuesta si existe */}
-                  {obs.resuelta && obs.respuesta && (
-                    <div className="ml-4 mt-3">
-                      <div className="flex items-start gap-2 mb-2">
-                        <div className="w-6 h-6 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-                          <span className="text-green-600 dark:text-green-400 text-xs">✓</span>
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-semibold text-slate-700 dark:text-slate-300 text-sm">
-                              {obs.respondida_por_nombre || 'Docente'}
-                            </span>
-                            <span className="text-xs text-slate-500 dark:text-slate-400">
-                              {formatearFecha(obs.fecha_respuesta)}
-                            </span>
-                          </div>
-                          <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3">
-                            <p className="text-slate-700 dark:text-slate-300 text-sm whitespace-pre-wrap">
-                              {obs.respuesta}
+                        return (
+                          <div
+                            key={mensaje.id}
+                            className={`rounded-lg border p-3 ${
+                              esInicial
+                                ? 'bg-orange-50 border-orange-200 dark:bg-orange-900/20 dark:border-orange-800'
+                                : mensaje.es_admin
+                                ? 'bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800'
+                                : 'bg-white border-slate-200 dark:bg-slate-800 dark:border-slate-700'
+                            }`}
+                          >
+                            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between mb-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-semibold text-sm text-slate-800 dark:text-slate-100">
+                                  {mensaje.autor_nombre || mensaje.autor_username || 'Usuario'}
+                                </span>
+                                <span className="text-xs text-slate-500 dark:text-slate-400">
+                                  {mensaje.es_admin ? 'Autoridad' : 'Docente'}
+                                </span>
+                                {esInicial && (
+                                  <span className="text-xs font-bold text-orange-700 dark:text-orange-300">
+                                    Observacion inicial
+                                  </span>
+                                )}
+                              </div>
+                              <time className="text-xs text-slate-500 dark:text-slate-400">
+                                {formatearFecha(mensaje.fecha)}
+                              </time>
+                            </div>
+                            <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words">
+                              {mensaje.texto}
                             </p>
                           </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Formulario para responder */}
-                  {!obs.resuelta && puedeResponder && (
-                    <div className="ml-4 mt-3">
-                      {respondiendo === obs.id ? (
-                        <div className="space-y-2">
-                          <textarea
-                            value={respuestaTexto}
-                            onChange={(e) => setRespuestaTexto(e.target.value)}
-                            placeholder="Escribe tu respuesta..."
-                            rows={3}
-                            className="w-full px-3 py-2 rounded-lg border-2 border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                          />
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => handleResponder(obs.id)}
-                              className="px-4 py-2 rounded-lg font-semibold bg-green-500 hover:bg-green-600 text-white transition-all text-sm"
-                            >
-                              ✓ Enviar Respuesta
-                            </button>
-                            <button
-                              onClick={() => {
-                                setRespondiendo(null);
-                                setRespuestaTexto('');
-                              }}
-                              className="px-4 py-2 rounded-lg font-semibold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600 transition-all text-sm"
-                            >
-                              Cancelar
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => setRespondiendo(obs.id)}
-                          className="px-4 py-2 rounded-lg font-semibold bg-blue-500 hover:bg-blue-600 text-white transition-all text-sm flex items-center gap-2"
-                        >
-                          <span>↩️</span> Responder
-                        </button>
-                      )}
-                    </div>
-                  )}
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
-              </div>
-            </div>
-          ))}
+              </article>
+            );
+          })}
         </div>
       </div>
-    </div>
+    </section>
   );
 }
 

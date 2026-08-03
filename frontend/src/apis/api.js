@@ -186,11 +186,23 @@ export const cambiarEstadoProyecto = (id, estado) =>
 // ===================================
 export const getObservaciones = () => api.get('/observaciones/');
 export const getObservacionDetalle = (id) => api.get(`/observaciones/${id}/`);
-export const getObservacionesPorFondo = (fondoId) => {
-  return api.get(`/observaciones/?fondo_tiempo=${fondoId}`);
+export const getObservacionesPorFondo = (fondoId, options = {}) => {
+  const params = { fondo_tiempo: fondoId };
+  if (options.marcarLeido) params.marcar_leido = true;
+  return api.get('/observaciones/', { params });
 };
-export const agregarMensajeObservacion = (observacionId, texto) => {
-  return api.post(`/observaciones/${observacionId}/agregar-mensaje/`, { texto });
+export const agregarMensajeObservacion = (observacionId, texto, respondeA = null) => {
+  const payload = { texto };
+  if (respondeA) payload.responde_a = respondeA;
+  return api.post(`/observaciones/${observacionId}/agregar-mensaje/`, payload);
+};
+
+export const getTypingObservacionFondo = (fondoId) => {
+  return api.get('/observaciones/typing-status/', { params: { fondo_tiempo: fondoId } });
+};
+
+export const setTypingObservacionFondo = (fondoId, escribiendo) => {
+  return api.post('/observaciones/typing-status/', { fondo_tiempo: fondoId, escribiendo });
 };
 
 export const marcarObservacionResuelta = (observacionId) => {

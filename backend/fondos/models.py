@@ -1010,6 +1010,20 @@ class FondoTiempo(models.Model):
         ]
         
         ESTADOS_EDITABLES = ['borrador', 'observado', 'rechazado']
+        TRANSICIONES_ESTADO_PERMITIDAS = {
+            ('borrador', 'presentado_director'),
+            ('observado', 'presentado_director'),
+            ('presentado_director', 'aprobado_director'),
+            ('presentado_director', 'observado'),
+            ('presentado_director', 'rechazado'),
+            ('aprobado_director', 'en_ejecucion'),
+            ('en_ejecucion', 'informe_presentado'),
+            ('informe_presentado', 'finalizado'),
+            # Flujo legado soportado para datos/endpoints antiguos.
+            ('borrador', 'presentado_jefe'),
+            ('presentado_jefe', 'presentado_director'),
+            ('presentado_jefe', 'observado'),
+        }
         
         # Si el fondo ya existe en DB, verificar si está en estado bloqueado
         if self.pk:
@@ -1039,7 +1053,11 @@ class FondoTiempo(models.Model):
                     })
             
             # Si pasó, al menos el estado actual es editable
-            if self.estado not in ESTADOS_EDITABLES + [fondo_actual.estado]:
+            transicion_estado = (fondo_actual.estado, self.estado)
+            if (
+                self.estado not in ESTADOS_EDITABLES + [fondo_actual.estado]
+                and transicion_estado not in TRANSICIONES_ESTADO_PERMITIDAS
+            ):
                 raise ValidationError({
                     'estado': (
                         f'Transición de estado no permitida. '
@@ -1211,6 +1229,11 @@ class CargaHoraria(models.Model):
     hora_inicio = models.TimeField(null=True, blank=True)
     hora_fin = models.TimeField(null=True, blank=True)
     aula = models.CharField(max_length=100, default='', blank=True)
+    titulo_actividad = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text='Descripcion de la actividad para cargas no academicas.'
+    )
     horas = models.PositiveIntegerField(help_text="Cantidad de horas anuales asignadas para esta actividad.")
     documento_respaldo = models.CharField(
         max_length=100,
@@ -1397,8 +1420,16 @@ class MensajeObservacion(models.Model):
 
     observacion = models.ForeignKey(ObservacionFondo, on_delete=models.CASCADE, related_name='mensajes')
     autor = models.ForeignKey(User, on_delete=models.PROTECT, related_name='mensajes_observacion')
+    responde_a = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='respuestas'
+    )
     texto = models.TextField()
     fecha = models.DateTimeField(auto_now_add=True)
+    leido_en = models.DateTimeField(null=True, blank=True)
     es_admin = models.BooleanField(default=False)  # True si lo envió un admin/director
     
     class Meta:
@@ -1408,6 +1439,12 @@ class MensajeObservacion(models.Model):
     
     def __str__(self):
         return f"Mensaje de {self.autor.username} - {self.fecha.strftime('%d/%m/%Y %H:%M')}"
+
+    def marcar_como_leido(self):
+        if not self.leido_en:
+            from django.utils import timezone
+            self.leido_en = timezone.now()
+            self.save(update_fields=['leido_en'])
 
 
 class HistorialFondo(models.Model):

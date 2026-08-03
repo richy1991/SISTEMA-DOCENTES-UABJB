@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { distribuirHorasFondoTiempo, getCategoriasPorFondo } from '../apis/api';
+import { getApiErrorMessage } from '../utils/formErrors';
 
 const FUNCIONES_SUSTANTIVAS = [
   { tipo: 'academica', nombre: 'Académica', color: '#3B82F6' },
@@ -130,7 +131,7 @@ function DistribuirHoras({
       if (onActualizar) onActualizar();
     } catch (err) {
       console.error('Error al guardar distribución:', err);
-      toast.error('No se pudo guardar la distribución de horas');
+      toast.error(getApiErrorMessage(err, 'No se pudo guardar la distribución de horas'));
     } finally {
       setGuardando(false);
     }

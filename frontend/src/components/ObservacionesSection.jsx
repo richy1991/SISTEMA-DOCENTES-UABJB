@@ -32,11 +32,6 @@ function ObservacionesSection({ fondoId, estadoFondo, usuarioActual }) {
       return;
     }
 
-    if (mensajeTexto.trim().length < 10) {
-      toast.error('El mensaje debe tener al menos 10 caracteres');
-      return;
-    }
-
     try {
       setEnviando(true);
       await agregarMensajeObservacion(observacionId, mensajeTexto);

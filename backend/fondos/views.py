@@ -11,6 +11,7 @@ from django.http import HttpResponse, JsonResponse, FileResponse
 from django.db import transaction, IntegrityError
 from django.db.models import Prefetch, ProtectedError, prefetch_related_objects, Q
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.cache import cache
 from datetime import datetime, date
 from decimal import Decimal, InvalidOperation
 from .utils.carrera_pdf_generator import CarreraPDFGenerator
@@ -1801,13 +1802,55 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         Endpoint para presentar fondo directamente a Director.
         """
         fondo = self.get_object()
-        
-        if fondo.estado == 'borrador':
-            fondo.estado = 'presentado_director'
-            fondo.fecha_presentacion = timezone.now()
+        user = request.user
+
+        if not user.is_superuser:
+            perfil = _obtener_perfil_efectivo(user, request)
+            if not (perfil and perfil.rol == 'jefe_estudios' and _usuario_tiene_acceso_a_carrera(user, fondo.carrera, request)):
+                raise PermissionDenied("Solo Jefatura de Estudios puede presentar fondos al Director.")
+
+        if fondo.estado not in ['borrador', 'observado']:
+            return Response(
+                {'error': 'Solo se pueden presentar fondos en estado borrador u observado'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        total_macro = Decimal(str(fondo.total_asignado or 0)).quantize(Decimal('0.01'))
+        horas_objetivo = Decimal(str(fondo.horas_semana or 0)).quantize(Decimal('0.01'))
+        tiene_micro = CargaHoraria.objects.filter(
+            docente=fondo.docente,
+            calendario=fondo.calendario_academico,
+        ).exists()
+
+        if horas_objetivo <= 0 or total_macro != horas_objetivo or not tiene_micro:
+            return Response(
+                {'error': 'Complete la distribución de horas y asigne al menos una materia antes de presentar'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        estado_anterior = fondo.estado
+        if estado_anterior == 'observado':
+            for observacion in ObservacionFondo.objects.filter(fondo_tiempo=fondo, resuelta=False):
+                observacion.marcar_resuelta(user)
+
+        fondo.estado = 'presentado_director'
+        fondo.fecha_presentacion = timezone.now()
+        try:
             fondo.save()
-            return Response({'status': 'Fondo presentado correctamente'}, status=status.HTTP_200_OK)
-        return Response({'error': 'Solo se pueden presentar fondos en estado borrador'}, status=status.HTTP_400_BAD_REQUEST)
+        except DjangoValidationError as exc:
+            detail = getattr(exc, 'message_dict', None) or getattr(exc, 'messages', None) or str(exc)
+            return self._validation_error_response(detail)
+
+        HistorialFondo.objects.create(
+            fondo_tiempo=fondo,
+            usuario=user,
+            tipo_cambio='presentacion',
+            descripcion='Fondo presentado por Jefatura de Estudios al Director.',
+            estado_anterior=estado_anterior,
+            estado_nuevo='presentado_director'
+        )
+
+        return Response({'status': 'Fondo presentado correctamente'}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
     @transaction.atomic
@@ -2684,6 +2727,61 @@ class ObservacionFondoViewSet(viewsets.ModelViewSet):
     filterset_fields = ['fondo_tiempo', 'resuelta']
     ordering_fields = ['fecha_creacion']
     ordering = ['-fecha_creacion']
+
+    def _marcar_mensajes_entrantes_como_leidos(self):
+        fondo_id = self.request.query_params.get('fondo_tiempo', None)
+        if not fondo_id:
+            return
+
+        MensajeObservacion.objects.filter(
+            observacion__fondo_tiempo_id=fondo_id,
+            leido_en__isnull=True,
+        ).exclude(autor=self.request.user).update(leido_en=timezone.now())
+
+    def list(self, request, *args, **kwargs):
+        marcar_leido = str(request.query_params.get('marcar_leido', '')).lower() in ('1', 'true', 'yes')
+        if marcar_leido:
+            self._marcar_mensajes_entrantes_como_leidos()
+        return super().list(request, *args, **kwargs)
+
+    @action(detail=False, methods=['get', 'post'], url_path='typing-status')
+    def typing_status(self, request):
+        fondo_id = request.query_params.get('fondo_tiempo') or request.data.get('fondo_tiempo')
+        if not fondo_id:
+            return Response({'detail': "El campo 'fondo_tiempo' es obligatorio."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            fondo_id = int(fondo_id)
+        except (TypeError, ValueError):
+            return Response({'detail': "El campo 'fondo_tiempo' debe ser un entero valido."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if request.method == 'POST':
+            escribiendo = bool(request.data.get('escribiendo'))
+            cache_key = f'fondo-tiempo-chat-typing:{fondo_id}:{request.user.id}'
+            fondo_cache_key = f'fondo-tiempo-chat-typing:{fondo_id}:usuarios'
+            usuarios_escribiendo = cache.get(fondo_cache_key, {})
+
+            if escribiendo:
+                ahora = timezone.now().isoformat()
+                cache.set(cache_key, ahora, timeout=6)
+                usuarios_escribiendo[str(request.user.id)] = ahora
+                cache.set(fondo_cache_key, usuarios_escribiendo, timeout=6)
+            else:
+                cache.delete(cache_key)
+                usuarios_escribiendo.pop(str(request.user.id), None)
+                if usuarios_escribiendo:
+                    cache.set(fondo_cache_key, usuarios_escribiendo, timeout=6)
+                else:
+                    cache.delete(fondo_cache_key)
+            return Response({'escribiendo': escribiendo})
+
+        usuarios_escribiendo = cache.get(f'fondo-tiempo-chat-typing:{fondo_id}:usuarios', {})
+        otros = [
+            user_id for user_id in usuarios_escribiendo.keys()
+            if str(user_id) != str(request.user.id)
+        ]
+
+        return Response({'alguien_escribiendo': bool(otros)})
     
     def get_queryset(self):
         """Filtrar observaciones según el usuario y fondo"""
@@ -2722,16 +2820,31 @@ class ObservacionFondoViewSet(viewsets.ModelViewSet):
     
         # Validar que haya texto
         texto = request.data.get('texto', '').strip()
-        if not texto or len(texto) < 10:
+        if not texto:
             return Response(
-                {'error': 'El mensaje debe tener al menos 10 caracteres'},
+                {'error': 'El mensaje no puede estar vacio'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+        responde_a = None
+        responde_a_id = request.data.get('responde_a')
+        if responde_a_id:
+            try:
+                responde_a = MensajeObservacion.objects.get(
+                    id=responde_a_id,
+                    observacion=observacion
+                )
+            except (MensajeObservacion.DoesNotExist, ValueError, TypeError):
+                return Response(
+                    {'error': 'El mensaje citado no pertenece a esta conversacion'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
     
         # Crear mensaje
         mensaje = MensajeObservacion.objects.create(
             observacion=observacion,
             autor=request.user,
+            responde_a=responde_a,
             texto=texto,
             es_admin=request.user.perfil.rol in ['director', 'jefe_estudios']
        )
