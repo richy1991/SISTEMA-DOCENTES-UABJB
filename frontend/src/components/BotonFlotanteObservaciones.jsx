@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   CheckCheck,
   ChevronDown,
+  ChevronsDown,
   Copy,
   MessageCircle,
   Pin,
@@ -14,7 +15,8 @@ import {
   getObservacionesPorFondo,
   agregarMensajeObservacion,
   getTypingObservacionFondo,
-  setTypingObservacionFondo
+  setTypingObservacionFondo,
+  marcarObservacionResuelta
 } from '../apis/api';
 import api from '../apis/api';
 import toast from 'react-hot-toast';
@@ -26,6 +28,7 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
   const [observaciones, setObservaciones] = useState([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
+  const [isClosingChat, setIsClosingChat] = useState(false);
   const [texto, setTexto] = useState('');
   const [sending, setSending] = useState(false);
   const [usuarioActual, setUsuarioActual] = useState(null);
@@ -37,11 +40,15 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
   const [menuMensajeId, setMenuMensajeId] = useState(null);
   const [menuPlacement, setMenuPlacement] = useState('below');
   const [respondiendoA, setRespondiendoA] = useState(null);
+  const [observacionPorResolver, setObservacionPorResolver] = useState(null);
+  const [observacionPendienteVisible, setObservacionPendienteVisible] = useState(true);
+  const [cerrandoConfirmacionResolver, setCerrandoConfirmacionResolver] = useState(false);
   const [mensajeFijado, setMensajeFijado] = useState(null);
   const [mensajeParaFijar, setMensajeParaFijar] = useState(null);
   const [duracionFijado, setDuracionFijado] = useState('7d');
   const [mensajeResaltadoId, setMensajeResaltadoId] = useState(null);
   const [mensajesNuevosIds, setMensajesNuevosIds] = useState([]);
+  const [mostrarBajarChat, setMostrarBajarChat] = useState(false);
   const [swipeMensaje, setSwipeMensaje] = useState(null);
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
@@ -59,6 +66,8 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
   const typingVisibleRef = useRef(false);
   const localTypingRef = useRef(false);
   const newMessageTimerRef = useRef(null);
+  const closeChatTimerRef = useRef(null);
+  const justOpenedChatRef = useRef(false);
 
   const capturarPosicionesMensajes = useCallback(() => {
     const rects = new Map();
@@ -148,7 +157,6 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
     try {
       const response = await getTypingObservacionFondo(fondoId);
       const siguienteEstado = Boolean(response.data?.alguien_escribiendo);
-      if (typingVisibleRef.current !== siguienteEstado) capturarPosicionesMensajes();
       typingVisibleRef.current = siguienteEstado;
       setAlguienEscribiendo(siguienteEstado);
       if (siguienteEstado) {
@@ -161,7 +169,6 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
         }, 180);
       }
     } catch {
-      if (typingVisibleRef.current) capturarPosicionesMensajes();
       typingVisibleRef.current = false;
       setAlguienEscribiendo(false);
       if (typingHideTimerRef.current) window.clearTimeout(typingHideTimerRef.current);
@@ -169,7 +176,7 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
         setTypingIndicadorVisible(false);
       }, 180);
     }
-  }, [fondoId, capturarPosicionesMensajes]);
+  }, [fondoId]);
 
   useEffect(() => {
     if (!open || !fondoId) return undefined;
@@ -178,45 +185,25 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
     return () => window.clearInterval(intervalId);
   }, [open, fondoId, cargarTyping]);
 
-  useEffect(() => {
-    if (!open || !typingIndicadorVisible || mensajesNuevosIds.length > 0) return undefined;
-    if (!shouldAutoScrollRef.current) return undefined;
-
-    const timeoutId = window.setTimeout(() => {
-      if (!scrollRef.current || !shouldAutoScrollRef.current) return;
-      scrollRef.current.scrollTo({
-        top: scrollRef.current.scrollHeight,
-        behavior: 'smooth',
-      });
-    }, 320);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [open, typingIndicadorVisible, mensajesNuevosIds]);
-
   useEffect(() => () => {
     if (typingTimerRef.current) window.clearTimeout(typingTimerRef.current);
     if (typingHideTimerRef.current) window.clearTimeout(typingHideTimerRef.current);
     if (newMessageTimerRef.current) window.clearTimeout(newMessageTimerRef.current);
+    if (closeChatTimerRef.current) window.clearTimeout(closeChatTimerRef.current);
     if (fondoId) setTypingObservacionFondo(fondoId, false).catch(() => {});
   }, [fondoId]);
 
   useEffect(() => {
     if (!open || !scrollRef.current) return;
+    if (justOpenedChatRef.current) return;
     if (mensajesNuevosIds.length > 0) return;
-    if (typingIndicadorVisible && shouldAutoScrollRef.current) {
-      const timeoutId = window.setTimeout(() => {
-        if (!scrollRef.current || !shouldAutoScrollRef.current) return;
-        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-      }, 120);
-      return () => window.clearTimeout(timeoutId);
-    }
     const debeBajar = shouldAutoScrollRef.current;
     const timeoutId = window.setTimeout(() => {
       if (!scrollRef.current || !debeBajar) return;
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }, 80);
     return () => window.clearTimeout(timeoutId);
-  }, [open, observaciones, typingIndicadorVisible, mensajesNuevosIds]);
+  }, [open, observaciones, mensajesNuevosIds]);
 
   useEffect(() => {
     if (!open) return;
@@ -339,6 +326,7 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
   useImperativeHandle(ref, () => ({
     abrirPanel: () => {
       shouldAutoScrollRef.current = true;
+      justOpenedChatRef.current = true;
       setOpen(true);
       if (onObservacionCambiada) onObservacionCambiada();
     },
@@ -352,6 +340,8 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
 
   const esAutoridad = usuarioActual?.perfil?.rol === 'director' ||
     usuarioActual?.perfil?.rol === 'jefe_estudios';
+  const rolActivo = localStorage.getItem('active_role') || usuarioActual?.perfil?.rol;
+  const puedeMarcarObservacionResuelta = usuarioActual?.is_superuser || rolActivo === 'jefe_estudios';
 
   const observacionesOrdenadas = useMemo(() => {
     return [...observaciones].sort(
@@ -361,9 +351,10 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
 
   const mensajes = useMemo(() => {
     return observacionesOrdenadas
-      .flatMap((obs) => (obs.mensajes || []).map((mensaje, index) => ({
+      .flatMap((obs, obsIndex) => (obs.mensajes || []).map((mensaje, index) => ({
         ...mensaje,
         observacionId: obs.id,
+        observacionNumero: obsIndex + 1,
         observacionResuelta: obs.resuelta,
         esInicial: index === 0,
       })))
@@ -371,6 +362,20 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
   }, [observacionesOrdenadas]);
 
   useLayoutEffect(() => {
+    if (!open || !scrollRef.current || !justOpenedChatRef.current) return;
+    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    setMostrarBajarChat(false);
+    previousMessageRectsRef.current = new Map();
+    justOpenedChatRef.current = false;
+  }, [open, mensajes.length, loading]);
+
+  const observacionPendientePrincipal = useMemo(() => {
+    const pendientes = mensajes.filter((mensaje) => mensaje.esInicial && !mensaje.observacionResuelta);
+    return pendientes[pendientes.length - 1] || null;
+  }, [mensajes]);
+
+  useLayoutEffect(() => {
+    if (justOpenedChatRef.current) return;
     const nuevos = mensajesNuevosIds;
     const previousRects = previousMessageRectsRef.current;
     const tieneMovimientoPendiente = previousRects && previousRects.size > 0;
@@ -403,9 +408,9 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
     }
 
     previousMessageRectsRef.current = new Map();
-  }, [mensajes, mensajesNuevosIds, open, typingIndicadorVisible]);
+  }, [mensajes, mensajesNuevosIds, open]);
 
-  const hayConversacionActiva = observaciones.some((obs) => !obs.resuelta);
+  const hayConversacionActiva = observaciones.length > 0;
   const puedeResponder = esAutoridad || estadoFondo === 'observado' || hayConversacionActiva;
 
   const esMiMensaje = (mensaje) => {
@@ -432,7 +437,7 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
       return count + mensajesOtro.length;
     }, 0);
 
-  const conversacionActiva = observaciones.filter((obs) => !obs.resuelta).pop();
+  const conversacionActiva = observacionesOrdenadas[observacionesOrdenadas.length - 1] || null;
   const formatHora = (fecha) => {
     if (!fecha) return '';
     const parsed = new Date(fecha);
@@ -520,16 +525,20 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
     toast.success('Fijaste un mensaje.');
   };
 
-  const irAMensajeFijado = () => {
-    if (!mensajeFijado?.id) return;
-    const target = messageRefs.current.get(mensajeFijado.id);
+  const irAMensaje = (mensajeId) => {
+    if (!mensajeId) return;
+    const target = messageRefs.current.get(mensajeId);
     const container = scrollRef.current;
     if (!target || !container) return;
 
     const offset = target.offsetTop - 72;
     container.scrollTo({ top: Math.max(0, offset), behavior: 'smooth' });
-    setMensajeResaltadoId(mensajeFijado.id);
+    setMensajeResaltadoId(mensajeId);
     window.setTimeout(() => setMensajeResaltadoId(null), 1800);
+  };
+
+  const irAMensajeFijado = () => {
+    irAMensaje(mensajeFijado?.id);
   };
 
   const toggleMenuMensaje = (event, mensajeId) => {
@@ -591,6 +600,54 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
     }
   };
 
+  const marcarComoResuelta = async (observacionId) => {
+    if (!observacionId) return;
+    try {
+      await marcarObservacionResuelta(observacionId);
+      setObservaciones((actuales) =>
+        actuales.map((obs) =>
+          obs.id === observacionId
+            ? { ...obs, resuelta: true, fecha_resolucion: new Date().toISOString() }
+            : obs
+        )
+      );
+      cerrarConfirmacionResolver();
+      toast.success('Observacion marcada como resuelta.');
+    } catch (err) {
+      console.error('Error al marcar observacion como resuelta:', err);
+      toast.error('No se pudo marcar como resuelta.');
+    }
+  };
+
+  const cerrarConfirmacionResolver = () => {
+    if (!observacionPorResolver) return;
+    setCerrandoConfirmacionResolver(true);
+    window.setTimeout(() => {
+      setObservacionPorResolver(null);
+      setCerrandoConfirmacionResolver(false);
+    }, 220);
+  };
+
+  const actualizarVisibilidadObservacionPendiente = useCallback(() => {
+    if (!observacionPendientePrincipal?.id || !scrollRef.current) {
+      setObservacionPendienteVisible(true);
+      return;
+    }
+
+    const target = messageRefs.current.get(observacionPendientePrincipal.id);
+    if (!target) {
+      setObservacionPendienteVisible(false);
+      return;
+    }
+
+    const containerRect = scrollRef.current.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    setObservacionPendienteVisible(
+      targetRect.bottom > containerRect.top + 12 &&
+      targetRect.top < containerRect.bottom - 12
+    );
+  }, [observacionPendientePrincipal]);
+
   const handleTextoChange = (value) => {
     setTexto(value);
     if (!open || !fondoId || !hayConversacionActiva || !puedeResponder) return;
@@ -616,14 +673,25 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
   };
 
   const cerrarChat = () => {
-    setOpen(false);
-    setPanelBox(null);
+    if (isClosingChat) return;
+    setIsClosingChat(true);
     setAlguienEscribiendo(false);
     setTypingIndicadorVisible(false);
     if (typingTimerRef.current) window.clearTimeout(typingTimerRef.current);
     if (typingHideTimerRef.current) window.clearTimeout(typingHideTimerRef.current);
     localTypingRef.current = false;
     if (fondoId) setTypingObservacionFondo(fondoId, false).catch(() => {});
+    if (closeChatTimerRef.current) window.clearTimeout(closeChatTimerRef.current);
+    closeChatTimerRef.current = window.setTimeout(() => {
+      setOpen(false);
+      setIsClosingChat(false);
+      setPanelBox(null);
+      setMenuMensajeId(null);
+      setRespondiendoA(null);
+      setObservacionPorResolver(null);
+      setCerrandoConfirmacionResolver(false);
+      setMensajeParaFijar(null);
+    }, 320);
   };
 
   const handleChatScroll = () => {
@@ -631,7 +699,23 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
     if (!el) return;
     const distanciaAlFinal = el.scrollHeight - el.scrollTop - el.clientHeight;
     shouldAutoScrollRef.current = distanciaAlFinal < 80;
+    setMostrarBajarChat(distanciaAlFinal > 180);
+    actualizarVisibilidadObservacionPendiente();
   };
+
+  const bajarAlFinalChat = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    shouldAutoScrollRef.current = true;
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    setMostrarBajarChat(false);
+  };
+
+  useEffect(() => {
+    if (!open || !observacionPendientePrincipal) return undefined;
+    const timeoutId = window.setTimeout(actualizarVisibilidadObservacionPendiente, 40);
+    return () => window.clearTimeout(timeoutId);
+  }, [open, observacionPendientePrincipal, mensajes, actualizarVisibilidadObservacionPendiente]);
 
   const iniciarSwipeMensaje = (event, mensaje, esMio) => {
     if (event.pointerType === 'mouse') return;
@@ -725,11 +809,14 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
         onClick={() => {
           if (open) cerrarChat();
           else {
+            if (closeChatTimerRef.current) window.clearTimeout(closeChatTimerRef.current);
+            setIsClosingChat(false);
             shouldAutoScrollRef.current = true;
+            justOpenedChatRef.current = true;
             setOpen(true);
           }
         }}
-        className="ft-chat-button fixed bottom-6 right-6 w-14 h-14 rounded-full transition-all duration-300 hover:scale-110 flex items-center justify-center text-white z-[121]"
+        className={`ft-chat-button fixed bottom-6 right-6 w-14 h-14 rounded-full transition-all duration-300 hover:scale-110 flex items-center justify-center text-white z-[121] ${isClosingChat ? 'is-absorbing' : ''}`}
         title="Mensajes"
         aria-label={badgeCount > 0 ? `Mensajes, ${formatBadgeCount(badgeCount)} pendientes` : 'Mensajes'}
       >
@@ -751,7 +838,7 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
               width: panelBox.width,
               height: panelBox.height,
             } : undefined}
-            className={`ft-chat-panel absolute w-[430px] max-w-[calc(100vw-1.5rem)] h-[690px] max-h-[calc(100vh-8rem)] rounded-3xl overflow-hidden flex flex-col pointer-events-auto ${panelBox ? '' : 'right-6 bottom-24'}`}
+            className={`ft-chat-panel absolute w-[430px] max-w-[calc(100vw-1.5rem)] h-[690px] max-h-[calc(100vh-8rem)] rounded-3xl overflow-hidden flex flex-col pointer-events-auto ${panelBox ? '' : 'right-6 bottom-24'} ${isClosingChat ? 'is-closing' : ''}`}
           >
             <div
               onPointerDown={iniciarArrastre}
@@ -811,6 +898,27 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
                 </button>
               </div>
             )}
+            {!observacionPorResolver && observacionPendientePrincipal && !observacionPendienteVisible && (
+              <div
+                role="button"
+                tabIndex={0}
+                className="ft-chat-resolve-sticky ft-chat-pending-sticky"
+                onClick={() => irAMensaje(observacionPendientePrincipal.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    irAMensaje(observacionPendientePrincipal.id);
+                  }
+                }}
+                title="Ir a la observacion pendiente"
+              >
+                <AlertTriangle size={14} />
+                <div>
+                  <span>Observacion #{observacionPendientePrincipal.observacionNumero}</span>
+                  <p>Pendiente de resolver</p>
+                </div>
+              </div>
+            )}
 
             <div
               ref={scrollRef}
@@ -851,15 +959,6 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
                       onPointerUp={finalizarSwipeMensaje}
                       onPointerCancel={finalizarSwipeMensaje}
                     >
-                      <button
-                        type="button"
-                        className="ft-chat-message-menu-trigger"
-                        onClick={(e) => toggleMenuMensaje(e, mensaje.id)}
-                        title="Opciones"
-                        aria-label="Opciones del mensaje"
-                      >
-                        <ChevronDown size={20} />
-                      </button>
                       {menuMensajeId === mensaje.id && (
                         <div className={`ft-chat-message-menu ${esMio ? 'is-mine' : 'is-peer'} is-${menuPlacement}`}>
                           <button type="button" onClick={() => elegirRespuesta(mensaje)}>
@@ -877,6 +976,15 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
                         </div>
                       )}
                       <div className={`ft-chat-bubble ${esMio ? 'is-mine' : 'is-peer'} ${mensaje.esInicial ? 'has-initial-label' : ''}`}>
+                      <button
+                        type="button"
+                        className="ft-chat-message-menu-trigger"
+                        onClick={(e) => toggleMenuMensaje(e, mensaje.id)}
+                        title="Opciones"
+                        aria-label="Opciones del mensaje"
+                      >
+                        <ChevronDown size={20} />
+                      </button>
                       {mensaje.responde_a_detalle && (
                         <div
                           className="ft-chat-reply-quote"
@@ -888,9 +996,28 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
                       )}
                       <p className="ft-chat-text text-sm break-words whitespace-pre-wrap">{mensaje.texto}</p>
                       {mensaje.esInicial && (
-                        <p className="ft-chat-initial-label">
+                        <p className={`ft-chat-initial-label ${mensaje.observacionResuelta ? 'is-resolved' : ''}`}>
                           <AlertTriangle size={11} />
-                          <span>Observacion inicial</span>
+                          <span>Observacion #{mensaje.observacionNumero || 1}</span>
+                          <span className="ft-chat-observation-state">
+                            ({mensaje.observacionResuelta ? 'Resuelta' : 'Pendiente'})
+                          </span>
+                          {!mensaje.observacionResuelta && puedeMarcarObservacionResuelta && (
+                            <button
+                              type="button"
+                              className="ft-chat-resolve-link"
+                              onClick={() => {
+                                setCerrandoConfirmacionResolver(false);
+                                setObservacionPorResolver({
+                                  id: mensaje.observacionId,
+                                  numero: mensaje.observacionNumero || 1,
+                                  mensajeId: mensaje.id
+                                });
+                              }}
+                            >
+                              Marcar como resuelta
+                            </button>
+                          )}
                         </p>
                       )}
                       <p className="ft-chat-time">
@@ -911,11 +1038,6 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
                 );
               })}
 
-              {observaciones.some((obs) => obs.resuelta) && !hayConversacionActiva && (
-                <div className="absolute inset-x-3 bottom-3 flex justify-center pointer-events-none">
-                  <div className="ft-chat-resolved">Observaciones resueltas.</div>
-                </div>
-              )}
               <div className={`ft-chat-typing-row ${typingIndicadorVisible && mensajesNuevosIds.length === 0 ? 'is-visible' : ''}`}>
                 <div className="flex justify-start">
                   <div className="ft-chat-typing">
@@ -926,17 +1048,53 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
                 </div>
               </div>
             </div>
+            {mostrarBajarChat && (
+              <button
+                type="button"
+                className="ft-chat-scroll-bottom"
+                onClick={bajarAlFinalChat}
+                title="Bajar al final"
+                aria-label="Bajar al final del chat"
+              >
+                <ChevronsDown size={20} />
+              </button>
+            )}
 
             <div className="ft-chat-composer p-3">
               {respondiendoA && (
-                <div className="ft-chat-reply-preview">
-                  <Reply size={14} />
+                <div
+                  className="ft-chat-reply-preview"
+                  style={{ '--ft-chat-accent': colorCita(respondiendoA) }}
+                >
                   <div>
-                    <span>Respondiendo a {nombreCita(respondiendoA)}</span>
+                    <span>{nombreCita(respondiendoA)}</span>
                     <p>{resumenMensaje(respondiendoA)}</p>
                   </div>
                   <button type="button" onClick={() => setRespondiendoA(null)} title="Cancelar respuesta">
                     <X size={14} />
+                  </button>
+                </div>
+              )}
+              {observacionPorResolver && (
+                <div className={`ft-chat-resolve-confirm ${cerrandoConfirmacionResolver ? 'is-closing' : ''}`}>
+                  <AlertTriangle size={14} />
+                  <div>
+                    <span>Observacion #{observacionPorResolver.numero}</span>
+                    <p>Observacion resuelta?</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="ft-chat-resolve-confirm-cancel"
+                    onClick={cerrarConfirmacionResolver}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    className="ft-chat-resolve-confirm-action"
+                    onClick={() => marcarComoResuelta(observacionPorResolver.id)}
+                  >
+                    Confirmar
                   </button>
                 </div>
               )}

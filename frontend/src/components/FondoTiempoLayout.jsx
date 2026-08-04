@@ -1,4 +1,5 @@
 import { Outlet } from 'react-router-dom';
+import { useEffect } from 'react';
 import Sidebar from './Sidebar';
 import ThemeToggle from './ThemeToggle';
 
@@ -12,8 +13,18 @@ const FondoTiempoLayout = ({
     onProfileUpdate, // <-- Recibimos la prop
     onCarreraActivaChange,
 }) => {
+    useEffect(() => {
+        document.documentElement.style.setProperty('--fondo-sidebar-width', sidebarCollapsed ? '5rem' : '18rem');
+        return () => {
+            document.documentElement.style.removeProperty('--fondo-sidebar-width');
+        };
+    }, [sidebarCollapsed]);
+
     return (
-        <div className="flex h-screen overflow-hidden bg-blue-50 dark:bg-slate-900">
+        <div
+            className="flex h-screen overflow-hidden bg-blue-50 dark:bg-slate-900"
+            style={{ '--fondo-sidebar-width': sidebarCollapsed ? '5rem' : '18rem' }}
+        >
             {/* Selector de Tema - Flotante Global */}
             <ThemeToggle theme={theme} setTheme={setTheme} />
 

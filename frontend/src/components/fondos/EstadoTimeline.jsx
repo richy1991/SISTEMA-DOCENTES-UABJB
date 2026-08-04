@@ -128,7 +128,7 @@ const EstadoTimeline = ({ estado, tieneObservaciones = false, observacionesPendi
         </div>
       )}
 
-      {estado === 'observado' && tieneObservaciones && (
+      {false && estado === 'observado' && tieneObservaciones && (
         <div className="mt-3 p-2.5 bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-900/20 dark:to-amber-900/20 border border-orange-200 dark:border-orange-800 rounded-lg flex items-start gap-2 shadow-sm">
           <span className="text-lg flex-shrink-0">📌</span>
           <p className="text-[11px] text-orange-700 dark:text-orange-400 font-semibold">Revisa las observaciones abajo y reenvía con los cambios.</p>

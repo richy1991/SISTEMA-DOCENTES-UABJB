@@ -208,7 +208,7 @@ const CATEGORY_ICONS = {
 };
 
 function DetalleFondo({ isDark }) {
-  const { activeAssignment } = useActiveRole();
+  const { activeAssignment, activeRole, effectiveUser } = useActiveRole();
   const { id } = useParams();
   const navigate = useNavigate();
   const [fondo, setFondo] = useState(null);
@@ -249,6 +249,8 @@ function DetalleFondo({ isDark }) {
   const slideGraficoRef = useRef(0);
   const timerGraficoRef = useRef(null);
   const prevTotalesCategoriasRef = useRef({});
+  const estadoFondoRef = useRef(null);
+  const observacionesPendientesRef = useRef(0);
   const [animarTransicionMacroMicro, setAnimarTransicionMacroMicro] = useState(false);
   const secuenciaGuardadoTimeoutsRef = useRef([]);
   const limpiarSecuenciaGuardado = () => {
@@ -312,14 +314,18 @@ function DetalleFondo({ isDark }) {
   const [enviandoInforme, setEnviandoInforme] = useState(false);
 
   // iiisyp es solo lectura: no puede aprobar ni gestionar fondos
+  const rolOperativo = activeRole || activeAssignment?.rol || effectiveUser?.perfil?.rol || usuarioActual?.perfil?.rol;
   const esSuperAdmin = usuarioActual?.is_superuser === true;
   const esAdmin = false;
-  const esDirector = usuarioActual?.perfil?.rol === 'director';
-  const esJefeEstudios = usuarioActual?.perfil?.rol === 'jefe_estudios';
-  const esIisyp = usuarioActual?.perfil?.rol === 'iiisyp';
+  const esDirector = rolOperativo === 'director';
+  const esJefeEstudios = rolOperativo === 'jefe_estudios';
+  const esIisyp = rolOperativo === 'iiisyp';
   const puedeGestionarDistribucion = esSuperAdmin || esJefeEstudios;
   const puedeGestionarCarga = esSuperAdmin || esJefeEstudios;
   const soloLecturaPorRol = !puedeGestionarCarga;
+  const puedePresentarADirector = fondo?.estado === 'borrador' && (esJefeEstudios || esSuperAdmin);
+  const puedeReenviarADirector = fondo?.estado === 'observado' && (esJefeEstudios || esSuperAdmin);
+  const fondoPresentadoADirector = fondo?.estado === 'presentado_director' && (esJefeEstudios || esSuperAdmin);
 
   useEffect(() => {
     // Define panel inicial por rol al entrar a la vista.
@@ -361,6 +367,8 @@ function DetalleFondo({ isDark }) {
 
 
   useEffect(() => {
+    estadoFondoRef.current = null;
+    observacionesPendientesRef.current = 0;
     cargarDetalle();
   }, [id, activeAssignment?.id]);
 
@@ -416,7 +424,10 @@ function DetalleFondo({ isDark }) {
 
     const sync = () => {
       const h = refEl.getBoundingClientRect().height;
-      if (accionesEl) accionesEl.style.height = h + 'px';
+      if (accionesEl) {
+        accionesEl.style.height = h + 'px';
+        accionesEl.style.overflowY = 'auto';
+      }
       if (cargaEl) {
         cargaEl.style.height = h + 'px';
         cargaEl.style.overflowY = 'auto';
@@ -462,6 +473,8 @@ function DetalleFondo({ isDark }) {
       setFondo(response.data);
       const pendientes = response.data.observaciones_detalladas?.filter(obs => !obs.resuelta).length || 0;
       setObservacionesPendientes(pendientes);
+      estadoFondoRef.current = response.data.estado;
+      observacionesPendientesRef.current = pendientes;
 
       // Verificar si el usuario es staff/director
       try {
@@ -484,6 +497,43 @@ function DetalleFondo({ isDark }) {
       if (!silencioso) setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const debeVigilarCambios =
+      (esJefeEstudios && fondo?.estado === 'presentado_director') ||
+      (esDirector && ['borrador', 'observado'].includes(fondo?.estado));
+
+    if (!debeVigilarCambios) return undefined;
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      getFondoTiempoDetalle(id)
+        .then((response) => {
+          const pendientes = response.data.observaciones_detalladas?.filter(obs => !obs.resuelta).length || 0;
+          if (estadoFondoRef.current === null) {
+            estadoFondoRef.current = response.data.estado;
+            observacionesPendientesRef.current = pendientes;
+            return;
+          }
+
+          const cambioDetectado =
+            response.data.estado !== estadoFondoRef.current ||
+            pendientes !== observacionesPendientesRef.current;
+
+          if (!cambioDetectado) return;
+
+          setFondo(response.data);
+          setObservacionesPendientes(pendientes);
+          estadoFondoRef.current = response.data.estado;
+          observacionesPendientesRef.current = pendientes;
+        })
+        .catch((err) => {
+          console.warn('No se pudo sincronizar el estado del fondo:', err);
+        });
+    }, 5000);
+
+    return () => window.clearInterval(intervalId);
+  }, [id, activeAssignment?.id, fondo?.estado, esJefeEstudios, esDirector]);
 
   const handleActualizacionHoras = () => {
     cargarDetalle({ silencioso: true });
@@ -641,6 +691,7 @@ function DetalleFondo({ isDark }) {
   };
 
   const presentarADirector = async () => {
+    const esReenvio = fondo.estado === 'observado';
     try {
       const requisitosPresentacion = validarRequisitos();
       if (!requisitosPresentacion.total) {
@@ -649,12 +700,17 @@ function DetalleFondo({ isDark }) {
       }
 
       await presentarFondoADirector(fondo.id);
-      toast.success(
-        fondo.estado === 'observado'
-          ? 'Correcciones enviadas y fondo presentado nuevamente'
-          : 'Fondo presentado al Director exitosamente'
-      );
-      await cargarDetalle();
+      setFondo((prev) => prev ? {
+        ...prev,
+        estado: 'presentado_director',
+        fecha_presentacion: new Date().toISOString(),
+      } : prev);
+      if (esReenvio) {
+        setObservacionesPendientes(0);
+        observacionesPendientesRef.current = 0;
+      }
+      estadoFondoRef.current = 'presentado_director';
+      toast.success(esReenvio ? 'Fondo reenviado al Director correctamente' : 'Fondo presentado al Director exitosamente');
     } catch (err) {
       console.error('Error al presentar:', err);
       console.error('Error response:', err.response?.data);
@@ -735,7 +791,16 @@ function DetalleFondo({ isDark }) {
 
   const handleObservacionEnviada = async () => {
     cerrarFormularioObservar();
-    await cargarDetalle();
+    setFondo((prev) => prev ? {
+      ...prev,
+      estado: 'observado',
+    } : prev);
+    setObservacionesPendientes((prev) => {
+      const siguiente = Math.max(1, Number(prev || 0) + 1);
+      observacionesPendientesRef.current = siguiente;
+      return siguiente;
+    });
+    estadoFondoRef.current = 'observado';
 
     if (observacionesRef.current) {
       await observacionesRef.current.actualizarObservaciones();
@@ -1000,6 +1065,7 @@ function DetalleFondo({ isDark }) {
   const mostrarAccionesWidget = secuenciaGuardado.activa ? secuenciaGuardado.acciones : tieneDistribucionGuardada;
 
   const puedeEditar = fondo.puede_editar;
+  const ocultarDetallePorBorradorDirector = esDirector && !esSuperAdmin && fondo.estado === 'borrador';
   const puedeEditarDocente = (Boolean(puedeEditar) || esSuperAdmin) && !esAdmin && puedeGestionarDistribucion;
   const puedeEditarDistribucion = puedeEditarDocente && ['borrador', 'observado'].includes(fondo.estado);
 
@@ -1181,6 +1247,23 @@ function DetalleFondo({ isDark }) {
             </div>
           </div>
 
+          {ocultarDetallePorBorradorDirector ? (
+            <div className="rounded-[1.4rem] border border-slate-200/80 dark:border-slate-700/70 bg-white/95 dark:bg-slate-800/95 p-5 shadow-lg shadow-slate-200/60 dark:shadow-slate-950/20">
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300">
+                  <InfoIcon className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                    Fondo pendiente de presentacion
+                  </h2>
+                  <p className="mt-1.5 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                    Este fondo aun no ha sido presentado por el Jefe de Estudios. La distribucion Macro, las asignaciones Micro y las acciones de revision estaran disponibles cuando el fondo sea presentado formalmente al Director.
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
             {/* ================================================= */}
@@ -1504,6 +1587,26 @@ function DetalleFondo({ isDark }) {
                   </div>
 
                   <div className="space-y-2.5 mt-auto pt-2">
+                    {/* JEFATURA: acciones principales de flujo */}
+                    {false && puedePresentarADirector && (
+                      <button
+                        onClick={presentarADirector}
+                        className="w-full py-2 rounded-xl font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg shadow-blue-500/30 flex justify-center items-center gap-2 transition-all hover:scale-[1.02] text-xs"
+                      >
+                        <PaperAirplaneIcon className="w-3.5 h-3.5" />
+                        Presentar
+                      </button>
+                    )}
+
+                    {false && puedeReenviarADirector && (
+                      <button
+                        onClick={presentarADirector}
+                        className="w-full py-2 rounded-xl font-bold text-white bg-orange-500 hover:bg-orange-600 shadow-lg shadow-orange-500/30 flex justify-center items-center gap-2 transition-all hover:scale-[1.02] text-xs"
+                      >
+                        <ArrowPathIcon className="w-3.5 h-3.5" />
+                        Reenviar al Director
+                      </button>
+                    )}
                     {/* Acciones rápidas superiores */}
                     <div className="space-y-2 pb-2 border-b border-slate-200 dark:border-slate-700">
                       {fondo.tiene_programa_analitico && fondo.programa_analitico_url && (
@@ -1529,7 +1632,7 @@ function DetalleFondo({ isDark }) {
                     </div>
 
                     {/* JEFATURA: Presentar a Director */}
-                    {fondo.estado === 'borrador' && (esJefeEstudios || esSuperAdmin) && (
+                    {puedePresentarADirector && (
                       <button
                         onClick={presentarADirector}
                         className="w-full py-2 rounded-xl font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg shadow-blue-500/30 flex justify-center items-center gap-2 transition-all hover:scale-[1.02] text-xs"
@@ -1560,17 +1663,28 @@ function DetalleFondo({ isDark }) {
                     )}
 
                     {/* JEFATURA: Volver a presentar a Director */}
-                    {fondo.estado === 'observado' && (esJefeEstudios || esSuperAdmin) && (
+                    {puedeReenviarADirector && (
                       <button
                         onClick={presentarADirector}
                         className="w-full py-2 rounded-xl font-bold text-white bg-orange-500 hover:bg-orange-600 shadow-lg shadow-orange-500/30 flex justify-center items-center gap-2 transition-all hover:scale-[1.02] text-xs"
                       >
-                        <ArrowPathIcon className="w-3.5 h-3.5" />
-                        Reenviar
+                        <SendIcon className="w-3.5 h-3.5" />
+                        Reenviar al Director
                       </button>
                     )}
 
                     {/* ADMIN: Iniciar Ejecución */}
+                    {fondoPresentadoADirector && (
+                      <button
+                        type="button"
+                        disabled
+                        className="w-full py-2 rounded-xl font-bold text-white bg-slate-500/80 dark:bg-slate-600/80 cursor-not-allowed opacity-80 flex justify-center items-center gap-2 text-xs border border-slate-400/40 dark:border-slate-500/40"
+                      >
+                        <SendIcon className="w-3.5 h-3.5" />
+                        Presentado al Director
+                      </button>
+                    )}
+
                     {fondo.estado === 'aprobado_director' && esDirector && !esIisyp && (
                       <button
                         onClick={() => setMostrarModalIniciarEjecucion(true)}
@@ -1888,13 +2002,14 @@ function DetalleFondo({ isDark }) {
             )}
 
           </div>
+          )}
 
         </div>
       </div>
 
 
       {/* BOTÓN OBSERVACIONES - Portal para que quede fijo en la esquina de la pantalla */}
-      {ReactDOM.createPortal(
+      {!ocultarDetallePorBorradorDirector && ReactDOM.createPortal(
         <div className="fixed bottom-[6.5rem] right-16 z-[9999]">
           <BotonFlotanteObservaciones
             ref={observacionesRef}

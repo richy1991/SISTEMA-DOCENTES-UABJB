@@ -2848,6 +2848,9 @@ class ObservacionFondoViewSet(viewsets.ModelViewSet):
             texto=texto,
             es_admin=request.user.perfil.rol in ['director', 'jefe_estudios']
        )
+
+        output_serializer = self.get_serializer(observacion)
+        return Response(output_serializer.data)
     
         # NUEVO: Si estaba resuelta y el admin envía mensaje, reabrir Y cambiar fondo a observado
         if observacion.resuelta and es_admin:
@@ -2875,19 +2878,26 @@ class ObservacionFondoViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'], url_path='marcar-resuelta')
     def marcar_resuelta(self, request, pk=None):
-        """Marcar hilo como resuelto (solo docente)"""
+        """Marcar hilo como resuelto."""
         observacion = self.get_object()
+        fondo = observacion.fondo_tiempo
+        perfil = _obtener_perfil_efectivo(request.user, request)
+        es_jefatura = (
+            perfil
+            and perfil.rol == 'jefe_estudios'
+            and _usuario_tiene_acceso_a_carrera(request.user, fondo.carrera, request)
+        )
       
         # Solo el docente puede marcar como resuelta
-        if request.user.is_staff:
+        if request.user.is_staff and not (request.user.is_superuser or es_jefatura):
             return Response(
                 {'error': 'Solo el docente puede marcar como resuelta'},
                 status=status.HTTP_403_FORBIDDEN
         )
     
         # Verificar que sea el docente dueño del fondo
-        if hasattr(request.user, 'perfil') and request.user.perfil.docente:
-             if observacion.fondo_tiempo.docente != request.user.perfil.docente:
+        if request.user.is_superuser or es_jefatura or (hasattr(request.user, 'perfil') and request.user.perfil.docente):
+             if not (request.user.is_superuser or es_jefatura) and observacion.fondo_tiempo.docente != request.user.perfil.docente:
                  raise PermissionDenied("No puede resolver observaciones de otros docentes")
         else:
              raise PermissionDenied("Usuario no tiene docente asignado")
@@ -2899,6 +2909,9 @@ class ObservacionFondoViewSet(viewsets.ModelViewSet):
         )   
     
         observacion.marcar_resuelta(request.user)
+
+        output_serializer = self.get_serializer(observacion)
+        return Response(output_serializer.data)
     
         # NUEVO: Cambiar el estado del fondo a "presentado_director"
         fondo = observacion.fondo_tiempo
@@ -2909,7 +2922,10 @@ class ObservacionFondoViewSet(viewsets.ModelViewSet):
         siguiente_estado = 'presentado_jefe' # Por defecto, vuelve al Jefe de Estudios
         descripcion_historial = 'Docente marcó observación como resuelta y presentó a Jefe de Estudios.'
 
-        if primer_mensaje and hasattr(primer_mensaje.autor, 'perfil'):
+        if request.user.is_superuser or es_jefatura:
+            siguiente_estado = 'presentado_director'
+            descripcion_historial = 'Jefatura marcÃ³ observaciÃ³n como resuelta y presentÃ³ a Director.'
+        elif primer_mensaje and hasattr(primer_mensaje.autor, 'perfil'):
             if primer_mensaje.autor.perfil.rol == 'director':
                 siguiente_estado = 'presentado_director'
                 descripcion_historial = 'Docente marcó observación como resuelta y presentó a Director.'

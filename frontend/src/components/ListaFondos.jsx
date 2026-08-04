@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { eliminarFondoTiempo, generarFondosTiempoMasivo, getFondosTiempo } from '../apis/api';
 import { puedeCrearFondoTiempo } from '../utils/fondoTiempoPermissions';
@@ -44,10 +44,25 @@ function ListaFondos({ isDark }) {
   const [user, setUser] = useState(null);
   const [showMassiveModal, setShowMassiveModal] = useState(false);
   const [generandoMasivo, setGenerandoMasivo] = useState(false);
+  const firmaEstadosRef = useRef(null);
   
   useEffect(() => {
+    firmaEstadosRef.current = null;
     cargarFondos();
     setUser(effectiveUser || JSON.parse(localStorage.getItem('user') || 'null'));
+  }, [activeAssignment?.id]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      cargarFondos({ silencioso: true }).then((huboCambios) => {
+        if (huboCambios) {
+          window.clearInterval(intervalId);
+        }
+      });
+    }, 5000);
+
+    return () => window.clearInterval(intervalId);
   }, [activeAssignment?.id]);
 
   useEffect(() => {
@@ -56,16 +71,33 @@ function ListaFondos({ isDark }) {
     }
   }, [effectiveUser]);
 
-  const cargarFondos = async () => {
+  const cargarFondos = async ({ silencioso = false } = {}) => {
     try {
+      if (!silencioso) {
+        setLoading(true);
+      }
       const response = await getFondosTiempo();
       const data = response.data.results || response.data;
-      setFondos(Array.isArray(data) ? data : []);
-      setLoading(false);
+      const fondosData = Array.isArray(data) ? data : [];
+      const firmaEstados = fondosData
+        .map((fondo) => `${fondo.id}:${fondo.estado}`)
+        .sort()
+        .join('|');
+      const huboCambios = firmaEstadosRef.current !== null && firmaEstadosRef.current !== firmaEstados;
+
+      firmaEstadosRef.current = firmaEstados;
+      setFondos(fondosData);
+      if (!silencioso) {
+        setLoading(false);
+      }
+      return huboCambios;
     } catch (err) {
-      setError('Error al cargar los fondos de tiempo');
-      setLoading(false);
+      if (!silencioso) {
+        setError('Error al cargar los fondos de tiempo');
+        setLoading(false);
+      }
       console.error(err);
+      return false;
     }
   };
 
