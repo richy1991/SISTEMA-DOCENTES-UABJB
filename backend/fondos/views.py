@@ -14,18 +14,19 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.cache import cache
 from datetime import datetime, date
 from decimal import Decimal, InvalidOperation
+import json
 from .utils.carrera_pdf_generator import CarreraPDFGenerator
 from .utils.pdf_generator import FondoPDFGenerator
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from .models import (
-    Docente, Carrera, Materia, FondoTiempo, CategoriaFuncion, Actividad, PerfilUsuario, CargaHoraria,
-    CalendarioAcademico, Proyecto, InformeFondo, ObservacionFondo, MensajeObservacion, HistorialFondo,
-    SaldoVacacionesGestion, FacultadCatalogo, DatosLaborales, DocenteCarrera
+    Docente, Carrera, Materia, FondoTiempo, CategoriaFuncion, Actividad, SubActividadDocente, PerfilUsuario, CargaHoraria,
+    CalendarioAcademico, Proyecto, InformeFondo, InformeAsignaturaEjecutada, Evidencia, ObservacionFondo, MensajeObservacion, HistorialFondo,
+    SaldoVacacionesGestion, FacultadCatalogo, DatosLaborales, DocenteCarrera, AsignacionCarrera
 )
 from .serializers import (
     DocenteSerializer, CarreraSerializer, MateriaSerializer, FondoTiempoSerializer,
-    FondoTiempoListSerializer, CategoriaFuncionSerializer, ActividadSerializer, CargaHorariaSerializer,
+    FondoTiempoListSerializer, CategoriaFuncionSerializer, ActividadSerializer, SubActividadDocenteSerializer, CargaHorariaSerializer,
     UsuarioSerializer, CrearUsuarioSerializer, ActualizarUsuarioSerializer,
     FotoPerfilSerializer, PerfilUsuarioSerializer,
     CalendarioAcademicoSerializer, ProyectoSerializer, ProyectoListSerializer,
@@ -859,6 +860,24 @@ class CargaHorariaViewSet(viewsets.ModelViewSet):
     ordering_fields = ['calendario__gestion', 'docente', 'horas', 'dia_semana', 'hora_inicio']
     ordering = ['-calendario__gestion']
 
+    def _obtener_fondo_asociado(self, carga):
+        carrera = carga.materia.carrera if carga and carga.materia_id else None
+        qs = FondoTiempo.objects.filter(
+            docente=carga.docente,
+            calendario_academico=carga.calendario,
+            archivado=False,
+        )
+        if carrera:
+            qs = qs.filter(carrera=carrera)
+        return qs.first()
+
+    def _validar_carga_modificable(self, carga):
+        fondo = self._obtener_fondo_asociado(carga)
+        if not fondo:
+            raise PermissionDenied("No se pudo identificar el Fondo de Tiempo asociado a esta asignacion.")
+        if fondo.estado not in ['borrador', 'observado']:
+            raise PermissionDenied(f"No se puede modificar la asignacion. El fondo esta en estado '{fondo.get_estado_display()}'.")
+
     def _usuario_carrera_inactiva(self):
         user = self.request.user
         if user.is_superuser:
@@ -912,13 +931,16 @@ class CargaHorariaViewSet(viewsets.ModelViewSet):
 
         return queryset.none()
     
-    def _validar_estado_fondo(self, docente, calendario):
+    def _validar_estado_fondo(self, docente, calendario, materia=None):
         """Valida que el fondo esté en estado editable (borrador/observado) y que exista"""
-        fondo = FondoTiempo.objects.filter(
+        qs = FondoTiempo.objects.filter(
             docente=docente,
             calendario_academico=calendario,
             archivado=False
-        ).first()
+        )
+        if materia and materia.carrera_id:
+            qs = qs.filter(carrera=materia.carrera)
+        fondo = qs.first()
 
         if not fondo:
             raise PermissionDenied("No se puede crear carga horaria. El docente no tiene un Fondo de Tiempo registrado para este calendario.")
@@ -930,18 +952,23 @@ class CargaHorariaViewSet(viewsets.ModelViewSet):
             raise PermissionDenied(f"No se puede modificar la carga horaria. El fondo está en estado '{fondo.get_estado_display()}'.")
 
     def perform_create(self, serializer):
-        self._validar_estado_fondo(serializer.validated_data['docente'], serializer.validated_data['calendario'])
+        self._validar_estado_fondo(
+            serializer.validated_data['docente'],
+            serializer.validated_data['calendario'],
+            serializer.validated_data.get('materia'),
+        )
         serializer.save()
 
     def perform_update(self, serializer):
         instance = self.get_object()
         docente = serializer.validated_data.get('docente', instance.docente)
         calendario = serializer.validated_data.get('calendario', instance.calendario)
-        self._validar_estado_fondo(docente, calendario)
+        materia = serializer.validated_data.get('materia', instance.materia)
+        self._validar_estado_fondo(docente, calendario, materia)
         serializer.save()
 
     def perform_destroy(self, instance):
-        self._validar_estado_fondo(instance.docente, instance.calendario)
+        self._validar_estado_fondo(instance.docente, instance.calendario, instance.materia)
         instance.delete()
 
 # =====================================================
@@ -959,6 +986,7 @@ class CalendarioAcademicoViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset()
+
         user = self.request.user
 
         if not user.is_superuser:
@@ -1254,6 +1282,36 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
                 {'docente': 'Docente exento de distribución de tiempo según Art. 25°'}
             )
 
+    def _docente_es_autoridad_carrera(self, docente, carrera):
+        if not docente or not carrera:
+            return False
+
+        user_ids = set()
+        if docente.user_id:
+            user_ids.add(docente.user_id)
+
+        perfiles = PerfilUsuario.objects.filter(
+            docente=docente,
+            user__isnull=False,
+            activo=True,
+        ).values_list('user_id', flat=True)
+        user_ids.update(user_id for user_id in perfiles if user_id)
+
+        if AsignacionCarrera.objects.filter(
+            Q(docente=docente) | Q(user_id__in=user_ids),
+            carrera=carrera,
+            activo=True,
+            rol__in=['director', 'jefe_estudios'],
+        ).exists():
+            return True
+
+        return PerfilUsuario.objects.filter(
+            Q(docente=docente) | Q(user_id__in=user_ids),
+            carrera=carrera,
+            activo=True,
+            rol__in=['director', 'jefe_estudios'],
+        ).exists()
+
     def _validar_permiso_distribucion(self, fondo):
         user = self.request.user
         perfil = _obtener_perfil_efectivo(user, self.request)
@@ -1402,10 +1460,18 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
             docente=docente,
             calendario_academico=calendario_activo,
             tipo_fondo='semestral',
+            archivado=False,
         ).exists():
             raise drf_serializers.ValidationError({
                 'docente': 'Este docente ya tiene un fondo de tiempo registrado para el periodo seleccionado'
             })
+
+        CargaHoraria.objects.filter(
+            docente=docente,
+            calendario=calendario_activo,
+        ).filter(
+            Q(materia__carrera=carrera) | Q(materia__isnull=True)
+        ).delete()
         
         # Ya no forzamos el docente del usuario logueado.
         # El serializer valida que 'docente' venga en el request.
@@ -1472,6 +1538,7 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
 
         creados = 0
         omitidos_exclusiva = 0
+        omitidos_autoridad_no_th = 0
         omitidos_ya_existentes = 0
         tipos_categoria = [tipo for tipo, _label in CategoriaFuncion.TIPO_CHOICES]
 
@@ -1484,6 +1551,13 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
 
                 if vinculo.dedicacion == 'dedicacion_exclusiva':
                     omitidos_exclusiva += 1
+                    continue
+
+                if (
+                    self._docente_es_autoridad_carrera(vinculo.docente, vinculo.carrera)
+                    and vinculo.dedicacion not in {'horario_16', 'horario_24', 'horario_40', 'horario_48'}
+                ):
+                    omitidos_autoridad_no_th += 1
                     continue
 
                 ya_existe = FondoTiempo.objects.filter(
@@ -1515,6 +1589,7 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         return Response({
             'creados': creados,
             'omitidos_exclusiva': omitidos_exclusiva,
+            'omitidos_autoridad_no_th': omitidos_autoridad_no_th,
             'omitidos_ya_existentes': omitidos_ya_existentes,
         }, status=status.HTTP_201_CREATED)
 
@@ -1567,9 +1642,21 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         # Archivar en lugar de eliminar
         instance.archivado = True
         instance.save()
+
+        cargas_eliminadas = 0
+        if instance.docente_id and instance.calendario_academico_id:
+            cargas_eliminadas, _ = CargaHoraria.objects.filter(
+                docente=instance.docente,
+                calendario=instance.calendario_academico,
+            ).filter(
+                Q(materia__carrera=instance.carrera) | Q(materia__isnull=True)
+            ).delete()
         
         return Response(
-            {'message': 'Fondo archivado correctamente'},
+            {
+                'message': 'Fondo archivado correctamente',
+                'cargas_horarias_eliminadas': cargas_eliminadas,
+            },
             status=status.HTTP_200_OK
         )
     
@@ -1875,7 +1962,8 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         # Cambiar estado
         estado_anterior = fondo.estado
         fondo.estado = 'aprobado_director'
-        fondo.fecha_aprobacion = timezone.now()
+        fecha_aprobacion = timezone.now()
+        fondo.fecha_aprobacion = fecha_aprobacion
         fondo.aprobado_por = request.user
         
         observacion = serializer.validated_data.get('observacion', '')
@@ -1895,6 +1983,37 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
             descripcion=f'Fondo aprobado por Director. {observacion}',
             estado_anterior=estado_anterior,
             estado_nuevo='aprobado_director'
+        )
+
+        ObservacionFondo.objects.filter(fondo_tiempo=fondo, resuelta=False).update(
+            resuelta=True,
+            resuelta_por=request.user,
+            fecha_resolucion=fecha_aprobacion
+        )
+
+        hilo_aprobacion = (
+            ObservacionFondo.objects.filter(fondo_tiempo=fondo)
+            .order_by('-fecha_creacion')
+            .first()
+        )
+        if not hilo_aprobacion:
+            hilo_aprobacion = ObservacionFondo.objects.create(
+                fondo_tiempo=fondo,
+                resuelta=True,
+                resuelta_por=request.user,
+                fecha_resolucion=fecha_aprobacion
+            )
+
+        director_nombre = request.user.get_full_name() or request.user.username
+        fecha_local = timezone.localtime(fecha_aprobacion).strftime('%d/%m/%Y %H:%M')
+        MensajeObservacion.objects.create(
+            observacion=hilo_aprobacion,
+            autor=request.user,
+            texto=(
+                f'Fondo aprobado por {director_nombre} el {fecha_local}. '
+                'La conversacion de observaciones queda cerrada en modo solo lectura.'
+            ),
+            es_admin=True
         )
         
         output_serializer = FondoTiempoDetalleSerializer(fondo, context={'request': request})
@@ -2113,80 +2232,143 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
     @transaction.atomic
     def presentar_informe(self, request, pk=None):
         """
-        Presentar informe de cumplimiento al finalizar el semestre
-        Solo el docente puede hacerlo
-        Estado: en_ejecucion → informe_presentado
+        Presentar informe final de cumplimiento.
+        Estado del fondo: en_ejecucion -> informe_presentado.
         """
         fondo = self.get_object()
-        
-        # Verificar que sea el docente dueño del fondo
+
         if not self.request.user.is_staff:
             if hasattr(self.request.user, 'perfil') and self.request.user.perfil.docente:
                 if fondo.docente != self.request.user.perfil.docente:
                     raise PermissionDenied("No puede presentar informes de otros docentes")
             else:
                 raise PermissionDenied("Usuario no tiene docente asignado")
-        
-        # Validar estado actual
+
         if fondo.estado != 'en_ejecucion':
             return Response(
-                {'error': f'Solo se pueden presentar informes de fondos en ejecución. Estado actual: {fondo.get_estado_display()}'},
+                {'error': f'Solo se pueden presentar informes de fondos en ejecucion. Estado actual: {fondo.get_estado_display()}'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
-        # Validar datos del informe
+
+        def _parse_json_list(nombre):
+            raw = request.data.get(nombre, [])
+            if raw in (None, ''):
+                return []
+            if isinstance(raw, list):
+                return raw
+            try:
+                parsed = json.loads(raw)
+            except (TypeError, ValueError):
+                raise drf_serializers.ValidationError({nombre: 'Debe enviar una lista JSON valida.'})
+            if not isinstance(parsed, list):
+                raise drf_serializers.ValidationError({nombre: 'Debe enviar una lista.'})
+            return parsed
+
+        try:
+            asignaturas = _parse_json_list('asignaturas_ejecutadas')
+            evidencias_payload = _parse_json_list('evidencias_digitales')
+        except drf_serializers.ValidationError as exc:
+            return self._validation_error_response(exc.detail)
+
         actividades_realizadas = request.data.get('actividades_realizadas', '').strip()
         logros = request.data.get('logros', '').strip()
         dificultades = request.data.get('dificultades', '').strip()
+        resultados = request.data.get('resultados', '').strip()
+        resumen_ejecutivo = request.data.get('resumen_ejecutivo', '').strip()
+        observaciones = request.data.get('observaciones', '').strip()
         archivo_adjunto = request.FILES.get('archivo_adjunto', None)
-        
+
         if not actividades_realizadas or len(actividades_realizadas) < 50:
             return Response(
-                {'error': 'Debe describir las actividades realizadas (mínimo 50 caracteres)'},
+                {'error': 'Debe describir las actividades realizadas (minimo 50 caracteres)'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         if not logros or len(logros) < 30:
             return Response(
-                {'error': 'Debe describir los logros alcanzados (mínimo 30 caracteres)'},
+                {'error': 'Debe describir los logros alcanzados (minimo 30 caracteres)'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
-        # Crear el informe
+
+        if not asignaturas:
+            return Response(
+                {'error': 'Debe registrar al menos una asignatura ejecutada en la seccion academica.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         informe = InformeFondo.objects.create(
             fondo_tiempo=fondo,
-            tipo='parcial',
+            tipo='final',
+            estado='presentado',
+            resumen_ejecutivo=resumen_ejecutivo or actividades_realizadas[:500],
             actividades_realizadas=actividades_realizadas,
+            resultados=resultados or logros,
             logros=logros,
             dificultades=dificultades,
+            observaciones=observaciones,
             elaborado_por=request.user,
-            fecha_elaboracion=timezone.now().date(),
-            archivo_adjunto=archivo_adjunto
+            archivo_adjunto=archivo_adjunto,
         )
-        
-        # Cambiar estado del fondo
+
+        for item in asignaturas:
+            if not isinstance(item, dict):
+                continue
+            materia_id = item.get('materia') or item.get('materia_id') or None
+            materia = Materia.objects.filter(pk=materia_id).first() if materia_id else None
+            InformeAsignaturaEjecutada.objects.create(
+                informe=informe,
+                materia=materia,
+                nombre=(item.get('nombre') or '').strip(),
+                sigla=(item.get('sigla') or '').strip(),
+                paralelo=(item.get('paralelo') or '').strip(),
+                horas_aula=Decimal(str(item.get('horas_aula') or 0)),
+                inscritos=int(item.get('inscritos') or 0),
+                aprobados=int(item.get('aprobados') or 0),
+                reprobados=int(item.get('reprobados') or 0),
+                habilitados=int(item.get('habilitados') or 0),
+                descripcion_evaluacion=(item.get('descripcion_evaluacion') or '').strip(),
+            )
+
+        tipos_validos = {tipo for tipo, _label in CategoriaFuncion.TIPO_CHOICES}
+        for idx, item in enumerate(evidencias_payload):
+            if not isinstance(item, dict):
+                continue
+            categoria = item.get('categoria')
+            archivo = request.FILES.get(f'evidencia_archivo_{idx}')
+            descripcion = (item.get('descripcion_ejecutado') or '').strip()
+            if not categoria or categoria not in tipos_validos or not archivo or not descripcion:
+                continue
+            actividad_id = item.get('actividad') or item.get('actividad_id') or None
+            actividad = Actividad.objects.filter(pk=actividad_id, categoria__fondo_tiempo=fondo).first() if actividad_id else None
+            Evidencia.objects.create(
+                informe=informe,
+                categoria=categoria,
+                actividad=actividad,
+                descripcion_ejecutado=descripcion,
+                archivo=archivo,
+                nombre_original=getattr(archivo, 'name', ''),
+            )
+
         estado_anterior = fondo.estado
         fondo.estado = 'informe_presentado'
         fondo.fecha_informe = timezone.now()
         fondo.save()
-        
-        # Registrar en historial
+
         HistorialFondo.objects.create(
             fondo_tiempo=fondo,
             usuario=request.user,
             tipo_cambio='informe_presentado',
-            descripcion=f'Docente presentó informe de cumplimiento (ID: {informe.id})',
+            descripcion=f'Docente presento informe final de cumplimiento (ID: {informe.id})',
             estado_anterior=estado_anterior,
-            estado_nuevo=fondo.estado
+            estado_nuevo=fondo.estado,
         )
-        
+
         output_serializer = FondoTiempoDetalleSerializer(fondo, context={'request': request})
         return Response({
             'fondo': output_serializer.data,
             'informe_id': informe.id,
-            'message': 'Informe presentado exitosamente'
+            'message': 'Informe final presentado exitosamente',
         })
-
 
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated], url_path='evaluar-y-finalizar')
     @transaction.atomic
@@ -2215,7 +2397,7 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
             )
         
         # Validar que exista al menos un informe
-        informe = fondo.informes.filter(tipo='parcial').order_by('-fecha_elaboracion').first()
+        informe = fondo.informes.filter(tipo='final').order_by('-fecha_elaboracion').first()
         if not informe:
             return Response(
                 {'error': 'No se encontró informe asociado al fondo'},
@@ -2244,9 +2426,21 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         informe.evaluacion_director = evaluacion_director
         informe.evaluado_por = request.user
         informe.fecha_evaluacion = timezone.now().date()
+        informe.estado = 'finalizado'
         informe.save()
         
         # Cambiar estado del fondo a finalizado
+        estado_anterior = fondo.estado
+        fondo.estado = 'informe_evaluado'
+        fondo.save()
+        HistorialFondo.objects.create(
+            fondo_tiempo=fondo,
+            usuario=request.user,
+            tipo_cambio='edicion',
+            descripcion=f'Informe final evaluado por Director - Cumplimiento: {cumplimiento}',
+            estado_anterior=estado_anterior,
+            estado_nuevo=fondo.estado
+        )
         estado_anterior = fondo.estado
         fondo.estado = 'finalizado'
         fondo.fecha_finalizacion = timezone.now()
@@ -2389,16 +2583,28 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
 
         total_horas_anuales = 0.0
         total_horas_semanales_horario = 0.0
+        total_horas_semanales_micro = 0.0
         for carga in cargas:
             total_horas_anuales += float(carga.horas or 0)
+            total_horas_semanales_micro += float(carga.horas or 0) / 18.0
             total_horas_semanales_horario += self._duracion_horas_bloque(carga.hora_inicio, carga.hora_fin)
 
         dedicacion_esperada = float(horas_semanales) if horas_semanales else 0.0
-        diferencia = abs(total_horas_semanales_horario - dedicacion_esperada)
-        if diferencia > 0.01:
+        presupuesto_academico = 0.0
+        categoria_academica = fondo.categorias.filter(tipo='academica').first()
+        if categoria_academica:
+            presupuesto_academico = float(categoria_academica.total_horas or 0)
+
+        if total_horas_semanales_micro > presupuesto_academico + 0.01:
             errores.append(
-                'La suma semanal de bloques horarios no coincide con la dedicación del docente '
-                f'({total_horas_semanales_horario:.2f}h vs {dedicacion_esperada:.2f}h).'
+                'La carga academica del Micro supera el presupuesto academico del Macro '
+                f'({total_horas_semanales_micro:.2f}h vs {presupuesto_academico:.2f}h).'
+            )
+
+        if cargas.exists() and total_horas_semanales_horario == 0:
+            advertencias.append(
+                'Las asignaciones academicas no tienen bloques horarios registrados; '
+                'el PDF mostrara el detalle de materias y las horas planificadas por semestre.'
             )
 
         # 4) Criterio de mapeo de horarios para tabla L-S
@@ -2426,6 +2632,8 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
             'totales': {
                 'horas_anuales_carga_horaria': round(total_horas_anuales, 2),
                 'horas_semanales_por_horario': round(total_horas_semanales_horario, 2),
+                'horas_semanales_micro': round(total_horas_semanales_micro, 2),
+                'horas_semanales_macro_academica': round(presupuesto_academico, 2),
                 'horas_semanales_dedicacion': round(dedicacion_esperada, 2),
             },
             'mapeo_horarios': {
@@ -2570,6 +2778,36 @@ class ActividadViewSet(FondoTiempoDistribucionAccessMixin, viewsets.ModelViewSet
 
     def perform_destroy(self, instance):
         self._validar_fondo_modificable(instance.categoria.fondo_tiempo)
+        instance.delete()
+
+
+class SubActividadDocenteViewSet(FondoTiempoDistribucionAccessMixin, viewsets.ModelViewSet):
+    queryset = SubActividadDocente.objects.select_related(
+        'fondo_tiempo',
+        'fondo_tiempo__docente',
+        'fondo_tiempo__carrera',
+    ).all()
+    serializer_class = SubActividadDocenteSerializer
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = ['fondo_tiempo', 'tipo']
+    search_fields = ['tipo', 'evidencias']
+
+    def get_queryset(self):
+        return self._filtrar_por_rol(super().get_queryset(), 'fondo_tiempo')
+
+    def perform_create(self, serializer):
+        fondo = serializer.validated_data.get('fondo_tiempo')
+        self._validar_fondo_modificable(fondo)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        instance = self.get_object()
+        fondo = serializer.validated_data.get('fondo_tiempo', instance.fondo_tiempo)
+        self._validar_fondo_modificable(fondo)
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._validar_fondo_modificable(instance.fondo_tiempo)
         instance.delete()
 
 
@@ -2727,11 +2965,39 @@ class ObservacionFondoViewSet(viewsets.ModelViewSet):
     filterset_fields = ['fondo_tiempo', 'resuelta']
     ordering_fields = ['fecha_creacion']
     ordering = ['-fecha_creacion']
+    roles_chat_autorizados = ('director', 'jefe_estudios')
+
+    def _perfil_chat(self):
+        return _obtener_perfil_efectivo(self.request.user, self.request)
+
+    def _usuario_puede_acceder_chat(self, fondo=None):
+        user = self.request.user
+        perfil = self._perfil_chat()
+        if not perfil or perfil.rol not in self.roles_chat_autorizados:
+            return False
+
+        if fondo is None:
+            return True
+
+        return _usuario_tiene_acceso_a_carrera(user, fondo.carrera, self.request)
+
+    def _denegar_chat(self):
+        raise PermissionDenied(
+            "El chat de observaciones es privado para Jefe de Estudios y Director de Carrera."
+        )
+
+    def _validar_acceso_chat_fondo_id(self, fondo_id):
+        fondo = get_object_or_404(FondoTiempo.objects.select_related('carrera'), id=fondo_id)
+        if not self._usuario_puede_acceder_chat(fondo):
+            self._denegar_chat()
+        return fondo
 
     def _marcar_mensajes_entrantes_como_leidos(self):
         fondo_id = self.request.query_params.get('fondo_tiempo', None)
         if not fondo_id:
             return
+
+        self._validar_acceso_chat_fondo_id(fondo_id)
 
         MensajeObservacion.objects.filter(
             observacion__fondo_tiempo_id=fondo_id,
@@ -2754,6 +3020,8 @@ class ObservacionFondoViewSet(viewsets.ModelViewSet):
             fondo_id = int(fondo_id)
         except (TypeError, ValueError):
             return Response({'detail': "El campo 'fondo_tiempo' debe ser un entero valido."}, status=status.HTTP_400_BAD_REQUEST)
+
+        self._validar_acceso_chat_fondo_id(fondo_id)
 
         if request.method == 'POST':
             escribiendo = bool(request.data.get('escribiendo'))
@@ -2784,39 +3052,42 @@ class ObservacionFondoViewSet(viewsets.ModelViewSet):
         return Response({'alguien_escribiendo': bool(otros)})
     
     def get_queryset(self):
-        """Filtrar observaciones según el usuario y fondo"""
+        """Filtrar observaciones segun el usuario y fondo."""
         queryset = super().get_queryset()
-    
-        # Si no es staff (es docente), solo ver observaciones de sus fondos
-        if not self.request.user.is_staff:
-            if hasattr(self.request.user, 'perfil') and self.request.user.perfil.docente:
-                # Filtrar explícitamente por el ID del docente del perfil
-                queryset = queryset.filter(fondo_tiempo__docente_id=self.request.user.perfil.docente.id)
-            else:
-                queryset = queryset.none()
-    
-        # Filtrar por fondo_tiempo si viene en parámetros (DESPUÉS del filtro de permisos)
+
+        if not self._usuario_puede_acceder_chat():
+            self._denegar_chat()
+
+        if not self.request.user.is_superuser:
+            carreras = _obtener_carreras_activas_usuario(self.request.user, self.request)
+            queryset = queryset.filter(fondo_tiempo__carrera__in=carreras)
+
         fondo_id = self.request.query_params.get('fondo_tiempo', None)
         if fondo_id:
+            self._validar_acceso_chat_fondo_id(fondo_id)
             queryset = queryset.filter(fondo_tiempo_id=fondo_id)
-    
+
         return queryset
     
     @action(detail=True, methods=['post'], url_path='agregar-mensaje')
     def agregar_mensaje(self, request, pk=None):
         """Agregar un mensaje al hilo"""
         observacion = self.get_object()
+        estados_chat_cerrado = [
+            'aprobado_director',
+            'en_ejecucion',
+            'informe_presentado',
+            'finalizado',
+            'archivado'
+        ]
+        if observacion.fondo_tiempo.estado in estados_chat_cerrado:
+            return Response(
+                {'error': 'El chat de observaciones esta cerrado porque el fondo ya fue aprobado.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
     
-        # Verificar permisos
-        es_admin = request.user.is_staff
-    
-        if not es_admin:
-            # Si es docente, verificar que sea su fondo
-           if hasattr(request.user, 'perfil') and request.user.perfil.docente:
-               if observacion.fondo_tiempo.docente != request.user.perfil.docente:
-                   raise PermissionDenied("No puede agregar mensajes a observaciones de otros docentes")
-           else:
-               raise PermissionDenied("Usuario no tiene docente asignado")
+        if not self._usuario_puede_acceder_chat(observacion.fondo_tiempo):
+            self._denegar_chat()
     
         # Validar que haya texto
         texto = request.data.get('texto', '').strip()
@@ -2846,7 +3117,7 @@ class ObservacionFondoViewSet(viewsets.ModelViewSet):
             autor=request.user,
             responde_a=responde_a,
             texto=texto,
-            es_admin=request.user.perfil.rol in ['director', 'jefe_estudios']
+            es_admin=True
        )
 
         output_serializer = self.get_serializer(observacion)
@@ -2881,6 +3152,9 @@ class ObservacionFondoViewSet(viewsets.ModelViewSet):
         """Marcar hilo como resuelto."""
         observacion = self.get_object()
         fondo = observacion.fondo_tiempo
+        if not self._usuario_puede_acceder_chat(fondo):
+            self._denegar_chat()
+
         perfil = _obtener_perfil_efectivo(request.user, request)
         es_jefatura = (
             perfil
@@ -3509,3 +3783,4 @@ def cambiar_password_inicial(request):
 class CustomTokenObtainPairView(TokenObtainPairView):
     """Vista de login personalizada que usa el serializer extendido"""
     serializer_class = CustomTokenObtainPairSerializer
+

@@ -1,10 +1,11 @@
-import { useCallback, useEffect, forwardRef, useImperativeHandle, useMemo, useRef, useState, useLayoutEffect } from 'react';
+﻿import { useCallback, useEffect, forwardRef, useImperativeHandle, useMemo, useRef, useState, useLayoutEffect } from 'react';
 import {
   AlertTriangle,
   CheckCheck,
   ChevronDown,
   ChevronsDown,
   Copy,
+  Lock,
   MessageCircle,
   Pin,
   Reply,
@@ -22,7 +23,7 @@ import api from '../apis/api';
 import toast from 'react-hot-toast';
 
 const formatBadgeCount = (count) => (count > 99 ? '99+' : String(count));
-const quoteAccentColors = ['#00e5ff', '#ff3df2', '#a3ff12', '#ffb000', '#7c4dff', '#00ffa3'];
+const quoteAccentColors = ['#00e5ff', '#a3ff12', '#ffb000', '#00ffa3', '#ff4d00', '#39ff14', '#00ffcc'];
 
 const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObservacionCambiada }, ref) => {
   const [observaciones, setObservaciones] = useState([]);
@@ -52,6 +53,7 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
   const [swipeMensaje, setSwipeMensaje] = useState(null);
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
+  const chatButtonRef = useRef(null);
   const typingTimerRef = useRef(null);
   const typingHideTimerRef = useRef(null);
   const panelRef = useRef(null);
@@ -68,6 +70,22 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
   const newMessageTimerRef = useRef(null);
   const closeChatTimerRef = useRef(null);
   const justOpenedChatRef = useRef(false);
+
+  const actualizarDestinoCierreChat = () => {
+    const panel = panelRef.current;
+    const button = chatButtonRef.current;
+    if (!panel || !button) return;
+
+    const panelRect = panel.getBoundingClientRect();
+    const buttonRect = button.getBoundingClientRect();
+    const panelCenterX = panelRect.left + panelRect.width / 2;
+    const panelCenterY = panelRect.top + panelRect.height / 2;
+    const buttonCenterX = buttonRect.left + buttonRect.width / 2;
+    const buttonCenterY = buttonRect.top + buttonRect.height / 2;
+
+    panel.style.setProperty('--ft-chat-close-x', `${buttonCenterX - panelCenterX}px`);
+    panel.style.setProperty('--ft-chat-close-y', `${buttonCenterY - panelCenterY}px`);
+  };
 
   const capturarPosicionesMensajes = useCallback(() => {
     const rects = new Map();
@@ -342,6 +360,25 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
     usuarioActual?.perfil?.rol === 'jefe_estudios';
   const rolActivo = localStorage.getItem('active_role') || usuarioActual?.perfil?.rol;
   const puedeMarcarObservacionResuelta = usuarioActual?.is_superuser || rolActivo === 'jefe_estudios';
+  const chatCerradoPorAprobacion = [
+    'aprobado_director',
+    'en_ejecucion',
+    'informe_presentado',
+    'finalizado',
+    'archivado'
+  ].includes(estadoFondo);
+
+  useEffect(() => {
+    if (!chatCerradoPorAprobacion) return;
+    setTexto('');
+    setRespondiendoA(null);
+    setObservacionPorResolver(null);
+    setAlguienEscribiendo(false);
+    setTypingIndicadorVisible(false);
+    if (typingTimerRef.current) window.clearTimeout(typingTimerRef.current);
+    localTypingRef.current = false;
+    if (fondoId) setTypingObservacionFondo(fondoId, false).catch(() => {});
+  }, [chatCerradoPorAprobacion, fondoId]);
 
   const observacionesOrdenadas = useMemo(() => {
     return [...observaciones].sort(
@@ -411,7 +448,9 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
   }, [mensajes, mensajesNuevosIds, open]);
 
   const hayConversacionActiva = observaciones.length > 0;
-  const puedeResponder = esAutoridad || estadoFondo === 'observado' || hayConversacionActiva;
+  const puedeResponder = !chatCerradoPorAprobacion && (
+    esAutoridad || estadoFondo === 'observado' || hayConversacionActiva
+  );
 
   const esMiMensaje = (mensaje) => {
     const usuarioActualId = Number(usuarioActual?.id);
@@ -485,7 +524,19 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
     return quoteAccentColors[Math.abs(seed) % quoteAccentColors.length];
   };
 
+  const esMensajeSistemaAprobacion = (mensaje) => {
+    const textoMensaje = String(mensaje?.texto || '');
+    return textoMensaje.startsWith('Fondo aprobado por ') &&
+      textoMensaje.includes('La conversacion de observaciones queda cerrada en modo solo lectura.');
+  };
+
   const elegirRespuesta = (mensaje) => {
+    if (!puedeResponder) {
+      setMenuMensajeId(null);
+      setRespondiendoA(null);
+      return;
+    }
+
     setRespondiendoA(mensaje);
     setMenuMensajeId(null);
     window.setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 60);
@@ -674,6 +725,7 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
 
   const cerrarChat = () => {
     if (isClosingChat) return;
+    actualizarDestinoCierreChat();
     setIsClosingChat(true);
     setAlguienEscribiendo(false);
     setTypingIndicadorVisible(false);
@@ -691,7 +743,7 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
       setObservacionPorResolver(null);
       setCerrandoConfirmacionResolver(false);
       setMensajeParaFijar(null);
-    }, 320);
+    }, 560);
   };
 
   const handleChatScroll = () => {
@@ -806,6 +858,7 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
   return (
     <>
       <button
+        ref={chatButtonRef}
         onClick={() => {
           if (open) cerrarChat();
           else {
@@ -919,6 +972,12 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
                 </div>
               </div>
             )}
+            {chatCerradoPorAprobacion && (
+              <div className="ft-chat-readonly-banner">
+                <Lock size={14} />
+                <span>Conversacion cerrada. Fondo aprobado.</span>
+              </div>
+            )}
 
             <div
               ref={scrollRef}
@@ -932,6 +991,7 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
 
               {mensajes.map((mensaje, index) => {
                 const esMio = esMiMensaje(mensaje);
+                const esSistemaAprobacion = esMensajeSistemaAprobacion(mensaje);
                 const swipeOffset = swipeMensaje?.id === mensaje.id ? swipeMensaje.offset : 0;
                 const esNuevo = mensajesNuevosIds.includes(mensaje.id);
                 const mostrarSeparadorFecha =
@@ -943,6 +1003,17 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
                         <span>{formatFechaSeparador(mensaje.fecha)}</span>
                       </div>
                     )}
+                    {esSistemaAprobacion ? (
+                      <div
+                        ref={(node) => {
+                          if (node) messageRefs.current.set(mensaje.id, node);
+                          else messageRefs.current.delete(mensaje.id);
+                        }}
+                        className="ft-chat-system-message"
+                      >
+                        <span>{mensaje.texto}</span>
+                      </div>
+                    ) : (
                     <div
                       ref={(node) => {
                         if (node) messageRefs.current.set(mensaje.id, node);
@@ -961,7 +1032,12 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
                     >
                       {menuMensajeId === mensaje.id && (
                         <div className={`ft-chat-message-menu ${esMio ? 'is-mine' : 'is-peer'} is-${menuPlacement}`}>
-                          <button type="button" onClick={() => elegirRespuesta(mensaje)}>
+                          <button
+                            type="button"
+                            onClick={() => elegirRespuesta(mensaje)}
+                            disabled={!puedeResponder}
+                            title={puedeResponder ? 'Responder' : 'Chat cerrado en modo solo lectura'}
+                          >
                             <Reply size={14} />
                             <span>Responder</span>
                           </button>
@@ -1002,7 +1078,7 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
                           <span className="ft-chat-observation-state">
                             ({mensaje.observacionResuelta ? 'Resuelta' : 'Pendiente'})
                           </span>
-                          {!mensaje.observacionResuelta && puedeMarcarObservacionResuelta && (
+                          {!mensaje.observacionResuelta && puedeMarcarObservacionResuelta && !chatCerradoPorAprobacion && (
                             <button
                               type="button"
                               className="ft-chat-resolve-link"
@@ -1034,6 +1110,7 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
                       </div>
                     </div>
                   </div>
+                    )}
                   </div>
                 );
               })}
@@ -1110,7 +1187,9 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
                     }
                   }}
                   placeholder={
-                    !hayConversacionActiva
+                    chatCerradoPorAprobacion
+                      ? 'Chat cerrado por fondo aprobado'
+                      : !hayConversacionActiva
                       ? 'No hay observaciones activas'
                       : !puedeResponder
                         ? 'No puedes responder en este estado'

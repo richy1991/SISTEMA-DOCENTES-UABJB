@@ -20,7 +20,25 @@ const XMarkIcon = (props) => (
     </svg>
 );
 
-const SEMANAS_GESTION = 45.8;
+const SEMANAS_CLASES_ANUAL = 40;
+
+const SUBACTIVIDADES_DOCENTE = [
+    { value: 'preparacion_temas', label: 'Preparación de temas', horas: 1.5 },
+    { value: 'clases_aula', label: 'Clases en aula', horas: 9 },
+    { value: 'elaboracion_tp', label: 'Elaboración de Trabajos Prácticos', horas: 1 },
+    { value: 'revision_tp', label: 'Revisión y Calificación de Trabajos Prácticos', horas: 2 },
+    { value: 'elaboracion_examenes', label: 'Elaboración de Exámenes', horas: 0.3 },
+    { value: 'revision_examenes', label: 'Revisión y Calificación de Exámenes', horas: 1.5 },
+    { value: 'consultas_reclamos', label: 'Consultas y Reclamos de Calificaciones', horas: 0.4 },
+    { value: 'planillas_notas', label: 'Elaboración de planillas e Introducción de notas', horas: 0.2 },
+    { value: 'planificacion_extra_aula', label: 'Planificación y gestión de práctica extra aula', horas: 0.4 },
+    { value: 'ejecucion_extra_aula', label: 'Ejecución de práctica extra aula', horas: 2 },
+    { value: 'descargo_viaje', label: 'Informe de descargo de viaje en prácticas', horas: 0 },
+    { value: 'laboratorios', label: 'Práctica de Laboratorios', horas: 0 },
+    { value: 'campo', label: 'Prácticas de Campo', horas: 2 },
+    { value: 'produccion_docente', label: 'Producción docente (textos guías)', horas: 2 },
+    { value: 'cursos_verano', label: 'Cursos de verano', horas: 0 },
+];
 
 const ChevronDown = ({ open = false }) => (
     <div className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center">
@@ -123,7 +141,7 @@ const CustomSelect = ({
     );
 };
 
-const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdicion, onCancelarEdicion, readOnly = true }) => {
+const CargaHorariaManager = ({ fondoId, docenteId, calendarioId, onCargaUpdate, cargaEdicion, onCancelarEdicion, readOnly = true }) => {
     const [cargas, setCargas] = useState([]);
     const [loading, setLoading] = useState(true);
     const [semestre, setSemestre] = useState('');
@@ -134,7 +152,7 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
         docente: 'Docente',
         calendario: 'Calendario academico',
         categoria: 'Categoria',
-        horas: 'Horas anuales',
+        horas: 'Horas por año',
         titulo_actividad: 'Actividad',
         documento_respaldo: 'Respaldo',
         hora_inicio: 'Hora de inicio',
@@ -180,17 +198,25 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
         horas: '',
         documento_respaldo: ''
     });
+    const [modoFormulario, setModoFormulario] = useState('academica');
+    const [actividadLibre, setActividadLibre] = useState({
+        categoria: '',
+        periodo: '',
+        nombre: '',
+        descripcion: '',
+        horas_semana: '',
+        evidencias: ''
+    });
+    const [subActividadDocente, setSubActividadDocente] = useState({
+        tipo: '',
+        horas_semana: '',
+        evidencias: ''
+    });
     const [isSubmitting, setIsSubmitting] = useState(false);
     const isReadOnly = Boolean(readOnly);
 
     const CATEGORIA_OPCIONES = [
-        { value: 'academica', label: 'Académica' },
-        { value: 'investigacion', label: 'Investigación' },
-        { value: 'extension_universitaria', label: 'Extensión universitaria' },
-        { value: 'interaccion_social', label: 'Interacción social' },
-        { value: 'gestion', label: 'Gestión' },
-        { value: 'academica_administrativa', label: 'Académica-administrativa' },
-        { value: 'social_cultural_deportiva', label: 'Social, cultural, deportiva y Otros' },
+        { value: 'academica', label: 'DOCENTE' },
     ];
 
     useEffect(() => {
@@ -198,18 +224,21 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
             cargarCargas();
             cargarFondoDetalle();
         }
-    }, [docenteId, calendarioId]);
+    }, [fondoId, docenteId, calendarioId]);
 
     useEffect(() => {
         if (cargaEdicion) {
+            const semestreEdicion = cargaEdicion.materia_semestre || cargaEdicion.semestre || '';
+            setSemestre(semestreEdicion ? semestreEdicion.toString() : '');
             setFormData({
-                categoria: cargaEdicion.categoria || 'academica',
+                categoria: 'academica',
                 materia: cargaEdicion.materia || cargaEdicion.materia_id || '',
                 titulo_actividad: cargaEdicion.titulo_actividad || '',
                 horas: cargaEdicion.horas,
                 documento_respaldo: cargaEdicion.respaldo || ''
             });
         } else {
+            setSemestre('');
             setFormData({ categoria: 'academica', materia: '', titulo_actividad: '', horas: '', documento_respaldo: '' });
         }
     }, [cargaEdicion]);
@@ -232,8 +261,7 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
                     }
                 }
                 setAllMaterias(todas);
-                const uniqueSemestres = [...new Set(todas.map(m => m.semestre))].sort((a, b) => a - b);
-                setSemestresDisponibles(uniqueSemestres);
+                setSemestresDisponibles([]);
             } catch (error) {
                 console.error("Error cargando materias:", error);
                 toast.error("Error al cargar materias");
@@ -245,12 +273,20 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
     }, []);
 
     useEffect(() => {
+        const carreraId = fondoDetalle?.carrera?.id || fondoDetalle?.carrera;
+        const materiasCarrera = allMaterias.filter(m => {
+            if (!carreraId) return true;
+            const materiaCarrera = m.carrera?.id || m.carrera_id || m.carrera;
+            return materiaCarrera?.toString() === carreraId.toString();
+        });
+        setSemestresDisponibles(Array.from({ length: 10 }, (_, idx) => idx + 1));
+
         if (semestre) {
-            setMaterias(allMaterias.filter(m => m.semestre.toString() === semestre.toString()));
+            setMaterias(materiasCarrera.filter(m => m.semestre?.toString() === semestre.toString()));
         } else {
             setMaterias([]);
         }
-    }, [semestre, allMaterias]);
+    }, [semestre, allMaterias, fondoDetalle]);
 
     const cargarCargas = async () => {
         try {
@@ -269,6 +305,11 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
 
     const cargarFondoDetalle = async () => {
         try {
+            if (fondoId) {
+                const detalle = await api.get(`/fondos-tiempo/${fondoId}/`);
+                setFondoDetalle(detalle.data);
+                return;
+            }
             const response = await api.get('/fondos-tiempo/', {
                 params: { docente: docenteId, calendario: calendarioId }
             });
@@ -289,7 +330,7 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (isReadOnly) return;
-        const esAcademica = formData.categoria === 'academica';
+        const esAcademica = true;
         if (esAcademica && !formData.materia) {
             toast.error("Seleccione una materia del plan de estudios");
             return;
@@ -299,12 +340,13 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
             return;
         }
         if (!formData.horas || Number(formData.horas) <= 0) {
-            toast.error("Verifique las horas anuales");
+            toast.error("Verifique las horas por año");
             return;
         }
         setIsSubmitting(true);
         const payload = {
             ...formData,
+            categoria: 'academica',
             materia: esAcademica ? formData.materia : null,
             titulo_actividad: esAcademica ? formData.titulo_actividad : formData.titulo_actividad.trim(),
             docente: docenteId,
@@ -340,7 +382,7 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
     };
 
     const handleDelete = async (id) => {
-        if (!confirm("¿Eliminar esta asignación?")) return;
+        if (!id) return;
         try {
             await api.delete(`/cargas-horarias/${id}/`);
             toast.success("Eliminado");
@@ -363,21 +405,11 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
     const handleMateriaChange = (materiaId) => {
         const materia = materias.find(m => m.id.toString() === materiaId);
         if (materia) {
-            const horasAnuales = Math.round((materia.horas_totales || 0) * SEMANAS_GESTION);
-            setFormData({ ...formData, materia: materiaId, titulo_actividad: materia.nombre, horas: horasAnuales });
+            const horasAnio = Math.round((materia.horas_totales || 0) * SEMANAS_CLASES_ANUAL);
+            setFormData({ ...formData, materia: materiaId, titulo_actividad: materia.nombre, horas: horasAnio });
         }
     };
 
-    const handleCategoriaChange = (categoria) => {
-        setSemestre('');
-        setFormData({
-            categoria,
-            materia: '',
-            titulo_actividad: '',
-            horas: '',
-            documento_respaldo: formData.documento_respaldo || ''
-        });
-    };
 
     const categoriaOptions = CATEGORIA_OPCIONES.map(opt => ({ value: opt.value, label: opt.label }));
     const semestreOptions = semestresDisponibles.map(s => ({ value: s.toString(), label: `${s}° Semestre` }));
@@ -385,9 +417,22 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
         value: m.id.toString(),
         label: `${m.nombre} (${m.horas_teoricas} HT / ${m.horas_practicas} HP - Total: ${m.horas_totales} hrs/sem)`
     }));
+    const categoriasActividadOptions = (fondoDetalle?.categorias || [])
+        .filter(cat => cat.tipo !== 'academica')
+        .map(cat => ({ value: cat.id.toString(), label: cat.tipo_display || cat.nombre || cat.tipo }));
+    const gestionFondo = fondoDetalle?.gestion || fondoDetalle?.calendario_academico?.gestion || '';
+    const gestionFondoLabel = gestionFondo ? `Gestión ${gestionFondo}` : 'Gestión del fondo';
+    const periodoActividadOptions = gestionFondo
+        ? [
+            { value: `1er Semestre ${gestionFondo}`, label: `1er Semestre ${gestionFondo}` },
+            { value: `2do Semestre ${gestionFondo}`, label: `2do Semestre ${gestionFondo}` },
+            { value: `Gestión ${gestionFondo} Completo`, label: `Gestión ${gestionFondo} Completo` },
+            { value: 'Transversal', label: 'Transversal' },
+        ]
+        : [{ value: 'Transversal', label: 'Transversal' }];
     const selectedMateriaId = formData.materia?.toString() || '';
-    const esAcademica = formData.categoria === 'academica';
-    const semanasPresupuesto = Number(fondoDetalle?.semanas_año || SEMANAS_GESTION);
+    const esAcademica = true;
+    const semanasPresupuesto = SEMANAS_CLASES_ANUAL;
     const categoriaPresupuesto = fondoDetalle?.categorias?.find(cat => cat.tipo === formData.categoria);
     const presupuestoSemana = Number(categoriaPresupuesto?.total_horas || 0);
     const asignadoSemana = cargas
@@ -401,9 +446,88 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
         || !formData.horas
         || Number(formData.horas) <= 0
         || respaldoInvalido;
+    const actividadHorasAnio = Math.round((Number(actividadLibre.horas_semana) || 0) * SEMANAS_CLASES_ANUAL);
+    const actividadSubmitDisabled = isSubmitting
+        || !actividadLibre.categoria
+        || !actividadLibre.periodo
+        || !actividadLibre.nombre.trim()
+        || !actividadLibre.descripcion.trim()
+        || !actividadLibre.horas_semana
+        || Number(actividadLibre.horas_semana) <= 0;
+    const subactividadesRegistradas = fondoDetalle?.categorias?.find(cat => cat.tipo === 'academica')?.subactividades_docente || [];
+    const tiposSubactividadesRegistradas = new Set(subactividadesRegistradas.map(item => item.tipo));
+    const subActividadOptions = SUBACTIVIDADES_DOCENTE
+        .filter(opt => !tiposSubactividadesRegistradas.has(opt.value) || opt.value === subActividadDocente.tipo)
+        .map(opt => ({ value: opt.value, label: opt.label }));
+    const subActividadHorasAnio = Math.round((Number(subActividadDocente.horas_semana) || 0) * SEMANAS_CLASES_ANUAL);
+    const subActividadSubmitDisabled = isSubmitting
+        || !subActividadDocente.tipo
+        || subActividadDocente.horas_semana === ''
+        || Number(subActividadDocente.horas_semana) < 0;
 
     const inputCls = "w-full px-3 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-400 dark:focus:ring-blue-600 focus:border-transparent transition-all";
     const labelCls = "block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5";
+
+    const handleActividadSubmit = async (e) => {
+        e.preventDefault();
+        if (isReadOnly || actividadSubmitDisabled) return;
+        setIsSubmitting(true);
+
+        const payload = {
+            categoria: Number(actividadLibre.categoria),
+            detalle: `${gestionFondoLabel} - ${actividadLibre.periodo} - ${actividadLibre.nombre.trim()}: ${actividadLibre.descripcion.trim()}`,
+            horas_semana: Number(actividadLibre.horas_semana),
+            evidencias: actividadLibre.evidencias.trim()
+        };
+
+        try {
+            await api.post('/actividades/', payload);
+            toast.success('Actividad agregada');
+            setActividadLibre({ categoria: '', periodo: '', nombre: '', descripcion: '', horas_semana: '', evidencias: '' });
+            cargarFondoDetalle();
+            if (onCargaUpdate) onCargaUpdate();
+        } catch (error) {
+            console.error(error);
+            const validationMessage = extractValidationMessage(error.response?.data);
+            toast.error(error.response?.status === 400 ? `ERROR DE VALIDACIÓN: ${validationMessage}` : 'Error al guardar actividad');
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleSubActividadChange = (tipo) => {
+        const plantilla = SUBACTIVIDADES_DOCENTE.find(item => item.value === tipo);
+        setSubActividadDocente(prev => ({
+            ...prev,
+            tipo,
+            horas_semana: plantilla ? String(plantilla.horas) : prev.horas_semana
+        }));
+    };
+
+    const handleSubActividadSubmit = async (e) => {
+        e.preventDefault();
+        if (isReadOnly || subActividadSubmitDisabled || !fondoDetalle?.id) return;
+        setIsSubmitting(true);
+
+        try {
+            await api.post('/subactividades-docente/', {
+                fondo_tiempo: fondoDetalle.id,
+                tipo: subActividadDocente.tipo,
+                horas_semana: Number(subActividadDocente.horas_semana),
+                evidencias: subActividadDocente.evidencias.trim()
+            });
+            toast.success('Sub-actividad DOCENTE agregada');
+            setSubActividadDocente({ tipo: '', horas_semana: '', evidencias: '' });
+            cargarFondoDetalle();
+            if (onCargaUpdate) onCargaUpdate();
+        } catch (error) {
+            console.error(error);
+            const validationMessage = extractValidationMessage(error.response?.data);
+            toast.error(error.response?.status === 400 ? `ERROR DE VALIDACIÓN: ${validationMessage}` : 'Error al guardar sub-actividad');
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
 
     return (
         <div className="h-full flex flex-col bg-white dark:bg-slate-800/95 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden transition-colors duration-300">
@@ -439,7 +563,25 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
                     </div>
                 )}
 
-                {/* ── Formulario — flex-1 + flex-col + justify-between ── */}
+                {/* -- Formulario - flex-1 + flex-col + justify-between -- */}
+                <div className="mb-4 grid grid-cols-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/60 p-1 text-xs font-bold">
+                    <button
+                        type="button"
+                        onClick={() => setModoFormulario('academica')}
+                        className={`rounded-lg px-3 py-2 transition-colors ${modoFormulario === 'academica' ? 'bg-white text-blue-700 shadow-sm dark:bg-slate-800 dark:text-blue-300' : 'text-slate-500 dark:text-slate-400'}`}
+                    >
+                        DOCENTE
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setModoFormulario('otras')}
+                        className={`rounded-lg px-3 py-2 transition-colors ${modoFormulario === 'otras' ? 'bg-white text-blue-700 shadow-sm dark:bg-slate-800 dark:text-blue-300' : 'text-slate-500 dark:text-slate-400'}`}
+                    >
+                        Actividades no académicas
+                    </button>
+                </div>
+
+                {modoFormulario === 'academica' ? (
                 <form onSubmit={handleSubmit} className="flex-1 flex flex-col justify-between gap-0">
 
                     {/* Campos superiores */}
@@ -452,9 +594,9 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
                                 <CustomSelect
                                     value={formData.categoria}
                                     options={categoriaOptions}
-                                    onChange={handleCategoriaChange}
-                                    placeholder="Seleccionar categoría"
-                                    disabled={isReadOnly}
+                                    onChange={() => {}}
+                                    placeholder="DOCENTE"
+                                    disabled={true}
                                 />
                             </div>
                             {esAcademica && (
@@ -507,13 +649,13 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
                             </div>
                         )}
 
-                        {/* Fila 3: Horas calculadas — tarjeta destacada */}
+                        {/* Fila 3: Horas calculadas - tarjeta destacada */}
                         <div className={`rounded-xl border-2 transition-all p-4 ${formData.horas
                             ? 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20'
                             : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30'}`}>
                             <div className="flex items-center justify-between mb-1">
                                 <span className={`text-xs font-bold uppercase tracking-wider ${formData.horas ? 'text-blue-500 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500'}`}>
-                                    Horas Anuales <span className="font-normal normal-case opacity-70">({esAcademica ? 'auto' : 'manual'})</span>
+                                    Horas por año <span className="font-normal normal-case opacity-70">({esAcademica ? 'auto' : 'manual'})</span>
                                 </span>
                                 {formData.horas && (
                                     <span className="text-[10px] font-bold bg-blue-500 text-white px-2 py-0.5 rounded-full">
@@ -543,8 +685,8 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
                             </div>
                             <p className="text-[9px] text-slate-400 dark:text-slate-500 mt-1.5 leading-tight">
                                 {esAcademica
-                                    ? `Total horas anuales = (HT + HP) x ${SEMANAS_GESTION} semanas`
-                                    : `Equivalencia semanal aproximada = horas anuales / ${semanasPresupuesto}`}
+                                    ? `Total horas año = (HT + HP) x ${SEMANAS_CLASES_ANUAL} semanas`
+                                    : `Equivalencia semanal aproximada = horas año / ${semanasPresupuesto}`}
                             </p>
                         </div>
 
@@ -560,9 +702,79 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
                                 onChange={e => setFormData({ ...formData, documento_respaldo: e.target.value })}
                                 disabled={isReadOnly} />
                         </div>
+
+                        <div className="rounded-xl border border-slate-300 bg-slate-50/80 p-3 dark:border-slate-700 dark:bg-slate-900/35">
+                            <div className="mb-3 flex items-center justify-between gap-3">
+                                <div>
+                                    <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-200">
+                                        Sub-actividades DOCENTE
+                                    </h4>
+                                    <p className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                                        Valores sugeridos editables del documento de referencia.
+                                    </p>
+                                </div>
+                                <span className="rounded-lg border border-blue-200 bg-white px-2 py-1 text-[10px] font-extrabold text-blue-700 dark:border-blue-800 dark:bg-slate-800 dark:text-blue-300">
+                                    {subActividadHorasAnio} hrs/año
+                                </span>
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_8rem]">
+                                <div>
+                                    <label className={labelCls}>Actividad pedagógica</label>
+                                    <CustomSelect
+                                        value={subActividadDocente.tipo}
+                                        options={subActividadOptions}
+                                        onChange={handleSubActividadChange}
+                                        placeholder="Seleccione sub-actividad"
+                                        disabled={isReadOnly}
+                                        emptyText="Todas las sub-actividades ya fueron registradas"
+                                        menuMaxHeight="max-h-64"
+                                    />
+                                </div>
+                                <div>
+                                    <label className={labelCls}>Hrs/Sem</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.1"
+                                        className={inputCls}
+                                        value={subActividadDocente.horas_semana}
+                                        onChange={e => setSubActividadDocente(prev => ({ ...prev, horas_semana: e.target.value }))}
+                                        disabled={isReadOnly}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="mt-3">
+                                <label className={labelCls}>Respaldo / Evidencia</label>
+                                <input
+                                    type="text"
+                                    className={inputCls}
+                                    value={subActividadDocente.evidencias}
+                                    onChange={e => setSubActividadDocente(prev => ({ ...prev, evidencias: e.target.value }))}
+                                    placeholder="Opcional"
+                                    disabled={isReadOnly}
+                                />
+                            </div>
+
+                            {!isReadOnly && (
+                                <button
+                                    type="button"
+                                    onClick={handleSubActividadSubmit}
+                                    disabled={subActividadSubmitDisabled}
+                                    className={`mt-3 w-full rounded-xl py-2.5 text-sm font-bold text-white transition-all ${
+                                        subActividadSubmitDisabled
+                                            ? 'cursor-not-allowed bg-slate-400 opacity-60 dark:bg-slate-600'
+                                            : 'bg-gradient-to-r from-cyan-600 to-blue-600 shadow-md shadow-blue-500/20 hover:from-cyan-700 hover:to-blue-700'
+                                    }`}
+                                >
+                                    Agregar Sub-actividad DOCENTE
+                                </button>
+                            )}
+                        </div>
                     </div>
 
-                    {/* ── Botón — pegado al fondo con mt-auto ── */}
+                    {/* -- Botón - pegado al fondo con mt-auto -- */}
                     <div className="mt-5">
                         {!isReadOnly && (
                         <button type="submit"
@@ -581,7 +793,7 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
                                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                                     </svg>
-                                    Guardando…
+                                    Guardando...
                                 </>
                             ) : cargaEdicion ? (
                                 <><PencilIcon className="w-4 h-4" /> Actualizar Asignación</>
@@ -593,6 +805,122 @@ const CargaHorariaManager = ({ docenteId, calendarioId, onCargaUpdate, cargaEdic
                     </div>
 
                 </form>
+                ) : (
+                <form onSubmit={handleActividadSubmit} className="flex-1 flex flex-col justify-between gap-0">
+                    <div className="space-y-4">
+                        <div>
+                            <label className={labelCls}>Categoria</label>
+                            <CustomSelect
+                                value={actividadLibre.categoria}
+                                options={categoriasActividadOptions}
+                                onChange={(value) => setActividadLibre(prev => ({ ...prev, categoria: value }))}
+                                placeholder="Seleccione una categoria"
+                                disabled={isReadOnly}
+                                emptyText="No hay categorias disponibles"
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label className={labelCls}>Gestión</label>
+                                <input
+                                    type="text"
+                                    className={`${inputCls} cursor-not-allowed bg-slate-100 text-slate-500 dark:bg-slate-900/70 dark:text-slate-400`}
+                                    value={gestionFondoLabel}
+                                    readOnly
+                                    disabled
+                                />
+                            </div>
+                            <div>
+                                <label className={labelCls}>Periodo</label>
+                                <CustomSelect
+                                    value={actividadLibre.periodo}
+                                    options={periodoActividadOptions}
+                                    onChange={(value) => setActividadLibre(prev => ({ ...prev, periodo: value }))}
+                                    placeholder="Seleccione un periodo"
+                                    disabled={isReadOnly}
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className={labelCls}>Nombre de actividad</label>
+                            <input
+                                type="text"
+                                className={inputCls}
+                                value={actividadLibre.nombre}
+                                onChange={e => setActividadLibre(prev => ({ ...prev, nombre: e.target.value }))}
+                                placeholder="Ej: Proyecto de investigacion aplicada"
+                                disabled={isReadOnly}
+                            />
+                        </div>
+
+                        <div>
+                            <label className={labelCls}>Descripcion</label>
+                            <textarea
+                                rows={3}
+                                className={`${inputCls} resize-none h-auto py-3`}
+                                value={actividadLibre.descripcion}
+                                onChange={e => setActividadLibre(prev => ({ ...prev, descripcion: e.target.value }))}
+                                placeholder="Detalle brevemente la actividad planificada"
+                                disabled={isReadOnly}
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-[1fr_auto] gap-3 items-end">
+                            <div>
+                                <label className={labelCls}>Horas/semana</label>
+                                <input
+                                    type="number"
+                                    min="0.1"
+                                    step="0.1"
+                                    className={inputCls}
+                                    value={actividadLibre.horas_semana}
+                                    onChange={e => setActividadLibre(prev => ({ ...prev, horas_semana: e.target.value }))}
+                                    placeholder="2"
+                                    disabled={isReadOnly}
+                                />
+                            </div>
+                            <div className="rounded-xl border-2 border-blue-200 bg-blue-50 px-4 py-2.5 text-right dark:border-blue-800 dark:bg-blue-900/20">
+                                <div className="text-[10px] font-bold uppercase text-blue-500 dark:text-blue-300">Horas año</div>
+                                <div className="text-2xl font-black text-blue-700 dark:text-blue-300">{actividadHorasAnio} hrs</div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className={labelCls}>Respaldo / Evidencia</label>
+                            <textarea
+                                rows={2}
+                                className={`${inputCls} resize-none h-auto py-3`}
+                                value={actividadLibre.evidencias}
+                                onChange={e => setActividadLibre(prev => ({ ...prev, evidencias: e.target.value }))}
+                                placeholder="Enlace o descripcion del respaldo"
+                                disabled={isReadOnly}
+                            />
+                        </div>
+
+                        <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500">
+                            Formula: horas/semana x {SEMANAS_CLASES_ANUAL} semanas = horas/año.
+                        </p>
+                    </div>
+
+                    <div className="mt-5">
+                        {!isReadOnly && (
+                            <button
+                                type="submit"
+                                disabled={actividadSubmitDisabled}
+                                className={`w-full py-3 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2 transition-all ${
+                                    actividadSubmitDisabled
+                                        ? 'bg-slate-400 dark:bg-slate-600 opacity-60 cursor-not-allowed shadow-none'
+                                        : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-md hover:shadow-lg hover:scale-[1.01]'
+                                }`}
+                            >
+                                {isSubmitting ? 'Guardando...' : <><PlusIcon className="w-4 h-4" /> Agregar Actividad</>}
+                            </button>
+                        )}
+                    </div>
+                </form>
+                )}
             </div>
         </div>
     );

@@ -1,7 +1,6 @@
 import { Outlet } from 'react-router-dom';
 import { useEffect } from 'react';
 import Sidebar from './Sidebar';
-import ThemeToggle from './ThemeToggle';
 
 const FondoTiempoLayout = ({ 
     user, 
@@ -22,11 +21,13 @@ const FondoTiempoLayout = ({
 
     return (
         <div
-            className="flex h-screen overflow-hidden bg-blue-50 dark:bg-slate-900"
-            style={{ '--fondo-sidebar-width': sidebarCollapsed ? '5rem' : '18rem' }}
+            className="flex h-screen overflow-hidden bg-[#d8e6f0] dark:bg-slate-900"
+            style={{
+                '--fondo-sidebar-width': sidebarCollapsed ? '5rem' : '18rem',
+                fontFamily: '"Nunito Sans", "Segoe UI", Helvetica, Arial, sans-serif',
+            }}
         >
-            {/* Selector de Tema - Flotante Global */}
-            <ThemeToggle theme={theme} setTheme={setTheme} />
+            {/* El ThemeToggle ahora está integrado en el Sidebar */}
 
             {/* Sidebar */}
             <Sidebar 
@@ -34,7 +35,9 @@ const FondoTiempoLayout = ({
                 onLogout={onLogout}
                 collapsed={sidebarCollapsed}
                 setCollapsed={setSidebarCollapsed}
-                onProfileUpdate={onProfileUpdate} // <-- La pasamos a Sidebar
+                theme={theme}
+                setTheme={setTheme}
+                onProfileUpdate={onProfileUpdate}
                 onCarreraActivaChange={onCarreraActivaChange}
             />
 
@@ -44,7 +47,7 @@ const FondoTiempoLayout = ({
                 sidebarCollapsed ? 'ml-20' : 'ml-72'
                 }`}
             >
-                <div className="min-h-full bg-blue-50 dark:bg-slate-900">
+                <div className="min-h-full bg-[#d8e6f0] dark:bg-slate-900">
                     {/* Las rutas anidadas (ListaFondos, DetalleFondo, etc.) se renderizarán aquí */}
                     <Outlet />
                 </div>

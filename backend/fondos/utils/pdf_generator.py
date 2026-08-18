@@ -12,6 +12,28 @@ from html import escape
 from django.db.models import Sum
 from fondos.models import CargaHoraria
 
+SEMANAS_CLASES_AULA = 40.0
+HORAS_EFECTIVAS_TC_OFICIAL = 1712.0
+
+FONDO_TIEMPO_UI_LABELS = {
+    'academica': 'DOCENTE',
+    'investigacion': 'INVESTIGACIÓN',
+    'extension_universitaria': 'EXTENSIÓN E INTERACCIÓN SOCIAL',
+    'interaccion_social': 'EXTENSIÓN E INTERACCIÓN SOCIAL',
+    'gestion': 'GESTIÓN',
+    'academica_administrativa': 'ADMINISTRATIVO (APOYO INSTITUTO)',
+    'social_cultural_deportiva': 'VIDA UNIVERSITARIA',
+}
+FONDO_TIEMPO_UI_LABELS = {
+    'academica': 'Académica',
+    'investigacion': 'Investigación',
+    'extension_universitaria': 'Extensión universitaria',
+    'interaccion_social': 'Interacción social',
+    'gestion': 'Gestión',
+    'academica_administrativa': 'Académica-administrativa',
+    'social_cultural_deportiva': 'Social, cultural, deportiva y Otros',
+}
+
 class FondoPDFGenerator:
     def __init__(self, buffer):
         self.buffer = buffer
@@ -61,6 +83,44 @@ class FondoPDFGenerator:
             return "-"
         return str(texto).replace('\n', '<br/>')
 
+    def _detalle_actividad_limpio(self, actividad):
+        """
+        Las actividades no academicas se guardaron como:
+        "Gestion 2026 - Gestion 2026 Completo - Nombre actividad: descripcion".
+        Para el PDF oficial solo debe mostrarse el nombre de la actividad.
+        """
+        detalle = str(getattr(actividad, 'detalle', '') or '').strip()
+        if not detalle:
+            return "-"
+
+        partes = [parte.strip() for parte in detalle.split(' - ') if parte.strip()]
+        if len(partes) >= 3 and partes[0].lower().startswith('gesti'):
+            detalle = ' - '.join(partes[2:]).strip()
+
+        if ':' in detalle:
+            nombre, descripcion = detalle.split(':', 1)
+            detalle = nombre.strip() or descripcion.strip()
+
+        return self._limpiar_texto(detalle)
+
+    def _obtener_vinculo_docente_carrera(self, fondo):
+        if not fondo or not fondo.docente_id or not fondo.carrera_id:
+            return None
+        DocenteCarrera = apps.get_model('fondos', 'DocenteCarrera')
+        return DocenteCarrera.objects.filter(
+            docente=fondo.docente,
+            carrera=fondo.carrera,
+            activo=True,
+        ).first()
+
+    def _obtener_dedicacion_display(self, fondo):
+        vinculo = self._obtener_vinculo_docente_carrera(fondo)
+        if vinculo:
+            return vinculo.get_dedicacion_display()
+        if fondo and fondo.horas_semana:
+            return f"{float(fondo.horas_semana):g} hrs/sem"
+        return "-"
+
     def _duracion_horas(self, hora_inicio, hora_fin):
         if not hora_inicio or not hora_fin:
             return 0.0
@@ -82,7 +142,7 @@ class FondoPDFGenerator:
             cargas_docencia,
             key=lambda c: (
                 orden_dias.get(c.dia_semana, 99),
-                c.hora_inicio,
+                c.hora_inicio or datetime.min.time(),
                 c.materia_id or 0,
                 c.paralelo,
                 (c.aula or '').strip().lower(),
@@ -189,7 +249,7 @@ class FondoPDFGenerator:
         estilo_tabla_col3 = ParagraphStyle('TablaCol3', parent=estilo_normal, fontSize=6.5, alignment=1, leading=7.5)
 
         # Columna 1
-        facultad_texto = fondo.carrera.facultad.title() if fondo.carrera else "Facultad de Ingeniería y Tecnología"
+        facultad_texto = "Facultad de Ingeniería y Tecnología"
         carrera_texto = fondo.carrera.nombre.title() if fondo.carrera else "Carrera"
         col1_data = [
             [Paragraph("Universidad Autónoma del Beni<br/>José Ballivián", estilo_header_bold)],
@@ -207,7 +267,7 @@ class FondoPDFGenerator:
         ]))
 
         # Columna 2
-        cat_docencia = fondo.categorias.filter(tipo='docente').first()
+        cat_docencia = fondo.categorias.filter(tipo='academica').first()
         rows_docente = []
         nombre_docente = fondo.docente.nombre_completo.title() if fondo.docente else "Docente"
         val_horas = float(fondo.horas_semana) if fondo.horas_semana is not None else 0
@@ -218,12 +278,12 @@ class FondoPDFGenerator:
         cargas_docencia = CargaHoraria.objects.filter(
             docente=fondo.docente, 
             calendario=fondo.calendario_academico, 
-            categoria='docente'
+            categoria='academica'
         )
         
         if cargas_docencia.exists():
             asignaturas_list = []
-            semanas_anio = float(fondo.semanas_año) if fondo.semanas_año else 1
+            semanas_anio = SEMANAS_CLASES_AULA
             for carga in cargas_docencia:
                 horas_sem = float(carga.horas) / semanas_anio
                 materia_txt = (
@@ -251,10 +311,10 @@ class FondoPDFGenerator:
         if cat_docencia:
             for act in cat_docencia.actividades.all().order_by('orden', 'id'):
                 h_sem = float(act.horas_semana or 0)
-                detalle = self._limpiar_texto(act.detalle)
+                detalle = self._detalle_actividad_limpio(act)
                 rows_docente.append([Paragraph(f"{detalle}", estilo_docente_actividad), Paragraph(f"{h_sem:g} Hrs/Sem", estilo_docente_val_right)])
         
-        dedicacion_texto = fondo.docente.get_dedicacion_display() if fondo.docente else "-"
+        dedicacion_texto = self._obtener_dedicacion_display(fondo)
         rows_docente.append([Paragraph(f"Tiempo de dedicación: {dedicacion_texto}", estilo_docente_label), ''])
         
         col2_table = Table(rows_docente, colWidths=[5.5*cm, 4.5*cm])
@@ -273,7 +333,7 @@ class FondoPDFGenerator:
         total_clases_aula = CargaHoraria.objects.filter(
             docente=fondo.docente, 
             calendario=fondo.calendario_academico, 
-            categoria='docente'
+            categoria='academica'
         ).aggregate(total=Sum('horas'))['total'] or 0
         total_clases_aula = float(total_clases_aula)
 
@@ -282,8 +342,8 @@ class FondoPDFGenerator:
         horas_feriados = fondo.horas_feriados
         horas_efectivas = float(fondo.horas_efectivas)
         
-        dias_vacacion = fondo.docente.calcular_dias_vacacion(fondo.gestion) if fondo.docente else 0
-        semanas_clase = total_clases_aula / 40.0 if total_clases_aula > 0 else 0
+        dias_vacacion = 30 if fondo.docente else 0
+        semanas_clase = SEMANAS_CLASES_AULA
         funciones_sustantivas = horas_efectivas - total_clases_aula
 
         def p_c3(txt, align=1, bold=False):
@@ -322,76 +382,6 @@ class FondoPDFGenerator:
         tabla_cabecera.hAlign = 'CENTER'
         elementos.append(tabla_cabecera)
         elementos.append(Spacer(1, 15))
-
-        # --- 2.1 HORARIO SEMANAL (LUNES A SÁBADO) ---
-        cargas_horario = list(cargas_docencia.select_related('materia'))
-        bloques_horario = self._agrupar_horarios_contiguos(cargas_horario)
-
-        estilo_horario_header = ParagraphStyle(
-            'HorarioHeader',
-            parent=estilo_celda_center,
-            fontSize=7,
-            fontName='Helvetica-Bold',
-        )
-        estilo_horario_celda = ParagraphStyle(
-            'HorarioCelda',
-            parent=estilo_celda,
-            fontSize=7,
-            leading=8,
-        )
-
-        datos_horario = [[
-            Paragraph('Día', estilo_horario_header),
-            Paragraph('Horario', estilo_horario_header),
-            Paragraph('Materia', estilo_horario_header),
-            Paragraph('Paralelo', estilo_horario_header),
-            Paragraph('Aula', estilo_horario_header),
-            Paragraph('Horas', estilo_horario_header),
-        ]]
-
-        if bloques_horario:
-            for bloque in bloques_horario:
-                datos_horario.append([
-                    Paragraph((bloque['dia_semana'] or '-').capitalize(), estilo_horario_celda),
-                    Paragraph(f"{bloque['hora_inicio'].strftime('%H:%M')} - {bloque['hora_fin'].strftime('%H:%M')}", estilo_horario_celda),
-                    Paragraph(self._limpiar_texto(bloque['materia']), estilo_horario_celda),
-                    Paragraph(self._limpiar_texto(bloque['paralelo'] or '-'), estilo_horario_celda),
-                    Paragraph(self._limpiar_texto(bloque['aula'] or '-'), estilo_horario_celda),
-                    Paragraph(f"{bloque['horas']:.2f}", estilo_horario_celda),
-                ])
-        else:
-            datos_horario.append([
-                Paragraph('-', estilo_horario_celda),
-                Paragraph('-', estilo_horario_celda),
-                Paragraph('Sin asignaciones horarias', estilo_horario_celda),
-                Paragraph('-', estilo_horario_celda),
-                Paragraph('-', estilo_horario_celda),
-                Paragraph('0.00', estilo_horario_celda),
-            ])
-
-        tabla_horario = Table(
-            datos_horario,
-            colWidths=[2.0*cm, 3.2*cm, 9.0*cm, 2.2*cm, 4.0*cm, 2.0*cm],
-            repeatRows=1,
-        )
-        tabla_horario.setStyle(TableStyle([
-            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-            ('BACKGROUND', (0,0), (-1,0), colors.Color(0.9, 0.9, 0.9)),
-            ('ALIGN', (0,0), (1,-1), 'CENTER'),
-            ('ALIGN', (3,0), (5,-1), 'CENTER'),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('LEFTPADDING', (0,0), (-1,-1), 3),
-            ('RIGHTPADDING', (0,0), (-1,-1), 3),
-            ('TOPPADDING', (0,0), (-1,-1), 2),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 2),
-        ]))
-        tabla_horario.hAlign = 'CENTER'
-
-        elementos.append(Paragraph('<b>HORARIO SEMANAL (LUNES A SÁBADO)</b>', estilo_celda_center))
-        elementos.append(Spacer(1, 0.15*cm))
-        elementos.append(tabla_horario)
-        elementos.append(Spacer(1, 0.35*cm))
-
         # --- 3. CUERPO: TABLA DE ACTIVIDADES ---
         
         headers_1 = ['N°', 'INDICADORES', '', 'Hrs/Sem', 'Hrs/Año', 'Total\nHrs/Año', '%', 'Evidencias']
@@ -404,13 +394,15 @@ class FondoPDFGenerator:
         categorias = fondo.categorias.all().order_by('id')
         
         # Sumar CargaHoraria al total global
-        total_cargas = CargaHoraria.objects.filter(docente=fondo.docente, calendario=fondo.calendario_academico, categoria='docente').aggregate(total=Sum('horas'))['total'] or 0
+        total_cargas = CargaHoraria.objects.filter(docente=fondo.docente, calendario=fondo.calendario_academico, categoria='academica').aggregate(total=Sum('horas'))['total'] or 0
         total_global += float(total_cargas)
 
         for cat in categorias:
             for act in cat.actividades.all():
                 total_global += float(act.horas_año or 0)
-        if total_global == 0: total_global = 1
+        total_base_porcentaje = horas_efectivas if horas_efectivas > 0 else HORAS_EFECTIVAS_TC_OFICIAL
+        if total_global == 0:
+            total_global = total_base_porcentaje
 
         # ESTILOS INICIALES (SIN GRID EN EL CUERPO)
         estilos_tabla = [
@@ -440,18 +432,23 @@ class FondoPDFGenerator:
             actividades = cat.actividades.all().order_by('orden', 'id')
             
             cargas = []
-            if cat.tipo == 'docente':
-                cargas = CargaHoraria.objects.filter(docente=fondo.docente, calendario=fondo.calendario_academico, categoria='docente').order_by('id')
+            if cat.tipo == 'academica':
+                cargas = CargaHoraria.objects.filter(docente=fondo.docente, calendario=fondo.calendario_academico, categoria='academica').order_by('id')
+
+            subactividades_docente = []
+            if cat.tipo == 'academica':
+                subactividades_docente = list(fondo.subactividades_docente.all().order_by('orden', 'id'))
             
-            n_filas = actividades.count() + len(cargas)
+            n_filas = actividades.count() + len(cargas) + len(subactividades_docente)
             
             total_cat = 0
             for c in cargas: total_cat += float(c.horas)
+            for sub in subactividades_docente: total_cat += float(sub.horas_anio or 0)
             for act in actividades:
                 total_cat += float(act.horas_año or 0)
             
-            porc_cat = (total_cat / total_global) * 100
-            nombre_cat = cat.get_tipo_display().upper()
+            porc_cat = (total_cat / total_base_porcentaje) * 100 if total_base_porcentaje else 0
+            nombre_cat = FONDO_TIEMPO_UI_LABELS.get(cat.tipo, cat.get_tipo_display().upper())
             
             if n_filas > 0:
                 start_row = row_cursor
@@ -460,6 +457,7 @@ class FondoPDFGenerator:
                 # Combinar Cargas y Actividades
                 items_mix = []
                 for c in cargas: items_mix.append(('carga', c))
+                for s in subactividades_docente: items_mix.append(('subactividad_docente', s))
                 for a in actividades: items_mix.append(('actividad', a))
                 
                 for idx, (tipo_obj, obj) in enumerate(items_mix):
@@ -472,10 +470,16 @@ class FondoPDFGenerator:
                             if obj.materia else 'Sin materia'
                         )
                         anual = float(obj.horas)
-                        semanas_anio = float(fondo.semanas_año) if fondo.semanas_año else 1
+                        semanas_anio = SEMANAS_CLASES_AULA
                         hs = anual / semanas_anio
                         semanas_calc = semanas_anio
-                        evidencia_texto = obj.documento_respaldo if obj.documento_respaldo else "Asignación Jefatura"
+                        evidencia_texto = obj.documento_respaldo if obj.documento_respaldo else "Programa de clases, Plan de clases, Planilla de calificaciones"
+                    elif tipo_obj == 'subactividad_docente':
+                        hs = float(obj.horas_semana or 0)
+                        anual = float(obj.horas_anio or 0)
+                        semanas_calc = SEMANAS_CLASES_AULA
+                        detalle = self._limpiar_texto(obj.get_tipo_display())
+                        evidencia_texto = self._limpiar_texto(obj.evidencias) if obj.evidencias else "-"
                     else:
                         act = obj
                         hs = float(act.horas_semana or 0)
@@ -483,7 +487,7 @@ class FondoPDFGenerator:
                         # CORRECCIÓN ERROR 500: Calcular semanas matemáticamente
                         semanas_calc = (anual / hs) if hs > 0 else 0
                         
-                        detalle = self._limpiar_texto(act.detalle)
+                        detalle = self._detalle_actividad_limpio(act)
                         
                         raw_evidencia = str(act.evidencias).strip() if act.evidencias else ""
                         if raw_evidencia.startswith('http') or raw_evidencia.startswith('www'):
@@ -504,7 +508,7 @@ class FondoPDFGenerator:
                             Paragraph(f"<b>{nombre_cat}</b>", self._get_estilo_celda_center()),
                             Paragraph(detalle, self._get_estilo_celda()),
                             f"{hs:.2f}",
-                            f"{semanas_calc:.2f}",
+                            f"{anual:.2f}",
                             f"{total_cat:.2f}", # DATO
                             f"{porc_cat:.2f}", # DATO
                             Paragraph(evidencia_texto, self._get_estilo_celda())
@@ -549,7 +553,8 @@ class FondoPDFGenerator:
             cat_index += 1
 
         # Total General
-        row_total = ['TOTAL HORAS', '', '', '', '', f"{int(total_global)}", '100', '']
+        total_pdf = int(total_base_porcentaje) if total_base_porcentaje else int(total_global)
+        row_total = ['TOTAL HORAS', '', '', '', '', f"{total_pdf}", '100', '']
         datos_tabla.append(row_total)
         estilos_tabla.append(('FONTNAME', (0, row_cursor), (-1, row_cursor), 'Helvetica-Bold'))
         estilos_tabla.append(('BACKGROUND', (0, row_cursor), (-1, row_cursor), colors.Color(0.95, 0.95, 0.95)))
@@ -562,14 +567,85 @@ class FondoPDFGenerator:
         tabla_actividades.hAlign = 'CENTER'
         elementos.append(tabla_actividades)
         
-        # --- 4. CONCLUSIONES ---
+        # --- 4. INFORME FINAL ---
         if informe_data:
             elementos.append(Spacer(1, 10))
-            elementos.append(Paragraph("<b>CONCLUSIONES Y EVALUACIÓN</b>", estilo_celda_center))
+            elementos.append(Paragraph("<b>INFORME FINAL DE CUMPLIMIENTO</b>", estilo_celda_center))
+
+            asignaturas = list(informe_data.asignaturas_ejecutadas.all()) if hasattr(informe_data, 'asignaturas_ejecutadas') else []
+            if asignaturas:
+                elementos.append(Spacer(1, 6))
+                elementos.append(Paragraph("<b>Resumen de asignaturas ejecutadas</b>", estilo_celda_center))
+                tabla_asignaturas_data = [[
+                    Paragraph("<b>Asignatura</b>", estilo_celda_center),
+                    Paragraph("<b>Par.</b>", estilo_celda_center),
+                    Paragraph("<b>Horas Aula</b>", estilo_celda_center),
+                    Paragraph("<b>Inscritos</b>", estilo_celda_center),
+                    Paragraph("<b>Aprob.</b>", estilo_celda_center),
+                    Paragraph("<b>Reprob.</b>", estilo_celda_center),
+                    Paragraph("<b>Habil.</b>", estilo_celda_center),
+                    Paragraph("<b>Evaluacion</b>", estilo_celda_center),
+                ]]
+                for item in asignaturas:
+                    nombre = f"{item.sigla} - {item.nombre}".strip(" -")
+                    tabla_asignaturas_data.append([
+                        Paragraph(self._limpiar_texto(nombre), estilo_celda),
+                        self._limpiar_texto(item.paralelo or '-'),
+                        f"{float(item.horas_aula or 0):.2f}",
+                        str(item.inscritos),
+                        str(item.aprobados),
+                        str(item.reprobados),
+                        str(item.habilitados),
+                        Paragraph(self._limpiar_texto(item.descripcion_evaluacion or '-'), estilo_celda),
+                    ])
+                tabla_asignaturas_data.append([
+                    Paragraph("<b>Horas Aula Ejecutadas</b>", estilo_celda),
+                    '', f"{float(informe_data.horas_aula_ejecutadas or 0):.2f}", '', '', '', '', ''
+                ])
+                tabla_asignaturas = Table(
+                    tabla_asignaturas_data,
+                    colWidths=[5.3*cm, 1.2*cm, 2*cm, 1.7*cm, 1.5*cm, 1.7*cm, 1.5*cm, 8*cm],
+                    repeatRows=1,
+                )
+                tabla_asignaturas.setStyle(TableStyle([
+                    ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+                    ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                    ('BACKGROUND', (0,0), (-1,0), colors.Color(0.90, 0.93, 0.96)),
+                    ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
+                    ('SPAN', (0,-1), (1,-1)),
+                    ('SPAN', (3,-1), (-1,-1)),
+                ]))
+                elementos.append(tabla_asignaturas)
+
+            evidencias = list(informe_data.evidencias_digitales.all()) if hasattr(informe_data, 'evidencias_digitales') else []
+            if evidencias:
+                elementos.append(Spacer(1, 8))
+                elementos.append(Paragraph("<b>Evidencias digitales cargadas</b>", estilo_celda_center))
+                tabla_evidencias_data = [[
+                    Paragraph("<b>Categoria</b>", estilo_celda_center),
+                    Paragraph("<b>Descripcion ejecutada</b>", estilo_celda_center),
+                    Paragraph("<b>Archivo</b>", estilo_celda_center),
+                ]]
+                for ev in evidencias:
+                    tabla_evidencias_data.append([
+                        Paragraph(FONDO_TIEMPO_UI_LABELS.get(ev.categoria, ev.get_categoria_display()), estilo_celda),
+                        Paragraph(self._limpiar_texto(ev.descripcion_ejecutado), estilo_celda),
+                        Paragraph(self._limpiar_texto(ev.nombre_original or os.path.basename(ev.archivo.name)), estilo_celda),
+                    ])
+                tabla_evidencias = Table(tabla_evidencias_data, colWidths=[5*cm, 14*cm, 5.7*cm], repeatRows=1)
+                tabla_evidencias.setStyle(TableStyle([
+                    ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+                    ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                    ('BACKGROUND', (0,0), (-1,0), colors.Color(0.90, 0.93, 0.96)),
+                ]))
+                elementos.append(tabla_evidencias)
+
+            elementos.append(Spacer(1, 10))
+            elementos.append(Paragraph("<b>CONCLUSIONES Y EVALUACION</b>", estilo_celda_center))
             contenido_logros = [
                 [Paragraph("<b>LOGROS:</b>", estilo_celda), Paragraph(self._limpiar_texto(informe_data.logros), estilo_normal)],
                 [Paragraph("<b>DIFICULTADES:</b>", estilo_celda), Paragraph(self._limpiar_texto(informe_data.dificultades), estilo_normal)],
-                [Paragraph("<b>EVALUACIÓN DIRECTOR:</b>", estilo_celda), Paragraph(self._limpiar_texto(informe_data.evaluacion_director), estilo_normal)],
+                [Paragraph("<b>EVALUACION DIRECTOR:</b>", estilo_celda), Paragraph(self._limpiar_texto(informe_data.evaluacion_director), estilo_normal)],
             ]
             tabla_conclusiones = Table(contenido_logros, colWidths=[3*cm, 21.7*cm])
             tabla_conclusiones.setStyle(TableStyle([
@@ -579,7 +655,6 @@ class FondoPDFGenerator:
             ]))
             tabla_conclusiones.hAlign = 'CENTER'
             elementos.append(tabla_conclusiones)
-
         # --- 5. FIRMAS DINÁMICAS ---
         nombre_director = self._nombre_director_carrera(fondo.carrera)
         nombre_docente_firma = fondo.docente.nombre_completo.upper() if fondo.docente else 'SIN DOCENTE ASIGNADO'

@@ -1,6 +1,9 @@
 import { Link, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 import ThemeToggle from './ThemeToggle';
 import { useActiveRole } from '../contexts/ActiveRoleContext';
+import { ERROR_FIELD_BORDER_CLASS, useErrorPulse } from '../utils/formErrors';
+import toast from 'react-hot-toast';
 
 // --- ICONOS ---
 // Se mantienen los mismos iconos, pero ahora se pueden personalizar más fácilmente.
@@ -55,6 +58,8 @@ const BuildingIcon = (props) => (
 // --- COMPONENTE PRINCIPAL ---
 const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
     const navigate = useNavigate();
+    const [roleErrorPulse, setRoleErrorPulse] = useState(0);
+    const [roleError, setRoleError] = useState('');
     const activeRoleContext = useActiveRole();
     const {
         activeAssignment,
@@ -75,6 +80,21 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
         navigate('/login');
     };
 
+    const handleModuleSelect = (module) => {
+        if (module.requiresRoleSelection && hasMultipleAssignments && !activeAssignment) {
+            const message = 'Debe elegir un rol de ingreso para acceder a Fondo de Tiempo.';
+            setRoleError(message);
+            setRoleErrorPulse((value) => value + 1);
+            toast.error(message, {
+                id: 'role-selection-required',
+                className: 'toast-brinco',
+            });
+            return;
+        }
+
+        navigate(module.path);
+    };
+
     const modules = [
         {
             name: 'Fondo de Tiempo',
@@ -83,6 +103,7 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
             icon: FondoTiempoIcon,
             color: 'blue',
             enabled: true,
+            requiresRoleSelection: true,
         },
         {
             name: 'Fondo a Largo Plazo',
@@ -368,7 +389,7 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
                                     animationDelay: `${160 + index * 120}ms`,
                                 }}
                             >
-                                <ModuleCard {...module} onClick={module.action} />
+                                <ModuleCard {...module} onClick={() => handleModuleSelect(module)} />
                             </div>
                         );
                     })}
@@ -394,9 +415,14 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
                                 <RoleInlineSelector
                                     assignments={assignments}
                                     activeAssignment={activeAssignment}
-                                    onSelect={selectAssignment}
+                                    onSelect={(assignment) => {
+                                        setRoleError('');
+                                        selectAssignment(assignment);
+                                    }}
                                     getRoleLabel={getRoleLabel}
                                     compactTop={mostrarHerramientasGestion}
+                                    error={roleError}
+                                    errorPulse={roleErrorPulse}
                                 />
                             )}
                         </div>
@@ -407,12 +433,15 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
     );
 };
 
-const RoleInlineSelector = ({ assignments, activeAssignment, onSelect, getRoleLabel, compactTop }) => (
-    <div className={`${compactTop ? 'mt-4 pt-4 border-t border-white/20 dark:border-white/10' : ''}`}>
+const RoleInlineSelector = ({ assignments, activeAssignment, onSelect, getRoleLabel, compactTop, error, errorPulse = 0 }) => {
+    const { motionClass } = useErrorPulse(error, errorPulse);
+
+    return (
+    <div className={`module-role-selector ${compactTop ? 'mt-4 pt-4 border-t border-white/20 dark:border-white/10' : ''}`}>
         <p className="module-tools-title text-xs uppercase tracking-[0.22em] text-cyan-200/90 dark:text-cyan-300/80 mb-3 text-center">
             Rol de Ingreso
         </p>
-        <div className="space-y-2">
+        <div className={`space-y-2 ${motionClass}`}>
             {assignments.map((assignment) => {
                 const selected = String(activeAssignment?.id || '') === String(assignment.id);
                 return (
@@ -423,6 +452,8 @@ const RoleInlineSelector = ({ assignments, activeAssignment, onSelect, getRoleLa
                         className={`w-full rounded-xl border px-3 py-3 text-left transition-all duration-300 ${
                             selected
                                 ? 'border-blue-300 bg-blue-600/90 text-white shadow-lg shadow-blue-900/20'
+                                : error
+                                    ? `${ERROR_FIELD_BORDER_CLASS} bg-white/25 text-slate-900 hover:border-red-400 hover:bg-white/35 dark:bg-slate-800/35 dark:text-slate-100 dark:hover:bg-slate-800/55`
                                 : 'border-white/30 bg-white/20 text-slate-900 hover:border-blue-300 hover:bg-white/35 dark:border-white/15 dark:bg-slate-800/35 dark:text-slate-100 dark:hover:bg-slate-800/55'
                         }`}
                     >
@@ -435,7 +466,8 @@ const RoleInlineSelector = ({ assignments, activeAssignment, onSelect, getRoleLa
             })}
         </div>
     </div>
-);
+    );
+};
 
 const FloatingToolButton = ({ name, description, path, icon: Icon, color }) => {
     const colorClasses = {

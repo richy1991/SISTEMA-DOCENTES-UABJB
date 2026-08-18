@@ -4,13 +4,27 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from .models import Docente, DocenteCarrera, Carrera, Materia, FondoTiempo, CategoriaFuncion, Actividad, PerfilUsuario, AsignacionCarrera, InformeFondo, ObservacionFondo, MensajeObservacion, HistorialFondo, CargaHoraria, SaldoVacacionesGestion, DatosLaborales
-from .role_context import get_active_assignment, get_effective_profile, serialize_assignment
+from .models import Docente, DocenteCarrera, Carrera, Materia, FondoTiempo, CategoriaFuncion, Actividad, SubActividadDocente, PerfilUsuario, AsignacionCarrera, InformeFondo, InformeAsignaturaEjecutada, Evidencia, ObservacionFondo, MensajeObservacion, HistorialFondo, CargaHoraria, SaldoVacacionesGestion, DatosLaborales
+from .role_context import get_active_assignment, get_active_careers_for_user, get_effective_profile, serialize_assignment
 from django.db.models import Sum
 from django.db import transaction
 from decimal import Decimal
 from django.utils import timezone
     
+SEMANAS_CLASES_ANUAL_MICRO = Decimal('40')
+HORAS_EFECTIVAS_TC_OFICIAL = Decimal('1712')
+
+FONDO_TIEMPO_UI_LABELS = {
+    'academica': 'DOCENTE',
+    'investigacion': 'INVESTIGACIÓN',
+    'extension_universitaria': 'EXTENSIÓN E INTERACCIÓN SOCIAL',
+    'interaccion_social': 'EXTENSIÓN E INTERACCIÓN SOCIAL',
+    'gestion': 'GESTIÓN',
+    'academica_administrativa': 'ADMINISTRATIVO (APOYO INSTITUTO)',
+    'social_cultural_deportiva': 'VIDA UNIVERSITARIA',
+}
+FONDO_TIEMPO_UI_LABELS = dict(CategoriaFuncion.TIPO_CHOICES)
+
 
 def _usuario_es_iisyp_solo_lectura(context):
     request = context.get('request') if context else None
@@ -32,6 +46,69 @@ def _filtrar_categorias_investigacion_para_iisyp(data, context):
                 if categoria.get('tipo') == 'investigacion'
             ]
     return data
+
+
+DEDICACIONES_TIEMPO_HORARIO = {'horario_16', 'horario_24', 'horario_40', 'horario_48'}
+
+
+def _obtener_vinculo_docente_carrera(docente, carrera):
+    if not docente or not carrera:
+        return None
+    return DocenteCarrera.objects.filter(
+        docente=docente,
+        carrera=carrera,
+        activo=True,
+    ).select_related('docente', 'carrera').first()
+
+
+def _docente_tiene_autoridad_en_carrera(docente, carrera):
+    if not docente or not carrera:
+        return False
+
+    user_ids = set()
+    if docente.user_id:
+        user_ids.add(docente.user_id)
+
+    perfiles = PerfilUsuario.objects.filter(
+        docente=docente,
+        user__isnull=False,
+        activo=True,
+    ).values_list('user_id', flat=True)
+    user_ids.update(user_id for user_id in perfiles if user_id)
+
+    if AsignacionCarrera.objects.filter(
+        docente=docente,
+        carrera=carrera,
+        activo=True,
+        rol__in=ROLES_AUTORIDAD_ASIGNACION,
+    ).exists():
+        return True
+
+    if user_ids and AsignacionCarrera.objects.filter(
+        user_id__in=user_ids,
+        carrera=carrera,
+        activo=True,
+        rol__in=ROLES_AUTORIDAD_ASIGNACION,
+    ).exists():
+        return True
+
+    if PerfilUsuario.objects.filter(
+        docente=docente,
+        carrera=carrera,
+        activo=True,
+        rol__in=ROLES_AUTORIDAD_ASIGNACION,
+    ).exists():
+        return True
+
+    if user_ids and PerfilUsuario.objects.filter(
+        user_id__in=user_ids,
+        carrera=carrera,
+        activo=True,
+        rol__in=ROLES_AUTORIDAD_ASIGNACION,
+    ).exists():
+        return True
+
+    return False
 
 
 def _obtener_docente_para_validacion_fondo(bloques, docente_por_defecto=None):
@@ -624,6 +701,11 @@ class CargaHorariaSerializer(serializers.ModelSerializer):
         aula = data.get('aula', self.instance.aula if self.instance else None)
         horas_nuevas = data.get('horas', self.instance.horas if self.instance else 0)
 
+        if categoria != 'academica':
+            raise serializers.ValidationError({
+                'categoria': 'La asignacion de carga horaria solo permite la categoria Academica.'
+            })
+
         if docente and docente.activo is False:
             raise serializers.ValidationError({
                 'docente': 'No se puede asignar carga horaria o materia a un docente inactivo.'
@@ -631,7 +713,7 @@ class CargaHorariaSerializer(serializers.ModelSerializer):
 
         fondo = None
         categoria_macro = None
-        semanas = Decimal('45.8')
+        semanas = SEMANAS_CLASES_ANUAL_MICRO
         if docente and calendario:
             fondo = FondoTiempo.objects.filter(
                 docente=docente,
@@ -639,9 +721,6 @@ class CargaHorariaSerializer(serializers.ModelSerializer):
                 archivado=False,
             ).first()
             if fondo:
-                semanas = Decimal(str(fondo.semanas_año or '45.8'))
-                if semanas <= 0:
-                    semanas = Decimal('45.8')
                 categoria_macro = CategoriaFuncion.objects.filter(
                     fondo_tiempo=fondo,
                     tipo=categoria,
@@ -695,11 +774,11 @@ class CargaHorariaSerializer(serializers.ModelSerializer):
         if hora_inicio and hora_fin and hora_fin <= hora_inicio:
             raise serializers.ValidationError({'hora_fin': 'La hora de fin debe ser mayor que la hora de inicio.'})
 
-        # Tope de plan por materia (horas/semana): horas anuales prorrateadas.
+        # Tope de plan por materia (horas/semana): horas por semestre prorrateadas.
         horas_asignadas_semana = Decimal(horas_nuevas or 0) / semanas
         horas_plan_semana = Decimal((materia.horas_totales or 0)) if materia else Decimal('0')
-        tolerancia_redondeo_anual = Decimal('0.5') / semanas
-        if materia and horas_asignadas_semana > (horas_plan_semana + tolerancia_redondeo_anual):
+        tolerancia_redondeo_semestre = Decimal('0.5') / semanas
+        if materia and horas_asignadas_semana > (horas_plan_semana + tolerancia_redondeo_semestre):
             exceso_semana = horas_asignadas_semana - horas_plan_semana
             raise serializers.ValidationError({
                 'horas': (
@@ -718,10 +797,10 @@ class CargaHorariaSerializer(serializers.ModelSerializer):
             if self.instance:
                 cargas_categoria = cargas_categoria.exclude(pk=self.instance.pk)
 
-            horas_existentes_anuales = Decimal(cargas_categoria.aggregate(total=Sum('horas'))['total'] or 0)
-            total_categoria_semana = (horas_existentes_anuales + Decimal(horas_nuevas or 0)) / semanas
+            horas_existentes_semestre = Decimal(cargas_categoria.aggregate(total=Sum('horas'))['total'] or 0)
+            total_categoria_semana = (horas_existentes_semestre + Decimal(horas_nuevas or 0)) / semanas
             presupuesto_semana = Decimal(str(categoria_macro.total_horas or 0))
-            if total_categoria_semana > (presupuesto_semana + tolerancia_redondeo_anual):
+            if total_categoria_semana > (presupuesto_semana + tolerancia_redondeo_semestre):
                 categoria_label = dict(CategoriaFuncion.TIPO_CHOICES).get(categoria, categoria)
                 exceso_semana = total_categoria_semana - presupuesto_semana
                 raise serializers.ValidationError({
@@ -794,8 +873,8 @@ class CargaHorariaSerializer(serializers.ModelSerializer):
             cargas_existentes = cargas_existentes.exclude(pk=self.instance.pk)
 
         horas_existentes = cargas_existentes.aggregate(total=Sum('horas'))['total'] or 0
-        total_horas_anuales = Decimal(horas_existentes) + Decimal(horas_nuevas or 0)
-        total_horas_semanales = total_horas_anuales / semanas
+        total_horas_semestre = Decimal(horas_existentes) + Decimal(horas_nuevas or 0)
+        total_horas_semanales = total_horas_semestre / semanas
 
         horas_maximas = Decimal(str(vinculo.horas_semanales_maximas if vinculo else 0))
 
@@ -1493,7 +1572,7 @@ class MateriaSerializer(serializers.ModelSerializer):
 
 
 class ActividadSerializer(serializers.ModelSerializer):
-    categoria_nombre = serializers.CharField(source='categoria.get_tipo_display', read_only=True)
+    categoria_nombre = serializers.SerializerMethodField()
     
     class Meta:
         model = Actividad
@@ -1507,6 +1586,9 @@ class ActividadSerializer(serializers.ModelSerializer):
         """Asegura que evidencias sea una cadena vacía si es None."""
         return value or ""
 
+    def get_categoria_nombre(self, obj):
+        return FONDO_TIEMPO_UI_LABELS.get(obj.categoria.tipo, obj.categoria.get_tipo_display())
+
     def validate_horas_semana(self, value):
         """Valida que las horas semanales no sean negativas."""
         if value < 0:
@@ -1514,24 +1596,78 @@ class ActividadSerializer(serializers.ModelSerializer):
         return value
 
     def validate_horas_año(self, value):
-        """Valida que las horas anuales no sean negativas."""
+        """Valida que las horas por semestre no sean negativas."""
         if value < 0:
-            raise serializers.ValidationError("Las horas anuales no pueden ser negativas.")
+            raise serializers.ValidationError("Las horas por semestre no pueden ser negativas.")
         return value
+
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        categoria = data.get('categoria', self.instance.categoria if self.instance else None)
+        if categoria and categoria.tipo == 'academica':
+            raise serializers.ValidationError({
+                'categoria': 'Las actividades libres solo aplican a las 6 categorias no academicas.'
+            })
+
+        horas_semana = Decimal(str(data.get(
+            'horas_semana',
+            self.instance.horas_semana if self.instance else 0
+        ) or 0))
+        data['horas_año'] = (horas_semana * SEMANAS_CLASES_ANUAL_MICRO).quantize(Decimal('0.01'))
+        return data
+
+
+class SubActividadDocenteSerializer(serializers.ModelSerializer):
+    tipo_display = serializers.CharField(source='get_tipo_display', read_only=True)
+
+    class Meta:
+        model = SubActividadDocente
+        fields = [
+            'id', 'fondo_tiempo', 'tipo', 'tipo_display',
+            'horas_semana', 'horas_anio', 'evidencias', 'orden',
+            'fecha_creacion', 'fecha_modificacion',
+        ]
+        read_only_fields = ['horas_anio', 'fecha_creacion', 'fecha_modificacion']
+
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        fondo = data.get('fondo_tiempo', self.instance.fondo_tiempo if self.instance else None)
+        tipo = data.get('tipo', self.instance.tipo if self.instance else None)
+
+        if fondo and tipo:
+            duplicado = SubActividadDocente.objects.filter(fondo_tiempo=fondo, tipo=tipo)
+            if self.instance:
+                duplicado = duplicado.exclude(pk=self.instance.pk)
+            if duplicado.exists():
+                raise serializers.ValidationError({
+                    'tipo': 'Esta sub-actividad docente ya fue registrada en este Fondo de Tiempo.'
+                })
+
+        horas_semana = Decimal(str(data.get(
+            'horas_semana',
+            self.instance.horas_semana if self.instance else 0
+        ) or 0))
+        data['horas_anio'] = (horas_semana * SEMANAS_CLASES_ANUAL_MICRO).quantize(Decimal('0.01'))
+        return data
 
 
 class CategoriaFuncionSerializer(serializers.ModelSerializer):
     actividades = ActividadSerializer(many=True, read_only=True) # IMPORTANTE: Devuelve TODAS las actividades sin filtrar
-    tipo_display = serializers.CharField(source='get_tipo_display', read_only=True)
+    tipo_display = serializers.SerializerMethodField()
     # total_horas se elimina como SerializerMethodField para permitir escritura (guardado en BD)
     porcentaje = serializers.SerializerMethodField()
     detalles_carga = serializers.SerializerMethodField()
     total_carga_horaria = serializers.SerializerMethodField()
+    subactividades_docente = serializers.SerializerMethodField()
     
     class Meta:
         model = CategoriaFuncion
         fields = ['id', 'fondo_tiempo', 'tipo', 'tipo_display', 'total_horas', 
-                  'porcentaje', 'actividades', 'detalles_carga', 'total_carga_horaria']
+                  'porcentaje', 'actividades', 'detalles_carga', 'total_carga_horaria',
+                  'subactividades_docente']
+
+    def get_tipo_display(self, obj):
+        return FONDO_TIEMPO_UI_LABELS.get(obj.tipo, obj.get_tipo_display())
 
     def get_total_carga_horaria(self, obj):
         """Total de asignaciones micro registradas en CargaHoraria para esta categoria."""
@@ -1555,6 +1691,12 @@ class CategoriaFuncionSerializer(serializers.ModelSerializer):
 
         horas_jefatura = context[cache_key].get(obj.tipo, 0) or 0
         return horas_jefatura
+
+    def get_subactividades_docente(self, obj):
+        if obj.tipo != 'academica':
+            return []
+        actividades = obj.fondo_tiempo.subactividades_docente.all().order_by('orden', 'id')
+        return SubActividadDocenteSerializer(actividades, many=True).data
 
     def get_porcentaje(self, obj):
         total_horas_categoria = obj.total_horas or 0
@@ -1588,12 +1730,20 @@ class CategoriaFuncionSerializer(serializers.ModelSerializer):
                 detalles_map[carga.categoria].append({
                     "id": carga.id,
                     "materia_id": carga.materia_id,
+                    "materia": carga.materia_id,
+                    "materia_semestre": carga.materia.semestre if carga.materia else None,
                     "titulo_actividad": (
                         f"{carga.materia.sigla} - {carga.materia.nombre} ({carga.paralelo})"
                         if carga.materia else carga.titulo_actividad
                     ),
                     "horas": carga.horas,
-                    "respaldo": carga.documento_respaldo
+                    "respaldo": carga.documento_respaldo,
+                    "documento_respaldo": carga.documento_respaldo,
+                    "paralelo": carga.paralelo,
+                    "dia_semana": carga.dia_semana,
+                    "hora_inicio": carga.hora_inicio,
+                    "hora_fin": carga.hora_fin,
+                    "aula": carga.aula,
                 })
             
             context[cache_key] = detalles_map
@@ -1676,14 +1826,35 @@ class FondoTiempoSerializer(serializers.ModelSerializer):
         docente = data.get('docente')
         if not docente and hasattr(self, 'instance') and self.instance:
             docente = self.instance.docente
-        
+
+        carrera = data.get('carrera')
+        if not carrera and hasattr(self, 'instance') and self.instance:
+            carrera = self.instance.carrera
+
         if not docente:
             return data
-        
-        # Obtener horas máximas del docente según su primer vínculo activo
-        primer_vinculo = DocenteCarrera.objects.filter(
-            docente=docente, activo=True
-        ).first()
+
+        vinculo = _obtener_vinculo_docente_carrera(docente, carrera)
+        if not vinculo:
+            raise serializers.ValidationError({
+                'docente': 'El docente no tiene un vinculo activo con la carrera seleccionada.'
+            })
+
+        if vinculo.dedicacion == 'dedicacion_exclusiva':
+            raise serializers.ValidationError({
+                'docente': 'Docente exento de distribucion de tiempo segun Art. 25.'
+            })
+
+        if (
+            _docente_tiene_autoridad_en_carrera(docente, carrera)
+            and vinculo.dedicacion not in DEDICACIONES_TIEMPO_HORARIO
+        ):
+            raise serializers.ValidationError({
+                'dedicacion': (
+                    'Los docentes con rol Director o Jefe de Estudios en esta carrera '
+                    'deben tener dedicacion de tipo Tiempo Horario (TH).'
+                )
+            })
         calendario = data.get('calendario_academico')
         if not calendario and hasattr(self, 'instance') and self.instance:
             calendario = self.instance.calendario_academico
@@ -1694,6 +1865,7 @@ class FondoTiempoSerializer(serializers.ModelSerializer):
                 docente=docente,
                 calendario_academico=calendario,
                 tipo_fondo='semestral',
+                archivado=False,
             )
             if self.instance:
                 duplicado_qs = duplicado_qs.exclude(pk=self.instance.pk)
@@ -1702,7 +1874,7 @@ class FondoTiempoSerializer(serializers.ModelSerializer):
                     'docente': 'Este docente ya tiene un fondo de tiempo registrado para el periodo seleccionado'
                 })
 
-        horas_maximas_semanales = primer_vinculo.horas_semanales_maximas if primer_vinculo else 0
+        horas_maximas_semanales = Decimal(str(vinculo.horas_semanales_maximas or 0))
         
         # Calcular total de horas asignadas en este fondo de tiempo
         total_horas_asignadas = Decimal(0)
@@ -1721,13 +1893,13 @@ class FondoTiempoSerializer(serializers.ModelSerializer):
                 'horas_efectivas': 
                 f'⚠️ LÍMITE EXCEDIDO: La suma de todas las actividades ({horas_semanales_asignadas:.2f} horas/semana) '
                 f'supera el máximo permitido de 56 horas semanales. '
-                f'Total anual: {total_horas_asignadas:.2f} horas. '
+                f'Total semestre: {total_horas_asignadas:.2f} horas. '
                 f'Por favor, reduce la carga de actividades.'
             })
         
         # Validación adicional: comparar con el límite específico del docente
         if horas_semanales_asignadas > horas_maximas_semanales:
-            dedicacion_label = primer_vinculo.get_dedicacion_display() if primer_vinculo else 'N/A'
+            dedicacion_label = vinculo.get_dedicacion_display()
             raise serializers.ValidationError({
                 'horas_efectivas':
                 f'⚠️ LÍMITE PERSONAL EXCEDIDO: Tu dedicación ({dedicacion_label}) tiene un límite de '
@@ -2933,18 +3105,62 @@ class ProyectoListSerializer(serializers.ModelSerializer):
 # INFORME FONDO SERIALIZER
 # =====================================================
 
+class InformeAsignaturaEjecutadaSerializer(serializers.ModelSerializer):
+    materia_nombre = serializers.CharField(source='materia.nombre', read_only=True)
+    materia_sigla = serializers.CharField(source='materia.sigla', read_only=True)
+
+    class Meta:
+        model = InformeAsignaturaEjecutada
+        fields = [
+            'id', 'informe', 'materia', 'materia_nombre', 'materia_sigla',
+            'nombre', 'sigla', 'paralelo', 'horas_aula',
+            'inscritos', 'aprobados', 'reprobados', 'habilitados',
+            'descripcion_evaluacion', 'fecha_creacion',
+        ]
+        read_only_fields = ['fecha_creacion']
+
+
+class EvidenciaSerializer(serializers.ModelSerializer):
+    categoria_display = serializers.SerializerMethodField()
+    actividad_detalle = serializers.CharField(source='actividad.detalle', read_only=True)
+    archivo_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Evidencia
+        fields = [
+            'id', 'informe', 'categoria', 'categoria_display', 'actividad',
+            'actividad_detalle', 'descripcion_ejecutado', 'archivo',
+            'archivo_url', 'nombre_original', 'fecha_creacion',
+        ]
+        read_only_fields = ['nombre_original', 'fecha_creacion']
+
+    def get_categoria_display(self, obj):
+        return FONDO_TIEMPO_UI_LABELS.get(obj.categoria, obj.get_categoria_display())
+
+    def get_archivo_url(self, obj):
+        if not obj.archivo:
+            return ''
+        request = self.context.get('request')
+        url = obj.archivo.url
+        return request.build_absolute_uri(url) if request else url
+
+
 class InformeFondoSerializer(serializers.ModelSerializer):
     tipo_display = serializers.CharField(source='get_tipo_display', read_only=True)
+    estado_display = serializers.CharField(source='get_estado_display', read_only=True)
     cumplimiento_display = serializers.CharField(source='get_cumplimiento_display', read_only=True)
     elaborado_por_nombre = serializers.CharField(source='elaborado_por.get_full_name', read_only=True)
     evaluado_por_nombre = serializers.SerializerMethodField()
     fondo_asignatura = serializers.CharField(source='fondo_tiempo.asignatura', read_only=True)
+    asignaturas_ejecutadas = serializers.SerializerMethodField()
+    evidencias_digitales = serializers.SerializerMethodField()
+    horas_aula_ejecutadas = serializers.SerializerMethodField()
     
     class Meta:
         model = InformeFondo
         fields = [
             'id', 'fondo_tiempo', 'fondo_asignatura',
-            'tipo', 'tipo_display', 'fecha_elaboracion',
+            'tipo', 'tipo_display', 'estado', 'estado_display', 'fecha_elaboracion',
             'elaborado_por', 'elaborado_por_nombre',
             'resumen_ejecutivo', 'actividades_realizadas', 'resultados',
             'logros' , 'dificultades',
@@ -2952,7 +3168,8 @@ class InformeFondoSerializer(serializers.ModelSerializer):
             'cumplimiento', 'cumplimiento_display',
             'evaluacion_director', 'fecha_evaluacion',
             'evaluado_por', 'evaluado_por_nombre',
-            'archivo_adjunto', 'fecha_modificacion'
+            'archivo_adjunto', 'asignaturas_ejecutadas', 'evidencias_digitales',
+            'horas_aula_ejecutadas', 'fecha_modificacion'
         ]
         read_only_fields = ['fecha_elaboracion', 'fecha_modificacion']
 
@@ -2962,20 +3179,43 @@ class InformeFondoSerializer(serializers.ModelSerializer):
             return obj.evaluado_por.get_full_name()
         return None
 
+    def get_asignaturas_ejecutadas(self, obj):
+        return InformeAsignaturaEjecutadaSerializer(
+            obj.asignaturas_ejecutadas.select_related('materia').all(),
+            many=True,
+            context=self.context,
+        ).data
+
+    def get_evidencias_digitales(self, obj):
+        return EvidenciaSerializer(
+            obj.evidencias_digitales.select_related('actividad').all(),
+            many=True,
+            context=self.context,
+        ).data
+
+    def get_horas_aula_ejecutadas(self, obj):
+        return obj.horas_aula_ejecutadas
+
 
 class InformeFondoListSerializer(serializers.ModelSerializer):
     """Serializer simplificado para listados"""
     tipo_display = serializers.CharField(source='get_tipo_display', read_only=True)
+    estado_display = serializers.CharField(source='get_estado_display', read_only=True)
     cumplimiento_display = serializers.CharField(source='get_cumplimiento_display', read_only=True)
     fondo_asignatura = serializers.CharField(source='fondo_tiempo.asignatura', read_only=True)
+    horas_aula_ejecutadas = serializers.SerializerMethodField()
     
     class Meta:
         model = InformeFondo
         fields = [
             'id', 'fondo_tiempo', 'fondo_asignatura', 'tipo', 'tipo_display',
-            'cumplimiento', 'cumplimiento_display', 'fecha_elaboracion',
+            'estado', 'estado_display', 'cumplimiento', 'cumplimiento_display',
+            'fecha_elaboracion', 'horas_aula_ejecutadas',
             'archivo_adjunto'
         ]
+
+    def get_horas_aula_ejecutadas(self, obj):
+        return obj.horas_aula_ejecutadas
 
 
 # =====================================================
@@ -3224,8 +3464,22 @@ class FondoTiempoDetalleSerializer(serializers.ModelSerializer):
     def get_puede_presentar(self, obj):
         return obj.puede_presentar()
 
+    def _puede_ver_chat_observaciones(self, obj):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        if not user or not user.is_authenticated:
+            return False
+        perfil = get_effective_profile(user, request)
+        if not perfil or perfil.rol not in ('director', 'jefe_estudios'):
+            return False
+
+        carreras = get_active_careers_for_user(user, request)
+        return carreras.filter(id=obj.carrera_id).exists()
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
+        if not self._puede_ver_chat_observaciones(instance):
+            data['observaciones_detalladas'] = []
         return _filtrar_categorias_investigacion_para_iisyp(data, self.context)
     
     def get_informe_actual(self, obj):

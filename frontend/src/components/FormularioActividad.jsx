@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import toast from 'react-hot-toast';
 
+const SEMANAS_CLASES_ANUAL = 40;
+
 const SaveIcon = (props) => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
@@ -9,10 +11,9 @@ const SaveIcon = (props) => (
 
 function FormularioActividad({ categoria, categoriasDisponibles, onGuardar, onCancelar, actividadInicial, modoEdicion }) {
   const [formData, setFormData] = useState({
-    categoria_id: actividadInicial?.categoria?.id || '',
+    categoria_id: actividadInicial?.categoria?.id || actividadInicial?.categoria || '',
     detalle: actividadInicial?.detalle || '',
     horas_semana: actividadInicial?.horas_semana || '',
-    semanas_año: actividadInicial?.semanas_año || 45.8,
     evidencias: actividadInicial?.evidencias || ''
   });
 
@@ -24,10 +25,9 @@ function FormularioActividad({ categoria, categoriasDisponibles, onGuardar, onCa
     }));
   };
 
-  const calcularHorasAño = () => {
+  const calcularHorasSemestre = () => {
     const horasSemana = parseFloat(formData.horas_semana) || 0;
-    const semanasAño = parseFloat(formData.semanas_año) || 45.8;
-    return Math.round(horasSemana * semanasAño);
+    return Math.round(horasSemana * SEMANAS_CLASES_ANUAL);
   };
 
   const categoriaActual = categoriasDisponibles?.find(c => c.id === parseInt(formData.categoria_id)) || categoria;
@@ -58,14 +58,13 @@ function FormularioActividad({ categoria, categoriasDisponibles, onGuardar, onCa
       return;
     }
 
-    const horasAño = calcularHorasAño();
+    const horasSemestre = calcularHorasSemestre();
 
     const data = {
       categoria: parseInt(formData.categoria_id),
       detalle: formData.detalle.trim(),
       horas_semana: parseFloat(formData.horas_semana),
-      semanas_año: parseFloat(formData.semanas_año),
-      horas_año: parseFloat(horasAño),
+      horas_año: parseFloat(horasSemestre),
       evidencias: formData.evidencias.trim() || ""
     };
 
@@ -129,7 +128,7 @@ function FormularioActividad({ categoria, categoriasDisponibles, onGuardar, onCa
           </div>
 
           {/* Horas por semana */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4">
             <div>
               <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
                 Horas por Semana *
@@ -147,37 +146,20 @@ function FormularioActividad({ categoria, categoriasDisponibles, onGuardar, onCa
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
-                Semanas al Año
-              </label>
-              <input
-                type="number"
-                name="semanas_año"
-                value={formData.semanas_año}
-                onChange={handleChange}
-                min="1"
-                step="0.1"
-                className="w-full px-4 py-3 rounded-lg border-2 border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-white font-bold text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                Por defecto: 45.8 semanas
-              </p>
-            </div>
           </div>
 
           {/* Horas al año (calculado) */}
           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-lg p-4 border-2 border-blue-200 dark:border-blue-800">
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                Total Horas al Año (calculado):
+                Total Horas del Año (calculado):
               </span>
               <span className="text-3xl font-black text-blue-600 dark:text-blue-400">
-                {calcularHorasAño()}h
+                {calcularHorasSemestre()}h
               </span>
             </div>
             <p className="text-xs text-slate-600 dark:text-slate-400 mt-2">
-              Fórmula: Horas/Semana × Semanas/Año
+              Formula: Horas/Semana x 40 semanas
             </p>
           </div>
 
