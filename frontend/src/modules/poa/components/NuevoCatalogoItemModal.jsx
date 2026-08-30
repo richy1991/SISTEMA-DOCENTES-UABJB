@@ -7,7 +7,7 @@ import { Input, Modal } from './base';
 import Dialog from './base/Dialog';
 import { buildClientErrorMessages, formatApiErrors, mapApiErrorsToFieldErrors, ModalErrorAlert } from './formErrorUtils';
 
-const NuevoCatalogoItemModal = ({ partida, item, onClose, onCreated, onUpdated }) => {
+const NuevoCatalogoItemModal = ({ partida, item, onClose, onCreated, onUpdated, stacked = false }) => {
   const [submitting, setSubmitting] = useState(false);
   const [errorMessages, setErrorMessages] = useState([]);
   const [fieldErrors, setFieldErrors] = useState({});
@@ -91,11 +91,9 @@ const NuevoCatalogoItemModal = ({ partida, item, onClose, onCreated, onUpdated }
         setFieldErrors(newFieldErrors);
         const messages = formatApiErrors(resp);
         setErrorMessages(messages);
-        toast.error(messages[0] || 'Error validando campos');
       } else {
         const messages = formatApiErrors(err?.message || String(err));
         setErrorMessages(messages);
-        toast.error(messages[0] || 'Error al guardar');
       }
     } finally {
       setSubmitting(false);
@@ -103,7 +101,7 @@ const NuevoCatalogoItemModal = ({ partida, item, onClose, onCreated, onUpdated }
   };
 
   return (
-    <Modal onClose={onClose}>
+    <Modal onClose={onClose} className={stacked ? 'poa-stacked-modal' : ''}>
       <Dialog
         open={Boolean(replaceDialog)}
         type="warning"
@@ -123,7 +121,6 @@ const NuevoCatalogoItemModal = ({ partida, item, onClose, onCreated, onUpdated }
           } catch (err) {
             const messages = formatApiErrors(err?.response?.data || err?.message || String(err));
             setErrorMessages(messages);
-            toast.error(messages[0] || 'Error al reemplazar');
           } finally {
             setReplaceDialog(null);
           }

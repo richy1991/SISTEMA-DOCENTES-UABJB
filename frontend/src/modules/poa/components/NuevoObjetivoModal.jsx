@@ -77,7 +77,9 @@ const NuevoObjetivoModal = ({ onClose, onCreated, documentoId, objetivo, existin
     const codeLower = (codigo || '').trim().toLowerCase();
     const duplicateName = existingObjetivos.find(o => String(o.descripcion || o.nombre || '').trim().toLowerCase() === nameLower && (!isEdit || Number(o.id) !== Number(objetivo.id)));
     if (duplicateName) {
+      setFieldErrors({ descripcion: 'Ya existe un objetivo con la misma descripción en este documento.' });
       setErrorMessages(['Descripción: ya existe un objetivo con la misma descripción en este documento.']);
+      focusFirstError({ descripcion: true });
       return;
     }
     const duplicateCode = existingObjetivos.find(o => String(o.codigo || '').trim().toLowerCase() === codeLower && codeLower !== '' && (!isEdit || Number(o.id) !== Number(objetivo.id)));
@@ -85,7 +87,6 @@ const NuevoObjetivoModal = ({ onClose, onCreated, documentoId, objetivo, existin
       const nextErrors = { codigo: 'Ya existe un objetivo con el mismo código en este documento.' };
       setFieldErrors(nextErrors);
       setErrorMessages(['Código: ya existe un objetivo con el mismo código en este documento.']);
-      toast.error('Ya existe un objetivo con el mismo código en este documento.');
       focusFirstError(nextErrors);
       return;
     }
@@ -117,19 +118,18 @@ const NuevoObjetivoModal = ({ onClose, onCreated, documentoId, objetivo, existin
       if (isEdit) {
         const res = await updateObjetivo(objetivo.id, payload);
         if (onUpdated) onUpdated(res.data);
+        toast.success(res.data?.message || 'Objetivo actualizado correctamente.');
       } else {
         const res = await createObjetivoEspecifico(payload);
         if (onCreated) onCreated(res.data);
+        toast.success(res.data?.message || 'Objetivo creado correctamente.');
       }
-      if (isEdit) toast.success('Objetivo actualizado');
-      else toast.success('Objetivo creado');
       if (onClose) onClose();
     } catch (err) {
       const nextFieldErrors = mapApiErrorsToFieldErrors(err?.response?.data || {});
       setFieldErrors(nextFieldErrors);
       const messages = formatApiErrors(err?.response?.data || err.message || 'Error al guardar objetivo');
       setErrorMessages(messages);
-      toast.error(messages[0] || 'Error al guardar objetivo');
       focusFirstError(nextFieldErrors);
     } finally {
       setLoading(false);

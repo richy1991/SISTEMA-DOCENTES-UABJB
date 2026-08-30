@@ -1,434 +1,70 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { createActividad, updateActividad, searchIndicadoresCatalogo, crearSolicitudCambioPOA } from '../../../apis/poa.api';
-import IconButton from './IconButton';
-import { FaTimes, FaSave } from 'react-icons/fa';
+import React, { useEffect, useState } from 'react';
+import { FaSave, FaTimes } from 'react-icons/fa';
+import { createActividad, updateActividad, searchIndicadoresCatalogo } from '../../../apis/poa.api';
 import { Input, Textarea, Select, Modal } from './base';
 import { buildClientErrorMessages, formatApiErrors, mapApiErrorsToFieldErrors, ModalErrorAlert } from './formErrorUtils';
 import toast from 'react-hot-toast';
 
-const NuevaActividadModal = ({ onClose, onCreated, onUpdated, objetivoId, actividad, documentoId = null, documentoEstado = '' }) => {
-  const [codigo, setCodigo] = useState('');
-  const [nombre, setNombre] = useState('');
-  const nombreRef = useRef(null);
-  const [responsable, setResponsable] = useState('');
-  const responsableRef = useRef(null);
-  const [productos, setProductos] = useState('');
-  const productosRef = useRef(null);
-  const [mesInicio, setMesInicio] = useState('enero');
-  const [mesFin, setMesFin] = useState('diciembre');
-  const [indicadorSeleccionado, setIndicadorSeleccionado] = useState(null);
-  const [indicadorUnidad, setIndicadorUnidad] = useState('numero');
-  const [indicadorLineaBase, setIndicadorLineaBase] = useState('');
-  const [indicadorMeta, setIndicadorMeta] = useState('');
-  const [estado, setEstado] = useState('programado');
-  const [indicadorQuery, setIndicadorQuery] = useState('');
-  const [indicadorSuggestions, setIndicadorSuggestions] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [errorMessages, setErrorMessages] = useState([]);
+const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const CAMPOS_OBLIGATORIOS = ['codigo', 'nombre', 'responsable', 'productos_esperados', 'mes_inicio', 'mes_fin', 'indicador_unidad', 'indicador_linea_base', 'indicador_meta'];
+const FORM_INICIAL = { codigo: '', nombre: '', responsable: '', productos_esperados: '', indicador_descripcion: '', indicador_unidad: 'numero', indicador_linea_base: '', indicador_meta: '', mes_inicio: 'enero', mes_fin: 'diciembre', riesgo_previsto: '' };
+
+export default function NuevaActividadModal({ onClose, onCreated, onUpdated, objetivoId, actividad }) {
+  const [form, setForm] = useState(FORM_INICIAL);
+  const [indicadores, setIndicadores] = useState([]);
+  const [guardando, setGuardando] = useState(false);
   const [fieldErrors, setFieldErrors] = useState({});
-  const skipNextSearchRef = useRef(false);
-  const requestChangeMode = ['aprobado', 'ejecucion'].includes(String(documentoEstado || '').toLowerCase());
+  const [errorMessages, setErrorMessages] = useState([]);
+
+  useEffect(() => {
+    setForm(actividad ? { ...FORM_INICIAL, ...actividad, indicador_descripcion: actividad.indicador_descripcion || '' } : FORM_INICIAL);
+    setFieldErrors({}); setErrorMessages([]);
+  }, [actividad]);
+
+  useEffect(() => {
+    const query = String(form.indicador_descripcion || '').trim();
+    if (query.length < 2) { setIndicadores([]); return; }
+    searchIndicadoresCatalogo(query).then((response) => setIndicadores(response.data?.results || response.data || [])).catch(() => setIndicadores([]));
+  }, [form.indicador_descripcion]);
 
   const focusFirstError = (errors) => {
-    const firstKey = Object.keys(errors || {})[0];
-    if (!firstKey) return;
-    requestAnimationFrame(() => {
-      const field = document.querySelector(`[name="${firstKey}"]`);
-      if (field) {
-        field.focus();
-        field.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
+    const field = Object.keys(errors || {})[0];
+    if (field) requestAnimationFrame(() => document.querySelector(`[name="${field}"]`)?.focus());
+  };
+  const cambiar = (campo, valor) => {
+    setForm((current) => ({ ...current, [campo]: valor }));
+    if (fieldErrors[campo]) setFieldErrors((current) => ({ ...current, [campo]: '' }));
+  };
+  const validar = () => {
+    const errors = {};
+    CAMPOS_OBLIGATORIOS.forEach((campo) => {
+      if (form[campo] === null || form[campo] === undefined || String(form[campo]).trim() === '') errors[campo] = 'Este campo es obligatorio.';
     });
+    if (!objetivoId || Number.isNaN(Number(objetivoId))) errors.objetivo_id = 'No se pudo identificar el objetivo de la actividad.';
+    if (!errors.mes_inicio && !errors.mes_fin && MESES.indexOf(form.mes_inicio) > MESES.indexOf(form.mes_fin)) errors.mes_fin = 'El mes final no puede ser anterior al mes inicial.';
+    ['indicador_linea_base', 'indicador_meta'].forEach((campo) => {
+      if (!errors[campo] && (!Number.isInteger(Number(form[campo])) || Number(form[campo]) < 0)) errors[campo] = 'Ingrese un número entero igual o mayor a cero.';
+      if (!errors[campo] && form.indicador_unidad === 'porcentaje' && Number(form[campo]) > 100) errors[campo] = 'Cuando la unidad es porcentaje, el valor debe estar entre 0 y 100.';
+    });
+    return errors;
   };
 
-  const indicadorLabel = useCallback((item) => {
-    if (!item) return '';
-    return String(item.indicador || item.nombre || item.descripcion || item.label || item.titulo || `#${item.id}`).trim();
-  }, []);
-
-  useEffect(() => {
-    if (!actividad) return;
+  const guardar = async (event) => {
+    event.preventDefault(); setErrorMessages([]);
+    const clientErrors = validar();
+    if (Object.keys(clientErrors).length) { setFieldErrors(clientErrors); setErrorMessages(buildClientErrorMessages(clientErrors)); focusFirstError(clientErrors); return; }
+    setGuardando(true);
     try {
-      setCodigo(actividad.codigo || '');
-      setNombre(actividad.nombre || '');
-      setResponsable(actividad.responsable || '');
-      setProductos(actividad.productos_esperados || actividad.productos || '');
-      setMesInicio(actividad.mes_inicio || actividad.mes || actividad.fecha_inicio || '');
-      setMesFin(actividad.mes_fin || '');
-      setEstado(actividad.estado || 'programado');
-      if (actividad.indicador && typeof actividad.indicador === 'object') {
-        setIndicadorSeleccionado(actividad.indicador);
-        setIndicadorQuery(actividad.indicador.descripcion || actividad.indicador.nombre || '');
-        setIndicadorUnidad(actividad.indicador.unidad || actividad.indicador.indicador_unidad || indicadorUnidad);
-        setIndicadorLineaBase(actividad.indicador.linea_base ?? actividad.indicador.indicador_linea_base ?? actividad.indicador.lineaBase ?? '');
-        setIndicadorMeta(actividad.indicador.meta ?? actividad.indicador.indicador_meta ?? '');
-      } else if (actividad.indicador && typeof actividad.indicador === 'string') {
-        setIndicadorSeleccionado(null);
-        setIndicadorQuery(actividad.indicador);
-      } else if (actividad.indicador_descripcion) {
-        setIndicadorSeleccionado(null);
-        setIndicadorQuery(actividad.indicador_descripcion);
-      }
-
-      const buscarValor = (candidates) => {
-        for (const c of candidates) {
-          if (c !== undefined && c !== null && c !== '') return c;
-        }
-        return '';
-      };
-
-      const lbCandidates = [
-        actividad.indicador?.linea_base,
-        actividad.indicador?.indicador_linea_base,
-        actividad.indicador?.lineaBase,
-        actividad.indicador_linea_base,
-        actividad.indicador_lineaBase,
-        actividad.linea_base,
-        actividad.lineaBase,
-        actividad.indicador_linea_base,
-      ];
-      const metaCandidates = [
-        actividad.indicador?.meta,
-        actividad.indicador?.indicador_meta,
-        actividad.indicador_meta,
-        actividad.meta,
-        actividad.indicador_meta,
-      ];
-
-      const foundLB = buscarValor(lbCandidates);
-      const foundMeta = buscarValor(metaCandidates);
-      if (foundLB !== '') setIndicadorLineaBase(String(foundLB));
-      if (foundMeta !== '') setIndicadorMeta(String(foundMeta));
-
-    } catch (e) {
-      // silencioso
-    }
-  }, [actividad, indicadorUnidad]);
-
-  const handleCreate = async (e) => {
-    e && e.preventDefault && e.preventDefault();
-    setErrorMessages([]);
-    setFieldErrors({});
-    const clientErrors = {};
-    if (!codigo || String(codigo).trim() === '' || String(codigo).trim() === 'AC-') clientErrors.codigo = 'El código es obligatorio y no puede quedarse como "AC-".';
-    if (!nombre || String(nombre).trim() === '') clientErrors.nombre = 'El nombre es obligatorio.';
-    if (Object.keys(clientErrors).length > 0) {
-      setFieldErrors(clientErrors);
-      setErrorMessages(buildClientErrorMessages(clientErrors));
-      focusFirstError(clientErrors);
-      return;
-    }
-    setLoading(true);
-    try {
-      const payload = {
-        objetivo_id: Number(objetivoId),
-        codigo: codigo || '',
-        nombre,
-        productos_esperados: productos || '',
-      };
-      if (responsable) payload.responsable = responsable;
-      if (mesInicio) payload.mes_inicio = mesInicio;
-      if (mesFin) payload.mes_fin = mesFin;
-      if (estado) payload.estado = estado;
-      if (indicadorSeleccionado) {
-        payload.indicador_descripcion = indicadorSeleccionado.descripcion || indicadorSeleccionado.nombre || String(indicadorQuery || '');
-      } else if (indicadorQuery && String(indicadorQuery).trim() !== '') {
-        payload.indicador_descripcion = String(indicadorQuery).trim();
-      }
-      if (indicadorUnidad) payload.indicador_unidad = indicadorUnidad;
-      if (indicadorLineaBase !== '') payload.indicador_linea_base = Number(indicadorLineaBase);
-      if (indicadorMeta !== '') payload.indicador_meta = Number(indicadorMeta);
-      if (requestChangeMode) {
-        await crearSolicitudCambioPOA({
-          documento: Number(documentoId || actividad?.documento_id || 0),
-          tipo_objeto: 'actividad',
-          objeto_id: actividad?.id || null,
-          accion: actividad?.id ? 'editar' : 'crear',
-          payload,
-          descripcion: actividad?.id ? 'Modificar actividad.' : 'Crear actividad.',
-          resumen: {
-            titulo: actividad?.id ? 'Editar actividad' : 'Nueva actividad',
-            codigo: payload.codigo,
-            nombre: payload.nombre,
-          },
-        });
-        toast.success('Solicitud de cambios enviada al Director de Carrera');
-        if (onClose) onClose();
-        return;
-      }
-      let res;
-      if (actividad && actividad.id) {
-        res = await updateActividad(actividad.id, payload);
-        if (onUpdated) onUpdated(res.data);
-      } else {
-        res = await createActividad(payload);
-        if (onCreated) onCreated(res.data);
-      }
-      if (onClose) onClose();
-    } catch (err) {
-      const messages = formatApiErrors(err?.response?.data ?? err?.message ?? err);
-      const nextFieldErrors = mapApiErrorsToFieldErrors(err?.response?.data || {});
-      setFieldErrors(nextFieldErrors);
-      setErrorMessages(messages);
-      focusFirstError(nextFieldErrors);
-    } finally {
-      setLoading(false);
-    }
+      const payload = { ...form, objetivo_id: Number(objetivoId), indicador_linea_base: Number(form.indicador_linea_base), indicador_meta: Number(form.indicador_meta) };
+      const respuesta = actividad?.id ? await updateActividad(actividad.id, payload) : await createActividad(payload);
+      toast.success(respuesta.data?.message || (actividad?.id ? 'Actividad actualizada correctamente.' : 'Actividad creada correctamente.'));
+      (actividad?.id ? onUpdated : onCreated)?.(respuesta.data); onClose?.();
+    } catch (error) {
+      const data = error?.response?.data;
+      const errors = mapApiErrorsToFieldErrors(data || {});
+      setFieldErrors(errors); setErrorMessages(formatApiErrors(data || error?.message || 'No se pudo guardar la actividad.')); focusFirstError(errors);
+    } finally { setGuardando(false); }
   };
 
-  useEffect(() => {
-    if (skipNextSearchRef.current) {
-      skipNextSearchRef.current = false;
-      return;
-    }
-    if (!indicadorQuery || String(indicadorQuery).trim().length < 2) {
-      setIndicadorSuggestions([]);
-      return;
-    }
-    let mounted = true;
-    searchIndicadoresCatalogo(indicadorQuery)
-      .then(r => {
-        if (!mounted) return;
-        const list = Array.isArray(r.data) ? r.data : (r.data.results || []);
-        setIndicadorSuggestions(list || []);
-      })
-      .catch(() => setIndicadorSuggestions([]));
-    return () => { mounted = false; };
-  }, [indicadorQuery, indicadorLabel]);
-
-  return (
-    <Modal onClose={onClose}>
-      <div className="modal-panel rounded-xl w-11/12 max-w-4xl">
-        <div className="modal-header flex items-center justify-between px-6 py-4">
-          <div className="font-semibold">{actividad && actividad.id ? 'Editar Actividad' : 'Nueva Actividad'}</div>
-          <IconButton icon={<FaTimes />} onClick={() => onClose && onClose()} className="btn-header-icon rounded-full w-8 h-8 flex items-center justify-center" title="Cerrar" ariaLabel="Cerrar" />
-        </div>
-        <div className="p-6 modal-body">
-
-          <ModalErrorAlert title="No se pudo guardar la actividad:" messages={errorMessages} />
-
-          <form onSubmit={handleCreate} className="space-y-4">
-            <div className="grid grid-cols-12 gap-4 items-end">
-              <div className="col-span-2">
-                <Input
-                  label="Código"
-                  name="codigo"
-                  value={codigo}
-                  onChange={e => {
-                    setCodigo(e.target.value);
-                    if (fieldErrors.codigo) setFieldErrors(prev => ({ ...prev, codigo: '' }));
-                  }}
-                  maxLength={13}
-                  error={fieldErrors.codigo}
-                />
-              </div>
-              <div className="col-span-7">
-                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Nombre</label>
-                <Textarea
-                  name="nombre"
-                  ref={nombreRef}
-                  value={nombre}
-                  onChange={e => {
-                    const val = e.target.value;
-                    setNombre(val);
-                    if (fieldErrors.nombre) setFieldErrors(prev => ({ ...prev, nombre: '' }));
-                    requestAnimationFrame(() => {
-                      if (nombreRef.current) {
-                        nombreRef.current.scrollTop = nombreRef.current.scrollHeight;
-                      }
-                    });
-                  }}
-                  className="overflow-auto"
-                  rows={2}
-                  error={fieldErrors.nombre}
-                />
-              </div>
-              <div className="col-span-3">
-                <Input
-                  label="Responsable"
-                  name="responsable"
-                  value={responsable}
-                  ref={responsableRef}
-                  onChange={e => {
-                    const val = e.target.value;
-                    setResponsable(val);
-                    if (fieldErrors.responsable) setFieldErrors(prev => ({ ...prev, responsable: '' }));
-                    requestAnimationFrame(() => {
-                      if (responsableRef.current) {
-                        responsableRef.current.scrollLeft = responsableRef.current.scrollWidth;
-                      }
-                    });
-                  }}
-                  className="overflow-x-auto whitespace-nowrap"
-                  error={fieldErrors.responsable}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Productos esperados</label>
-              <Textarea
-                name="productos_esperados"
-                ref={productosRef}
-                value={productos}
-                onChange={e => {
-                  const val = e.target.value;
-                  setProductos(val);
-                  if (fieldErrors.productos_esperados) setFieldErrors(prev => ({ ...prev, productos_esperados: '' }));
-                  requestAnimationFrame(() => {
-                    if (productosRef.current) {
-                      productosRef.current.scrollTop = productosRef.current.scrollHeight;
-                    }
-                  });
-                }}
-                className="overflow-auto"
-                rows={3}
-                error={fieldErrors.productos_esperados}
-              />
-            </div>
-
-            {/* Indicador / meta / unidad */}
-            <div className="grid grid-cols-12 gap-2 relative items-start">
-              <div className="col-span-7">
-                <label className="block text-xs font-medium text-gray-700 dark:text-slate-300">Indicador (buscar)</label>
-                <input
-                  name="indicador_descripcion"
-                  value={indicadorQuery}
-                  onChange={e => {
-                    setIndicadorQuery(e.target.value);
-                    setIndicadorSeleccionado(null);
-                    if (fieldErrors.indicador_descripcion) setFieldErrors(prev => ({ ...prev, indicador_descripcion: '' }));
-                  }}
-                  placeholder="Escribe para buscar..."
-                  autoComplete="off"
-                  className={`poa-input mt-1 block w-full rounded px-2 py-1 text-xs ${fieldErrors.indicador_descripcion ? 'border-red-500 dark:border-red-500 focus:ring-red-500 dark:focus:ring-red-500' : ''}`}
-                />
-                {indicadorSuggestions && indicadorSuggestions.length > 0 && (
-                  <ul className="absolute bg-white dark:bg-slate-800 border dark:border-slate-600 rounded mt-1 w-full max-h-44 overflow-auto z-30 shadow-lg">
-                    {indicadorSuggestions.map(s => {
-                      const label = indicadorLabel(s);
-                      return (
-                        <li
-                          key={s.id}
-                          className="p-2 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer text-gray-900 dark:text-slate-100"
-                          onClick={() => {
-                            skipNextSearchRef.current = true;
-                            setIndicadorSeleccionado(s);
-                            setIndicadorQuery(label);
-                            setIndicadorSuggestions([]);
-                          }}
-                        >
-                          {label}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-              <div className="col-span-3">
-                <Select
-                  label="Unidad"
-                  name="indicador_unidad"
-                  value={indicadorUnidad}
-                  onChange={e => {
-                    setIndicadorUnidad(e.target.value);
-                    if (fieldErrors.indicador_unidad) setFieldErrors(prev => ({ ...prev, indicador_unidad: '' }));
-                  }}
-                  className="text-xs"
-                  error={fieldErrors.indicador_unidad}
-                >
-                  <option value="numero">Número</option>
-                  <option value="porcentaje">Porcentaje</option>
-                </Select>
-              </div>
-              <div className="col-span-2">
-                <Input
-                  label="Línea base"
-                  name="indicador_linea_base"
-                  type="number"
-                  value={indicadorLineaBase}
-                  onChange={e => {
-                    setIndicadorLineaBase(e.target.value);
-                    if (fieldErrors.indicador_linea_base) setFieldErrors(prev => ({ ...prev, indicador_linea_base: '' }));
-                  }}
-                  className="text-xs"
-                  error={fieldErrors.indicador_linea_base}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 md:grid-cols-12 gap-2 items-center">
-              <div className="col-span-1 md:col-span-3">
-                <Input
-                  label="Meta"
-                  name="indicador_meta"
-                  type="number"
-                  value={indicadorMeta}
-                  onChange={e => {
-                    setIndicadorMeta(e.target.value);
-                    if (fieldErrors.indicador_meta) setFieldErrors(prev => ({ ...prev, indicador_meta: '' }));
-                  }}
-                  className="text-xs"
-                  error={fieldErrors.indicador_meta}
-                />
-              </div>
-              <div className="col-span-1 md:col-span-3">
-                <Select
-                  label="Estado"
-                  name="estado"
-                  value={estado}
-                  onChange={e => {
-                    setEstado(e.target.value);
-                    if (fieldErrors.estado) setFieldErrors(prev => ({ ...prev, estado: '' }));
-                  }}
-                  className="text-xs"
-                  error={fieldErrors.estado}
-                >
-                  <option value="programado">Programado</option>
-                  <option value="en_ejecucion">En ejecución</option>
-                  <option value="completado">Completado</option>
-                  <option value="cancelado">Cancelado</option>
-                </Select>
-              </div>
-              <div className="col-span-1 md:col-span-3">
-                <Input
-                  label="Mes inicio"
-                  name="mes_inicio"
-                  value={mesInicio}
-                  onChange={e => {
-                    setMesInicio(e.target.value);
-                    if (fieldErrors.mes_inicio) setFieldErrors(prev => ({ ...prev, mes_inicio: '' }));
-                  }}
-                  className="text-xs"
-                  error={fieldErrors.mes_inicio}
-                />
-              </div>
-              <div className="col-span-1 md:col-span-3">
-                <Input
-                  label="Mes fin"
-                  name="mes_fin"
-                  value={mesFin}
-                  onChange={e => {
-                    setMesFin(e.target.value);
-                    if (fieldErrors.mes_fin) setFieldErrors(prev => ({ ...prev, mes_fin: '' }));
-                  }}
-                  className="text-xs"
-                  error={fieldErrors.mes_fin}
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 modal-actions">
-              <IconButton icon={<FaTimes />} onClick={() => onClose && onClose()} className="btn-cancel px-3 py-2 rounded" title="Cancelar">Cancelar</IconButton>
-              <IconButton icon={<FaSave />} type="submit" disabled={loading} className="btn-success px-3 py-2 rounded" title={loading ? 'Guardando...' : (requestChangeMode ? 'Enviar solicitud de cambios' : (actividad && actividad.id ? 'Guardar' : 'Crear'))}>
-                {loading ? 'Guardando...' : (requestChangeMode ? 'Enviar solicitud de cambios' : (actividad && actividad.id ? 'Guardar' : 'Crear'))}
-              </IconButton>
-            </div>
-          </form>
-        </div>
-      </div>
-    </Modal>
-  );
-};
-
-export default NuevaActividadModal;
+  return <Modal onClose={onClose}><div className="modal-panel w-full max-w-3xl"><div className="modal-header flex items-center justify-between"><div><p className="text-xs">Actividad</p><h3>{actividad?.id ? 'Editar actividad' : 'Nueva actividad'}</h3></div><button type="button" onClick={onClose} aria-label="Cerrar"><FaTimes /></button></div><form onSubmit={guardar} className="space-y-4 p-5" noValidate><ModalErrorAlert title="Revise los campos marcados:" messages={errorMessages} /><div className="grid gap-3 md:grid-cols-3"><Input label="Código" name="codigo" required value={form.codigo} error={fieldErrors.codigo} onChange={(e) => cambiar('codigo', e.target.value)} /><div className="md:col-span-2"><Input label="Nombre de la actividad" name="nombre" required value={form.nombre} error={fieldErrors.nombre} onChange={(e) => cambiar('nombre', e.target.value)} /></div><div className="md:col-span-3"><Input label="Responsable" name="responsable" required value={form.responsable} error={fieldErrors.responsable} onChange={(e) => cambiar('responsable', e.target.value)} /></div><div className="md:col-span-3"><Textarea label="Productos esperados" name="productos_esperados" required rows={3} value={form.productos_esperados} error={fieldErrors.productos_esperados} onChange={(e) => cambiar('productos_esperados', e.target.value)} /></div></div><div className="grid gap-3 md:grid-cols-3"><div className="md:col-span-2"><Input label="Indicador" name="indicador_descripcion" list="indicadores-poa" value={form.indicador_descripcion} error={fieldErrors.indicador_descripcion} onChange={(e) => cambiar('indicador_descripcion', e.target.value)} helperText="Opcional según las reglas actuales." /><datalist id="indicadores-poa">{indicadores.map((item) => <option key={item.id || item.descripcion || item.indicador} value={item.descripcion || item.nombre || item.indicador} />)}</datalist></div><Select label="Unidad" name="indicador_unidad" required value={form.indicador_unidad} error={fieldErrors.indicador_unidad} onChange={(e) => cambiar('indicador_unidad', e.target.value)}><option value="numero">Número</option><option value="porcentaje">Porcentaje</option></Select><Input label="Línea base" name="indicador_linea_base" required type="number" min="0" max={form.indicador_unidad === 'porcentaje' ? 100 : undefined} value={form.indicador_linea_base} error={fieldErrors.indicador_linea_base} onChange={(e) => cambiar('indicador_linea_base', e.target.value)} /><Input label="Meta" name="indicador_meta" required type="number" min="0" max={form.indicador_unidad === 'porcentaje' ? 100 : undefined} value={form.indicador_meta} error={fieldErrors.indicador_meta} onChange={(e) => cambiar('indicador_meta', e.target.value)} /><Select label="Mes inicio" name="mes_inicio" required value={form.mes_inicio} error={fieldErrors.mes_inicio} onChange={(e) => { cambiar('mes_inicio', e.target.value); if (MESES.indexOf(e.target.value) > MESES.indexOf(form.mes_fin)) cambiar('mes_fin', e.target.value); }}>{MESES.map((mes) => <option key={mes} value={mes}>{mes[0].toUpperCase() + mes.slice(1)}</option>)}</Select><Select label="Mes fin" name="mes_fin" required value={form.mes_fin} error={fieldErrors.mes_fin} onChange={(e) => cambiar('mes_fin', e.target.value)}>{MESES.map((mes) => <option key={mes} value={mes} disabled={MESES.indexOf(mes) < MESES.indexOf(form.mes_inicio)}>{mes[0].toUpperCase() + mes.slice(1)}</option>)}</Select></div><Textarea label="Riesgo previsto y medida de respuesta" name="riesgo_previsto" rows={2} value={form.riesgo_previsto} error={fieldErrors.riesgo_previsto} onChange={(e) => cambiar('riesgo_previsto', e.target.value)} placeholder="Opcional: riesgo y cómo se atenderá." /><div className="modal-actions flex justify-end gap-2"><button type="button" className="btn-cancel rounded px-3 py-2" onClick={onClose}>Cancelar</button><button disabled={guardando} className="btn-primary rounded px-3 py-2"><FaSave className="mr-1 inline" />{guardando ? 'Guardando…' : 'Guardar actividad'}</button></div></form></div></Modal>;
+}

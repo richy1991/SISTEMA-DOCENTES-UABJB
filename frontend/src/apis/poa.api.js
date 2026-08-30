@@ -58,15 +58,11 @@ api.interceptors.response.use(
 	}
 );
 
-// Direcciones (expuestas por el app poa_document según apis.md)
-// Endpoint: GET /api/poa/direcciones/
-export const getAllDirecciones = () => api.get('/api/poa/direcciones/');
-export const getDireccionPorId = (id) => api.get(`/api/poa/direcciones/${id}/`);
-export const createDireccion = (payload) => api.post('/api/poa/direcciones/', payload);
-export const updateDireccion = (id, payload) => api.patch(`/api/poa/direcciones/${id}/`, payload);
-export const deleteDireccion = (id) => api.delete(`/api/poa/direcciones/${id}/`);
-// Buscar direcciones por texto (usa parámetro 'search' compatible con DRF SearchFilter)
-export const searchDirecciones = (q) => api.get('/api/poa/direcciones/', { params: { search: q } });
+// Programas POA (cada usuario solo consulta los de su propia carrera)
+export const getProgramasPOA = (params = {}) => api.get('/api/poa/programas/', { params });
+export const createProgramaPOA = (payload) => api.post('/api/poa/programas/', payload);
+export const updateProgramaPOA = (id, payload) => api.patch(`/api/poa/programas/${id}/`, payload);
+export const deleteProgramaPOA = (id) => api.delete(`/api/poa/programas/${id}/`);
 
 // Documentos POA
 // Encabezados (solo lectura). Si no envías gestion, el backend devuelve la del año actual.
@@ -162,6 +158,27 @@ export const iniciarEjecucionDocumentoPOA = (id, gestion) => {
 	return api.post(`/api/poa/documentos_poa/${id}/iniciar-ejecucion/`, {}, { params: { gestion: Number(gestion) } });
 };
 
+export const getSeguimientoPOA = (gestion) =>
+	api.get('/api/poa/documentos_poa/seguimiento/', { params: { gestion: Number(gestion) } });
+
+export const actualizarEstadoActividadPOA = (id, payload) =>
+	api.post(`/api/poa/actividades/${id}/actualizar-estado/`, payload);
+
+export const getSeguimientoActividadPOA = (id) => api.get(`/api/poa/actividades/${id}/seguimiento/`);
+export const getVersionesDocumentoPOA = (id, gestion) => api.get(`/api/poa/documentos_poa/${id}/versiones/`, { params: { gestion: Number(gestion) } });
+
+export const getConsolidadoRequerimientosPOA = (params) => api.get('/api/poa/consolidado-requerimientos/', { params });
+export const descargarConsolidadoRequerimientosExcelPOA = (params) =>
+	api.get('/api/poa/consolidado-requerimientos/', { params: { ...params, formato: 'excel' }, responseType: 'blob' });
+export const getOrdenesCompraPOA = (params = {}) => api.get('/api/poa/ordenes-compra/', { params });
+export const crearOrdenCompraPOA = (payload) => api.post('/api/poa/ordenes-compra/', payload);
+export const registrarRecepcionMaterialPOA = (payload) => api.post('/api/poa/recepciones-material/', payload);
+export const registrarEntregaMaterialPOA = (payload) => api.post('/api/poa/entregas-material/', payload);
+export const anularMovimientoMaterialPOA = (tipo, id, motivo) => api.post(`/api/poa/materiales/${tipo}/${id}/anular/`, { motivo });
+export const getTableroPOA = (params = {}) => api.get('/api/poa/tablero/', { params });
+export const getBandejaSeguimientoPOA = (params = {}) => api.get('/api/poa/seguimiento/bandeja/', { params });
+export const getDetalleSeguimientoProgramaPOA = (id) => api.get(`/api/poa/seguimiento/programas/${id}/`);
+
 export const crearSolicitudCambioPOA = (payload) => {
 	if (!payload || payload.documento === undefined || payload.documento === null || Number.isNaN(Number(payload.documento))) {
 		return badRequest({ documento: ['El campo "documento" es obligatorio.'] });
@@ -178,29 +195,12 @@ export const rechazarSolicitudCambioPOA = (id, respuesta = '') =>
 export const updateObservacionDocumentoPOA = (id, payload) =>
 	api.patch(`/api/poa/observaciones-documento/${id}/`, payload);
 
-// Reportes POA (mismo patrón que el sistema principal: axios + blob)
-export const descargarReporteGeneralPOA = (gestion) => {
-	if (gestion === undefined || gestion === null || Number.isNaN(Number(gestion))) {
-		return badRequest({ gestion: ['El parámetro "gestion" es obligatorio y debe ser un entero.'] });
-	}
-	return api.get('/api/reportes/generar-reporte-general/', {
-		params: { gestion: Number(gestion) },
+// Los PDF se cargan mediante FullscreenPDFViewer. Solo Excel se descarga directamente.
+export const descargarSeguimientoGeneralExcelPOA = (gestion) =>
+	api.get('/api/poa/reportes/seguimiento-institucional/', {
+		params: { gestion: Number(gestion), formato: 'excel' },
 		responseType: 'blob',
 	});
-};
-
-export const descargarReporteDocumentoPOA = (documentoId, gestion) => {
-	if (documentoId === undefined || documentoId === null || Number.isNaN(Number(documentoId))) {
-		return badRequest({ documento_id: ['El parámetro "documento_id" es obligatorio y debe ser un entero.'] });
-	}
-	if (gestion === undefined || gestion === null || Number.isNaN(Number(gestion))) {
-		return badRequest({ gestion: ['El parámetro "gestion" es obligatorio y debe ser un entero.'] });
-	}
-	return api.get(`/api/poa/documentos_poa/${Number(documentoId)}/pdf-oficial/`, {
-		params: { gestion: Number(gestion) },
-		responseType: 'blob',
-	});
-};
 
 // Objetivos específicos
 export const getObjetivosEspecificos = (documento_id) => {
@@ -249,7 +249,6 @@ export const deleteActividad = (id) => api.delete(`/api/poa/actividades/${id}/`)
 // Actions sobre actividades
 export const asignarCatalogoActividad = (id, catalogo_id) => api.patch(`/api/poa/actividades/${id}/asignar_catalogo/`, { catalogo_id });
 export const asignarIndicadorActividad = (id, indicador_id) => api.patch(`/api/poa/actividades/${id}/asignar_indicador/`, { indicador_id });
-export const indicadoresPorDireccion = (direccion_id) => api.get('/api/poa/actividades/indicadores_por_direccion/', { params: { direccion_id } });
 
 // Detalle presupuesto
 export const getDetallePresupuestoPorActividad = (actividad_id, documento_id) => {
@@ -282,55 +281,37 @@ export const updateDetalle = (id, payload) => api.patch(`/api/poa/detalle-presup
 export const deleteDetalle = (id) => api.delete(`/api/poa/detalle-presupuesto/${id}/`);
 
 
-// Catálogos (app catalogos)
+// Catálogos internos del módulo POA
 // Items
 // `params` es opcional; permite filtrar por partida_id, search, etc.
-export const getCatalogoItems = (params) => api.get('/api/catalogos/items/', { params });
+export const getCatalogoItems = (params) => api.get('/api/poa/catalogos/items/', { params });
 // Nuevo endpoint específico para autocompletes/consultas de catálogo usado por el modal
-// Endpoint: /api/catalogos/items-catalogo/
-export const getItemsCatalogo = (params) => api.get('/api/catalogos/items-catalogo/', { params });
-export const getCatalogoItemPorId = (id) => api.get(`/api/catalogos/items/${id}/`);
-export const createCatalogoItem = (payload) => api.post('/api/catalogos/items/', payload);
-export const updateCatalogoItem = (id, payload) => api.patch(`/api/catalogos/items/${id}/`, payload);
-export const deleteCatalogoItem = (id) => api.delete(`/api/catalogos/items/${id}/`);
+// Endpoint: /api/poa/catalogos/items-catalogo/
+export const getItemsCatalogo = (params) => api.get('/api/poa/catalogos/items-catalogo/', { params });
+export const getCatalogoItemPorId = (id) => api.get(`/api/poa/catalogos/items/${id}/`);
+export const createCatalogoItem = (payload) => api.post('/api/poa/catalogos/items/', payload);
+export const updateCatalogoItem = (id, payload) => api.patch(`/api/poa/catalogos/items/${id}/`, payload);
+export const deleteCatalogoItem = (id) => api.delete(`/api/poa/catalogos/items/${id}/`);
 export const importarCatalogoItemsExcel = (formData) =>
-	api.post('/api/catalogos/items/importar-excel/', formData);
+	api.post('/api/poa/catalogos/items/importar-excel/', formData);
 export const descargarCatalogoItemsExcel = (options = {}) =>
-	api.get('/api/catalogos/items-catalogo/exportar-excel/', {
+	api.get('/api/poa/catalogos/items-catalogo/exportar-excel/', {
 		responseType: 'blob',
 		...options,
 	});
 
-// Partidas presupuestarias (app catalogos)
-// Endpoint: GET /api/catalogos/partidas/
-export const getCatalogoPartidas = () => api.get('/api/catalogos/partidas/');
-
-// Operaciones (indicadores)
-export const getCatalogoOperaciones = (params) => api.get('/api/catalogos/operaciones/', { params });
-export const getCatalogoOperacionPorId = (id) => api.get(`/api/catalogos/operaciones/${id}/`);
-export const createCatalogoOperacion = (payload) => api.post('/api/catalogos/operaciones/', payload);
-export const updateCatalogoOperacion = (id, payload) => api.patch(`/api/catalogos/operaciones/${id}/`, payload);
-export const deleteCatalogoOperacion = (id) => api.delete(`/api/catalogos/operaciones/${id}/`);
-// Buscar operaciones/catalogo con parámetro 'search' (útil para autocompletes)
-export const searchCatalogoOperaciones = (q, extraParams = {}) => api.get('/api/catalogos/operaciones/', { params: { search: q, ...extraParams } });
-export const searchOperacionesCatalogo = (q) => api.get('/api/catalogos/operaciones-catalogo/', { params: { search: q } });
+// Partidas presupuestarias
+// Endpoint: GET /api/poa/catalogos/partidas/
+export const getCatalogoPartidas = () => api.get('/api/poa/catalogos/partidas/');
 
 // Indicadores planos para POA (catálogo nuevo de una sola columna)
-export const getIndicadoresCatalogo = (params) => api.get('/api/catalogos/indicadores/', { params });
-export const getIndicadorCatalogoPorId = (id) => api.get(`/api/catalogos/indicadores/${id}/`);
-export const createIndicadorCatalogo = (payload) => api.post('/api/catalogos/indicadores/', payload);
-export const updateIndicadorCatalogo = (id, payload) => api.patch(`/api/catalogos/indicadores/${id}/`, payload);
-export const deleteIndicadorCatalogo = (id) => api.delete(`/api/catalogos/indicadores/${id}/`);
-export const importarIndicadoresExcel = (formData) => api.post('/api/catalogos/indicadores/importar-excel/', formData);
-export const searchIndicadoresCatalogo = (q) => api.get('/api/catalogos/indicadores-catalogo/', { params: { search: q } });
-
-// Obtener operaciones filtradas por dirección (si el backend soporta ?direccion_id=)
-export const getOperacionesPorDireccion = (direccion_id) => {
-	if (direccion_id === undefined || direccion_id === null || Number.isNaN(Number(direccion_id))) {
-		return badRequest({ direccion_id: ['El parámetro "direccion_id" es obligatorio y debe ser un entero.'] });
-	}
-	return api.get('/api/catalogos/operaciones/', { params: { direccion_id: Number(direccion_id) } });
-};
+export const getIndicadoresCatalogo = (params) => api.get('/api/poa/catalogos/indicadores/', { params });
+export const getIndicadorCatalogoPorId = (id) => api.get(`/api/poa/catalogos/indicadores/${id}/`);
+export const createIndicadorCatalogo = (payload) => api.post('/api/poa/catalogos/indicadores/', payload);
+export const updateIndicadorCatalogo = (id, payload) => api.patch(`/api/poa/catalogos/indicadores/${id}/`, payload);
+export const deleteIndicadorCatalogo = (id) => api.delete(`/api/poa/catalogos/indicadores/${id}/`);
+export const importarIndicadoresExcel = (formData) => api.post('/api/poa/catalogos/indicadores/importar-excel/', formData);
+export const searchIndicadoresCatalogo = (q) => api.get('/api/poa/catalogos/indicadores-catalogo/', { params: { search: q } });
 
 // ─── Usuarios POA ─────────────────────────────────────────────────────────────
 // Gestión de accesos al módulo POA (docentes con roles asignados)

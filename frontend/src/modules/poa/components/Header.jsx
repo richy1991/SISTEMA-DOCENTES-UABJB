@@ -3,7 +3,6 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { FaArrowLeft, FaPlus, FaEdit, FaTrash, FaFilePdf, FaMoneyBillAlt, FaImage, FaEllipsisV } from 'react-icons/fa';
 import ThemeToggle from './ThemeToggle';
 import IconButton from './IconButton';
-import Dialog from './base/Dialog';
 import { buildPoaNavigationState, getPoaNavigationContext } from '../utils/navigationContext';
 
 const themeStyles = {
@@ -38,8 +37,6 @@ const Header = ({
   isHome, 
   showHeader, 
   headerSelectedActividad, 
-  headerSelectedDireccion, 
-  headerSelectedOperacion,
   setTheme,
   sidebarExpanded = true,
   poaPermissions = {}
@@ -49,7 +46,6 @@ const Header = ({
   const themeConfig = themeStyles[theme];
   const canEdit = !!poaPermissions?.canEdit;
   const canManageAccess = !!poaPermissions?.canManageAccess;
-  const [deleteOperacionDialog, setDeleteOperacionDialog] = React.useState(null);
   const [mobileActionsOpen, setMobileActionsOpen] = React.useState(false);
   const mobileActionsRef = React.useRef(null);
   const navContext = getPoaNavigationContext(location?.state);
@@ -71,7 +67,7 @@ const Header = ({
 
   React.useEffect(() => {
     setMobileActionsOpen(false);
-  }, [location?.pathname, headerSelectedActividad, headerSelectedDireccion, headerSelectedOperacion]);
+  }, [location?.pathname, headerSelectedActividad]);
 
   const getActividadForNavigation = () => (
     isPresupuestoPage
@@ -112,9 +108,12 @@ const Header = ({
     gestion: navContext?.gestion || getActividadForNavigation()?.gestion || getActividadForNavigation()?.documento_gestion,
     documentoId: getSelectedDocumentoId(),
     documentoEstado: navContext?.documentoEstado || getActividadForNavigation()?.documento_estado,
+    documentoNombre: navContext?.documentoNombre,
     documentosPath: getDocumentosPath(),
     objetivoId: getSelectedObjetivoId(),
+    objetivoNombre: navContext?.objetivoNombre,
     actividadId: getSelectedActividadId(),
+    actividadNombre: navContext?.actividadNombre || getActividadForNavigation()?.codigo || getActividadForNavigation()?.nombre,
     ...(getActividadForNavigation() ? { actividad: getActividadForNavigation() } : {}),
     ...patch,
   });
@@ -123,6 +122,12 @@ const Header = ({
     const p = location?.pathname || '';
     const objetivoId = getSelectedObjetivoId();
     const documentoId = getSelectedDocumentoId();
+    const retornoPoaPath = navContext?.retornoPoaPath;
+
+    if (p.includes('/seguimiento/programa/')) {
+      navigate('/poa', { state: { modo: location.state?.modo || 'ejecucion' } });
+      return;
+    }
 
     if (p === '/poa/presupuestos' || p.includes('/evidencias')) {
       if (objetivoId) {
@@ -135,6 +140,12 @@ const Header = ({
     }
 
     if (p.startsWith('/poa/actividades')) {
+      if (retornoPoaPath) {
+        navigate(retornoPoaPath, {
+          state: buildHeaderNavigationState({ retornoPoaPath, retornoPoaMode: navContext?.retornoPoaMode }),
+        });
+        return;
+      }
       if (documentoId) {
         navigate(`/poa/objetivos-especificos/${documentoId}`, {
           replace: true,
@@ -176,6 +187,7 @@ const Header = ({
     const p = location?.pathname || '';
     // Mostrar título específico para la vista de evidencias
     if (p.includes('/evidencias')) return 'Registro de Evidencias';
+    if (p.includes('/seguimiento/programa/')) return 'Seguimiento del programa';
     if (p === '/poa/documentos' || p === '/poa') return 'Documentos POA';
     if (p === '/poa/documentos-revision') return 'Revisión de Documentos POA';
     if (p === '/poa/catalogos/items') return 'Catálogo de items';
@@ -184,9 +196,10 @@ const Header = ({
     if (p.startsWith('/poa/actividades')) return 'Actividades';
     if (p.startsWith('/poa/catalogos')) return 'Catálogos';
     if (p === '/poa/presupuestos') return 'Detalle Presupuesto';
+    if (p === '/poa/consolidado-requerimientos') return 'Bandeja de compras';
     if (p === '/poa/reportes') return 'Reportes';
     if (p === '/poa/personas') return 'Personas';
-    return 'Ingeniería de Sistemas';
+    return 'Módulo POA';
   };
 
   const createHeaderAction = ({ key, label, icon, onClick, title, type = 'selected', className = '' }) => ({
@@ -328,56 +341,9 @@ const Header = ({
       ]);
     }
     
-    if (p === '/poa/catalogos/indicadores') {
-      if (!canEdit) return null;
-      if (headerSelectedDireccion) {
-        return renderActions([
-          ...(headerSelectedOperacion ? [
-            createHeaderAction({
-              key: 'edit-operacion',
-              label: 'Editar',
-              icon: <FaEdit />,
-              onClick: () => window.dispatchEvent(new CustomEvent('open-edit-operacion', { detail: headerSelectedOperacion })),
-            }),
-            createHeaderAction({
-              key: 'delete-operacion',
-              label: 'Eliminar',
-              icon: <FaTrash />,
-              onClick: () => setDeleteOperacionDialog(headerSelectedOperacion),
-            }),
-          ] : []),
-          createHeaderAction({
-            key: 'new-indicador',
-            label: 'Nuevo indicador',
-            icon: <FaPlus />,
-            type: 'new',
-            onClick: () => window.dispatchEvent(new CustomEvent('open-new', { detail: { page: 'indicadores' } })),
-            title: 'Nuevo indicador',
-          }),
-        ]);
-      }
-      return renderActions([
-        createHeaderAction({
-          key: 'new-direcciones',
-          label: 'Nuevo',
-          icon: <FaPlus />,
-          type: 'new',
-          onClick: () => window.dispatchEvent(new CustomEvent('open-new', { detail: { page: 'direcciones' } })),
-        }),
-      ]);
-    }
-    
     if (p.startsWith('/poa/actividades')) {
       return renderActions([
         ...(headerSelectedActividad ? [
-          ...(canEdit ? [
-            createHeaderAction({
-              key: 'edit-actividad',
-              label: 'Editar',
-              icon: <FaEdit />,
-              onClick: () => window.dispatchEvent(new CustomEvent('header-action', { detail: { action: 'edit', actividad: headerSelectedActividad } })),
-            }),
-          ] : []),
           createHeaderAction({
             key: 'presupuesto-actividad',
             label: 'Presupuesto',
@@ -410,6 +376,12 @@ const Header = ({
             }),
           }),
           ...(canEdit ? [
+            createHeaderAction({
+              key: 'edit-actividad',
+              label: 'Editar',
+              icon: <FaEdit />,
+              onClick: () => window.dispatchEvent(new CustomEvent('header-action', { detail: { action: 'edit', actividad: headerSelectedActividad } })),
+            }),
             createHeaderAction({
               key: 'delete-actividad',
               label: 'Eliminar',
@@ -477,28 +449,12 @@ const Header = ({
   const headerWidthClass = sidebarExpanded ? 'md:w-[calc(100%-18rem)]' : 'md:w-[calc(100%-5rem)]';
 
   return (
-    <>
-      <Dialog
-        open={Boolean(deleteOperacionDialog)}
-        type="danger"
-        title="Eliminar operación"
-        message={deleteOperacionDialog ? `Eliminar operación ${deleteOperacionDialog.nombre || deleteOperacionDialog.operacion || deleteOperacionDialog.id}?` : ''}
-        confirmText="Eliminar"
-        cancelText="Cancelar"
-        onCancel={() => setDeleteOperacionDialog(null)}
-        onConfirm={() => {
-          if (deleteOperacionDialog) {
-            window.dispatchEvent(new CustomEvent('delete-operacion', { detail: deleteOperacionDialog }));
-          }
-          setDeleteOperacionDialog(null);
-        }}
-      />
-      <header className={`poa-page-header ${themeConfig.headerBg} ${themeConfig.headerText} flex flex-wrap items-center gap-y-3 pl-20 pr-3 py-2 md:px-6 md:py-4 fixed top-0 right-0 left-0 z-30 w-full ${headerWidthClass} transform transition-all duration-300 ease-in-out ${sidebarOffset} ${showHeader ? `translate-y-0 opacity-100 ${themeConfig.headerShadow} ${themeConfig.headerBorder}` : '-translate-y-full opacity-0 pointer-events-none'}`}>
+    <header className={`poa-page-header ${themeConfig.headerBg} ${themeConfig.headerText} flex flex-wrap items-center gap-y-3 pl-20 pr-3 py-2 md:px-6 md:py-4 fixed top-0 right-0 left-0 z-30 w-full ${headerWidthClass} transform transition-all duration-300 ease-in-out ${sidebarOffset} ${showHeader ? `translate-y-0 opacity-100 ${themeConfig.headerShadow} ${themeConfig.headerBorder}` : '-translate-y-full opacity-0 pointer-events-none'}`}>
       {/* Left: page controls */}
       <div className="poa-header-left flex shrink-0 items-center gap-2 md:mr-4">
         {(() => {
           const p = location?.pathname || '';
-          if (p.startsWith('/poa/objetivos-especificos') || p.startsWith('/poa/actividades') || p.startsWith('/poa/presupuestos')) {
+          if (p.startsWith('/poa/objetivos-especificos') || p.startsWith('/poa/actividades') || p.startsWith('/poa/presupuestos') || p.includes('/seguimiento/programa/')) {
             return (
               <IconButton 
                 showIcon 
@@ -524,8 +480,7 @@ const Header = ({
       <div className="poa-header-actions ml-auto flex shrink-0 items-center gap-2 md:gap-4">
         {renderRightActions()}
       </div>
-      </header>
-    </>
+    </header>
   );
 };
 

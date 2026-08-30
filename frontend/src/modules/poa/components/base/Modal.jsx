@@ -6,10 +6,13 @@ import { createPortal } from 'react-dom';
  * Se renderiza directamente en document.body para asegurar que se superponga sobre todo
  */
 const Modal = ({ children, onClose, className = '' }) => {
+  const modalRef = React.useRef(null);
   // Manejar tecla Escape para cerrar
   React.useEffect(() => {
     const handleEscape = (e) => {
       if (e.key === 'Escape' && onClose) {
+        const modalesAbiertos = Array.from(document.querySelectorAll('.poa-modal'));
+        if (modalesAbiertos[modalesAbiertos.length - 1] !== modalRef.current) return;
         onClose();
       }
     };
@@ -28,6 +31,7 @@ const Modal = ({ children, onClose, className = '' }) => {
 
   const modalContent = (
     <div 
+      ref={modalRef}
       className={`poa-modal ${className}`}
       role="dialog"
       aria-modal="true"

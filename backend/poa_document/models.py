@@ -3,8 +3,31 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.utils import timezone
-from catalogos.models import Direccion
 from fondos.models import Carrera
+
+
+class ItemCatalogo(models.Model):
+    detalle = models.CharField(max_length=255, default='')
+    unidad_medida = models.CharField(max_length=50, default='Sin unidad')
+    partida = models.CharField(max_length=50, db_index=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['partida'], name='poa_item_partida_idx'),
+        ]
+
+    def __str__(self):
+        return self.detalle
+
+
+class IndicadorCatalogo(models.Model):
+    indicador = models.CharField(max_length=500, unique=True, db_index=True)
+
+    class Meta:
+        ordering = ['indicador']
+
+    def __str__(self):
+        return self.indicador
 
 
 class UsuarioPOA(models.Model):
@@ -76,6 +99,38 @@ class UsuarioPOA(models.Model):
         return f"UsuarioPOA #{self.pk} — {self.get_rol_display()}"
 
 
+class ProgramaPOA(models.Model):
+    """Programa interno de una carrera para clasificar sus documentos POA."""
+
+    carrera = models.ForeignKey(
+        Carrera,
+        on_delete=models.PROTECT,
+        related_name='programas_poa',
+        verbose_name='Carrera',
+    )
+    nombre = models.CharField(max_length=200, verbose_name='Nombre del programa')
+    activo = models.BooleanField(default=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Programa POA'
+        verbose_name_plural = 'Programas POA'
+        ordering = ['nombre', 'id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['carrera', 'nombre'],
+                name='unique_programa_poa_por_carrera',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['carrera', 'activo'], name='poa_prog_carr_act_idx'),
+        ]
+
+    def __str__(self):
+        return f"{self.nombre} ({self.carrera})"
+
+
 class DocumentoPOA(models.Model):
     ESTADO_CHOICES = [
         ('elaboracion', 'En elaboración'),
@@ -100,6 +155,8 @@ class DocumentoPOA(models.Model):
     estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='elaboracion', verbose_name='Estado')
     # Comentarios/ajustes que registra la entidad revisora durante la revisión del documento.
     observaciones = models.TextField(blank=True, default='')
+    # Nota interna de formulación. No sustituye las observaciones del Director.
+    observacion_elaboracion = models.TextField(blank=True, default='')
     ciclo_revision_actual = models.PositiveIntegerField(default=0)
 
     creado_en = models.DateTimeField(auto_now_add=True)
@@ -116,42 +173,22 @@ class DocumentoPOA(models.Model):
         return f"{self.programa} ({self.gestion})"
 
 
-class RevisionDocumentoPOA(models.Model):
-    ESTADO_CHOICES = [
-        ('pendiente', 'Pendiente'),
-        ('aprobado', 'Aprobado'),
-        ('observado', 'Observado'),
-    ]
-
-    TIPO_REVISOR_CHOICES = [
-        ('entidad', 'Entidad Revisora'),
-        ('director', 'Director de Carrera'),
-    ]
-
-    documento = models.ForeignKey(DocumentoPOA, on_delete=models.CASCADE, related_name='revisiones')
-    ciclo_revision = models.PositiveIntegerField(default=1)
-    revisor = models.ForeignKey(UsuarioPOA, on_delete=models.PROTECT, related_name='revisiones_documento_poa')
-    tipo_revisor = models.CharField(max_length=20, choices=TIPO_REVISOR_CHOICES)
-    estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='pendiente')
-    observaciones = models.TextField(blank=True, default='')
-    fecha_asignacion = models.DateTimeField(auto_now_add=True)
-    fecha_respuesta = models.DateTimeField(null=True, blank=True)
-    respondido_por = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='respuestas_revision_poa')
-    activo = models.BooleanField(default=True)
+class VersionDocumentoPOA(models.Model):
+    """Instantánea inmutable de un POA aprobado o de un cambio autorizado."""
+    documento = models.ForeignKey(DocumentoPOA, on_delete=models.CASCADE, related_name='versiones')
+    numero = models.PositiveIntegerField()
+    snapshot = models.JSONField(default=dict)
+    motivo = models.TextField()
+    creado_por = models.ForeignKey(User, on_delete=models.PROTECT, related_name='versiones_poa_creadas')
+    creado_en = models.DateTimeField(auto_now_add=True)
+    vigente = models.BooleanField(default=True)
 
     class Meta:
-        verbose_name = 'Revision de Documento POA'
-        verbose_name_plural = 'Revisiones de Documento POA'
-        ordering = ['tipo_revisor', 'fecha_asignacion']
-        constraints = [
-            models.UniqueConstraint(
-                fields=['documento', 'ciclo_revision', 'revisor'],
-                name='unique_revision_documento_poa_por_ciclo',
-            ),
-        ]
+        ordering = ['-numero']
+        constraints = [models.UniqueConstraint(fields=['documento', 'numero'], name='poa_version_documento_numero_unico')]
 
     def __str__(self):
-        return f"Revision #{self.pk} - Documento {self.documento_id} - {self.revisor}"
+        return f"{self.documento} - Versión {self.numero}"
 
 
 class HistorialDocumentoPOA(models.Model):
@@ -287,10 +324,6 @@ class Actividad(models.Model):
         ('en_ejecucion', 'En ejecución'),
         ('completado', 'Completado'),
         ('cancelado', 'Cancelado'),
-        # Compatibilidad con datos existentes
-        ('en_proceso', 'En Proceso'),
-        ('ejecutado', 'Ejecutado'),
-        ('suspendido', 'Suspendido'),
     ]
 
     UNIDADES_INDICADOR = [
@@ -310,6 +343,9 @@ class Actividad(models.Model):
     indicador_unidad = models.CharField(max_length=50, choices=UNIDADES_INDICADOR, default='numero')
     indicador_linea_base = models.IntegerField()
     indicador_meta = models.IntegerField()
+    # Plan de metas, por ejemplo [{"periodo": "Enero", "meta": 10}].
+    # Se almacena en la actividad para que la planificación permanezca autocontenida.
+    riesgo_previsto = models.TextField(blank=True, default='')
     monto_funcion = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     monto_inversion = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     estado = models.CharField(max_length=20, choices=ESTADOS, default='programado')
@@ -323,6 +359,21 @@ class Actividad(models.Model):
 
     def __str__(self):
         return f"{self.codigo} - {self.nombre}"
+
+
+class SeguimientoActividadPOA(models.Model):
+    """Bitácora breve de ejecución; no otorga acceso al receptor o responsable."""
+    actividad = models.ForeignKey(Actividad, on_delete=models.CASCADE, related_name='seguimientos')
+    estado_anterior = models.CharField(max_length=20, blank=True, default='')
+    estado_nuevo = models.CharField(max_length=20, choices=Actividad.ESTADOS)
+    avance_porcentaje = models.PositiveSmallIntegerField(default=0)
+    nota = models.TextField(blank=True, default='')
+    registrado_por = models.ForeignKey(User, on_delete=models.PROTECT, related_name='seguimientos_actividad_poa')
+    registrado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-registrado_en']
+        indexes = [models.Index(fields=['actividad', 'registrado_en'], name='poa_documen_activid_a53145_idx')]
 
 
 
@@ -355,6 +406,84 @@ class DetallePresupuesto(models.Model):
 
     def __str__(self):
         return f"{self.actividad} - {self.item} ({self.cantidad})"
+
+
+class OrdenCompraPOA(models.Model):
+    ESTADOS = [('borrador', 'Borrador'), ('emitida', 'Emitida'), ('recibiendo', 'Recibiendo'), ('recibida', 'Recibida'), ('cancelada', 'Cancelada')]
+    carrera = models.ForeignKey(Carrera, on_delete=models.PROTECT, related_name='ordenes_compra_poa')
+    gestion = models.PositiveIntegerField()
+    numero = models.CharField(max_length=80)
+    proveedor = models.CharField(max_length=255)
+    fecha = models.DateField()
+    estado = models.CharField(max_length=20, choices=ESTADOS, default='emitida')
+    respaldo = models.FileField(upload_to='poa/compras/%Y/%m', null=True, blank=True)
+    observacion = models.TextField(blank=True, default='')
+    creado_por = models.ForeignKey(User, on_delete=models.PROTECT, related_name='ordenes_compra_poa_creadas')
+    creado_en = models.DateTimeField(auto_now_add=True)
+    anulado_por = models.ForeignKey(User, on_delete=models.PROTECT, null=True, blank=True, related_name='ordenes_compra_poa_anuladas')
+    motivo_anulacion = models.TextField(blank=True, default='')
+
+    class Meta:
+        ordering = ['-fecha', '-id']
+        constraints = [models.UniqueConstraint(fields=['carrera', 'gestion', 'numero'], name='poa_orden_numero_carrera_gestion')]
+
+
+class DetalleOrdenCompraPOA(models.Model):
+    orden = models.ForeignKey(OrdenCompraPOA, on_delete=models.PROTECT, related_name='detalles')
+    partida = models.CharField(max_length=50)
+    item = models.CharField(max_length=150)
+    unidad_medida = models.CharField(max_length=50)
+    caracteristicas = models.TextField(blank=True, default='')
+    tipo = models.CharField(max_length=20)
+    cantidad_planificada = models.PositiveIntegerField()
+    cantidad_comprada = models.PositiveIntegerField()
+    costo_unitario_real = models.DecimalField(max_digits=12, decimal_places=2)
+    origen_detalles = models.JSONField(default=list)  # IDs de presupuesto incluidos, como trazabilidad de origen.
+
+    @property
+    def costo_total_real(self):
+        return self.cantidad_comprada * self.costo_unitario_real
+
+
+class RecepcionMaterialPOA(models.Model):
+    orden = models.ForeignKey(OrdenCompraPOA, on_delete=models.PROTECT, related_name='recepciones')
+    fecha = models.DateField()
+    numero_respaldo = models.CharField(max_length=100, blank=True, default='')
+    recibido_por = models.CharField(max_length=255)
+    respaldo = models.FileField(upload_to='poa/recepciones/%Y/%m', null=True, blank=True)
+    observacion = models.TextField(blank=True, default='')
+    registrado_por = models.ForeignKey(User, on_delete=models.PROTECT, related_name='recepciones_poa_registradas')
+    registrado_en = models.DateTimeField(auto_now_add=True)
+    anulada = models.BooleanField(default=False)
+    motivo_anulacion = models.TextField(blank=True, default='')
+
+    class Meta: ordering = ['-fecha', '-id']
+
+
+class DetalleRecepcionMaterialPOA(models.Model):
+    recepcion = models.ForeignKey(RecepcionMaterialPOA, on_delete=models.PROTECT, related_name='detalles')
+    detalle_orden = models.ForeignKey(DetalleOrdenCompraPOA, on_delete=models.PROTECT, related_name='recepciones_detalle')
+    cantidad_recibida = models.PositiveIntegerField()
+    costo_unitario_real = models.DecimalField(max_digits=12, decimal_places=2)
+
+
+class EntregaMaterialActividad(models.Model):
+    detalle_recepcion = models.ForeignKey(DetalleRecepcionMaterialPOA, on_delete=models.PROTECT, related_name='entregas')
+    actividad = models.ForeignKey(Actividad, on_delete=models.PROTECT, related_name='entregas_material')
+    cantidad_entregada = models.PositiveIntegerField()
+    fecha = models.DateField()
+    nombre_receptor = models.CharField(max_length=255)
+    ci_receptor = models.CharField(max_length=50, blank=True, default='')
+    cargo_receptor = models.CharField(max_length=255, blank=True, default='')
+    telefono_receptor = models.CharField(max_length=50, blank=True, default='')
+    acta_archivo = models.FileField(upload_to='poa/entregas/%Y/%m', null=True, blank=True)
+    observacion = models.TextField(blank=True, default='')
+    registrado_por = models.ForeignKey(User, on_delete=models.PROTECT, related_name='entregas_material_poa_registradas')
+    registrado_en = models.DateTimeField(auto_now_add=True)
+    anulada = models.BooleanField(default=False)
+    motivo_anulacion = models.TextField(blank=True, default='')
+
+    class Meta: ordering = ['-fecha', '-id']
 
 
 class MensajeChat(models.Model):

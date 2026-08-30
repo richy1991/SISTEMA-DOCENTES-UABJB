@@ -5,11 +5,16 @@ const NAV_KEYS = [
   'gestionState',
   'documentoId',
   'documentoEstado',
+  'documentoNombre',
   'documentosPath',
   'objetivoId',
   'objetivoEspecificoId',
+  'objetivoNombre',
   'actividadId',
   'actividad',
+  'actividadNombre',
+  'retornoPoaPath',
+  'retornoPoaMode',
   'fromPoaFlow',
 ];
 

@@ -2,7 +2,6 @@ from io import BytesIO
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import landscape, letter
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import (
     BaseDocTemplate,
     Frame,
@@ -12,8 +11,9 @@ from reportlab.platypus import (
     Paragraph,
     Spacer,
     Table,
-    TableStyle,
 )
+
+from .estilos import crear_estilos_documento, estilo_tabla_base, texto_seguro
 
 
 class DocumentoPOAPDFGenerator:
@@ -23,10 +23,7 @@ class DocumentoPOAPDFGenerator:
 
     @staticmethod
     def _texto(valor, default=''):
-        if valor is None:
-            return default
-        texto = str(valor).strip()
-        return texto if texto else default
+        return texto_seguro(valor, default)
 
     @staticmethod
     def _money(valor):
@@ -41,69 +38,18 @@ class DocumentoPOAPDFGenerator:
         if unidad is None:
             return ''
         if hasattr(unidad, 'nombre') and getattr(unidad, 'nombre', ''):
-            return str(unidad.nombre).strip()
+            return DocumentoPOAPDFGenerator._texto(unidad.nombre)
         if hasattr(unidad, 'codigo') and getattr(unidad, 'codigo', ''):
-            return str(unidad.codigo).strip()
+            return DocumentoPOAPDFGenerator._texto(unidad.codigo)
         return DocumentoPOAPDFGenerator._texto(unidad)
 
     @staticmethod
     def _styles():
-        base = getSampleStyleSheet()
-        return {
-            'title': ParagraphStyle(
-                'poa-title',
-                parent=base['Heading3'],
-                fontName='Helvetica-Bold',
-                fontSize=10,
-                alignment=1,
-                leading=12,
-                spaceAfter=1,
-            ),
-            'subtitle': ParagraphStyle(
-                'poa-subtitle',
-                parent=base['Heading4'],
-                fontName='Helvetica-Bold',
-                fontSize=8,
-                alignment=1,
-                leading=10,
-                spaceAfter=4,
-            ),
-            'cell': ParagraphStyle(
-                'poa-cell',
-                parent=base['Normal'],
-                fontName='Helvetica',
-                fontSize=7,
-                leading=9,
-            ),
-            'cell_bold': ParagraphStyle(
-                'poa-cell-bold',
-                parent=base['Normal'],
-                fontName='Helvetica-Bold',
-                fontSize=7,
-                leading=9,
-            ),
-            'cell_small': ParagraphStyle(
-                'poa-cell-small',
-                parent=base['Normal'],
-                fontName='Helvetica',
-                fontSize=6.2,
-                leading=8,
-            ),
-        }
+        return crear_estilos_documento()
 
     @staticmethod
     def _table_base_style(extra=None):
-        rules = [
-            ('GRID', (0, 0), (-1, -1), 0.55, colors.black),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 3),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 3),
-            ('TOPPADDING', (0, 0), (-1, -1), 2),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
-        ]
-        if extra:
-            rules.extend(extra)
-        return TableStyle(rules)
+        return estilo_tabla_base(extra, color_borde=colors.black)
 
     @staticmethod
     def _header_table(documento, styles, orientation='landscape'):
@@ -244,10 +190,12 @@ class DocumentoPOAPDFGenerator:
         ]
         for i, row in enumerate(data[2:], start=2):
             if row[1] == '':
-                style.append(('SPAN', (0, i), (-1, i)))
+                tiene_totales = bool(row[9] or row[10])
+                style.append(('SPAN', (0, i), (8 if tiene_totales else 10, i)))
                 style.append(('BACKGROUND', (0, i), (-1, i), colors.HexColor('#f2f2f2')))
                 style.append(('FONTNAME', (0, i), (-1, i), 'Helvetica-Bold'))
-                style.append(('ALIGN', (9, i), (10, i), 'RIGHT'))
+                if tiene_totales:
+                    style.append(('ALIGN', (9, i), (10, i), 'RIGHT'))
         tabla.setStyle(DocumentoPOAPDFGenerator._table_base_style(style))
         elems.extend([tabla, Spacer(1, 8), DocumentoPOAPDFGenerator._responsables_table(documento, styles, orientation='landscape')])
         return elems
@@ -257,7 +205,7 @@ class DocumentoPOAPDFGenerator:
         elems = [
             Paragraph('PROGRAMACIÓN DE OPERACIONES ANUAL', styles['title']),
             Paragraph('OPERACIONES POR PARTIDAS PRESUPUESTARIAS', styles['title']),
-            Spacer(1, 4),
+            Paragraph('Formulario Nro. 2', styles['subtitle']),
             DocumentoPOAPDFGenerator._header_table(documento, styles, orientation='landscape'),
             Spacer(1, 6),
         ]
@@ -307,10 +255,6 @@ class DocumentoPOAPDFGenerator:
 
         elems.extend([tabla, Spacer(1, 8), DocumentoPOAPDFGenerator._responsables_table(documento, styles, orientation='landscape')])
         return elems
-
-    @staticmethod
-    def _formulario_3(documento, styles):
-        return DocumentoPOAPDFGenerator._formulario_3_actividad(documento, None, list(), styles)
 
     @staticmethod
     def _formulario_3_actividad(documento, actividad, detalles, styles):

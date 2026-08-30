@@ -328,14 +328,19 @@ const ObjetivosEspecificosPage = () => {
   }, [canEdit, documentoEstado]);
 
 
-  const handleVerActividades = (objetivoId) => navigate(`/poa/actividades/${objetivoId}`, {
-    state: buildPoaNavigationState(location?.state, {
-      documentoId: Number(documentId),
-      documentoEstado,
-      objetivoId: Number(objetivoId),
-      gestion: gestionNavegacion,
-    }),
-  });
+  const handleVerActividades = (objetivoId) => {
+    const objetivoSeleccionado = (objetivos || []).find((objetivo) => Number(objetivo.id) === Number(objetivoId));
+    navigate(`/poa/actividades/${objetivoId}`, {
+      state: buildPoaNavigationState(location?.state, {
+        documentoId: Number(documentId),
+        documentoEstado,
+        documentoNombre: typeof documentHeader?.programa === 'object' ? documentHeader?.programa?.nombre : documentHeader?.programa,
+        objetivoId: Number(objetivoId),
+        objetivoNombre: objetivoSeleccionado?.codigo || objetivoSeleccionado?.descripcion,
+        gestion: gestionNavegacion,
+      }),
+    });
+  };
 
   const totalObjetivos = Array.isArray(objetivos) ? objetivos.length : 0;
   const presupuestoTotal = Object.values(recursosPorObjetivo || {}).reduce((acc, n) => acc + (Number(n) || 0), 0);

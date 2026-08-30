@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import IconButton from './IconButton';
-import { FaTimes, FaSave, FaCalendarAlt } from 'react-icons/fa';
-import { createDocumentoPOA, updateDocumentoPOA, getUsuariosPOA, getDocumentosPOAPorGestion, getDirectorCarreraActual, crearSolicitudCambioPOA } from '../../../apis/poa.api';
+import { FaTimes, FaSave, FaCalendarAlt, FaPlus } from 'react-icons/fa';
+import { createDocumentoPOA, updateDocumentoPOA, getUsuariosPOA, getDocumentosPOAPorGestion, getDirectorCarreraActual, crearSolicitudCambioPOA, getProgramasPOA } from '../../../apis/poa.api';
 import { Textarea, Modal } from './base';
 import { DEFAULT_ENTIDAD } from '../config/defaults';
 import { formatApiErrors, mapApiErrorsToFieldErrors, ModalErrorAlert } from './formErrorUtils';
+import NuevoProgramaPOAModal from './NuevoProgramaPOAModal';
 
 const ELABORADOR_ROLE = 'elaborador';
 
@@ -89,6 +90,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
     entidad: DEFAULT_ENTIDAD,
     gestion: initialGestion || new Date().getFullYear(),
     programa: '',
+    programa_id: '',
     unidad_solicitante: '',
     objetivo_gestion_institucional: '',
     elaborado_por: '',
@@ -127,6 +129,9 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
   const [showJefeDropdown, setShowJefeDropdown] = useState(false);
   const [jefeHighlight, setJefeHighlight] = useState(0);
   const [justificacionEdicion, setJustificacionEdicion] = useState('');
+  const [programas, setProgramas] = useState([]);
+  const [programasLoading, setProgramasLoading] = useState(true);
+  const [showNuevoPrograma, setShowNuevoPrograma] = useState(false);
   const isCreateMode = !docToEdit?.id;
   const userFromStorage = (() => {
     if (typeof window === 'undefined') return null;
@@ -169,6 +174,23 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
   }, []);
 
   useEffect(() => {
+    let mounted = true;
+    getProgramasPOA({ activo: true })
+      .then((response) => {
+        if (!mounted) return;
+        const data = response?.data;
+        setProgramas(Array.isArray(data) ? data : (data?.results || []));
+      })
+      .catch(() => {
+        if (mounted) setProgramas([]);
+      })
+      .finally(() => {
+        if (mounted) setProgramasLoading(false);
+      });
+    return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
     if (initialGestion) {
       setForm(f => ({ ...f, gestion: initialGestion }));
     }
@@ -182,6 +204,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
         entidad: docToEdit.entidad ?? DEFAULT_ENTIDAD,
         gestion: (docToEdit.gestion ?? initialGestion) || new Date().getFullYear(),
         programa: typeof docToEdit.programa === 'object' ? (docToEdit.programa.nombre || docToEdit.programa) : (docToEdit.programa || ''),
+        programa_id: '',
         unidad_solicitante: normalizeCarreraValue(docToEdit.unidad_solicitante_id ?? docToEdit.unidad_solicitante),
         objetivo_gestion_institucional: docToEdit.objetivo_gestion_institucional ?? '',
         elaborado_por: docToEdit.elaborado_por?.id ?? docToEdit.elaborado_por_id ?? docToEdit.elaborado_por ?? '',
@@ -196,6 +219,19 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
       // ignore
     }
   }, [docToEdit, initialGestion]);
+
+  useEffect(() => {
+    if (!docToEdit?.programa || !programas.length) return;
+    const nombreActual = typeof docToEdit.programa === 'object'
+      ? (docToEdit.programa.nombre || '')
+      : String(docToEdit.programa);
+    const programaEncontrado = programas.find(
+      (programa) => String(programa.nombre).trim().toLowerCase() === nombreActual.trim().toLowerCase()
+    );
+    if (programaEncontrado) {
+      setForm((prev) => ({ ...prev, programa: programaEncontrado.nombre, programa_id: String(programaEncontrado.id) }));
+    }
+  }, [docToEdit, programas]);
 
   useEffect(() => {
     if (!isCreateMode) return;
@@ -302,10 +338,13 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
     e && e.preventDefault && e.preventDefault();
     setErrorMessages([]);
     setFieldErrors({});
-    if (!form.gestion || !unidadSolicitanteResuelta) {
+    if (!form.gestion || !unidadSolicitanteResuelta || (!docToEdit?.id && !form.programa_id) || !String(form.objetivo_gestion_institucional || '').trim() || !fechaElab) {
       const nextErrors = {};
       if (!form.gestion) nextErrors.gestion = 'Este campo es obligatorio.';
       if (!unidadSolicitanteResuelta) nextErrors.unidad_solicitante = 'Este usuario no tiene carrera asignada.';
+      if (!docToEdit?.id && !form.programa_id) nextErrors.programa_id = 'Seleccione un programa o cree uno nuevo.';
+      if (!String(form.objetivo_gestion_institucional || '').trim()) nextErrors.objetivo_gestion_institucional = 'Este campo es obligatorio.';
+      if (!fechaElab) nextErrors.fecha_elaboracion = 'Este campo es obligatorio.';
       setFieldErrors(nextErrors);
       setErrorMessages(Object.values(nextErrors));
       focusFirstError(nextErrors);
@@ -331,6 +370,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
         entidad: DEFAULT_ENTIDAD,
         gestion: Number(form.gestion),
         programa: form.programa || null,
+        programa_id: form.programa_id ? Number(form.programa_id) : null,
         objetivo_gestion_institucional: form.objetivo_gestion_institucional || null,
         unidad_solicitante: unidadSolicitanteResuelta ? Number(unidadSolicitanteResuelta) : null,
         elaborado_por: resolvePersonaNombre(form.elaborado_por, personas, elabQuery) || null,
@@ -360,7 +400,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
         }
         const res = await updateDocumentoPOA(docToEdit.id, payload, Number(payload.gestion));
         const updated = res?.data;
-        toast.success('Edición guardada');
+        toast.success(res.data?.message || 'Documento actualizado correctamente.');
         if (onUpdated) onUpdated(updated || res.data);
         if (onClose) onClose();
       } else {
@@ -389,16 +429,20 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
         }
 
         if (onCreated) onCreated(created || res.data);
-        toast.success('Documento creado correctamente');
+        toast.success(res.data?.message || 'Documento creado correctamente.');
         if (onClose) onClose();
       }
     } catch (err) {
       const resp = err?.response?.data;
       const nextFieldErrors = mapApiErrorsToFieldErrors(resp || {});
+      if (nextFieldErrors.programa && !nextFieldErrors.programa_id) nextFieldErrors.programa_id = nextFieldErrors.programa;
+      if (resp?.non_field_errors?.length && /Elaborado por.*Jefe de unidad/i.test(String(resp.non_field_errors))) {
+        nextFieldErrors.elaborado_por_id = String(resp.non_field_errors[0]);
+        nextFieldErrors.jefe_unidad_id = String(resp.non_field_errors[0]);
+      }
       setFieldErrors(nextFieldErrors);
       const messages = formatApiErrors(resp || err?.message || 'Error al crear documento');
       setErrorMessages(messages);
-      toast.error(messages[0] || 'Error al guardar documento');
       focusFirstError(nextFieldErrors);
     } finally {
       setLoading(false);
@@ -411,7 +455,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
         <div className="modal-header flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3 min-w-0">
             <div className="font-semibold text-lg truncate">{docToEdit ? 'Editar Documento POA' : 'Nuevo Documento POA'}</div>
-            <span className="inline-flex items-center rounded-md border border-blue-300/60 bg-blue-500/15 px-3 py-1 text-sm font-semibold text-blue-100">
+            <span className={`inline-flex items-center rounded-md border px-3 py-1 text-sm font-semibold ${fieldErrors.gestion ? 'border-red-500 bg-red-500/15 text-red-100' : 'border-blue-300/60 bg-blue-500/15 text-blue-100'}`}>
               Gestion: {form.gestion || initialGestion || new Date().getFullYear()}
             </span>
           </div>
@@ -421,6 +465,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
         <div className="px-8 py-6 modal-body">
 
           <ModalErrorAlert title="No se pudo guardar el documento:" messages={errorMessages} />
+          {fieldErrors.gestion && <div role="alert" className="mb-3 text-xs text-red-600 dark:text-red-400">Gestión: {fieldErrors.gestion}</div>}
 
           <form onSubmit={handleCreate} className="space-y-5">
 
@@ -432,6 +477,8 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
                   ref={dateInputRef}
                   name="fecha_elaboracion"
                   type="date"
+                  required
+                  aria-invalid={fieldErrors.fecha_elaboracion ? 'true' : undefined}
                   value={fechaElab}
                   onChange={e => {
                     setFechaElab(e.target.value);
@@ -454,6 +501,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
                   ariaLabel="Seleccionar fecha"
                 />
               </div>
+              {fieldErrors.fecha_elaboracion && <div role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">{fieldErrors.fecha_elaboracion}</div>}
             </div>
 
             {/* Fila 2: Unidad solicitante + Programa */}
@@ -471,12 +519,44 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Programa</label>
-                <input
-                  name="programa"
-                  value={form.programa}
-                  onChange={handleChange}
-                  className={`poa-input block w-full ${fieldErrors.programa ? 'border-red-500 dark:border-red-500 focus:ring-red-500 dark:focus:ring-red-500' : ''}`}
-                />
+                <div className="flex gap-2">
+                  <select
+                    name="programa_id"
+                    value={form.programa_id}
+                    disabled={programasLoading}
+                    onChange={(event) => {
+                      const programa = programas.find((item) => String(item.id) === event.target.value);
+                      setForm((prev) => ({
+                        ...prev,
+                        programa_id: event.target.value,
+                        programa: programa?.nombre || prev.programa,
+                      }));
+                      if (fieldErrors.programa_id) setFieldErrors((prev) => ({ ...prev, programa_id: '' }));
+                    }}
+                    required
+                    aria-invalid={fieldErrors.programa_id ? 'true' : undefined}
+                    className={`poa-input block min-w-0 flex-1 ${fieldErrors.programa_id ? 'border-red-500 dark:border-red-500 focus:ring-red-500 dark:focus:ring-red-500' : ''}`}
+                  >
+                    <option value="">{programasLoading ? 'Cargando programas...' : 'Seleccione un programa'}</option>
+                    {!form.programa_id && form.programa && (
+                      <option value="" disabled>{form.programa} (histórico)</option>
+                    )}
+                    {programas.map((programa) => (
+                      <option key={programa.id} value={programa.id}>{programa.nombre}</option>
+                    ))}
+                  </select>
+                  {isCreateMode && (
+                    <IconButton
+                      icon={<FaPlus />}
+                      type="button"
+                      onClick={() => setShowNuevoPrograma(true)}
+                      className="btn-success px-3 py-2 rounded"
+                      title="Crear programa"
+                      ariaLabel="Crear programa"
+                    />
+                  )}
+                </div>
+                {fieldErrors.programa_id && <div role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">{fieldErrors.programa_id}</div>}
               </div>
             </div>
 
@@ -488,6 +568,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
                 value={form.objetivo_gestion_institucional}
                 onChange={handleChange}
                 rows={3}
+                required
                 className="resize-y"
                 error={fieldErrors.objetivo_gestion_institucional}
               />
@@ -522,6 +603,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
                       }}
                       placeholder="Buscar persona..."
                       className={`poa-input mt-1 block w-full bg-white dark:bg-slate-900 ${fieldErrors.elaborado_por_id ? 'border-red-500 dark:border-red-500 focus:ring-red-500 dark:focus:ring-red-500' : ''}`}
+                      aria-invalid={fieldErrors.elaborado_por_id ? 'true' : undefined}
                     />
                     {!lockElaborador && showElabDropdown && elabFilteredPersonas.length > 0 && (
                       <ul className="absolute z-50 mt-1 w-full max-w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded shadow-lg max-h-56 overflow-auto">
@@ -539,6 +621,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
                     )}
                   </div>
                 )}
+                {fieldErrors.elaborado_por_id && <div role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">{fieldErrors.elaborado_por_id}</div>}
               </div>
               <div className="min-w-0">
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Jefe de unidad</label>
@@ -568,6 +651,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
                       }}
                       placeholder="Buscar jefe de unidad..."
                       className={`poa-input mt-1 block w-full bg-white dark:bg-slate-900 ${fieldErrors.jefe_unidad_id ? 'border-red-500 dark:border-red-500 focus:ring-red-500 dark:focus:ring-red-500' : ''}`}
+                      aria-invalid={fieldErrors.jefe_unidad_id ? 'true' : undefined}
                     />
                     {!lockJefeUnidad && showJefeDropdown && jefeFilteredPersonas.length > 0 && (
                       <ul className="absolute z-50 mt-1 w-full max-w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded shadow-lg max-h-56 overflow-auto">
@@ -585,6 +669,7 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
                     )}
                   </div>
                 )}
+                {fieldErrors.jefe_unidad_id && <div role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">{fieldErrors.jefe_unidad_id}</div>}
               </div>
             </div>
 
@@ -618,6 +703,15 @@ const NuevoDocumentoModal = ({ onClose, onCreated, initialGestion, document: doc
           </form>
         </div>
       </div>
+      {showNuevoPrograma && (
+        <NuevoProgramaPOAModal
+          onClose={() => setShowNuevoPrograma(false)}
+          onCreated={(programa) => {
+            setProgramas((prev) => [...prev, programa].sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es')));
+            setForm((prev) => ({ ...prev, programa: programa.nombre, programa_id: String(programa.id) }));
+          }}
+        />
+      )}
     </Modal>
   );
 };

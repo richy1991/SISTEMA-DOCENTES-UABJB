@@ -1,12 +1,15 @@
 from django.contrib import admin
 from poa_document.models import (
     UsuarioPOA,
-    Direccion,
     DocumentoPOA,
-    RevisionDocumentoPOA,
     HistorialDocumentoPOA,
     ObservacionDocumentoPOA,
     SolicitudCambioPOA,
+    ProgramaPOA,
+    VersionDocumentoPOA,
+    SeguimientoActividadPOA,
+    ItemCatalogo,
+    IndicadorCatalogo,
 )
 
 @admin.register(UsuarioPOA)
@@ -16,13 +19,28 @@ class UsuarioPOAAdmin(admin.ModelAdmin):
     search_fields = ('user__username', 'user__first_name', 'user__last_name',
                      'docente__nombres', 'docente__apellido_paterno', 'nombre_entidad')
     ordering = ('carrera', 'rol')
-       
 
-@admin.register(Direccion)
-class DireccionAdmin(admin.ModelAdmin):
-    list_display = ('nombre',)
-    search_fields = ('nombre',)
-    ordering = ('nombre',)
+
+@admin.register(ProgramaPOA)
+class ProgramaPOAAdmin(admin.ModelAdmin):
+    list_display = ('nombre', 'carrera', 'activo', 'actualizado_en')
+    list_filter = ('activo', 'carrera')
+    search_fields = ('nombre', 'carrera__nombre', 'carrera__codigo')
+    ordering = ('carrera', 'nombre')
+
+
+@admin.register(ItemCatalogo)
+class ItemCatalogoAdmin(admin.ModelAdmin):
+    list_display = ('detalle', 'unidad_medida', 'partida')
+    search_fields = ('detalle', 'partida', 'unidad_medida')
+    list_filter = ('partida',)
+
+
+@admin.register(IndicadorCatalogo)
+class IndicadorCatalogoAdmin(admin.ModelAdmin):
+    list_display = ('indicador',)
+    search_fields = ('indicador',)
+
 
 @admin.register(DocumentoPOA)
 class DocumentoPOAAdmin(admin.ModelAdmin):  
@@ -45,12 +63,18 @@ class DocumentoPOAAdmin(admin.ModelAdmin):
     )
 
 
-@admin.register(RevisionDocumentoPOA)
-class RevisionDocumentoPOAAdmin(admin.ModelAdmin):
-    list_display = ('documento', 'ciclo_revision', 'revisor', 'tipo_revisor', 'estado', 'activo', 'fecha_asignacion', 'fecha_respuesta')
-    list_filter = ('tipo_revisor', 'estado', 'activo', 'ciclo_revision')
-    search_fields = ('documento__programa', 'revisor__user__username', 'revisor__nombre_entidad')
-    ordering = ('-fecha_asignacion',)
+@admin.register(VersionDocumentoPOA)
+class VersionDocumentoPOAAdmin(admin.ModelAdmin):
+    list_display = ('documento', 'numero', 'vigente', 'creado_por', 'creado_en')
+    list_filter = ('vigente',)
+    readonly_fields = ('documento', 'numero', 'snapshot', 'motivo', 'creado_por', 'creado_en', 'vigente')
+
+
+@admin.register(SeguimientoActividadPOA)
+class SeguimientoActividadPOAAdmin(admin.ModelAdmin):
+    list_display = ('actividad', 'estado_anterior', 'estado_nuevo', 'avance_porcentaje', 'registrado_por', 'registrado_en')
+    list_filter = ('estado_nuevo',)
+    readonly_fields = ('actividad', 'estado_anterior', 'estado_nuevo', 'avance_porcentaje', 'nota', 'registrado_por', 'registrado_en')
 
 
 @admin.register(HistorialDocumentoPOA)
@@ -75,5 +99,3 @@ class SolicitudCambioPOAAdmin(admin.ModelAdmin):
     list_filter = ('tipo_objeto', 'accion', 'estado')
     search_fields = ('documento__programa', 'descripcion', 'solicitado_por__username')
     ordering = ('-creado_en',)
-
-

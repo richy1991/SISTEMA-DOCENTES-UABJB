@@ -1,9 +1,12 @@
 from datetime import date
 from decimal import Decimal
-from io import BytesIO
+import json
+import unicodedata
 
+from openpyxl import load_workbook
 from rest_framework import viewsets, mixins
-from rest_framework.permissions import IsAuthenticated, AllowAny, SAFE_METHODS
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.permissions import IsAuthenticated, AllowAny, BasePermission, SAFE_METHODS
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework import generics
@@ -11,16 +14,11 @@ from rest_framework.views import APIView
 from django.http import FileResponse, HttpResponse
 from django.utils import timezone
 from django.db import transaction
-from django.db.models import Count, DecimalField, Prefetch, Q, Sum
+from django.db.models import Count, DecimalField, Max, Prefetch, Q, Sum
 from django.db.models.functions import Coalesce
 from django.core.exceptions import ObjectDoesNotExist
 from rest_framework.exceptions import PermissionDenied
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import landscape, letter
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.platypus import SimpleDocTemplate, Spacer, Table, TableStyle, Paragraph
 from poa_document.models import (
-    Direccion,
     DocumentoPOA,
     ObjetivoEspecifico,
     Actividad,
@@ -33,11 +31,16 @@ from poa_document.models import (
     BloqueoChat,
     Evidencia,
     EvidenciaArchivo,
+    ProgramaPOA,
+    ItemCatalogo,
+    IndicadorCatalogo,
+    VersionDocumentoPOA,
+    SeguimientoActividadPOA,
+    OrdenCompraPOA, DetalleOrdenCompraPOA, RecepcionMaterialPOA, DetalleRecepcionMaterialPOA, EntregaMaterialActividad,
 )
 from fondos.models import Docente
 from django.contrib.auth.models import User
 from .serializers import (
-    DireccionSerializer,
     DocumentoPOASerializer,
     ObjetivoEspecificoSerializer,
     ActividadSerializer,
@@ -49,13 +52,132 @@ from .serializers import (
     MensajeChatSerializer,
     EvidenciaSerializer,
     EvidenciaArchivoSerializer,
+    ProgramaPOASerializer,
+    ItemCatalogoSerializer,
+    PartidaCatalogoSerializer,
+    IndicadorCatalogoSerializer,
+    VersionDocumentoPOASerializer,
+    SeguimientoActividadPOASerializer,
+    OrdenCompraPOASerializer, RecepcionMaterialPOASerializer, EntregaMaterialActividadSerializer,
 )
-from catalogos.models import IndicadorCatalogo
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.conf import settings
 from django.shortcuts import get_object_or_404
-from poa_document.utils.pdf_generator import DocumentoPOAPDFGenerator
+from poa_document.reportes.excel import (
+    generar_catalogo_items_excel,
+    generar_consolidado_requerimientos_excel,
+    generar_seguimiento_institucional_excel,
+)
+from poa_document.reportes.pdf import (
+    DocumentoPOAPDFGenerator,
+    generar_consolidado_requerimientos_pdf,
+    generar_seguimiento_institucional_pdf,
+)
+
+
+def _respuesta_pdf(request, buffer, nombre_archivo):
+    """Entrega el PDF en línea al visor y como adjunto para clientes antiguos."""
+    params = getattr(request, 'query_params', request.GET)
+    vista_previa = str(params.get('view') or '').lower() in {'1', 'true', 'yes'}
+    return FileResponse(
+        buffer,
+        as_attachment=not vista_previa,
+        filename=nombre_archivo,
+        content_type='application/pdf',
+    )
+
+
+def _consolidar_requerimientos(request):
+    """Consolida solo datos históricos de presupuesto de la carrera activa."""
+    params = getattr(request, 'query_params', request.GET)
+    gestion_raw = params.get('gestion')
+    try:
+        gestion = int(gestion_raw)
+    except (TypeError, ValueError):
+        raise ValueError('El parámetro gestión es obligatorio y debe ser un año válido.')
+
+    documentos = _filtrar_documentos_por_usuario(DocumentoPOA.objects.filter(gestion=gestion), request.user)
+    programa = (params.get('programa') or '').strip()
+    if programa:
+        documentos = documentos.filter(programa=programa)
+    estado = (params.get('estado') or '').strip()
+    estados = [estado] if estado else ['aprobado', 'ejecucion']
+    documentos = documentos.filter(estado__in=estados)
+
+    detalles = DetallePresupuesto.objects.filter(actividad__objetivo__documento__in=documentos).select_related(
+        'actividad__objetivo__documento'
+    )
+    for field in ('partida', 'item', 'mes_requerimiento'):
+        value = (params.get(field) or '').strip()
+        if value:
+            detalles = detalles.filter(**{f'{field}__icontains': value})
+
+    agrupados = {}
+    for detalle in detalles.order_by('partida', 'item', 'unidad_medida', 'caracteristicas', 'id'):
+        # No se fusionan partidas, unidades, tipos o características distintos.
+        clave = (detalle.tipo, detalle.partida.strip(), detalle.item.strip(), detalle.unidad_medida.strip(), detalle.caracteristicas.strip())
+        if clave not in agrupados:
+            agrupados[clave] = {
+                'tipo': detalle.tipo, 'partida': detalle.partida, 'item': detalle.item,
+                'unidad_medida': detalle.unidad_medida, 'caracteristicas': detalle.caracteristicas,
+                'cantidad_total': 0, 'monto_estimado_total': Decimal('0'), 'origenes': [],
+            }
+        fila = agrupados[clave]
+        fila['cantidad_total'] += detalle.cantidad
+        fila['monto_estimado_total'] += detalle.costo_total
+        actividad = detalle.actividad
+        documento = actividad.objetivo.documento
+        fila['origenes'].append({
+            'detalle_id': detalle.id, 'cantidad': detalle.cantidad, 'costo_total': str(detalle.costo_total),
+            'mes_requerimiento': detalle.mes_requerimiento, 'actividad_codigo': actividad.codigo,
+            'actividad_nombre': actividad.nombre, 'programa': documento.programa, 'documento_id': documento.id,
+        })
+    items = list(agrupados.values())
+    for fila in items:
+        fila['monto_estimado_total'] = str(fila['monto_estimado_total'])
+        fila['actividades_solicitantes'] = len({origen['actividad_codigo'] + str(origen['documento_id']) for origen in fila['origenes']})
+    return gestion, items
+
+
+def _errores_formulacion_documento(documento):
+    """Reglas de calidad que se aplican justo antes de enviar el POA a revisión."""
+    errores = []
+    if not (documento.programa or '').strip():
+        errores.append('El documento debe tener un programa.')
+    if not (documento.objetivo_gestion_institucional or '').strip():
+        errores.append('Debe registrar el objetivo de gestión institucional.')
+
+    objetivos = list(documento.objetivos.prefetch_related('actividades__detalles_presupuesto').all())
+    if not objetivos:
+        errores.append('Debe registrar al menos un objetivo específico.')
+        return errores
+
+    codigos = set()
+    for objetivo in objetivos:
+        if not (objetivo.descripcion or '').strip():
+            errores.append(f'El objetivo {objetivo.codigo or objetivo.id} no tiene descripción.')
+        actividades = list(objetivo.actividades.all())
+        if not actividades:
+            errores.append(f'El objetivo {objetivo.codigo or objetivo.id} debe tener al menos una actividad.')
+        for actividad in actividades:
+            etiqueta = actividad.codigo or f'#{actividad.id}'
+            codigo = (actividad.codigo or '').strip().lower()
+            if not codigo:
+                errores.append(f'La actividad {etiqueta} no tiene código.')
+            elif codigo in codigos:
+                errores.append(f'El código de actividad "{actividad.codigo}" está repetido en el documento.')
+            else:
+                codigos.add(codigo)
+            obligatorios = {
+                'nombre': actividad.nombre, 'responsable': actividad.responsable,
+                'productos esperados': actividad.productos_esperados,
+                'indicador': actividad.indicador_descripcion,
+            }
+            for campo, valor in obligatorios.items():
+                if not str(valor or '').strip():
+                    errores.append(f'La actividad {etiqueta} debe registrar {campo}.')
+    return errores
 
 
 def _get_user_profile(user):
@@ -208,6 +330,36 @@ def _crear_historial_documento(documento, usuario, tipo_evento, descripcion, est
     )
 
 
+def _crear_version_documento(documento, usuario, motivo):
+    """Congela el contenido aprobado; el JSON evita que cambios posteriores lo alteren."""
+    objetivos = []
+    for objetivo in documento.objetivos.prefetch_related('actividades__detalles_presupuesto').all():
+        actividades = []
+        for actividad in objetivo.actividades.all():
+            actividades.append({
+                'codigo': actividad.codigo, 'nombre': actividad.nombre, 'responsable': actividad.responsable,
+                'productos_esperados': actividad.productos_esperados, 'mes_inicio': actividad.mes_inicio,
+                'mes_fin': actividad.mes_fin, 'indicador': actividad.indicador_descripcion,
+                'unidad': actividad.indicador_unidad, 'linea_base': actividad.indicador_linea_base,
+                'meta_anual': actividad.indicador_meta,
+                'presupuesto': [
+                    {'tipo': d.tipo, 'partida': d.partida, 'item': d.item, 'unidad_medida': d.unidad_medida,
+                     'cantidad': d.cantidad, 'costo_unitario': str(d.costo_unitario), 'costo_total': str(d.costo_total),
+                     'mes_requerimiento': d.mes_requerimiento}
+                    for d in actividad.detalles_presupuesto.all()
+                ],
+            })
+        objetivos.append({'codigo': objetivo.codigo, 'descripcion': objetivo.descripcion, 'actividades': actividades})
+    anterior = documento.versiones.filter(vigente=True)
+    anterior.update(vigente=False)
+    numero = (documento.versiones.aggregate(maximo=Max('numero')).get('maximo') or 0) + 1
+    return VersionDocumentoPOA.objects.create(
+        documento=documento, numero=numero, motivo=motivo, creado_por=usuario, vigente=True,
+        snapshot={'encabezado': {'gestion': documento.gestion, 'programa': documento.programa,
+            'objetivo_gestion_institucional': documento.objetivo_gestion_institucional}, 'objetivos': objetivos},
+    )
+
+
 ESTADOS_PLANIFICACION_EDITABLE = ('elaboracion', 'observado')
 ESTADOS_PLANIFICACION_CON_SOLICITUD = ('aprobado', 'ejecucion')
 
@@ -286,6 +438,7 @@ def _aplicar_solicitud_cambio(solicitud):
             'jefe_unidad',
             'fecha_elaboracion',
             'observaciones',
+            'observacion_elaboracion',
         }
         cambios = []
         for field in allowed:
@@ -339,6 +492,7 @@ def _aplicar_solicitud_cambio(solicitud):
                 indicador_unidad=payload.get('indicador_unidad') or 'numero',
                 indicador_linea_base=payload.get('indicador_linea_base') or 0,
                 indicador_meta=payload.get('indicador_meta') or 0,
+                riesgo_previsto=payload.get('riesgo_previsto') or '',
                 estado=payload.get('estado') or 'programado',
             )
             return {'actividad_id': actividad.id}
@@ -353,6 +507,7 @@ def _aplicar_solicitud_cambio(solicitud):
                 'codigo', 'nombre', 'responsable', 'productos_esperados',
                 'mes_inicio', 'mes_fin', 'indicador_descripcion',
                 'indicador_unidad', 'indicador_linea_base', 'indicador_meta',
+                'riesgo_previsto',
                 'estado',
             ]
             for field in editable:
@@ -374,18 +529,9 @@ def _aplicar_solicitud_cambio(solicitud):
             ).first()
             if not actividad:
                 raise PermissionDenied('La actividad del presupuesto no pertenece al documento.')
-            detalle = DetallePresupuesto.objects.create(
-                actividad=actividad,
-                tipo=payload.get('tipo') or 'funcionamiento',
-                partida=payload.get('partida') or '',
-                item=payload.get('item') or '',
-                unidad_medida=payload.get('unidad_medida') or '',
-                caracteristicas=payload.get('caracteristicas') or '',
-                cantidad=payload.get('cantidad') or 0,
-                costo_unitario=payload.get('costo_unitario') or 0,
-                costo_total=0,
-                mes_requerimiento=payload.get('mes_requerimiento') or '',
-            )
+            serializer = DetallePresupuestoSerializer(data={**payload, 'actividad_id': actividad.id})
+            serializer.is_valid(raise_exception=True)
+            detalle = serializer.save()
             _recalcular_montos_actividad(actividad)
             return {'detalle_id': detalle.id}
         detalle = DetallePresupuesto.objects.select_related('actividad__objetivo__documento').filter(
@@ -396,15 +542,9 @@ def _aplicar_solicitud_cambio(solicitud):
             raise PermissionDenied('El presupuesto solicitado no pertenece al documento.')
         actividad = detalle.actividad
         if accion == 'editar':
-            editable = [
-                'tipo', 'partida', 'item', 'unidad_medida',
-                'caracteristicas', 'cantidad', 'costo_unitario',
-                'mes_requerimiento',
-            ]
-            for field in editable:
-                if field in payload:
-                    setattr(detalle, field, payload.get(field))
-            detalle.save()
+            serializer = DetallePresupuestoSerializer(detalle, data=payload, partial=True)
+            serializer.is_valid(raise_exception=True)
+            detalle = serializer.save()
             _recalcular_montos_actividad(actividad)
             return {'detalle_id': detalle.id}
         if accion == 'eliminar':
@@ -435,7 +575,7 @@ def _objetivos_con_resumen_queryset():
 def _documentos_queryset():
     return DocumentoPOA.objects.prefetch_related(
         Prefetch('objetivos', queryset=_objetivos_con_resumen_queryset()),
-        'revisiones__revisor__user',
+        'versiones__creado_por',
         'historial__usuario',
         'observaciones_checklist__creado_por',
         'observaciones_checklist__resuelto_por',
@@ -727,134 +867,8 @@ class DirectorCarreraActualView(APIView):
 
 
 class ReporteGeneralPOAView(APIView):
-    """Genera un PDF con el resumen general de documentos POA por gestión."""
+    """Concatena en un PDF los formularios oficiales de la gestión seleccionada."""
     permission_classes = [IsAuthenticated]
-
-    def _build_pdf(self, documentos, gestion):
-        buffer = BytesIO()
-        doc = SimpleDocTemplate(
-            buffer,
-            pagesize=landscape(letter),
-            leftMargin=18,
-            rightMargin=18,
-            topMargin=18,
-            bottomMargin=18,
-        )
-
-        styles = getSampleStyleSheet()
-        title_style = ParagraphStyle(
-            'poa-report-title',
-            parent=styles['Heading2'],
-            fontName='Helvetica-Bold',
-            fontSize=16,
-            leading=18,
-            textColor=colors.HexColor('#0f172a'),
-        )
-        subtitle_style = ParagraphStyle(
-            'poa-report-subtitle',
-            parent=styles['Normal'],
-            fontName='Helvetica',
-            fontSize=9,
-            leading=11,
-            textColor=colors.HexColor('#334155'),
-        )
-        cell_style = ParagraphStyle(
-            'poa-report-cell',
-            parent=styles['Normal'],
-            fontName='Helvetica',
-            fontSize=8,
-            leading=10,
-        )
-        cell_bold_style = ParagraphStyle(
-            'poa-report-cell-bold',
-            parent=styles['Normal'],
-            fontName='Helvetica-Bold',
-            fontSize=8,
-            leading=10,
-        )
-
-        total = len(documentos)
-        resumen = {
-            'elaboracion': 0,
-            'revision': 0,
-            'observado': 0,
-            'aprobado': 0,
-            'ejecucion': 0,
-        }
-        for documento in documentos:
-            estado = getattr(documento, 'estado', 'elaboracion')
-            if estado in resumen:
-                resumen[estado] += 1
-
-        story = [
-            Paragraph(f'Reporte General POA - Gestión {gestion}', title_style),
-            Paragraph('Resumen de documentos disponibles para la gestión seleccionada.', subtitle_style),
-            Spacer(1, 10),
-        ]
-
-        resumen_data = [
-            [Paragraph('<b>Total</b>', cell_bold_style), Paragraph(str(total), cell_style)],
-            [Paragraph('<b>En elaboración</b>', cell_bold_style), Paragraph(str(resumen['elaboracion']), cell_style)],
-            [Paragraph('<b>En revisión</b>', cell_bold_style), Paragraph(str(resumen['revision']), cell_style)],
-            [Paragraph('<b>Observado</b>', cell_bold_style), Paragraph(str(resumen['observado']), cell_style)],
-            [Paragraph('<b>Aprobado</b>', cell_bold_style), Paragraph(str(resumen['aprobado']), cell_style)],
-            [Paragraph('<b>En ejecución</b>', cell_bold_style), Paragraph(str(resumen['ejecucion']), cell_style)],
-        ]
-        resumen_table = Table(resumen_data, colWidths=[170, 60])
-        resumen_table.setStyle(TableStyle([
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
-            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f8fafc')),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 6),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-            ('TOPPADDING', (0, 0), (-1, -1), 4),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-        ]))
-        story.extend([resumen_table, Spacer(1, 12)])
-
-        rows = [[
-            Paragraph('<b>#</b>', cell_bold_style),
-            Paragraph('<b>Programa</b>', cell_bold_style),
-            Paragraph('<b>Unidad solicitante</b>', cell_bold_style),
-            Paragraph('<b>Estado</b>', cell_bold_style),
-            Paragraph('<b>Fecha elaboración</b>', cell_bold_style),
-            Paragraph('<b>Elaborado por</b>', cell_bold_style),
-            Paragraph('<b>Director de Carrera</b>', cell_bold_style),
-        ]]
-
-        if documentos:
-            for index, documento in enumerate(documentos, start=1):
-                unidad = getattr(getattr(documento, 'unidad_solicitante', None), 'nombre', '') or getattr(getattr(documento, 'unidad_solicitante', None), 'codigo', '') or ''
-                rows.append([
-                    Paragraph(str(index), cell_style),
-                    Paragraph(str(getattr(documento, 'programa', '') or ''), cell_style),
-                    Paragraph(str(unidad), cell_style),
-                    Paragraph(str(documento.get_estado_display()), cell_style),
-                    Paragraph(str(getattr(documento, 'fecha_elaboracion', '')), cell_style),
-                    Paragraph(str(getattr(documento, 'elaborado_por', '') or ''), cell_style),
-                    Paragraph(str(getattr(documento, 'jefe_unidad', '') or ''), cell_style),
-                ])
-        else:
-            rows.append([
-                Paragraph('Sin documentos registrados para esta gestión.', cell_style), '', '', '', '', '', ''
-            ])
-
-        table = Table(rows, colWidths=[24, 170, 105, 72, 78, 115, 115], repeatRows=1)
-        table.setStyle(TableStyle([
-            ('GRID', (0, 0), (-1, -1), 0.45, colors.HexColor('#94a3b8')),
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e2e8f0')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#0f172a')),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 5),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 5),
-            ('TOPPADDING', (0, 0), (-1, -1), 4),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-        ]))
-        story.append(table)
-
-        doc.build(story)
-        buffer.seek(0)
-        return buffer
 
     def get(self, request):
         gestion_param = request.query_params.get('gestion')
@@ -875,7 +889,398 @@ class ReporteGeneralPOAView(APIView):
 
         buffer = DocumentoPOAPDFGenerator.generar_reporte_general(list(documentos), gestion)
         nombre_archivo = f'reporte_documentos_{gestion}.pdf'
-        return FileResponse(buffer, as_attachment=True, filename=nombre_archivo)
+        return _respuesta_pdf(request, buffer, nombre_archivo)
+
+
+class ConsolidadoRequerimientosView(APIView):
+    """Bandeja de compras: consulta y exportación, sin generar una compra todavía."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            gestion, items = _consolidar_requerimientos(request)
+        except ValueError as exc:
+            return Response({'gestion': [str(exc)]}, status=status.HTTP_400_BAD_REQUEST)
+        total = sum((Decimal(item['monto_estimado_total']) for item in items), Decimal('0'))
+        formato = (request.query_params.get('formato') or '').lower()
+        if formato == 'excel':
+            buffer = generar_consolidado_requerimientos_excel(items, gestion, total)
+            return FileResponse(buffer, as_attachment=True, filename=f'consolidado_compras_poa_{gestion}.xlsx')
+        if formato == 'pdf':
+            buffer = generar_consolidado_requerimientos_pdf(items, gestion, total)
+            return _respuesta_pdf(request, buffer, f'solicitud_compra_poa_{gestion}.pdf')
+        return Response({'gestion': gestion, 'total_items': len(items), 'cantidad_total': sum(item['cantidad_total'] for item in items), 'monto_estimado_total': str(total), 'items': items})
+
+
+class ReporteSeguimientoInstitucionalPOAView(APIView):
+    """Informe institucional de seguimiento: físico, financiero y medios de verificación."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            gestion = int(request.query_params.get('gestion') or timezone.now().year)
+        except (TypeError, ValueError):
+            return Response({'gestion': ['La gestión debe ser válida.']}, status=status.HTTP_400_BAD_REQUEST)
+        documentos = _filtrar_documentos_por_usuario(
+            DocumentoPOA.objects.filter(gestion=gestion).select_related('unidad_solicitante'),
+            request.user,
+        )
+        documento_id = request.query_params.get('documento')
+        if documento_id:
+            documentos = documentos.filter(pk=documento_id)
+        documentos_lista = list(documentos.order_by('programa', 'id'))
+        documentos_reporte = [{
+            'id': documento.id,
+            'programa': documento.programa,
+            'unidad': documento.unidad_solicitante.nombre,
+            'facultad': str(getattr(documento.unidad_solicitante, 'facultad', '') or ''),
+            'jefe_unidad': documento.jefe_unidad,
+            'elaborado_por': documento.elaborado_por,
+            'fecha_elaboracion': documento.fecha_elaboracion,
+        } for documento in documentos_lista]
+        actividades = Actividad.objects.filter(
+            objetivo__documento__in=documentos_lista,
+        ).select_related(
+            'objetivo__documento__unidad_solicitante',
+        ).prefetch_related(
+            'evidencias__archivos', 'detalles_presupuesto',
+        ).order_by('objetivo__documento__programa', 'objetivo_id', 'id')
+        filas_excel, filas_pdf = [], []
+        for actividad in actividades:
+            evidencia = actividad.evidencias.order_by('-creado_en').first()
+            presupuesto = sum((detalle.costo_total for detalle in actividad.detalles_presupuesto.all()), Decimal('0'))
+            avance = evidencia.grado_cumplimiento if evidencia else 0
+            archivos = list(evidencia.archivos.all()) if evidencia else []
+            medios_verificacion, medios_archivos = [], []
+            for archivo in archivos:
+                enlace = archivo.url or (request.build_absolute_uri(archivo.archivo.url) if archivo.archivo else '')
+                if enlace:
+                    medios_verificacion.append(enlace)
+                archivo_local = ''
+                if archivo.archivo:
+                    try:
+                        archivo_local = archivo.archivo.path
+                    except (NotImplementedError, OSError, ValueError):
+                        pass
+                medios_archivos.append({
+                    'tipo': archivo.tipo,
+                    'enlace': enlace,
+                    'archivo_local': archivo_local,
+                })
+            documento = actividad.objetivo.documento
+            indicador_numero = (actividad.codigo or '').split('-')[-1] or actividad.id
+            filas_excel.append({
+                'documento_id': documento.id,
+                'programa': documento.programa,
+                'unidad': documento.unidad_solicitante.nombre,
+                'facultad': str(getattr(documento.unidad_solicitante, 'facultad', '') or ''),
+                'objetivo_id': actividad.objetivo_id,
+                'objetivo_codigo': actividad.objetivo.codigo,
+                'objetivo_descripcion': actividad.objetivo.descripcion,
+                'actividad_codigo': actividad.codigo,
+                'actividad_nombre': actividad.nombre,
+                'responsable': actividad.responsable,
+                'productos_esperados': actividad.productos_esperados,
+                'resultados_logrados': evidencia.resultados_logrados if evidencia else '',
+                'medios_verificacion': medios_verificacion,
+                'medios_archivos': medios_archivos,
+                'indicador_numero': indicador_numero,
+                'indicador_descripcion': actividad.indicador_descripcion,
+                'indicador_linea_base': actividad.indicador_linea_base,
+                'programado': evidencia.programado if evidencia else actividad.indicador_meta,
+                'ejecutado': evidencia.ejecutado if evidencia else 0,
+                'grado_cumplimiento': float(avance),
+                'presupuesto': str(presupuesto),
+            })
+            filas_pdf.append([
+                documento.programa, actividad.codigo, actividad.nombre, actividad.responsable,
+                actividad.mes_inicio, actividad.mes_fin, actividad.estado, float(avance),
+                str(presupuesto), evidencia.resultados_logrados if evidencia else '',
+                evidencia.programado if evidencia else 0, evidencia.ejecutado if evidencia else 0,
+            ])
+        formato = (request.query_params.get('formato') or 'excel').lower()
+        if formato == 'excel':
+            buffer = generar_seguimiento_institucional_excel(
+                filas_excel, gestion, documentos_reporte,
+            )
+            return FileResponse(
+                buffer,
+                as_attachment=True,
+                filename=f'informe_general_seguimiento_poa_{gestion}.xlsx',
+            )
+        buffer = generar_seguimiento_institucional_pdf(filas_pdf, gestion)
+        return _respuesta_pdf(request, buffer, f'informe_seguimiento_poa_{gestion}.pdf')
+
+
+class TableroPOAView(APIView):
+    """Resumen operativo por carrera: no duplica datos, solo los hace accionables."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            params = getattr(request, 'query_params', request.GET)
+            gestion = int(params.get('gestion') or timezone.now().year)
+        except (TypeError, ValueError):
+            return Response({'gestion': ['La gestión debe ser un año válido.']}, status=status.HTTP_400_BAD_REQUEST)
+        documentos = _filtrar_documentos_por_usuario(DocumentoPOA.objects.filter(gestion=gestion), request.user)
+        programa = (params.get('programa') or '').strip()
+        if programa: documentos = documentos.filter(programa=programa)
+        actividades = Actividad.objects.filter(objetivo__documento__in=documentos).select_related('objetivo__documento').prefetch_related('evidencias')
+        detalles = DetallePresupuesto.objects.filter(actividad__in=actividades)
+        ordenes = OrdenCompraPOA.objects.filter(gestion=gestion, carrera__in=documentos.values('unidad_solicitante')).prefetch_related('detalles__recepciones_detalle__entregas')
+        estados_documento = {estado: documentos.filter(estado=estado).count() for estado, _ in DocumentoPOA.ESTADO_CHOICES}
+        estados_actividad = {estado: actividades.filter(estado=estado).count() for estado, _ in Actividad.ESTADOS}
+        meses = {'enero':1, 'febrero':2, 'marzo':3, 'abril':4, 'mayo':5, 'junio':6, 'julio':7, 'agosto':8, 'septiembre':9, 'octubre':10, 'noviembre':11, 'diciembre':12}
+        hoy_mes = timezone.now().month
+        retrasadas = [a for a in actividades if a.estado in ('programado', 'en_ejecucion') and meses.get((a.mes_fin or '').lower(), 13) < hoy_mes]
+        sin_evidencia = [a for a in actividades if a.estado == 'en_ejecucion' and not a.evidencias.all()]
+        recibido_pendiente = []
+        comprometido = Decimal('0'); recibido = Decimal('0'); entregado = Decimal('0')
+        for orden in ordenes:
+            for detalle in orden.detalles.all():
+                comprometido += detalle.costo_total_real
+                recepciones = [r for r in detalle.recepciones_detalle.all() if not r.recepcion.anulada]
+                cantidad_recibida = sum(r.cantidad_recibida for r in recepciones)
+                costo_recibido = sum((r.cantidad_recibida * r.costo_unitario_real for r in recepciones), Decimal('0'))
+                recibido += costo_recibido
+                cantidad_entregada = sum(e.cantidad_entregada for r in recepciones for e in r.entregas.all() if not e.anulada)
+                entregado += sum((e.cantidad_entregada * r.costo_unitario_real for r in recepciones for e in r.entregas.all() if not e.anulada), Decimal('0'))
+                if cantidad_recibida > cantidad_entregada:
+                    recibido_pendiente.append({'orden_id': orden.id, 'orden_numero': orden.numero, 'partida': detalle.partida, 'item': detalle.item, 'pendiente_entrega': cantidad_recibida - cantidad_entregada, 'unidad_medida': detalle.unidad_medida})
+        planificado = sum((d.costo_total for d in detalles), Decimal('0'))
+        mes_actual = next((nombre for nombre, numero in meses.items() if numero == hoy_mes), '')
+        actividades_mes = [a for a in actividades if (a.mes_inicio or '').lower() == mes_actual]
+        resumen_mensual = {
+            'mes': mes_actual.capitalize(),
+            'programadas': len(actividades_mes),
+            'en_ejecucion': sum(1 for a in actividades_mes if a.estado == 'en_ejecucion'),
+            'completadas': sum(1 for a in actividades_mes if a.estado == 'completado'),
+            'retrasadas': sum(1 for a in actividades_mes if a in retrasadas),
+        }
+        alertas = []
+        if retrasadas: alertas.append({'nivel': 'advertencia', 'destinatarios': ['director', 'elaborador'], 'mensaje': f'{len(retrasadas)} actividad(es) superaron su mes de finalización.'})
+        if sin_evidencia: alertas.append({'nivel': 'info', 'destinatarios': ['elaborador'], 'mensaje': f'{len(sin_evidencia)} actividad(es) en ejecución no tienen evidencia.'})
+        if comprometido > planificado: alertas.append({'nivel': 'critica', 'destinatarios': ['director', 'elaborador'], 'mensaje': 'El costo comprometido supera el presupuesto planificado.'})
+        if recibido_pendiente: alertas.append({'nivel': 'advertencia', 'destinatarios': ['elaborador'], 'mensaje': f'{len(recibido_pendiente)} material(es) recibidos aún esperan entrega.'})
+        breve = lambda a: {'id': a.id, 'codigo': a.codigo, 'nombre': a.nombre, 'programa': a.objetivo.documento.programa, 'mes_fin': a.mes_fin, 'estado': a.estado, 'objetivo_id': a.objetivo_id, 'documento_id': a.objetivo.documento_id, 'documento_estado': a.objetivo.documento.estado, 'gestion': a.objetivo.documento.gestion}
+        for alerta in alertas:
+            if alerta['nivel'] == 'critica' or 'material' in alerta['mensaje']:
+                alerta['accion'] = 'ver_materiales'
+            elif 'evidencia' in alerta['mensaje']:
+                alerta['accion'] = 'registrar_evidencia'; alerta['referencia'] = breve(sin_evidencia[0])
+            elif retrasadas:
+                alerta['accion'] = 'ver_actividad'; alerta['referencia'] = breve(retrasadas[0])
+        return Response({'gestion': gestion, 'estados_documento': estados_documento, 'estados_actividad': estados_actividad, 'agenda_mensual': resumen_mensual, 'presupuesto': {'planificado': str(planificado), 'comprometido': str(comprometido), 'recibido': str(recibido), 'entregado': str(entregado)}, 'actividades_retrasadas': [breve(a) for a in retrasadas[:20]], 'actividades_sin_evidencia': [breve(a) for a in sin_evidencia[:20]], 'materiales_pendientes_entrega': recibido_pendiente[:20], 'alertas': alertas})
+
+
+class BandejaSeguimientoPOAView(APIView):
+    """Datos compactos del trabajo operativo: solo programas en ejecución."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            gestion = int(request.query_params.get('gestion') or timezone.now().year)
+        except (TypeError, ValueError):
+            return Response({'gestion': ['La gestión debe ser válida.']}, status=status.HTTP_400_BAD_REQUEST)
+        modo = (request.query_params.get('modo') or 'ejecucion').lower()
+        if modo not in ('ejecucion', 'planificado'):
+            return Response({'modo': ['Seleccione ejecución o planificado.']}, status=status.HTTP_400_BAD_REQUEST)
+        documentos_base = DocumentoPOA.objects.filter(gestion=gestion)
+        documentos_base = documentos_base.filter(estado='ejecucion') if modo == 'ejecucion' else documentos_base.exclude(estado='ejecucion')
+        documentos = _filtrar_documentos_por_usuario(documentos_base, request.user).prefetch_related('objetivos__actividades__evidencias')
+        programas, total, avance_total, con_evidencia, retrasadas = [], 0, 0, 0, 0
+        meses = {'enero': 1, 'febrero': 2, 'marzo': 3, 'abril': 4, 'mayo': 5, 'junio': 6, 'julio': 7, 'agosto': 8, 'septiembre': 9, 'octubre': 10, 'noviembre': 11, 'diciembre': 12}
+        for documento in documentos:
+            actividades = [actividad for objetivo in documento.objetivos.all() for actividad in objetivo.actividades.all()]
+            completadas = sum(1 for actividad in actividades if actividad.estado == 'completado')
+            en_ejecucion = sum(1 for actividad in actividades if actividad.estado == 'en_ejecucion')
+            programas.append({'id': documento.id, 'programa': documento.programa, 'estado_documento': documento.estado, 'total_actividades': len(actividades), 'completadas': completadas, 'en_ejecucion': en_ejecucion, 'avance_porcentaje': round((completadas / len(actividades) * 100) if actividades else 0, 1)})
+            for actividad in actividades:
+                total += 1
+                evidencia = actividad.evidencias.order_by('-creado_en').first()
+                avance_total += float(evidencia.grado_cumplimiento or 0) if evidencia else 0
+                con_evidencia += 1 if evidencia else 0
+                retrasadas += 1 if actividad.estado in ('programado', 'en_ejecucion') and meses.get((actividad.mes_fin or '').lower(), 13) < timezone.now().month else 0
+        return Response({'gestion': gestion, 'modo': modo, 'programas': programas, 'resumen': {'documentos': len(programas), 'actividades': total, 'avance_fisico': round(avance_total / total, 1) if total else 0, 'con_evidencia': con_evidencia, 'retrasadas': retrasadas}})
+
+
+class DetalleSeguimientoProgramaPOAView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        documento = get_object_or_404(
+            _filtrar_documentos_por_usuario(DocumentoPOA.objects.all(), request.user).prefetch_related(
+                'objetivos__actividades__evidencias__archivos',
+                'objetivos__actividades__detalles_presupuesto',
+                'objetivos__actividades__seguimientos',
+            ),
+            pk=pk,
+        )
+        objetivos = []
+        for objetivo in documento.objetivos.all():
+            actividades = []
+            for actividad in objetivo.actividades.all():
+                evidencia = actividad.evidencias.order_by('-creado_en').first()
+                detalles = list(actividad.detalles_presupuesto.all())
+                presupuesto_total = sum((detalle.costo_total for detalle in detalles), Decimal('0'))
+                medios_verificacion = EvidenciaArchivoSerializer(
+                    list(evidencia.archivos.all()) if evidencia else [], many=True, context={'request': request}
+                ).data
+                actividades.append({'id': actividad.id, 'codigo': actividad.codigo, 'nombre': actividad.nombre, 'responsable': actividad.responsable, 'productos_esperados': actividad.productos_esperados, 'indicador_descripcion': actividad.indicador_descripcion, 'indicador_unidad': actividad.indicador_unidad, 'indicador_linea_base': actividad.indicador_linea_base, 'indicador_meta': actividad.indicador_meta, 'riesgo_previsto': actividad.riesgo_previsto, 'presupuesto_total': str(presupuesto_total), 'tiene_presupuesto': bool(detalles), 'mes_inicio': actividad.mes_inicio, 'mes_fin': actividad.mes_fin, 'estado': actividad.estado, 'avance': float(evidencia.grado_cumplimiento or 0) if evidencia else 0, 'tiene_evidencia': bool(evidencia), 'seguimientos_registrados': actividad.seguimientos.count(), 'medios_verificacion': medios_verificacion, 'situacion_actual': {'resultados_logrados': evidencia.resultados_logrados if evidencia else '', 'programado': evidencia.programado if evidencia else 0, 'ejecutado': evidencia.ejecutado if evidencia else 0, 'actualizado_en': evidencia.actualizado_en.isoformat() if evidencia else None, 'archivos': len(medios_verificacion), 'medios_verificacion': medios_verificacion}})
+            objetivos.append({'id': objetivo.id, 'codigo': objetivo.codigo, 'descripcion': objetivo.descripcion, 'actividades': actividades})
+        return Response({'id': documento.id, 'programa': documento.programa, 'gestion': documento.gestion, 'estado_documento': documento.estado, 'objetivos': objetivos})
+
+
+class OrdenCompraPOAView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        carrera = _carrera_usuario_poa(request.user)
+        relacionados = ('detalles__recepciones_detalle__entregas', 'recepciones__detalles__entregas')
+        qs = OrdenCompraPOA.objects.prefetch_related(*relacionados).all() if request.user.is_superuser else OrdenCompraPOA.objects.filter(carrera=carrera).prefetch_related(*relacionados)
+        gestion = request.query_params.get('gestion')
+        if gestion: qs = qs.filter(gestion=gestion)
+        return Response(OrdenCompraPOASerializer(qs, many=True, context={'request': request}).data)
+
+    def post(self, request):
+        _requerir_elaborador(request)
+        carrera = _carrera_usuario_poa(request.user)
+        if not carrera:
+            return Response({'detail': 'No tiene una carrera activa.'}, status=status.HTTP_400_BAD_REQUEST)
+        lineas = request.data.get('lineas') or []
+        if isinstance(lineas, str):
+            try:
+                lineas = json.loads(lineas)
+            except json.JSONDecodeError:
+                return Response({'lineas': ['Las líneas de compra no tienen un formato válido.']}, status=status.HTTP_400_BAD_REQUEST)
+        if not lineas:
+            return Response({'lineas': ['Seleccione al menos un ítem consolidado.']}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            gestion = int(request.data.get('gestion'))
+        except (TypeError, ValueError):
+            return Response({'gestion': ['La gestión es obligatoria.']}, status=status.HTTP_400_BAD_REQUEST)
+        numero = (request.data.get('numero') or '').strip(); proveedor = (request.data.get('proveedor') or '').strip()
+        if not numero or not proveedor or not request.data.get('fecha'):
+            return Response({'detail': 'Número, proveedor y fecha son obligatorios.'}, status=status.HTTP_400_BAD_REQUEST)
+        with transaction.atomic():
+            orden = OrdenCompraPOA.objects.create(carrera=carrera, gestion=gestion, numero=numero, proveedor=proveedor, fecha=request.data['fecha'], observacion=(request.data.get('observacion') or ''), respaldo=request.FILES.get('respaldo'), creado_por=request.user)
+            alertas = []
+            for linea in lineas:
+                origenes = [int(x) for x in (linea.get('origen_detalles') or [])]
+                origen_qs = DetallePresupuesto.objects.filter(id__in=origenes, actividad__objetivo__documento__unidad_solicitante=carrera, actividad__objetivo__documento__gestion=gestion, actividad__objetivo__documento__estado__in=['aprobado', 'ejecucion'])
+                if origen_qs.count() != len(set(origenes)):
+                    raise PermissionDenied('Un detalle de origen no pertenece a la carrera, gestión o estado permitido.')
+                planificada = sum(d.cantidad for d in origen_qs)
+                comprada = int(linea.get('cantidad_comprada') or 0)
+                costo = Decimal(str(linea.get('costo_unitario_real') or 0))
+                if comprada <= 0 or costo < 0 or comprada > planificada:
+                    raise PermissionDenied('La cantidad comprada debe ser positiva y no superar la cantidad planificada; el costo no puede ser negativo.')
+                estimado = sum((d.costo_total for d in origen_qs), Decimal('0'))
+                real = comprada * costo
+                if real > estimado: alertas.append(f"{linea.get('item')}: costo real superior al estimado.")
+                DetalleOrdenCompraPOA.objects.create(orden=orden, partida=linea['partida'], item=linea['item'], unidad_medida=linea.get('unidad_medida') or '', caracteristicas=linea.get('caracteristicas') or '', tipo=linea.get('tipo') or 'funcionamiento', cantidad_planificada=planificada, cantidad_comprada=comprada, costo_unitario_real=costo, origen_detalles=origenes)
+            _crear_historial_documento(origen_qs.first().actividad.objetivo.documento, request.user, 'edicion', f'Orden de compra {numero} registrada.', datos_evento={'orden_id': orden.id})
+        data = OrdenCompraPOASerializer(orden).data; data['alertas'] = alertas
+        return Response(data, status=status.HTTP_201_CREATED)
+
+
+class RecepcionMaterialPOAView(APIView):
+    permission_classes = [IsAuthenticated]
+    def post(self, request):
+        _requerir_elaborador(request)
+        orden = get_object_or_404(OrdenCompraPOA, pk=request.data.get('orden'))
+        carrera = _carrera_usuario_poa(request.user)
+        if not request.user.is_superuser and orden.carrera_id != getattr(carrera, 'id', None): raise PermissionDenied('La orden no pertenece a su carrera.')
+        if orden.estado not in ('emitida', 'recibiendo'): return Response({'detail': 'Solo se reciben órdenes emitidas o en recepción.'}, status=status.HTTP_400_BAD_REQUEST)
+        lineas = request.data.get('lineas') or []
+        if isinstance(lineas, str):
+            try:
+                lineas = json.loads(lineas)
+            except json.JSONDecodeError:
+                return Response({'lineas': ['Las líneas de recepción no tienen un formato válido.']}, status=status.HTTP_400_BAD_REQUEST)
+        if not lineas: return Response({'lineas': ['Registre al menos una cantidad recibida.']}, status=status.HTTP_400_BAD_REQUEST)
+        with transaction.atomic():
+            recepcion = RecepcionMaterialPOA.objects.create(orden=orden, fecha=request.data.get('fecha') or timezone.now().date(), numero_respaldo=request.data.get('numero_respaldo') or '', recibido_por=request.data.get('recibido_por') or '', observacion=request.data.get('observacion') or '', respaldo=request.FILES.get('respaldo'), registrado_por=request.user)
+            for linea in lineas:
+                detalle = get_object_or_404(DetalleOrdenCompraPOA, pk=linea.get('detalle_orden'), orden=orden)
+                recibido = int(linea.get('cantidad_recibida') or 0)
+                acumulado = sum(d.cantidad_recibida for d in detalle.recepciones_detalle.filter(recepcion__anulada=False))
+                if recibido <= 0 or acumulado + recibido > detalle.cantidad_comprada: raise PermissionDenied('La recepción supera el saldo comprado.')
+                DetalleRecepcionMaterialPOA.objects.create(recepcion=recepcion, detalle_orden=detalle, cantidad_recibida=recibido, costo_unitario_real=linea.get('costo_unitario_real') or detalle.costo_unitario_real)
+            pendientes = any(sum(d.cantidad_recibida for d in detalle.recepciones_detalle.filter(recepcion__anulada=False)) < detalle.cantidad_comprada for detalle in orden.detalles.all())
+            orden.estado = 'recibiendo' if pendientes else 'recibida'; orden.save(update_fields=['estado'])
+        return Response(RecepcionMaterialPOASerializer(recepcion).data, status=status.HTTP_201_CREATED)
+
+
+class EntregaMaterialActividadView(APIView):
+    permission_classes = [IsAuthenticated]
+    def post(self, request):
+        _requerir_elaborador(request)
+        detalle = get_object_or_404(DetalleRecepcionMaterialPOA.objects.select_related('recepcion__orden'), pk=request.data.get('detalle_recepcion'))
+        actividad = get_object_or_404(Actividad.objects.select_related('objetivo__documento'), pk=request.data.get('actividad'))
+        orden = detalle.recepcion.orden; carrera = _carrera_usuario_poa(request.user)
+        if not request.user.is_superuser and (orden.carrera_id != getattr(carrera, 'id', None) or actividad.objetivo.documento.unidad_solicitante_id != orden.carrera_id or actividad.objetivo.documento.gestion != orden.gestion): raise PermissionDenied('La entrega debe pertenecer a la misma carrera y gestión.')
+        origenes = set(detalle.detalle_orden.origen_detalles or [])
+        requeridos = list(DetallePresupuesto.objects.filter(actividad=actividad, id__in=origenes))
+        if not requeridos: raise PermissionDenied('Este material no fue planificado para la actividad seleccionada.')
+        cantidad = int(request.data.get('cantidad_entregada') or 0)
+        disponible = detalle.cantidad_recibida - sum(e.cantidad_entregada for e in detalle.entregas.filter(anulada=False))
+        entregado_actividad = sum(e.cantidad_entregada for e in EntregaMaterialActividad.objects.filter(actividad=actividad, anulada=False, detalle_recepcion__detalle_orden=detalle.detalle_orden))
+        if cantidad <= 0 or cantidad > disponible or cantidad + entregado_actividad > sum(r.cantidad for r in requeridos): raise PermissionDenied('La entrega supera el saldo recibido o el requerimiento de la actividad.')
+        receptor = (request.data.get('nombre_receptor') or '').strip()
+        if not receptor: return Response({'nombre_receptor': ['El nombre del receptor es obligatorio.']}, status=status.HTTP_400_BAD_REQUEST)
+        entrega = EntregaMaterialActividad.objects.create(detalle_recepcion=detalle, actividad=actividad, cantidad_entregada=cantidad, fecha=request.data.get('fecha') or timezone.now().date(), nombre_receptor=receptor, ci_receptor=request.data.get('ci_receptor') or '', cargo_receptor=request.data.get('cargo_receptor') or '', telefono_receptor=request.data.get('telefono_receptor') or '', observacion=request.data.get('observacion') or '', acta_archivo=request.FILES.get('acta_archivo'), registrado_por=request.user)
+        return Response(EntregaMaterialActividadSerializer(entrega).data, status=status.HTTP_201_CREATED)
+
+
+class AnularMovimientoMaterialPOAView(APIView):
+    """Anula movimientos sin borrarlos, respetando el orden de la trazabilidad."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, tipo, pk):
+        _requerir_elaborador(request)
+        motivo = (request.data.get('motivo') or '').strip()
+        if not motivo:
+            return Response({'motivo': ['Indique el motivo de la anulación.']}, status=status.HTTP_400_BAD_REQUEST)
+        carrera = _carrera_usuario_poa(request.user)
+
+        if tipo == 'entrega':
+            movimiento = get_object_or_404(EntregaMaterialActividad.objects.select_related('detalle_recepcion__recepcion__orden'), pk=pk)
+            orden = movimiento.detalle_recepcion.recepcion.orden
+            if not request.user.is_superuser and orden.carrera_id != getattr(carrera, 'id', None):
+                raise PermissionDenied('La entrega no pertenece a su carrera.')
+            if movimiento.anulada:
+                return Response({'detail': 'La entrega ya fue anulada.'}, status=status.HTTP_400_BAD_REQUEST)
+            movimiento.anulada = True; movimiento.motivo_anulacion = motivo; movimiento.save(update_fields=['anulada', 'motivo_anulacion'])
+            return Response(EntregaMaterialActividadSerializer(movimiento).data)
+
+        if tipo == 'recepcion':
+            movimiento = get_object_or_404(RecepcionMaterialPOA.objects.prefetch_related('detalles__entregas'), pk=pk)
+            orden = movimiento.orden
+            if not request.user.is_superuser and orden.carrera_id != getattr(carrera, 'id', None):
+                raise PermissionDenied('La recepción no pertenece a su carrera.')
+            if movimiento.anulada:
+                return Response({'detail': 'La recepción ya fue anulada.'}, status=status.HTTP_400_BAD_REQUEST)
+            if any(detalle.entregas.filter(anulada=False).exists() for detalle in movimiento.detalles.all()):
+                return Response({'detail': 'Primero anule las entregas realizadas con esta recepción.'}, status=status.HTTP_400_BAD_REQUEST)
+            movimiento.anulada = True; movimiento.motivo_anulacion = motivo; movimiento.save(update_fields=['anulada', 'motivo_anulacion'])
+            pendientes = any(sum(d.cantidad_recibida for d in detalle.recepciones_detalle.filter(recepcion__anulada=False)) < detalle.cantidad_comprada for detalle in orden.detalles.all())
+            orden.estado = 'recibiendo' if pendientes else 'recibida'; orden.save(update_fields=['estado'])
+            return Response(RecepcionMaterialPOASerializer(movimiento).data)
+
+        if tipo == 'orden':
+            movimiento = get_object_or_404(OrdenCompraPOA.objects.prefetch_related('recepciones'), pk=pk)
+            if not request.user.is_superuser and movimiento.carrera_id != getattr(carrera, 'id', None):
+                raise PermissionDenied('La orden no pertenece a su carrera.')
+            if movimiento.estado == 'cancelada':
+                return Response({'detail': 'La orden ya fue anulada.'}, status=status.HTTP_400_BAD_REQUEST)
+            if movimiento.recepciones.filter(anulada=False).exists():
+                return Response({'detail': 'Primero anule las recepciones y entregas asociadas.'}, status=status.HTTP_400_BAD_REQUEST)
+            movimiento.estado = 'cancelada'; movimiento.anulado_por = request.user; movimiento.motivo_anulacion = motivo
+            movimiento.save(update_fields=['estado', 'anulado_por', 'motivo_anulacion'])
+            return Response(OrdenCompraPOASerializer(movimiento).data)
+
+        return Response({'detail': 'Tipo de movimiento no válido.'}, status=status.HTTP_404_NOT_FOUND)
 
 
 class ChatContactosPOAView(APIView):
@@ -1049,25 +1454,47 @@ class CurrentUserAPIView(APIView):
         })
 
 
-class DireccionViewSet(viewsets.ModelViewSet):
-    queryset = Direccion.objects.all()
-    serializer_class = DireccionSerializer
+class ProgramaPOAViewSet(viewsets.ModelViewSet):
+    """Catálogo de programas aislado a la carrera del usuario POA."""
+
+    serializer_class = ProgramaPOASerializer
     permission_classes = [IsAuthenticated]
 
-    def create(self, request, *args, **kwargs):
-        _requerir_elaborador(request)
-        return super().create(request, *args, **kwargs)
+    def get_queryset(self):
+        carrera = _carrera_usuario_poa(self.request.user)
+        if self.request.user.is_superuser:
+            qs = ProgramaPOA.objects.select_related('carrera').all()
+        elif not carrera:
+            return ProgramaPOA.objects.none()
+        else:
+            qs = ProgramaPOA.objects.select_related('carrera').filter(carrera=carrera)
+        activo = self.request.query_params.get('activo')
+        if activo is not None:
+            qs = qs.filter(activo=str(activo).lower() in {'1', 'true', 'si', 'yes'})
+        return qs
 
-    def update(self, request, *args, **kwargs):
-        _requerir_elaborador(request)
-        return super().update(request, *args, **kwargs)
+    def perform_create(self, serializer):
+        _requerir_elaborador(self.request)
+        carrera = _carrera_usuario_poa(self.request.user)
+        if not carrera:
+            raise PermissionDenied('El usuario no tiene una carrera asignada para gestionar programas POA.')
+        serializer.save(carrera=carrera)
 
-    def partial_update(self, request, *args, **kwargs):
-        _requerir_elaborador(request)
-        return super().partial_update(request, *args, **kwargs)
+    def perform_update(self, serializer):
+        _requerir_elaborador(self.request)
+        serializer.save()
 
     def destroy(self, request, *args, **kwargs):
         _requerir_elaborador(request)
+        programa = self.get_object()
+        if DocumentoPOA.objects.filter(
+            unidad_solicitante=programa.carrera,
+            programa=programa.nombre,
+        ).exists():
+            return Response(
+                {'detail': 'No se puede eliminar un programa con documentos POA. Inactívelo para conservar el historial.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         return super().destroy(request, *args, **kwargs)
 
 
@@ -1195,7 +1622,7 @@ class DocumentoPOAViewSet(viewsets.ModelViewSet):
             gestion = documento.gestion
             nombre_archivo = f"POA_{programa}_{gestion}.pdf"
 
-            return FileResponse(buffer, as_attachment=True, filename=nombre_archivo)
+            return _respuesta_pdf(request, buffer, nombre_archivo)
         except Exception as e:
             return HttpResponse(f"Error crítico al generar PDF: {str(e)}", status=500)
 
@@ -1206,12 +1633,18 @@ class DocumentoPOAViewSet(viewsets.ModelViewSet):
         if doc.estado not in ('elaboracion', 'observado'):
             return Response({'detail': f'No se puede enviar a revisión desde el estado {doc.get_estado_display()}.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        errores_formulacion = _errores_formulacion_documento(doc)
+        if errores_formulacion:
+            return Response({
+                'detail': 'El documento aún no cumple los requisitos de formulación para enviarse a revisión.',
+                'errores': errores_formulacion,
+            }, status=status.HTTP_400_BAD_REQUEST)
+
         director = (doc.jefe_unidad or '').strip()
         if not director:
             return Response({'jefe_unidad': ['El documento debe tener un Director de Carrera asignado antes de enviarse a revisión.']}, status=status.HTTP_400_BAD_REQUEST)
 
         estado_anterior = doc.estado
-        doc.revisiones.filter(activo=True).update(activo=False)
         nuevo_ciclo = doc.ciclo_revision_actual + 1
 
         doc.estado = 'revision'
@@ -1233,6 +1666,34 @@ class DocumentoPOAViewSet(viewsets.ModelViewSet):
         )
         return Response(self.get_serializer(doc).data)
 
+    @action(detail=True, methods=['get'], url_path='validar-formulacion')
+    def validar_formulacion(self, request, pk=None):
+        doc = self.get_object()
+        errores = _errores_formulacion_documento(doc)
+        return Response({'valido': not errores, 'errores': errores})
+
+    @action(detail=True, methods=['get'], url_path='versiones')
+    def versiones(self, request, pk=None):
+        doc = self.get_object()
+        return Response(VersionDocumentoPOASerializer(doc.versiones.select_related('creado_por'), many=True).data)
+
+    @action(detail=False, methods=['get'], url_path='seguimiento')
+    def seguimiento(self, request):
+        try:
+            gestion = int(request.query_params.get('gestion') or timezone.now().year)
+        except (TypeError, ValueError):
+            return Response({'gestion': ['La gestión debe ser un año válido.']}, status=status.HTTP_400_BAD_REQUEST)
+        documentos = _filtrar_documentos_por_usuario(DocumentoPOA.objects.filter(gestion=gestion), request.user)
+        actividades = Actividad.objects.filter(objetivo__documento__in=documentos).select_related('objetivo__documento')
+        resumen = {estado: actividades.filter(estado=estado).count() for estado, _ in Actividad.ESTADOS}
+        activas = actividades.filter(estado='en_ejecucion').order_by('mes_fin', 'codigo')[:12]
+        programadas = actividades.filter(estado='programado', objetivo__documento__estado='ejecucion').order_by('mes_inicio', 'codigo')[:12]
+        return Response({
+            'gestion': gestion, 'resumen': resumen,
+            'actividades_en_ejecucion': ActividadSerializer(activas, many=True, context={'request': request}).data,
+            'actividades_programadas': ActividadSerializer(programadas, many=True, context={'request': request}).data,
+        })
+
     @action(detail=True, methods=['post'], url_path='aprobar')
     def aprobar(self, request, pk=None):
         _requerir_revisor(request)
@@ -1245,6 +1706,7 @@ class DocumentoPOAViewSet(viewsets.ModelViewSet):
         doc.estado = 'aprobado'
         doc.observaciones = ''
         doc.save(update_fields=['estado', 'observaciones', 'actualizado_en'])
+        _crear_version_documento(doc, request.user, 'Aprobación del Director de Carrera.')
 
         _crear_historial_documento(
             documento=doc,
@@ -1529,6 +1991,11 @@ class SolicitudCambioPOAViewSet(viewsets.ModelViewSet):
             solicitud.respuesta = (request.data.get('respuesta') or '').strip()
             solicitud.respondido_en = timezone.now()
             solicitud.save(update_fields=['estado', 'revisado_por', 'respuesta', 'respondido_en', 'actualizado_en'])
+            _crear_version_documento(
+                solicitud.documento,
+                request.user,
+                f'Solicitud de cambio #{solicitud.id} aprobada: {solicitud.descripcion or solicitud.get_tipo_objeto_display()}.',
+            )
 
             _crear_historial_documento(
                 documento=solicitud.documento,
@@ -1583,11 +2050,21 @@ class EvidenciaViewSet(viewsets.ModelViewSet):
     serializer_class = EvidenciaSerializer
     permission_classes = [IsAuthenticated]
 
-    def _sincronizar_estado_actividad(self, actividad_id, estado):
-        if not actividad_id:
+    def _sincronizar_estado_actividad(self, actividad, evidencia, usuario):
+        """Una evidencia parcial indica ejecución; 100% permite cerrar la actividad."""
+        if not actividad:
             return
-
-        Actividad.objects.filter(pk=actividad_id).update(estado=estado)
+        nuevo = 'completado' if int(evidencia.grado_cumplimiento or 0) >= 100 else 'en_ejecucion'
+        if actividad.estado == nuevo:
+            return
+        anterior = actividad.estado
+        actividad.estado = nuevo
+        actividad.save(update_fields=['estado'])
+        SeguimientoActividadPOA.objects.create(
+            actividad=actividad, estado_anterior=anterior, estado_nuevo=nuevo,
+            avance_porcentaje=max(0, min(100, int(evidencia.grado_cumplimiento or 0))),
+            nota='Estado actualizado a partir de la evidencia registrada.', registrado_por=usuario,
+        )
 
     def _guardar_adjuntos(self, evidencia, request, data, replace_links=False):
         files = request.FILES.getlist('archivos') or []
@@ -1661,7 +2138,7 @@ class EvidenciaViewSet(viewsets.ModelViewSet):
             evidencia = ser.save()
 
             self._guardar_adjuntos(evidencia, request, data)
-            self._sincronizar_estado_actividad(evidencia.actividad_id, 'completado')
+            self._sincronizar_estado_actividad(actividad_obj, evidencia, request.user)
             _crear_historial_documento(
                 documento=actividad_obj.objetivo.documento,
                 usuario=request.user,
@@ -1688,7 +2165,7 @@ class EvidenciaViewSet(viewsets.ModelViewSet):
             evidencia = ser.save()
 
             self._guardar_adjuntos(evidencia, request, data, replace_links=True)
-            self._sincronizar_estado_actividad(evidencia.actividad_id, 'completado')
+            self._sincronizar_estado_actividad(actividad_obj, evidencia, request.user)
             _crear_historial_documento(
                 documento=actividad_obj.objetivo.documento,
                 usuario=request.user,
@@ -1712,7 +2189,6 @@ class EvidenciaViewSet(viewsets.ModelViewSet):
             documento = actividad_obj.objetivo.documento
             evidencia_id = instance.id
             response = super().destroy(request, *args, **kwargs)
-            self._sincronizar_estado_actividad(actividad_id, 'programado')
             _crear_historial_documento(
                 documento=documento,
                 usuario=request.user,
@@ -1818,6 +2294,7 @@ class ObjetivoEspecificoViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'Documento no encontrado o sin permisos para modificarlo.'}, status=status.HTTP_404_NOT_FOUND)
         _requerir_documento_editable_directo(request, documento)
         response = super().create(request, *args, **kwargs)
+        response.data['message'] = 'Actividad creada correctamente.'
         _crear_historial_documento(
             documento=documento,
             usuario=request.user,
@@ -1833,6 +2310,7 @@ class ObjetivoEspecificoViewSet(viewsets.ModelViewSet):
         obj = self.get_object()
         _requerir_documento_editable_directo(request, obj.documento)
         response = super().update(request, *args, **kwargs)
+        response.data['message'] = 'Actividad actualizada correctamente.'
         _crear_historial_documento(
             documento=obj.documento,
             usuario=request.user,
@@ -1848,6 +2326,7 @@ class ObjetivoEspecificoViewSet(viewsets.ModelViewSet):
         obj = self.get_object()
         _requerir_documento_editable_directo(request, obj.documento)
         response = super().partial_update(request, *args, **kwargs)
+        response.data['message'] = 'Actividad actualizada correctamente.'
         _crear_historial_documento(
             documento=obj.documento,
             usuario=request.user,
@@ -1901,6 +2380,43 @@ class ActividadViewSet(viewsets.ModelViewSet):
             from rest_framework.exceptions import NotFound
             raise NotFound('La actividad no pertenece a una carrera accesible para este usuario.')
         return obj
+
+    @action(detail=True, methods=['post'], url_path='actualizar-estado')
+    def actualizar_estado(self, request, pk=None):
+        """Transición explícita usada por el tablero de ejecución."""
+        _requerir_elaborador(request)
+        actividad = self.get_object()
+        documento = actividad.objetivo.documento
+        if documento.estado != 'ejecucion':
+            return Response({'detail': 'Las actividades solo se actualizan durante la ejecución del POA.'}, status=status.HTTP_400_BAD_REQUEST)
+        nuevo = (request.data.get('estado') or '').strip()
+        transiciones = {
+            'programado': {'en_ejecucion', 'cancelado'},
+            'en_ejecucion': {'completado', 'cancelado'},
+            'completado': set(), 'cancelado': set(),
+        }
+        if nuevo not in transiciones.get(actividad.estado, set()):
+            return Response({'estado': ['La transición solicitada no está permitida. Para reabrir una actividad terminada o cancelada use una solicitud de cambio.']}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            avance = int(request.data.get('avance_porcentaje', 100 if nuevo == 'completado' else 0))
+        except (TypeError, ValueError):
+            return Response({'avance_porcentaje': ['Debe ser un entero entre 0 y 100.']}, status=status.HTTP_400_BAD_REQUEST)
+        if not 0 <= avance <= 100:
+            return Response({'avance_porcentaje': ['Debe estar entre 0 y 100.']}, status=status.HTTP_400_BAD_REQUEST)
+        anterior = actividad.estado
+        actividad.estado = nuevo
+        actividad.save(update_fields=['estado'])
+        seguimiento = SeguimientoActividadPOA.objects.create(
+            actividad=actividad, estado_anterior=anterior, estado_nuevo=nuevo,
+            avance_porcentaje=avance, nota=(request.data.get('nota') or '').strip(), registrado_por=request.user,
+        )
+        _crear_historial_documento(documento, request.user, 'edicion', f'Actividad {actividad.codigo} cambió a {actividad.get_estado_display()}.', documento.estado, documento.estado, {'actividad_id': actividad.id, 'seguimiento_id': seguimiento.id})
+        return Response({'actividad': self.get_serializer(actividad).data, 'seguimiento': SeguimientoActividadPOASerializer(seguimiento).data})
+
+    @action(detail=True, methods=['get'], url_path='seguimiento')
+    def historial_seguimiento(self, request, pk=None):
+        actividad = self.get_object()
+        return Response(SeguimientoActividadPOASerializer(actividad.seguimientos.select_related('registrado_por'), many=True).data)
 
     @action(detail=True, methods=['patch'])
     def asignar_catalogo(self, request, pk=None):
@@ -2056,19 +2572,6 @@ class ActividadViewSet(viewsets.ModelViewSet):
             datos_evento={'actividad_id': actividad_id},
         )
         return response
-
-    @action(detail=False, methods=['get'])
-    def indicadores_por_direccion(self, request):
-        search = (request.query_params.get('q') or request.query_params.get('search') or '').strip()
-        try:
-            indicadores = IndicadorCatalogo.objects.all().order_by('indicador')
-            if search:
-                indicadores = indicadores.filter(indicador__icontains=search)
-            from catalogos.api.serializers import IndicadorCatalogoSerializer
-            serializer = IndicadorCatalogoSerializer(indicadores, many=True)
-            return Response(serializer.data)
-        except Exception as e:
-            return Response({'error': f'Error al obtener indicadores: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['patch'])
     def asignar_indicador(self, request, pk=None):
@@ -2473,3 +2976,455 @@ class MensajeChatViewSet(
             'detail': 'Usuario desbloqueado correctamente.' if deleted else 'El usuario no estaba bloqueado.',
             'bloqueado_por_mi': False,
         })
+
+
+class IsElaboradorOrReadOnly(BasePermission):
+    """Permite lectura a usuarios autenticados y escritura solo a rol elaborador."""
+
+    message = 'Solo usuarios con rol elaborador pueden modificar el catálogo de items.'
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+
+        if request.method in SAFE_METHODS:
+            return True
+
+        return UsuarioPOA.objects.filter(
+            user=user,
+            activo=True,
+            rol='elaborador',
+        ).exists()
+
+
+class ItemCatalogoViewSet(viewsets.ModelViewSet):
+    serializer_class = ItemCatalogoSerializer
+    permission_classes = [IsElaboradorOrReadOnly]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    @staticmethod
+    def _normalize_header(value):
+        if value is None:
+            return ''
+        text = str(value).strip().lower()
+        text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
+        return text.replace(' ', '_')
+
+    @staticmethod
+    def _normalize_code(value):
+        if value is None:
+            return ''
+        if isinstance(value, float) and value.is_integer():
+            value = int(value)
+        return str(value).strip()
+
+    @action(detail=False, methods=['get', 'post'], url_path='importar-excel')
+    def importar_excel(self, request, *args, **kwargs):
+        if request.method == 'GET':
+            return Response(
+                {
+                    'detail': 'Endpoint de importación de catálogo.',
+                    'uso': 'Envíe POST multipart/form-data con el archivo en el campo "archivo".',
+                },
+                status=200,
+            )
+
+        archivo = request.FILES.get('archivo')
+        if not archivo:
+            return Response({'detail': 'Debe adjuntar un archivo Excel en el campo "archivo".'}, status=400)
+
+        dry_run = str(request.data.get('dry_run', 'false')).strip().lower() in {'1', 'true', 'si', 'yes'}
+        replace_duplicates = str(request.data.get('replace_duplicates', 'false')).strip().lower() in {'1', 'true', 'si', 'yes'}
+
+        try:
+            workbook = load_workbook(filename=archivo, data_only=True, read_only=True)
+            sheet = workbook[workbook.sheetnames[0]]
+        except Exception as exc:
+            return Response({'detail': f'No se pudo leer el archivo: {exc}'}, status=400)
+
+        iterator = sheet.iter_rows(values_only=True)
+        header_row = next(iterator, None)
+        if not header_row:
+            return Response({'detail': 'El archivo no contiene encabezados.'}, status=400)
+
+        header_map = {self._normalize_header(value): idx for idx, value in enumerate(header_row) if value is not None}
+
+        def col_idx(candidates):
+            for candidate in candidates:
+                idx = header_map.get(candidate)
+                if idx is not None:
+                    return idx
+            return None
+
+        col_detalle = col_idx(['detalle', 'descripcion'])
+        col_partida = col_idx(['partida', 'partida_codigo', 'codigo_partida'])
+        col_unidad = col_idx(['unidad', 'unidad_medida', 'uom'])
+
+        missing = []
+        if col_detalle is None:
+            missing.append('DETALLE/descripcion')
+        if col_partida is None:
+            missing.append('partida/partida_codigo')
+        if missing:
+            return Response(
+                {
+                    'detail': 'Faltan columnas requeridas en el Excel.',
+                    'faltantes': missing,
+                    'encabezados_detectados': list(header_map.keys()),
+                },
+                status=400,
+            )
+
+        stats = {
+            'filas_procesadas': 0,
+            'filas_vacias': 0,
+            'items_creados': 0,
+            'items_actualizados': 0,
+            'duplicados_detectados': 0,
+            'errores': 0,
+            'detalle_truncado': 0,
+            'dry_run': dry_run,
+            'replace_duplicates': replace_duplicates,
+            'partidas_unicas_detectadas': 0,
+        }
+        errores = []
+
+        partidas_detectadas = set()
+        to_create = []
+        to_update = {}
+        duplicados_conflicto = []
+        existing_by_detalle = {}
+        pending_creates_by_detalle = {}
+
+        if not dry_run:
+            for item in ItemCatalogo.objects.all().only('id', 'detalle', 'partida', 'unidad_medida'):
+                key = str(item.detalle or '').strip().lower()
+                if key:
+                    existing_by_detalle[key] = item
+
+        def get_cell(row, idx):
+            if idx is None or idx >= len(row):
+                return None
+            return row[idx]
+
+        for excel_row_num, row in enumerate(iterator, start=2):
+            detalle = str(get_cell(row, col_detalle) or '').strip()
+            partida_codigo = self._normalize_code(get_cell(row, col_partida))
+            unidad_medida = str(get_cell(row, col_unidad) or 'Sin unidad').strip() if col_unidad is not None else 'Sin unidad'
+
+            if not detalle and not partida_codigo:
+                stats['filas_vacias'] += 1
+                continue
+
+            stats['filas_procesadas'] += 1
+            if not detalle or not partida_codigo:
+                stats['errores'] += 1
+                if len(errores) < 200:
+                    errores.append({'fila': excel_row_num, 'error': 'DETALLE y partida son obligatorios.'})
+                continue
+
+            if len(detalle) > 255:
+                detalle = detalle[:255]
+                stats['detalle_truncado'] += 1
+
+            partidas_detectadas.add(partida_codigo)
+
+            if dry_run:
+                stats['items_creados'] += 1
+                continue
+
+            detail_key = detalle.lower()
+            existing = existing_by_detalle.get(detail_key)
+            if existing is not None:
+                stats['duplicados_detectados'] += 1
+                if not replace_duplicates:
+                    if len(duplicados_conflicto) < 200:
+                        duplicados_conflicto.append(
+                            {
+                                'fila': excel_row_num,
+                                'detalle': detalle,
+                                'item_existente_id': existing.id,
+                                'error': 'Detalle duplicado en catálogo existente.',
+                            }
+                        )
+                    continue
+
+                existing.partida = partida_codigo
+                existing.unidad_medida = unidad_medida or 'Sin unidad'
+                to_update[existing.id] = existing
+                stats['items_actualizados'] += 1
+                continue
+
+            pending_create = pending_creates_by_detalle.get(detail_key)
+            if pending_create is not None:
+                stats['duplicados_detectados'] += 1
+                pending_create.partida = partida_codigo
+                pending_create.unidad_medida = unidad_medida or 'Sin unidad'
+                continue
+
+            new_item = ItemCatalogo(
+                partida=partida_codigo,
+                detalle=detalle,
+                unidad_medida=unidad_medida or 'Sin unidad',
+            )
+            to_create.append(new_item)
+            pending_creates_by_detalle[detail_key] = new_item
+
+        if not dry_run and duplicados_conflicto and not replace_duplicates:
+            return Response(
+                {
+                    'detail': 'Se detectaron DETALLE duplicados en el catálogo existente.',
+                    'requires_confirmation': True,
+                    'accion_recomendada': 'replace_duplicates=true para reemplazar registros existentes',
+                    'resumen': stats,
+                    'duplicados': duplicados_conflicto,
+                },
+                status=409,
+            )
+
+        if not dry_run:
+            with transaction.atomic():
+                if to_update:
+                    ItemCatalogo.objects.bulk_update(
+                        list(to_update.values()),
+                        fields=['partida', 'unidad_medida'],
+                        batch_size=1000,
+                    )
+                if to_create:
+                    ItemCatalogo.objects.bulk_create(to_create, batch_size=1000)
+                    stats['items_creados'] = len(to_create)
+        stats['partidas_unicas_detectadas'] = len(partidas_detectadas)
+
+        return Response({'resumen': stats, 'errores': errores}, status=200)
+
+    def get_queryset(self):
+        qs = ItemCatalogo.objects.all()
+        partida_codigo = (
+            self.request.query_params.get('partida')
+            or self.request.query_params.get('partida_codigo')
+            or self.request.query_params.get('partida_id')
+        )
+        if partida_codigo:
+            return qs.filter(partida=str(partida_codigo).strip())
+        # No devolver listado global; exigir filtro por partida
+        return qs
+
+    def list(self, request, *args, **kwargs):
+        partida_codigo = request.query_params.get('partida') or request.query_params.get('partida_codigo') or request.query_params.get('partida_id')
+        if not partida_codigo:
+            return Response({'detail': "El parámetro 'partida' es obligatorio para listar items."}, status=400)
+        return super().list(request, *args, **kwargs)
+
+    def create(self, request, *args, **kwargs):
+        data = request.data.copy()
+        # Mantener compatibilidad: si llega partida_id usarlo como codigo de partida
+        if 'partida' not in data and 'partida_id' in data:
+            data['partida'] = str(data.get('partida_id')).strip()
+        if 'partida' not in data:
+            return Response({'detail': "El campo 'partida' es obligatorio para crear un item."}, status=400)
+
+        detalle = str(data.get('detalle') or '').strip()
+        replace_existing = str(data.get('replace_existing', 'false')).strip().lower() in {'1', 'true', 'si', 'yes'}
+        if detalle:
+            existente = ItemCatalogo.objects.filter(detalle__iexact=detalle).first()
+            if existente and not replace_existing:
+                return Response(
+                    {
+                        'detail': 'Ya existe un item con el mismo DETALLE.',
+                        'requires_confirmation': True,
+                        'duplicate_item_id': existente.id,
+                        'duplicate_detalle': existente.detalle,
+                    },
+                    status=409,
+                )
+            if existente and replace_existing:
+                serializer = self.get_serializer(existente, data=data, partial=True)
+                serializer.is_valid(raise_exception=True)
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_200_OK)
+
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+
+
+class PartidaPresupuestariaViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = PartidaCatalogoSerializer
+    permission_classes = [AllowAny]
+
+    def get_queryset(self):
+        partidas = (
+            ItemCatalogo.objects
+            .exclude(partida='')
+            .values_list('partida', flat=True)
+            .distinct()
+            .order_by('partida')
+        )
+        return [{'id': p, 'codigo': p, 'nombre': p} for p in partidas]
+
+
+class ItemCatalogoReadOnlyViewSet(viewsets.ReadOnlyModelViewSet):
+    """Endpoint solo-lectura para listar/ver detalles de items junto con su partida.
+
+    Este viewset expone GET / y GET /<id>/ sin exigir el filtro por partida_id.
+    """
+    queryset = ItemCatalogo.objects.all()
+    serializer_class = ItemCatalogoSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        partida_codigo = (
+            self.request.query_params.get('partida')
+            or self.request.query_params.get('partida_codigo')
+            or self.request.query_params.get('partida_id')
+        )
+        if partida_codigo:
+            qs = qs.filter(partida=str(partida_codigo).strip())
+
+        search = (self.request.query_params.get('q') or self.request.query_params.get('search') or '').strip()
+        if search:
+            qs = qs.filter(
+                Q(detalle__icontains=search)
+                | Q(unidad_medida__icontains=search)
+                | Q(partida__icontains=search)
+            )
+
+        return qs.order_by('id')
+
+    def list(self, request, *args, **kwargs):
+        search = (request.query_params.get('q') or request.query_params.get('search') or '').strip()
+        queryset = self.filter_queryset(self.get_queryset())
+
+        # En búsquedas devolver una muestra mayor sin paginación para UX más fluida.
+        if search:
+            serializer = self.get_serializer(queryset[:200], many=True)
+            return Response(serializer.data)
+
+        return super().list(request, *args, **kwargs)
+
+    @action(detail=False, methods=['get'], url_path='exportar-excel')
+    def exportar_excel(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset()).order_by('id')
+        buffer = generar_catalogo_items_excel(queryset.iterator())
+        return FileResponse(
+            buffer,
+            as_attachment=True,
+            filename='catalogo_items.xlsx',
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+
+
+class IndicadorCatalogoViewSet(viewsets.ModelViewSet):
+    serializer_class = IndicadorCatalogoSerializer
+    permission_classes = [AllowAny]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get_queryset(self):
+        qs = IndicadorCatalogo.objects.all()
+        search = (self.request.query_params.get('q') or self.request.query_params.get('search') or '').strip()
+        if search:
+            qs = qs.filter(indicador__icontains=search)
+        return qs.order_by('indicador')
+
+    @action(detail=False, methods=['get', 'post'], url_path='importar-excel')
+    def importar_excel(self, request):
+        if request.method == 'GET':
+            return Response(
+                {
+                    'detail': 'Importa un archivo Excel con indicadores.',
+                    'uso': 'Envíe POST multipart/form-data con el archivo en el campo "archivo".',
+                    'formato_sugerido': 'Un indicador por fila en la primera columna. Puede incluir encabezado.',
+                },
+                status=200,
+            )
+
+        archivo = request.FILES.get('archivo')
+        if not archivo:
+            return Response({'detail': 'Debe adjuntar un archivo Excel en el campo "archivo".'}, status=400)
+
+        nombre_archivo = str(getattr(archivo, 'name', '') or '').lower()
+        if not nombre_archivo.endswith('.xlsx'):
+            return Response({'detail': 'El archivo debe ser Excel (.xlsx).'}, status=400)
+
+        dry_run = str(request.data.get('dry_run', 'false')).strip().lower() in {'1', 'true', 'si', 'yes'}
+
+        try:
+            workbook = load_workbook(filename=archivo, data_only=True, read_only=True)
+            sheet = workbook.active
+            indicadores_detectados = []
+            vistos_archivo = set()
+            for fila, row in enumerate(sheet.iter_rows(min_row=1, max_col=1, values_only=True), start=1):
+                indicador = str(row[0] or '').strip() if row else ''
+                if not indicador:
+                    continue
+
+                indicador = unicodedata.normalize('NFKC', indicador)
+                indicador = ' '.join(indicador.split())
+                if not indicador:
+                    continue
+
+                if fila == 1 and indicador.casefold() in {'indicador', 'indicadores'}:
+                    continue
+
+                key = indicador.casefold()
+                if key in vistos_archivo:
+                    continue
+
+                vistos_archivo.add(key)
+                indicadores_detectados.append(indicador[:500])
+        except Exception as exc:
+            return Response({'detail': f'No se pudo leer el archivo Excel: {str(exc)}'}, status=400)
+
+        if not indicadores_detectados:
+            return Response(
+                {
+                    'detail': 'No se encontraron indicadores en el archivo Excel.',
+                    'sugerencia': 'Asegúrese de que los indicadores estén en la primera columna.',
+                },
+                status=400,
+            )
+
+        existentes = {
+            str(value or '').casefold()
+            for value in IndicadorCatalogo.objects.values_list('indicador', flat=True)
+        }
+        nuevos = [
+            IndicadorCatalogo(indicador=text)
+            for text in indicadores_detectados
+            if text.casefold() not in existentes
+        ]
+
+        if not dry_run and nuevos:
+            with transaction.atomic():
+                IndicadorCatalogo.objects.bulk_create(nuevos, ignore_conflicts=True)
+
+        duplicados = len(indicadores_detectados) - len(nuevos)
+
+        return Response(
+            {
+                'detail': 'Archivo Excel procesado correctamente.',
+                'dry_run': dry_run,
+                'indicadores_detectados': len(indicadores_detectados),
+                'indicadores_duplicados': duplicados,
+                'indicadores_creados': 0 if dry_run else len(nuevos),
+                'preview': indicadores_detectados[:50],
+            },
+            status=201 if not dry_run else 200,
+        )
+
+
+class IndicadorCatalogoReadOnlyViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = IndicadorCatalogoSerializer
+    permission_classes = [AllowAny]
+
+    def get_queryset(self):
+        qs = IndicadorCatalogo.objects.all()
+        search = (self.request.query_params.get('q') or self.request.query_params.get('search') or '').strip()
+        if search:
+            qs = qs.filter(indicador__icontains=search)
+        return qs.order_by('indicador')

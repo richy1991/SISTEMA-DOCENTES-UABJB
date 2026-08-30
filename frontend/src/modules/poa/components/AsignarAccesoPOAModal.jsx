@@ -90,7 +90,6 @@ const AsignarAccesoPOAModal = ({ onClose, accesoToEdit, onCreated, onUpdated }) 
       const messages = buildClientErrorMessages(nextFieldErrors);
       setFieldErrors(nextFieldErrors);
       setErrorMessages(messages);
-      toast.error(messages[0]);
       focusFirstError(nextFieldErrors);
       return;
     }
@@ -122,12 +121,10 @@ const AsignarAccesoPOAModal = ({ onClose, accesoToEdit, onCreated, onUpdated }) 
       const nextFieldErrors = mapApiErrorsToFieldErrors(data);
 
       if (err?.response?.status === 400 && data?.detail) {
-        toast.error(data.detail);
         setErrorMessages([data.detail]);
       } else {
         setFieldErrors(nextFieldErrors);
         setErrorMessages(messages);
-        toast.error(messages[0] || 'Error al guardar');
         focusFirstError(nextFieldErrors);
       }
     } finally {
