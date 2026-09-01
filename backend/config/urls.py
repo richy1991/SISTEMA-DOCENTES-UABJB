@@ -11,7 +11,6 @@ from fondos.views import CustomTokenObtainPairView
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('fondos.urls')),
-    path('api/catalogos/', include('catalogos.api.urls')),
     path('api/poa/', include('poa_document.api.urls')),
     path('api/reportes/generar-reporte-general/', ReporteGeneralPOAView.as_view(), name='reporte-general-poa'),
     path('api/token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),

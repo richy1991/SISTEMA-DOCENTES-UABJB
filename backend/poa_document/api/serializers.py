@@ -1,3 +1,5 @@
+import re
+
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.db.models import Sum
@@ -9,17 +11,42 @@ from poa_document.models import (
     Actividad,
     DetallePresupuesto,
     UsuarioPOA,
-    RevisionDocumentoPOA,
     HistorialDocumentoPOA,
     ObservacionDocumentoPOA,
     SolicitudCambioPOA,
     MensajeChat,
+    VersionDocumentoPOA,
+    SeguimientoActividadPOA,
+    OrdenCompraPOA, DetalleOrdenCompraPOA, RecepcionMaterialPOA, DetalleRecepcionMaterialPOA, EntregaMaterialActividad,
 )
-from poa_document.models import Evidencia, EvidenciaArchivo
+from poa_document.models import Evidencia, EvidenciaArchivo, ProgramaPOA, ItemCatalogo, IndicadorCatalogo
 from fondos.models import Docente, Carrera
-from catalogos.api.serializers import DireccionSerializer
-from catalogos.models import Direccion
-from catalogos.models import OperacionCatalogo
+
+
+class PartidaCatalogoSerializer(serializers.Serializer):
+    id = serializers.CharField()
+    codigo = serializers.CharField()
+    nombre = serializers.CharField()
+
+
+class ItemCatalogoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ItemCatalogo
+        fields = ['id', 'detalle', 'unidad_medida', 'partida']
+        read_only_fields = ['id']
+
+
+class IndicadorCatalogoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = IndicadorCatalogo
+        fields = ['id', 'indicador']
+        read_only_fields = ['id']
+
+    def validate_indicador(self, value):
+        text = str(value or '').strip()
+        if not text:
+            raise serializers.ValidationError('El indicador no puede estar vacío.')
+        return text
 
 
 def _carrera_usuario_autenticado(user):
@@ -60,6 +87,21 @@ class CarreraSimpleSerializer(serializers.ModelSerializer):
         fields = ['id', 'nombre', 'codigo']
 
 
+class ProgramaPOASerializer(serializers.ModelSerializer):
+    carrera_nombre = serializers.CharField(source='carrera.nombre', read_only=True)
+
+    class Meta:
+        model = ProgramaPOA
+        fields = ['id', 'carrera', 'carrera_nombre', 'nombre', 'activo', 'creado_en', 'actualizado_en']
+        read_only_fields = ['id', 'carrera', 'carrera_nombre', 'creado_en', 'actualizado_en']
+
+    def validate_nombre(self, value):
+        nombre = str(value or '').strip()
+        if not nombre:
+            raise serializers.ValidationError('El nombre del programa es obligatorio.')
+        return nombre
+
+
 class UsuarioPOASerializer(serializers.ModelSerializer):
     user_detalle = UserSimpleSerializer(source='user', read_only=True)
     docente_detalle = DocenteSimpleSerializer(source='docente', read_only=True)
@@ -92,41 +134,28 @@ class UsuarioPOASerializer(serializers.ModelSerializer):
         return value
 
 
-class RevisionDocumentoPOASerializer(serializers.ModelSerializer):
-    revisor_nombre = serializers.SerializerMethodField()
-    revisor_entidad = serializers.CharField(source='revisor.nombre_entidad', read_only=True)
-    revisor_rol_display = serializers.CharField(source='revisor.get_rol_display', read_only=True)
-    tipo_revisor_display = serializers.CharField(source='get_tipo_revisor_display', read_only=True)
-    estado_display = serializers.CharField(source='get_estado_display', read_only=True)
-    respondido_por_nombre = serializers.SerializerMethodField()
-    es_revisor_actual = serializers.SerializerMethodField()
+class VersionDocumentoPOASerializer(serializers.ModelSerializer):
+    creado_por_nombre = serializers.SerializerMethodField()
 
     class Meta:
-        model = RevisionDocumentoPOA
-        fields = [
-            'id', 'ciclo_revision', 'revisor', 'revisor_nombre', 'revisor_entidad', 'revisor_rol_display',
-            'tipo_revisor', 'tipo_revisor_display', 'estado', 'estado_display', 'observaciones',
-            'fecha_asignacion', 'fecha_respuesta', 'respondido_por', 'respondido_por_nombre',
-            'activo', 'es_revisor_actual'
-        ]
+        model = VersionDocumentoPOA
+        fields = ['id', 'numero', 'motivo', 'creado_por', 'creado_por_nombre', 'creado_en', 'vigente']
         read_only_fields = fields
 
-    def get_revisor_nombre(self, obj):
-        return obj.revisor.nombre_entidad or obj.revisor.nombre_display
+    def get_creado_por_nombre(self, obj):
+        return obj.creado_por.get_full_name() or obj.creado_por.username
 
-    def get_respondido_por_nombre(self, obj):
-        if not obj.respondido_por:
-            return ''
-        return obj.respondido_por.get_full_name() or obj.respondido_por.username
 
-    def get_es_revisor_actual(self, obj):
-        request = self.context.get('request')
-        user = getattr(request, 'user', None)
-        if not user or not user.is_authenticated:
-            return False
-        if user.is_superuser:
-            return True
-        return obj.revisor.user_id == user.id
+class SeguimientoActividadPOASerializer(serializers.ModelSerializer):
+    registrado_por_nombre = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SeguimientoActividadPOA
+        fields = ['id', 'estado_anterior', 'estado_nuevo', 'avance_porcentaje', 'nota', 'registrado_por', 'registrado_por_nombre', 'registrado_en']
+        read_only_fields = fields
+
+    def get_registrado_por_nombre(self, obj):
+        return obj.registrado_por.get_full_name() or obj.registrado_por.username
 
 
 class HistorialDocumentoPOASerializer(serializers.ModelSerializer):
@@ -207,17 +236,16 @@ class SolicitudCambioPOASerializer(serializers.ModelSerializer):
         return obj.revisado_por.get_full_name() or obj.revisado_por.username
 
 
-# DireccionSerializer ahora se importa desde catalogos.api.serializers
-
-
 class DocumentoPOASerializer(serializers.ModelSerializer):
     unidad_solicitante_detalle = CarreraSimpleSerializer(source='unidad_solicitante', read_only=True)
+    programa_id = serializers.PrimaryKeyRelatedField(
+        queryset=ProgramaPOA.objects.all(), write_only=True, required=False, allow_null=True
+    )
 
     elaborado_por_id = serializers.PrimaryKeyRelatedField(queryset=UsuarioPOA.objects.all(), write_only=True, required=False, allow_null=True)
     jefe_unidad_id = serializers.PrimaryKeyRelatedField(queryset=UsuarioPOA.objects.all(), write_only=True, required=False, allow_null=True)
 
     objetivos = serializers.SerializerMethodField()
-    revisiones_activas = serializers.SerializerMethodField()
     historial = serializers.SerializerMethodField()
     observaciones_checklist = serializers.SerializerMethodField()
     solicitudes_cambio_pendientes = serializers.SerializerMethodField()
@@ -225,16 +253,17 @@ class DocumentoPOASerializer(serializers.ModelSerializer):
     class Meta:
         model = DocumentoPOA
         fields = [
-            'id', 'gestion', 'unidad_solicitante', 'unidad_solicitante_detalle', 'programa', 'objetivo_gestion_institucional',
-            'elaborado_por', 'jefe_unidad', 'fecha_elaboracion', 'estado', 'observaciones', 'ciclo_revision_actual',
+            'id', 'gestion', 'unidad_solicitante', 'unidad_solicitante_detalle', 'programa', 'programa_id', 'objetivo_gestion_institucional',
+            'elaborado_por', 'jefe_unidad', 'fecha_elaboracion', 'estado', 'observaciones', 'observacion_elaboracion', 'ciclo_revision_actual',
             'creado_en', 'actualizado_en', 'elaborado_por_id', 'jefe_unidad_id',
-            'objetivos', 'revisiones_activas', 'historial',
+            'objetivos', 'historial',
             'observaciones_checklist', 'solicitudes_cambio_pendientes'
         ]
 
     def validate(self, attrs):
         request = self.context.get('request')
         user = getattr(request, 'user', None)
+        programa_obj = attrs.pop('programa_id', None)
         elaborado_por_obj = attrs.pop('elaborado_por_id', None)
         jefe_unidad_obj = attrs.pop('jefe_unidad_id', None)
         elaborado_por = elaborado_por_obj or attrs.get('elaborado_por', getattr(self.instance, 'elaborado_por', ''))
@@ -250,6 +279,16 @@ class DocumentoPOASerializer(serializers.ModelSerializer):
                 errors['unidad_solicitante'] = 'El usuario no tiene una carrera asignada para crear o editar documentos POA.'
             else:
                 attrs['unidad_solicitante'] = carrera
+
+        carrera_documento = attrs.get('unidad_solicitante', getattr(self.instance, 'unidad_solicitante', None))
+        if programa_obj is not None:
+            if not programa_obj.activo:
+                errors['programa_id'] = 'El programa seleccionado está inactivo.'
+            elif not carrera_documento or programa_obj.carrera_id != carrera_documento.id:
+                errors['programa_id'] = 'El programa seleccionado no pertenece a la carrera del documento.'
+            else:
+                # El campo de texto conserva una fotografía histórica del programa.
+                attrs['programa'] = programa_obj.nombre
 
         if elaborado_por is not None:
             if hasattr(elaborado_por, 'activo') and not elaborado_por.activo:
@@ -302,10 +341,6 @@ class DocumentoPOASerializer(serializers.ModelSerializer):
     def get_objetivos(self, obj):
         return ObjetivoEspecificoSerializer(obj.objetivos.all(), many=True).data
 
-    def get_revisiones_activas(self, obj):
-        revisiones = obj.revisiones.filter(activo=True, ciclo_revision=obj.ciclo_revision_actual).select_related('revisor__user', 'respondido_por')
-        return RevisionDocumentoPOASerializer(revisiones, many=True, context=self.context).data
-
     def get_historial(self, obj):
         historial = obj.historial.select_related('usuario').all()[:10]
         return HistorialDocumentoPOASerializer(historial, many=True, context=self.context).data
@@ -322,12 +357,6 @@ class DocumentoPOASerializer(serializers.ModelSerializer):
 
 
 # Serializers para Objetivos/Actividades (integrados en poa_document)
-class OperacionCatalogoSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = OperacionCatalogo
-        fields = ['id', 'operacion', 'indicador', 'servicio', 'proceso']
-
-
 class ObjetivoEspecificoSerializer(serializers.ModelSerializer):
     # Para crear/editar desde la API requerimos relacionar explícitamente el documento
     # No forzamos el campo en updates/patches; la vista validará su presencia en create
@@ -399,6 +428,7 @@ class ActividadSerializer(serializers.ModelSerializer):
             'mes_inicio', 'mes_fin', 'indicador_descripcion', 'indicador_descripcion_texto',
             'indicadores_disponibles',
             'indicador_unidad', 'indicador_linea_base', 'indicador_meta',
+            'riesgo_previsto',
             'monto_funcion', 'monto_inversion', 'estado',
             'evidencia_registrada', 'evidencia_cumplimiento'
         ]
@@ -415,6 +445,29 @@ class ActividadSerializer(serializers.ModelSerializer):
         if request and request.method == 'POST':
             if 'objetivo' not in attrs:
                 raise serializers.ValidationError({ 'objetivo_id': 'El campo objetivo_id es obligatorio para crear una actividad.' })
+        meses = {
+            'enero': 1, 'febrero': 2, 'marzo': 3, 'abril': 4, 'mayo': 5, 'junio': 6,
+            'julio': 7, 'agosto': 8, 'septiembre': 9, 'octubre': 10, 'noviembre': 11, 'diciembre': 12,
+        }
+        inicio = str(attrs.get('mes_inicio', getattr(self.instance, 'mes_inicio', ''))).strip().lower()
+        fin = str(attrs.get('mes_fin', getattr(self.instance, 'mes_fin', ''))).strip().lower()
+        errors = {}
+        if inicio not in meses:
+            errors['mes_inicio'] = 'Seleccione un mes de inicio válido.'
+        if fin not in meses:
+            errors['mes_fin'] = 'Seleccione un mes de finalización válido.'
+        if inicio in meses and fin in meses and meses[inicio] > meses[fin]:
+            errors['mes_fin'] = 'El mes de finalización no puede ser anterior al mes de inicio.'
+
+        unidad = attrs.get('indicador_unidad', getattr(self.instance, 'indicador_unidad', 'numero'))
+        if unidad == 'porcentaje':
+            for campo in ('indicador_linea_base', 'indicador_meta'):
+                valor = attrs.get(campo, getattr(self.instance, campo, 0))
+                if valor is not None and not 0 <= valor <= 100:
+                    errors[campo] = 'Cuando la unidad es porcentaje, el valor debe estar entre 0 y 100.'
+
+        if errors:
+            raise serializers.ValidationError(errors)
         return attrs
 
     def create(self, validated_data):
@@ -450,6 +503,96 @@ class ActividadSerializer(serializers.ModelSerializer):
             return 0
 
 
+# Compra, recepción y entrega: solo se exponen snapshots, nunca se crean usuarios para receptores.
+class DetalleOrdenCompraPOASerializer(serializers.ModelSerializer):
+    costo_total_real = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    cantidad_recibida = serializers.SerializerMethodField()
+    cantidad_entregada = serializers.SerializerMethodField()
+    saldo_recepcion = serializers.SerializerMethodField()
+    saldo_entrega = serializers.SerializerMethodField()
+    actividades_origen = serializers.SerializerMethodField()
+
+    def get_cantidad_recibida(self, obj):
+        return sum(detalle.cantidad_recibida for detalle in obj.recepciones_detalle.filter(recepcion__anulada=False))
+
+    def get_cantidad_entregada(self, obj):
+        return sum(entrega.cantidad_entregada for recepcion in obj.recepciones_detalle.filter(recepcion__anulada=False) for entrega in recepcion.entregas.filter(anulada=False))
+
+    def get_saldo_recepcion(self, obj):
+        return obj.cantidad_comprada - self.get_cantidad_recibida(obj)
+
+    def get_saldo_entrega(self, obj):
+        return self.get_cantidad_recibida(obj) - self.get_cantidad_entregada(obj)
+
+    def get_actividades_origen(self, obj):
+        detalles = DetallePresupuesto.objects.filter(id__in=obj.origen_detalles).select_related('actividad')
+        resultado = {}
+        for detalle in detalles:
+            actividad = detalle.actividad
+            actual = resultado.setdefault(actividad.id, {
+                'id': actividad.id, 'codigo': actividad.codigo, 'nombre': actividad.nombre,
+                'cantidad_requerida': 0, 'cantidad_entregada': 0,
+            })
+            actual['cantidad_requerida'] += detalle.cantidad
+        entregas = EntregaMaterialActividad.objects.filter(
+            anulada=False, detalle_recepcion__detalle_orden=obj,
+        ).values('actividad').annotate(total=Sum('cantidad_entregada'))
+        for entrega in entregas:
+            if entrega['actividad'] in resultado:
+                resultado[entrega['actividad']]['cantidad_entregada'] = entrega['total']
+        return list(resultado.values())
+
+    class Meta:
+        model = DetalleOrdenCompraPOA
+        fields = ['id', 'partida', 'item', 'unidad_medida', 'caracteristicas', 'tipo', 'cantidad_planificada', 'cantidad_comprada', 'costo_unitario_real', 'costo_total_real', 'origen_detalles', 'cantidad_recibida', 'cantidad_entregada', 'saldo_recepcion', 'saldo_entrega', 'actividades_origen']
+        read_only_fields = fields
+
+
+class OrdenCompraPOASerializer(serializers.ModelSerializer):
+    detalles = DetalleOrdenCompraPOASerializer(many=True, read_only=True)
+    recepciones = serializers.SerializerMethodField()
+
+    def get_recepciones(self, obj):
+        return RecepcionMaterialPOASerializer(obj.recepciones.all(), many=True, context=self.context).data
+    class Meta:
+        model = OrdenCompraPOA
+        fields = ['id', 'carrera', 'gestion', 'numero', 'proveedor', 'fecha', 'estado', 'respaldo', 'observacion', 'creado_por', 'creado_en', 'motivo_anulacion', 'detalles', 'recepciones']
+        read_only_fields = fields
+
+
+class DetalleRecepcionMaterialPOASerializer(serializers.ModelSerializer):
+    entregas = serializers.SerializerMethodField()
+    saldo_entrega = serializers.SerializerMethodField()
+
+    def get_entregas(self, obj):
+        return EntregaMaterialActividadSerializer(obj.entregas.all(), many=True, context=self.context).data
+
+    def get_saldo_entrega(self, obj):
+        return obj.cantidad_recibida - sum(entrega.cantidad_entregada for entrega in obj.entregas.filter(anulada=False))
+
+    class Meta:
+        model = DetalleRecepcionMaterialPOA
+        fields = ['id', 'detalle_orden', 'cantidad_recibida', 'costo_unitario_real', 'entregas', 'saldo_entrega']
+        read_only_fields = fields
+
+
+class RecepcionMaterialPOASerializer(serializers.ModelSerializer):
+    detalles = DetalleRecepcionMaterialPOASerializer(many=True, read_only=True)
+    class Meta:
+        model = RecepcionMaterialPOA
+        fields = ['id', 'orden', 'fecha', 'numero_respaldo', 'recibido_por', 'respaldo', 'observacion', 'registrado_por', 'registrado_en', 'anulada', 'motivo_anulacion', 'detalles']
+        read_only_fields = fields
+
+
+class EntregaMaterialActividadSerializer(serializers.ModelSerializer):
+    actividad_nombre = serializers.CharField(source='actividad.nombre', read_only=True)
+    actividad_codigo = serializers.CharField(source='actividad.codigo', read_only=True)
+    class Meta:
+        model = EntregaMaterialActividad
+        fields = ['id', 'detalle_recepcion', 'actividad', 'actividad_nombre', 'actividad_codigo', 'cantidad_entregada', 'fecha', 'nombre_receptor', 'ci_receptor', 'cargo_receptor', 'telefono_receptor', 'acta_archivo', 'observacion', 'registrado_por', 'registrado_en', 'anulada', 'motivo_anulacion']
+        read_only_fields = fields
+
+
 # Serializer para DetallePresupuesto (integrado en poa_document)
 class DetallePresupuestoSerializer(serializers.ModelSerializer):
     # actividad_id no es obligatorio en updates; la vista exige su presencia al crear
@@ -458,8 +601,11 @@ class DetallePresupuestoSerializer(serializers.ModelSerializer):
     documento_id = serializers.IntegerField(source='actividad.objetivo.documento_id', read_only=True)
     documento_estado = serializers.CharField(source='actividad.objetivo.documento.estado', read_only=True)
     # Asegurar que 'cantidad' sea validada como entero en el endpoint
-    cantidad = serializers.IntegerField(min_value=0)
+    cantidad = serializers.IntegerField(min_value=1)
+    costo_unitario = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0)
     tipo = serializers.ChoiceField(choices=DetallePresupuesto.TIPOS, default='funcion')
+    catalogo_item_id = serializers.SerializerMethodField()
+    catalogo_item_ref = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     class Meta:
         model = DetallePresupuesto
         # Exponer sólo los campos que existen en la base de datos. No incluimos
@@ -479,8 +625,84 @@ class DetallePresupuestoSerializer(serializers.ModelSerializer):
             'costo_unitario',
             'costo_total',
             'mes_requerimiento',
+            'catalogo_item_id',
+            'catalogo_item_ref',
         ]
         read_only_fields = ['id', 'costo_total']
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        meses = {
+            'enero': 1, 'febrero': 2, 'marzo': 3, 'abril': 4, 'mayo': 5, 'junio': 6,
+            'julio': 7, 'agosto': 8, 'septiembre': 9, 'octubre': 10, 'noviembre': 11, 'diciembre': 12,
+        }
+        actividad = attrs.get('actividad', getattr(self.instance, 'actividad', None))
+        catalogo_item_ref = attrs.get('catalogo_item_ref')
+        unidad_medida = str(attrs.get('unidad_medida', getattr(self.instance, 'unidad_medida', '')) or '').strip()
+        valor = str(attrs.get('mes_requerimiento', getattr(self.instance, 'mes_requerimiento', '')) or '').strip().lower()
+        partes = [parte.strip() for parte in re.split(r'\s*(?:-|hasta|\ba\b)\s*', valor) if parte.strip()]
+        errors = {}
+
+        if not unidad_medida or unidad_medida.lower() in {'sin unidad', 'sin_unidad'}:
+            errors['unidad_medida'] = 'Ingrese una unidad de medida válida.'
+
+        if catalogo_item_ref is not None:
+            catalogo_item = ItemCatalogo.objects.filter(pk=catalogo_item_ref).first()
+            item = str(attrs.get('item', getattr(self.instance, 'item', '')) or '').strip()
+            partida = str(attrs.get('partida', getattr(self.instance, 'partida', '')) or '').strip()
+            if not catalogo_item:
+                errors['item'] = 'El ítem seleccionado ya no existe en el catálogo.'
+            elif catalogo_item.detalle.strip().casefold() != item.casefold() or str(catalogo_item.partida).strip() != partida:
+                errors['item'] = 'El ítem seleccionado no coincide con el registro del catálogo.'
+
+        if not partes or len(partes) > 2 or any(parte not in meses for parte in partes):
+            errors['mes_requerimiento'] = 'Seleccione un rango de meses válido.'
+        elif actividad:
+            inicio = partes[0]
+            fin = partes[-1]
+            actividad_inicio = str(actividad.mes_inicio or '').strip().lower()
+            actividad_fin = str(actividad.mes_fin or '').strip().lower()
+            if actividad_inicio not in meses or actividad_fin not in meses:
+                errors['mes_requerimiento'] = 'La actividad no tiene un rango de meses válido.'
+            elif meses[inicio] > meses[fin]:
+                errors['mes_requerimiento'] = 'El mes final no puede ser anterior al mes inicial.'
+            elif meses[inicio] < meses[actividad_inicio] or meses[fin] > meses[actividad_fin]:
+                errors['mes_requerimiento'] = (
+                    f'El requerimiento debe estar entre {actividad_inicio.capitalize()} '
+                    f'y {actividad_fin.capitalize()}, que es el rango planificado de la actividad.'
+                )
+            else:
+                attrs['mes_requerimiento'] = inicio.capitalize() if inicio == fin else f'{inicio.capitalize()} - {fin.capitalize()}'
+
+        if errors:
+            raise serializers.ValidationError(errors)
+        return attrs
+
+    def get_catalogo_item_id(self, obj):
+        coincidencias = ItemCatalogo.objects.filter(partida=str(obj.partida).strip(), detalle__iexact=str(obj.item).strip())
+        if coincidencias.count() == 1:
+            return coincidencias.values_list('id', flat=True).first()
+        return None
+
+    def _actualizar_unidad_catalogo(self, catalogo_item_ref, unidad_medida):
+        if catalogo_item_ref is None:
+            return
+        catalogo_item = ItemCatalogo.objects.filter(pk=catalogo_item_ref).first()
+        if catalogo_item and str(catalogo_item.unidad_medida or '').strip().lower() in {'', 'sin unidad', 'sin_unidad'}:
+            catalogo_item.unidad_medida = str(unidad_medida).strip()
+            catalogo_item.save(update_fields=['unidad_medida'])
+
+    def create(self, validated_data):
+        catalogo_item_ref = validated_data.pop('catalogo_item_ref', None)
+        detalle = super().create(validated_data)
+        self._actualizar_unidad_catalogo(catalogo_item_ref, detalle.unidad_medida)
+        return detalle
+
+    def update(self, instance, validated_data):
+        catalogo_item_ref = validated_data.pop('catalogo_item_ref', None)
+        detalle = super().update(instance, validated_data)
+        self._actualizar_unidad_catalogo(catalogo_item_ref, detalle.unidad_medida)
+        return detalle
 
 
 class MensajeChatSerializer(serializers.ModelSerializer):

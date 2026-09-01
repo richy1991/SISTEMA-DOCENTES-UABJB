@@ -7,7 +7,15 @@ import toast from 'react-hot-toast';
 import { Input, Select, Modal } from './base';
 import { buildClientErrorMessages, formatApiErrors, mapApiErrorsToFieldErrors, ModalErrorAlert } from './formErrorUtils';
 
-const NuevoPresupuestoModal = ({ actividadId, documentoId, documentoEstado = '', detalle, onClose, onCreated, onUpdated }) => {
+const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const capitalizarMes = (mes) => mes ? mes[0].toUpperCase() + mes.slice(1) : '';
+const unidadSinRegistrar = (unidad) => ['', 'sin unidad', 'sin_unidad'].includes(String(unidad || '').trim().toLowerCase());
+const parsearRangoMeses = (valor, inicioPorDefecto, finPorDefecto) => {
+  const partes = String(valor || '').toLowerCase().split(/\s*(?:-|hasta|\ba\b)\s*/).filter((mes) => MESES.includes(mes));
+  return { inicio: partes[0] || inicioPorDefecto, fin: partes[1] || partes[0] || finPorDefecto };
+};
+
+const NuevoPresupuestoModal = ({ actividadId, actividad, documentoId, documentoEstado = '', detalle, onClose, onCreated, onUpdated }) => {
   const [submitting, setSubmitting] = useState(false);
   const [errorMessages, setErrorMessages] = useState([]);
   const [fieldErrors, setFieldErrors] = useState({});
@@ -32,12 +40,23 @@ const NuevoPresupuestoModal = ({ actividadId, documentoId, documentoEstado = '',
   const [showNuevoCatalogoItemModal, setShowNuevoCatalogoItemModal] = useState(false);
   const containerRef = useRef(null);
   const requestChangeMode = ['aprobado', 'ejecucion'].includes(String(documentoEstado || '').toLowerCase());
+  const indiceInicioActividad = Math.max(0, MESES.indexOf(String(actividad?.mes_inicio || '').toLowerCase()));
+  const indiceFinDetectado = MESES.indexOf(String(actividad?.mes_fin || '').toLowerCase());
+  const indiceFinActividad = indiceFinDetectado >= indiceInicioActividad ? indiceFinDetectado : MESES.length - 1;
+  const mesesActividad = MESES.slice(indiceInicioActividad, indiceFinActividad + 1);
+  const [mesInicioRequerimiento, setMesInicioRequerimiento] = useState(mesesActividad[0] || 'enero');
+  const [mesFinRequerimiento, setMesFinRequerimiento] = useState(mesesActividad[mesesActividad.length - 1] || 'diciembre');
 
   useEffect(() => {
+    const rango = parsearRangoMeses(detalle?.mes_requerimiento, mesesActividad[0] || 'enero', mesesActividad[mesesActividad.length - 1] || 'diciembre');
+    const inicioValido = mesesActividad.includes(rango.inicio) ? rango.inicio : (mesesActividad[0] || 'enero');
+    const finValido = mesesActividad.includes(rango.fin) ? rango.fin : (mesesActividad[mesesActividad.length - 1] || inicioValido);
+    setMesInicioRequerimiento(inicioValido);
+    setMesFinRequerimiento(MESES.indexOf(finValido) >= MESES.indexOf(inicioValido) ? finValido : inicioValido);
     if (detalle && typeof detalle === 'object') {
       setForm({
         item: detalle.item ?? '',
-        unidad_medida: detalle.unidad_medida ?? '',
+        unidad_medida: unidadSinRegistrar(detalle.unidad_medida) ? '' : (detalle.unidad_medida ?? ''),
         caracteristicas: detalle.caracteristicas ?? '',
         partida: detalle.partida ?? '',
         cantidad: detalle.cantidad ?? '',
@@ -48,14 +67,15 @@ const NuevoPresupuestoModal = ({ actividadId, documentoId, documentoEstado = '',
       setItemQuery(detalle.item ?? '');
       if (detalle.item) {
         setSelectedCatalogItem({
-          id: detalle.id ? `detalle-${detalle.id}` : `detalle-${Date.now()}`,
+          id: detalle.catalogo_item_id || (detalle.id ? `detalle-${detalle.id}` : `detalle-${Date.now()}`),
+          catalogo_item_id: detalle.catalogo_item_id || null,
           detalle: detalle.item,
           partida: detalle.partida ?? '',
           unidad_medida: detalle.unidad_medida ?? '',
         });
       }
     }
-  }, [detalle]);
+  }, [detalle, actividad?.mes_inicio, actividad?.mes_fin]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -70,6 +90,7 @@ const NuevoPresupuestoModal = ({ actividadId, documentoId, documentoEstado = '',
   const handleChange = (e) => {
     const { name, value } = e.target;
     setForm(prev => ({ ...prev, [name]: value }));
+    if (fieldErrors[name]) setFieldErrors((prev) => ({ ...prev, [name]: '' }));
     if (name === 'item') {
       setSelectedCatalogItem(null);
       setItemQuery(value);
@@ -121,7 +142,8 @@ const NuevoPresupuestoModal = ({ actividadId, documentoId, documentoEstado = '',
   const handleSelectCatalogItem = (itemData) => {
     const descripcion = itemData.detalle ?? itemData.descripcion ?? itemData.nombre ?? itemData.nombre_item ?? itemData.codigo ?? '';
     const partidaCodigo = itemData.partida?.codigo ?? itemData.partida ?? itemData.codigo_partida ?? '';
-    const unidadMedida = itemData.unidad_medida ?? itemData.unidad ?? '';
+    const unidadMedidaCatalogo = itemData.unidad_medida ?? itemData.unidad ?? '';
+    const unidadMedida = unidadSinRegistrar(unidadMedidaCatalogo) ? '' : unidadMedidaCatalogo;
     setForm(prev => ({
       ...prev,
       item: descripcion,
@@ -135,9 +157,14 @@ const NuevoPresupuestoModal = ({ actividadId, documentoId, documentoEstado = '',
 
   const handleNuevoCatalogoItemCreado = (nuevoItem) => {
     if (!nuevoItem) return;
+    setCatalogItems((items) => [nuevoItem, ...items.filter((item) => String(item.id) !== String(nuevoItem.id))]);
     handleSelectCatalogItem(nuevoItem);
     setShowNuevoCatalogoItemModal(false);
-    toast.success('Item agregado al catálogo y seleccionado.');
+  };
+
+  const abrirNuevoItemCatalogo = () => {
+    setShowDropdown(false);
+    setShowNuevoCatalogoItemModal(true);
   };
 
   const handleSubmit = async (e) => {
@@ -151,20 +178,27 @@ const NuevoPresupuestoModal = ({ actividadId, documentoId, documentoEstado = '',
       errs.item = 'Debes seleccionar un item desde el catálogo.';
     }
     if (!form.partida || String(form.partida).trim() === '') errs.partida = 'Requerido';
+    if (unidadSinRegistrar(form.unidad_medida)) errs.unidad_medida = 'Ingrese una unidad de medida válida.';
     if (!form.cantidad || String(form.cantidad).trim() === '') errs.cantidad = 'Requerido';
     if (!form.costo_unitario || String(form.costo_unitario).trim() === '') errs.costo_unitario = 'Requerido';
-    if (!form.mes_requerimiento || String(form.mes_requerimiento).trim() === '') errs.mes_requerimiento = 'Requerido';
+    if (!mesInicioRequerimiento || !mesFinRequerimiento) errs.mes_requerimiento = 'Seleccione el mes inicial y final.';
+    if (MESES.indexOf(mesInicioRequerimiento) > MESES.indexOf(mesFinRequerimiento)) errs.mes_requerimiento = 'El mes final no puede ser anterior al mes inicial.';
     if (!form.tipo || String(form.tipo).trim() === '') errs.tipo = 'Requerido';
 
     if (!errs.cantidad) {
       const n = Number(form.cantidad);
       if (!Number.isFinite(n) || !Number.isInteger(n)) errs.cantidad = 'La cantidad debe ser un entero';
-      if (n < 0) errs.cantidad = 'La cantidad debe ser >= 0';
+      if (n <= 0) errs.cantidad = 'La cantidad debe ser mayor a 0';
+    }
+
+    if (!errs.costo_unitario && Number(form.costo_unitario) < 0) {
+      errs.costo_unitario = 'El costo unitario no puede ser negativo';
     }
 
     if (Object.keys(errs).length > 0) {
       setFieldErrors(errs);
       setErrorMessages(buildClientErrorMessages(errs));
+      requestAnimationFrame(() => containerRef.current?.querySelector(`[name="${Object.keys(errs)[0]}"]`)?.focus());
       return;
     }
 
@@ -176,9 +210,13 @@ const NuevoPresupuestoModal = ({ actividadId, documentoId, documentoEstado = '',
       caracteristicas: form.caracteristicas || null,
       cantidad: Number.parseInt(String(form.cantidad), 10),
       costo_unitario: Number(form.costo_unitario) || 0,
-      mes_requerimiento: form.mes_requerimiento,
+      mes_requerimiento: mesInicioRequerimiento === mesFinRequerimiento
+        ? capitalizarMes(mesInicioRequerimiento)
+        : `${capitalizarMes(mesInicioRequerimiento)} - ${capitalizarMes(mesFinRequerimiento)}`,
       tipo: form.tipo,
     };
+    const catalogoItemId = selectedCatalogItem?.catalogo_item_id || selectedCatalogItem?.id;
+    if (catalogoItemId && Number.isInteger(Number(catalogoItemId))) payload.catalogo_item_ref = Number(catalogoItemId);
     if (documentoId) payload.documento_id = Number(documentoId);
 
     setSubmitting(true);
@@ -212,11 +250,12 @@ const NuevoPresupuestoModal = ({ actividadId, documentoId, documentoEstado = '',
         const res = await updateDetalle(detalle.id, payload);
         const updated = res.data || res;
         if (onUpdated) onUpdated(updated);
+        toast.success(res.data?.message || 'Ítem de presupuesto actualizado correctamente.');
         if (onClose) onClose();
       } else {
         const res = await createDetallePresupuesto(payload);
         if (onCreated) onCreated(res.data || res?.data || payload);
-        toast.success('Ítem de presupuesto creado');
+        toast.success(res.data?.message || 'Ítem de presupuesto creado correctamente.');
         if (onClose) onClose();
       }
     } catch (err) {
@@ -226,11 +265,10 @@ const NuevoPresupuestoModal = ({ actividadId, documentoId, documentoEstado = '',
         setFieldErrors(newFieldErrors);
         const messages = formatApiErrors(resp);
         setErrorMessages(messages);
-        toast.error(messages[0] || 'Error validando campos. Revisa el formulario.');
+        requestAnimationFrame(() => containerRef.current?.querySelector(`[name="${Object.keys(newFieldErrors)[0]}"]`)?.focus());
       } else {
         const messages = formatApiErrors(resp || err?.message || 'Error al guardar ítem');
         setErrorMessages(messages);
-        toast.error(messages[0] || 'Error al guardar ítem');
       }
     } finally {
       setSubmitting(false);
@@ -267,7 +305,9 @@ const NuevoPresupuestoModal = ({ actividadId, documentoId, documentoEstado = '',
                   }
                 }}
                 autoComplete="off"
-                className={`poa-input w-full px-2 py-1 ${fieldErrors.item ? 'error' : ''}`}
+                required
+                aria-invalid={fieldErrors.item ? 'true' : undefined}
+                className={`poa-input w-full px-2 py-1 ${fieldErrors.item ? 'border-red-500 dark:border-red-500 focus:ring-red-500 dark:focus:ring-red-500' : ''}`}
                 placeholder={catalogLoading ? 'Buscando ítems...' : 'Escribe el item y presiona Enter o Buscar'}
               />
               <button
@@ -298,7 +338,14 @@ const NuevoPresupuestoModal = ({ actividadId, documentoId, documentoEstado = '',
                       </button>
                     ))}
                   </div>
-                  <div className="p-2 border-t border-slate-200 dark:border-slate-700 flex justify-end">
+                  <div className="p-2 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onMouseDown={(e) => { e.preventDefault(); abrirNuevoItemCatalogo(); }}
+                      className="px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700"
+                    >
+                      + Agregar nuevo ítem
+                    </button>
                     <button
                       type="button"
                       onMouseDown={(e) => {
@@ -320,7 +367,7 @@ const NuevoPresupuestoModal = ({ actividadId, documentoId, documentoEstado = '',
                       type="button"
                       onMouseDown={(e) => {
                         e.preventDefault();
-                        setShowNuevoCatalogoItemModal(true);
+                        abrirNuevoItemCatalogo();
                       }}
                       className="px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700"
                     >
@@ -351,9 +398,11 @@ const NuevoPresupuestoModal = ({ actividadId, documentoId, documentoEstado = '',
                 value={form.unidad_medida}
                 onChange={handleChange}
                 autoComplete="off"
+                required
                 error={fieldErrors.unidad_medida}
+                placeholder="Ej.: Unidad, paquete, caja, resma"
+                helperText={selectedCatalogItem && unidadSinRegistrar(selectedCatalogItem.unidad_medida ?? selectedCatalogItem.unidad) ? 'El catálogo no tiene unidad. La que registre aquí quedará guardada para futuros usos.' : ''}
               />
-              {fieldErrors.unidad_medida && <div className="text-xs text-red-600 dark:text-red-400 mt-1">{fieldErrors.unidad_medida}</div>}
             </div>
             <div>
               <Input
@@ -363,10 +412,10 @@ const NuevoPresupuestoModal = ({ actividadId, documentoId, documentoEstado = '',
                 onChange={handleChange}
                 autoComplete="off"
                 disabled
+                required
                 error={fieldErrors.partida}
               />
               <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">La partida se autocompleta desde el item seleccionado.</div>
-              {fieldErrors.partida && <div className="text-xs text-red-600 dark:text-red-400 mt-1">{fieldErrors.partida}</div>}
             </div>
           </div>
 
@@ -387,13 +436,13 @@ const NuevoPresupuestoModal = ({ actividadId, documentoId, documentoEstado = '',
                 name="cantidad"
                 type="number"
                 min="0"
+                required
                 step="1"
                 value={form.cantidad}
                 onChange={handleChange}
                 autoComplete="off"
                 error={fieldErrors.cantidad}
               />
-              {fieldErrors.cantidad && <div className="text-xs text-red-600 dark:text-red-400 mt-1">{fieldErrors.cantidad}</div>}
             </div>
             <div>
               <Input
@@ -401,25 +450,50 @@ const NuevoPresupuestoModal = ({ actividadId, documentoId, documentoEstado = '',
                 name="costo_unitario"
                 type="number"
                 step="any"
+                min="0"
+                required
                 value={form.costo_unitario}
                 onChange={handleChange}
                 autoComplete="off"
                 error={fieldErrors.costo_unitario}
               />
-              {fieldErrors.costo_unitario && <div className="text-xs text-red-600 dark:text-red-400 mt-1">{fieldErrors.costo_unitario}</div>}
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Input
-                label="Mes de requerimiento"
-                name="mes_requerimiento"
-                value={form.mes_requerimiento}
-                onChange={handleChange}
-                error={fieldErrors.mes_requerimiento}
-              />
-              {fieldErrors.mes_requerimiento && <div className="text-xs text-red-600 dark:text-red-400 mt-1">{fieldErrors.mes_requerimiento}</div>}
+              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Mes de requerimiento</label>
+              <div className="mt-1 grid grid-cols-2 gap-2">
+                <Select
+                  label="Desde"
+                  name="mes_requerimiento"
+                  value={mesInicioRequerimiento}
+                  onChange={(event) => {
+                    const nuevoInicio = event.target.value;
+                    setMesInicioRequerimiento(nuevoInicio);
+                    if (MESES.indexOf(nuevoInicio) > MESES.indexOf(mesFinRequerimiento)) setMesFinRequerimiento(nuevoInicio);
+                    if (fieldErrors.mes_requerimiento) setFieldErrors((prev) => ({ ...prev, mes_requerimiento: '' }));
+                  }}
+                  required
+                  error={fieldErrors.mes_requerimiento}
+                >
+                  {mesesActividad.map((mes) => <option key={mes} value={mes}>{capitalizarMes(mes)}</option>)}
+                </Select>
+                <Select
+                  label="Hasta"
+                  name="mes_requerimiento_fin"
+                  value={mesFinRequerimiento}
+                  onChange={(event) => {
+                    setMesFinRequerimiento(event.target.value);
+                    if (fieldErrors.mes_requerimiento) setFieldErrors((prev) => ({ ...prev, mes_requerimiento: '' }));
+                  }}
+                  required
+                  error={fieldErrors.mes_requerimiento}
+                >
+                  {mesesActividad.map((mes) => <option key={mes} value={mes} disabled={MESES.indexOf(mes) < MESES.indexOf(mesInicioRequerimiento)}>{capitalizarMes(mes)}</option>)}
+                </Select>
+              </div>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Rango permitido por la actividad: {capitalizarMes(mesesActividad[0])} - {capitalizarMes(mesesActividad[mesesActividad.length - 1])}.</p>
             </div>
 
             <div>
@@ -428,12 +502,12 @@ const NuevoPresupuestoModal = ({ actividadId, documentoId, documentoEstado = '',
                 name="tipo"
                 value={form.tipo}
                 onChange={handleChange}
+                required
                 error={fieldErrors.tipo}
               >
                 <option value="funcionamiento">Funcionamiento</option>
                 <option value="inversion">Inversión</option>
               </Select>
-              {fieldErrors.tipo && <div className="text-xs text-red-600 dark:text-red-400 mt-1">{fieldErrors.tipo}</div>}
             </div>
           </div>
 
@@ -450,6 +524,7 @@ const NuevoPresupuestoModal = ({ actividadId, documentoId, documentoEstado = '',
 
       {showNuevoCatalogoItemModal && (
         <NuevoCatalogoItemModal
+          stacked
           partida={null}
           item={{
             detalle: itemQuery || '',

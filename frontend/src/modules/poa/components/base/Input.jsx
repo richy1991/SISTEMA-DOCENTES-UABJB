@@ -23,6 +23,7 @@ const Input = React.forwardRef(({
       )}
       <input
         ref={ref}
+        aria-invalid={error ? 'true' : undefined}
         className={`
           poa-input
           mt-1 block w-full rounded px-3 py-2
@@ -47,7 +48,7 @@ const Input = React.forwardRef(({
         </p>
       )}
       {error && (
-        <p className="poa-input-error mt-1 text-xs text-red-600 dark:text-red-400">
+        <p role="alert" className="poa-input-error mt-1 text-xs text-red-600 dark:text-red-400">
           {error}
         </p>
       )}

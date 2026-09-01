@@ -990,6 +990,12 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   cursor: default;
 }
 
+.poa-modal.poa-stacked-modal {
+  z-index: 1000001 !important;
+  background-color: rgba(15, 23, 42, 0.34) !important;
+  backdrop-filter: blur(1px);
+}
+
 /* Panel del modal - contenedor passthrough, el card interno lleva el estilo visual */
 .poa-modal .modal-panel-overlay {
   position: relative !important;
@@ -1007,10 +1013,11 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 .poa-modal .modal-panel {
   position: relative !important;
   z-index: 1000000 !important;
-  background: linear-gradient(180deg, #eef6ff 0%, #dcecff 100%);
-  border: 1px solid rgba(37, 99, 235, 0.48);
-  border-radius: 1.15rem;
-  box-shadow: 0 25px 65px rgba(30, 64, 175, 0.34);
+  background: #ffffff;
+  color: #243b53 !important;
+  border: 1px solid #c8d3df;
+  border-radius: 0.9rem;
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.22);
   overflow: hidden;
   /* Evitar que card-elegant aplique transform en el modal */
   transform: none !important;
@@ -1022,8 +1029,8 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 
 .poa-modal .modal-header {
-  background: linear-gradient(90deg, #2563eb, #0ea5e9 60%);
-  color: white;
+  background: #365d7d;
+  color: #ffffff;
   padding: 1rem 1.5rem;
 }
 
@@ -1033,7 +1040,8 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 
 .poa-modal .modal-panel .modal-actions {
-  background: rgba(214, 231, 255, 0.95);
+  background: #f1f5f9;
+  border-top: 1px solid #d9e2ec;
 }
 
 /* Inputs dentro del modal */
@@ -1149,18 +1157,15 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 /* .modal-panel-overlay es solo un contenedor invisible - no estilos en oscuro */
 
 .dark .poa-modal .modal-panel {
-  background:
-    linear-gradient(180deg, rgba(18, 34, 64, 0.98) 0%, rgba(12, 24, 48, 0.98) 100%) !important;
-  border-color: rgba(56,189,248,0.35) !important;
-  box-shadow: 0 30px 90px rgba(2, 6, 23, 0.72), inset 0 1px 0 rgba(148, 163, 184, 0.08) !important;
-  -webkit-backdrop-filter: blur(22px) !important;
-  backdrop-filter: blur(22px) !important;
+  background: #17212f !important;
+  border-color: #415365 !important;
+  box-shadow: 0 24px 60px rgba(2, 6, 23, 0.7) !important;
   color: #e2e8f0 !important;
 }
 
 .dark .poa-modal .modal-panel .modal-header {
-  background: linear-gradient(120deg, rgba(14,165,233,0.95), rgba(79,70,229,0.9));
-  box-shadow: inset 0 -3px 12px rgba(15,23,42,0.7);
+  background: #263f56;
+  box-shadow: none;
 }
 
 .dark .poa-modal .modal-panel .modal-body {
@@ -1169,7 +1174,8 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 
 .dark .poa-modal .modal-panel .modal-actions {
-  background: linear-gradient(180deg, rgba(16, 30, 57, 0.96), rgba(12, 24, 48, 0.96));
+  background: #1d2a39;
+  border-top-color: #415365;
 }
 
 .dark .poa-modal .modal-panel label {
@@ -1249,6 +1255,145 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 .dark .poa-modal .btn-header-icon:hover {
   filter: brightness(1.06);
+}
+
+/* Patrón único de modales institucionales: tamaño contenido, tonos sobrios y responsivo. */
+.poa-modal {
+  /* Bloquea la página sin oscurecerla ni aplicar efectos visuales detrás. */
+  background: transparent !important;
+  backdrop-filter: none !important;
+}
+
+.poa-modal .modal-panel-overlay {
+  width: min(92vw, 52rem) !important;
+  max-width: calc(100vw - 2rem) !important;
+}
+
+.poa-modal .modal-panel {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  max-height: min(84vh, 42rem) !important;
+}
+
+.poa-modal .modal-header {
+  background: #ffffff !important;
+  color: #243b53 !important;
+  border-bottom: 2px solid #5b7792;
+}
+
+.poa-modal .modal-header :is(h1, h2, h3, h4, p, small, button) {
+  color: #243b53 !important;
+}
+
+.poa-modal .btn-primary,
+.poa-modal .btn-success {
+  background: #405f78 !important;
+  border-color: #405f78 !important;
+  box-shadow: none !important;
+}
+
+.poa-modal .btn-primary:hover,
+.poa-modal .btn-success:hover {
+  background: #334d63 !important;
+  filter: none !important;
+}
+
+.poa-modal .btn-cancel {
+  background: #edf1f5 !important;
+  border-color: #b9c7d4 !important;
+  box-shadow: none !important;
+}
+
+.poa-modal .btn-danger {
+  background: #765d61 !important;
+  border-color: #765d61 !important;
+  box-shadow: none !important;
+}
+
+.dark .poa-modal { background: transparent !important; }
+.dark .poa-modal .modal-header { background: #17212f !important; border-color: #6d8ba6; }
+.dark .poa-modal .modal-header :is(h1, h2, h3, h4, p, small, button) { color: #e2e8f0 !important; }
+.dark .poa-modal .btn-primary,
+.dark .poa-modal .btn-success { background: #36556d !important; border-color: #4b6a82 !important; box-shadow: none !important; }
+.dark .poa-modal .btn-cancel { background: #263646 !important; border-color: #536779 !important; box-shadow: none !important; }
+
+/* El retorno del seguimiento se integra al encabezado global, no se duplica en el contenido. */
+.poa-main-surface header:has(> h2) > button:first-child {
+  display: none;
+}
+
+/* Botones secundarios legibles en las listas de seguimiento. */
+.poa-main-surface button.rounded-lg.border {
+  background: #f8fafc;
+  color: #334e68 !important;
+  border-color: #9fb0c0 !important;
+}
+
+.dark .poa-main-surface button.rounded-lg.border {
+  background: #263646;
+  color: #e2e8f0 !important;
+  border-color: #536779 !important;
+}
+
+/* El estado inicial de una actividad es programado; no se selecciona durante la planificación. */
+.poa-modal :has(> select[name="estado"]) {
+  display: none !important;
+}
+
+/* Resumen de planificación en las filas de seguimiento: visible en escritorio,
+   compacto (solo nombre/estado) en teléfono. */
+@media (min-width: 768px) {
+  .poa-main-surface .hidden.grid-cols-4 {
+    display: grid !important;
+    grid-template-columns: minmax(7rem, 0.8fr) minmax(8rem, 0.9fr) minmax(14rem, 2fr) !important;
+    align-items: start;
+  }
+
+  .poa-main-surface .hidden.grid-cols-4 .col-span-2 {
+    grid-column: auto !important;
+  }
+
+  .poa-main-surface article > header > b.text-xs + h3 {
+    display: inline;
+    margin-left: 0.45rem;
+  }
+
+  .poa-main-surface article > header > b.text-xs {
+    display: inline;
+  }
+}
+
+@media (max-width: 767px) {
+  .poa-main-surface .hidden.grid-cols-4 {
+    display: none !important;
+  }
+}
+
+@media (max-width: 767px) {
+  .poa-modal .modal-panel-overlay { width: calc(100vw - 1.5rem) !important; }
+  .poa-modal .modal-panel { max-height: calc(100dvh - 1.5rem) !important; }
+}
+
+/* Acciones institucionales unificadas: sin tonos neón ni contrastes agresivos. */
+.poa-app button:is(.bg-blue-500, .bg-blue-600, .bg-blue-700, .bg-cyan-500, .bg-cyan-600, .bg-cyan-700, .bg-indigo-500, .bg-indigo-600, .bg-indigo-700, .bg-violet-500, .bg-violet-600, .bg-violet-700, .bg-purple-500, .bg-purple-600, .bg-emerald-500, .bg-emerald-600, .bg-emerald-700),
+.poa-app a:is(.bg-blue-500, .bg-blue-600, .bg-blue-700, .bg-cyan-500, .bg-cyan-600, .bg-cyan-700, .bg-indigo-500, .bg-indigo-600, .bg-indigo-700, .bg-violet-500, .bg-violet-600, .bg-violet-700, .bg-purple-500, .bg-purple-600, .bg-emerald-500, .bg-emerald-600, .bg-emerald-700) {
+  background-color: #405f78 !important;
+  border-color: #405f78 !important;
+  box-shadow: none !important;
+}
+
+.poa-app button:is(.bg-red-500, .bg-red-600, .bg-red-700, .bg-orange-500, .bg-orange-600, .bg-amber-500, .bg-amber-600),
+.poa-app a:is(.bg-red-500, .bg-red-600, .bg-red-700, .bg-orange-500, .bg-orange-600, .bg-amber-500, .bg-amber-600) {
+  background-color: #766063 !important;
+  border-color: #766063 !important;
+  box-shadow: none !important;
+}
+
+.poa-app button:is(.bg-blue-500, .bg-blue-600, .bg-blue-700, .bg-cyan-500, .bg-cyan-600, .bg-cyan-700, .bg-indigo-500, .bg-indigo-600, .bg-indigo-700, .bg-violet-500, .bg-violet-600, .bg-violet-700, .bg-purple-500, .bg-purple-600, .bg-emerald-500, .bg-emerald-600, .bg-emerald-700, .bg-red-500, .bg-red-600, .bg-red-700, .bg-orange-500, .bg-orange-600, .bg-amber-500, .bg-amber-600):hover,
+.poa-app a:is(.bg-blue-500, .bg-blue-600, .bg-blue-700, .bg-cyan-500, .bg-cyan-600, .bg-cyan-700, .bg-indigo-500, .bg-indigo-600, .bg-indigo-700, .bg-violet-500, .bg-violet-600, .bg-violet-700, .bg-purple-500, .bg-purple-600, .bg-emerald-500, .bg-emerald-600, .bg-emerald-700, .bg-red-500, .bg-red-600, .bg-red-700, .bg-orange-500, .bg-orange-600, .bg-amber-500, .bg-amber-600):hover {
+  background-color: #334d63 !important;
+  filter: none !important;
 }
 
 /* Tarjeta de aviso 'no docs' en oscuro */
@@ -1445,6 +1590,73 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
 .dark .poa-table-head-formal + .poa-table-head-formal th {
   background: #123a63 !important;
+}
+
+/* Sistema visual institucional: tablas sobrias y legibles.
+   Estas reglas también neutralizan clases antiguas que aún aplicaban gradientes. */
+.poa-app .poa-table thead,
+.poa-app .poa-thead,
+.poa-app .poa-table-head-formal,
+.poa-app .poa-table thead tr,
+.poa-app .poa-thead th,
+.poa-app .poa-table-head-formal th {
+  background-color: #e7edf3 !important;
+  background-image: none !important;
+  color: #243b53 !important;
+  border-color: #c8d3df !important;
+  box-shadow: none !important;
+}
+
+.poa-app .poa-table thead th,
+.poa-app .poa-thead th,
+.poa-app .poa-table-head-formal th {
+  font-weight: 700 !important;
+  letter-spacing: 0.035em !important;
+}
+
+.dark .poa-app .poa-table thead,
+.dark .poa-app .poa-thead,
+.dark .poa-app .poa-table-head-formal,
+.dark .poa-app .poa-table thead tr,
+.dark .poa-app .poa-thead th,
+.dark .poa-app .poa-table-head-formal th {
+  background-color: #1f2d3d !important;
+  background-image: none !important;
+  color: #dbe5ef !important;
+  border-color: #415365 !important;
+}
+
+/* Acciones primarias: azul institucional apagado, sin brillo excesivo. */
+.poa-app button:is(.bg-blue-500, .bg-blue-600, .bg-blue-700, .bg-indigo-600, .bg-indigo-700, .bg-cyan-600, .bg-cyan-700, .bg-violet-600, .bg-violet-700),
+.poa-app a:is(.bg-blue-500, .bg-blue-600, .bg-blue-700, .bg-indigo-600, .bg-indigo-700, .bg-cyan-600, .bg-cyan-700, .bg-violet-600, .bg-violet-700) {
+  background-color: #365d7d !important;
+  border-color: #365d7d !important;
+  box-shadow: none !important;
+}
+
+.poa-app button:is(.bg-blue-500, .bg-blue-600, .bg-blue-700, .bg-indigo-600, .bg-indigo-700, .bg-cyan-600, .bg-cyan-700, .bg-violet-600, .bg-violet-700):hover,
+.poa-app a:is(.bg-blue-500, .bg-blue-600, .bg-blue-700, .bg-indigo-600, .bg-indigo-700, .bg-cyan-600, .bg-cyan-700, .bg-violet-600, .bg-violet-700):hover {
+  background-color: #294b67 !important;
+}
+
+.poa-app button:is(.bg-emerald-500, .bg-emerald-600, .bg-emerald-700),
+.poa-app a:is(.bg-emerald-500, .bg-emerald-600, .bg-emerald-700) {
+  background-color: #467565 !important;
+  border-color: #467565 !important;
+  box-shadow: none !important;
+}
+
+.poa-app button:is(.bg-orange-500, .bg-orange-600, .bg-amber-500, .bg-amber-600),
+.poa-app a:is(.bg-orange-500, .bg-orange-600, .bg-amber-500, .bg-amber-600) {
+  background-color: #9a7040 !important;
+  border-color: #9a7040 !important;
+  box-shadow: none !important;
+}
+
+.dark .poa-app button:is(.bg-blue-500, .bg-blue-600, .bg-blue-700, .bg-indigo-600, .bg-indigo-700, .bg-cyan-600, .bg-cyan-700, .bg-violet-600, .bg-violet-700),
+.dark .poa-app a:is(.bg-blue-500, .bg-blue-600, .bg-blue-700, .bg-indigo-600, .bg-indigo-700, .bg-cyan-600, .bg-cyan-700, .bg-violet-600, .bg-violet-700) {
+  background-color: #304b63 !important;
+  border-color: #4a657d !important;
 }
 
 /* Chat POA: apariencia tipo app de mensajeria moderna. */
@@ -2163,10 +2375,12 @@ table td {
 }
 
 table th {
-  background: linear-gradient(120deg, rgba(37,99,235,0.12), rgba(14,165,233,0.08));
-  color: #1e3a8a;
+  /* Encabezado institucional plano: sin gradientes ni brillo. */
+  background: #e7edf3;
+  color: #243b53;
+  border-color: #c8d3df;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
 }
 
 table tbody tr {
@@ -2216,10 +2430,11 @@ table tbody tr[data-selected="true"] td {
   background: transparent; /* evitar velos translúcidos en celdas */
 }
 
-/* Dark table header: subtle indigo/cyan glaze over solid base */
+/* Encabezado institucional plano para el tema oscuro. */
 .dark table th {
-  background: linear-gradient(120deg, rgba(14,165,233,0.18), rgba(79,70,229,0.16)), #0d1630;
-  color: #dbeafe;
+  background: #1f2d3d;
+  color: #dbe5ef;
+  border-color: #415365;
 }
 
 /* Zebra striping y hover para lectura */
@@ -4194,6 +4409,26 @@ table tbody tr[data-selected="true"] td {
     0 0 0 1px var(--poa-kpi-border),
     0 10px 22px rgba(2, 6, 23, 0.34) !important;
 }
+
+/* Superficies claras del POA: nunca heredan texto blanco de componentes antiguos. */
+:root:not(.dark) .poa-app .poa-main-surface .bg-white :is(h1, h2, h3, h4, p, span, label) {
+  color: inherit;
+}
+
+:root:not(.dark) .poa-app .poa-main-surface .bg-white :is(h1, h2, h3, h4) {
+  color: #172b4d !important;
+}
+
+:root:not(.dark) .poa-app .poa-main-surface .bg-white :is(p, span, label):not(.text-white) {
+  color: #52657a;
+}
+
+:root:not(.dark) .poa-app .poa-main-surface .bg-white .text-slate-900,
+:root:not(.dark) .poa-app .poa-main-surface .bg-white .text-slate-800,
+:root:not(.dark) .poa-app .poa-main-surface .bg-white .text-slate-700 {
+  color: #172b4d !important;
+}
+
 
 .dark .poa-app .poa-main-surface .poa-kpi-formal :is(.poa-kpi-label, .poa-summary-stat-label, p:first-of-type, span:first-of-type) {
   color: #b7c6d8 !important;

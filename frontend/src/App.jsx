@@ -9,7 +9,6 @@ import api from './apis/api';
 // Importaciones POA - Usar el layout principal que incluye sidebar/header
 import POAApp from './modules/poa/poa_App';
 import POAHomePage from './modules/poa/pages/POAHomePage';
-import DireccionesPage from './modules/poa/pages/DireccionesPage';
 import AccesosPOAPage from './modules/poa/pages/AccesosPOAPage';
 import DocumentosPOAPage from './modules/poa/pages/DocumentosPOAPage';
 import DocumentosRevisionPOAPage from './modules/poa/pages/DocumentosRevisionPOAPage';
@@ -21,6 +20,8 @@ import CatalogosMenu from './modules/poa/pages/CatalogosMenu';
 import IndicadoresPage from './modules/poa/pages/IndicadoresPage';
 import Reportes from './modules/poa/pages/Reportes';
 import PresupuestosPage from './modules/poa/pages/PresupuestosPage';
+import ConsolidadoRequerimientosPage from './modules/poa/pages/ConsolidadoRequerimientosPage';
+import SeguimientoProgramaPage from './modules/poa/pages/SeguimientoProgramaPage';
 import Login from './components/Login';
 import ModuleSelector from './components/ModuleSelector';
 import FondoTiempoLayout from './components/FondoTiempoLayout';
@@ -354,24 +355,19 @@ function App() {
             {/* Módulo: POA - Usando el layout con sidebar y header propios */}
             <Route path="/poa" element={<POAApp user={user} />}>
               <Route index element={<AnimatedRoute><POAHomePage /></AnimatedRoute>} />
-              <Route path="direcciones" element={<AnimatedRoute><DireccionesPage /></AnimatedRoute>} />
               <Route path="accesos" element={<AnimatedRoute><AccesosPOAPage /></AnimatedRoute>} />
               <Route path="documentos" element={<AnimatedRoute><DocumentosPOAPage /></AnimatedRoute>} />
               <Route path="documentos-revision" element={<AnimatedRoute><DocumentosRevisionPOAPage /></AnimatedRoute>} />
-              <Route path="documentos/nuevo" element={<AnimatedRoute><DocumentosPOAPage /></AnimatedRoute>} />
-              <Route path="actividades" element={<AnimatedRoute><ActividadesPage /></AnimatedRoute>} />
               <Route path="actividades/:objetivoEspecificoId" element={<AnimatedRoute><ActividadesPage /></AnimatedRoute>} />
               <Route path="actividades/:actividadId/evidencias" element={<AnimatedRoute><EvidenciaPage /></AnimatedRoute>} />
-              <Route path="objetivos" element={<AnimatedRoute><ObjetivosEspecificosPage /></AnimatedRoute>} />
               <Route path="objetivos-especificos/:documentId" element={<AnimatedRoute><ObjetivosEspecificosPage /></AnimatedRoute>} />
               <Route path="catalogos" element={<AnimatedRoute><CatalogosMenu /></AnimatedRoute>} />
               <Route path="catalogos/items" element={<AnimatedRoute><CatalogoItems /></AnimatedRoute>} />
               <Route path="catalogos/indicadores" element={<AnimatedRoute><IndicadoresPage /></AnimatedRoute>} />
-              <Route path="catalogos-menu" element={<AnimatedRoute><CatalogosMenu /></AnimatedRoute>} />
-              <Route path="catalogo-items" element={<AnimatedRoute><CatalogoItems /></AnimatedRoute>} />
-              <Route path="indicadores" element={<AnimatedRoute><IndicadoresPage /></AnimatedRoute>} />
               <Route path="reportes" element={<AnimatedRoute><Reportes /></AnimatedRoute>} />
               <Route path="presupuestos" element={<AnimatedRoute><PresupuestosPage /></AnimatedRoute>} />
+              <Route path="consolidado-requerimientos" element={<AnimatedRoute><ConsolidadoRequerimientosPage /></AnimatedRoute>} />
+              <Route path="seguimiento/programa/:documentId" element={<AnimatedRoute><SeguimientoProgramaPage /></AnimatedRoute>} />
             </Route>
 
             {/* Módulos de Administración y Catálogos (protegidos) */}

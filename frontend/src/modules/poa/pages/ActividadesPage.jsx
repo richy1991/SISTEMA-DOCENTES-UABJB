@@ -315,14 +315,13 @@ const ActividadesPage = () => {
           documentoEstado={documentoEstado}
           actividad={actividadEdit}
           onClose={() => { setActividadEdit(null); closeNueva(); }}
-          onCreated={(a) => { setActividades(prev => [a, ...(prev || [])]); closeNueva(); toast.success('Actividad creada correctamente'); }}
+          onCreated={(a) => { setActividades(prev => [a, ...(prev || [])]); closeNueva(); }}
           onUpdated={(u) => {
             // Reemplazar la actividad en la lista
             setActividades(prev => (prev || []).map(it => (it.id === u.id ? u : it)));
             setSelectedActividad(u);
             setActividadEdit(null);
             closeNueva();
-            toast.success('Actividad actualizada correctamente');
           }}
         />
       )}

@@ -5,10 +5,9 @@ import './index.css';
 import { useTheme } from '../../useTheme';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
+import PoaBreadcrumb from './components/PoaBreadcrumb';
 import ChatFlotantePOA from './components/ChatFlotantePOA';
-import Dialog from './components/base/Dialog';
 import GestionSelectorModal from './components/GestionSelectorModal';
-import NuevoIndicadorModal from './components/NuevoIndicadorModal';
 import { getUsuariosPOA } from '../../apis/poa.api';
 import { replacePoaNavigationContext } from './utils/navigationContext';
 
@@ -17,12 +16,7 @@ function POAApp({ user }) {
   const location = useLocation();
   const { effectiveTheme: theme, setTheme } = useTheme();
   const [showGestionModal, setShowGestionModal] = useState(false);
-  const [showNuevoIndicadorModal, setShowNuevoIndicadorModal] = useState(false);
-  const [editOperacion, setEditOperacion] = useState(null);
   const [headerSelectedActividad, setHeaderSelectedActividad] = useState(null);
-  const [headerSelectedDireccion, setHeaderSelectedDireccion] = useState(null);
-  const [headerSelectedOperacion, setHeaderSelectedOperacion] = useState(null);
-  const [showAsignarElaboradorDialog, setShowAsignarElaboradorDialog] = useState(false);
   const [showHeader, setShowHeader] = useState(true);
   const [forceShowHeader, setForceShowHeader] = useState(false);
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
@@ -145,55 +139,6 @@ function POAApp({ user }) {
     return () => window.removeEventListener('header-actions', onHeaderActions);
   }, []);
 
-  // Escuchar selecciÃ³n de direcciÃ³n desde la página de indicadores
-  useEffect(() => {
-    const h = (e) => {
-      const dir = e?.detail ?? null;
-      setHeaderSelectedDireccion(dir);
-    };
-    window.addEventListener('direccion-selected', h);
-    return () => window.removeEventListener('direccion-selected', h);
-  }, []);
-
-  // Escuchar selecciÃ³n de operaciÃ³n desde la página de indicadores
-  useEffect(() => {
-    const h = (e) => {
-      const op = e?.detail ?? null;
-      setHeaderSelectedOperacion(op);
-    };
-    window.addEventListener('operacion-selected', h);
-    return () => window.removeEventListener('operacion-selected', h);
-  }, []);
-
-  // Escuchar peticiÃ³n para abrir modal en modo ediciÃ³n
-  useEffect(() => {
-    const h = (e) => {
-      const op = e?.detail ?? null;
-      if (op) {
-        setEditOperacion(op);
-        setShowNuevoIndicadorModal(true);
-      }
-    };
-    window.addEventListener('open-edit-operacion', h);
-    return () => window.removeEventListener('open-edit-operacion', h);
-  }, []);
-
-  // Escuchar peticion global para crear nuevo indicador desde el header.
-  useEffect(() => {
-    const h = (e) => {
-      const page = e?.detail?.page ?? null;
-      if (page !== 'indicadores') return;
-      if (!headerSelectedDireccion) {
-        setShowAsignarElaboradorDialog(true);
-        return;
-      }
-      setEditOperacion(null);
-      setShowNuevoIndicadorModal(true);
-    };
-    window.addEventListener('open-new', h);
-    return () => window.removeEventListener('open-new', h);
-  }, [headerSelectedDireccion]);
-
   return (
     <div className={`poa-app flex h-screen overflow-hidden transition-colors duration-500`}>
       <ChatFlotantePOA currentUser={user} />
@@ -229,18 +174,6 @@ function POAApp({ user }) {
         />
       )}
 
-      {/* Modal de indicador */}
-      {showNuevoIndicadorModal && headerSelectedDireccion && (
-        <NuevoIndicadorModal 
-          direccion={headerSelectedDireccion} 
-          operacion={editOperacion} 
-          onClose={() => { 
-            setShowNuevoIndicadorModal(false); 
-            setEditOperacion(null); 
-          }} 
-        />
-      )}
-
       {/* Main Content */}
       <main className={`flex-1 flex flex-col transition-all duration-300 ml-0 ${sidebarExpanded ? 'md:ml-72' : 'md:ml-20'}`}>
         {/* Header */}
@@ -249,29 +182,18 @@ function POAApp({ user }) {
           isHome={isHome}
           showHeader={showHeader}
           headerSelectedActividad={headerSelectedActividad}
-          headerSelectedDireccion={headerSelectedDireccion}
-          headerSelectedOperacion={headerSelectedOperacion}
           setTheme={setTheme}
           sidebarExpanded={sidebarExpanded}
           poaPermissions={poaPermissions}
         />
 
         {/* Contenido central */}
-        <section className={`poa-main-surface flex flex-col items-stretch justify-start flex-1 min-h-0 overflow-y-auto ${isHome ? 'pt-2 md:pt-2 pb-6' : 'pt-28 md:pt-24 pb-6'} ${isEvidenciasPage ? 'px-4 md:px-8 lg:px-10' : (isActividadesPage || isPresupuestosPage || isObjetivosPage) ? 'px-2 md:px-4' : 'px-4 md:px-20'} w-full`}>
+        <section className={`poa-main-surface flex flex-col items-stretch justify-start flex-1 min-h-0 overflow-y-auto ${isHome ? 'pt-2 md:pt-2 pb-6' : 'pt-28 md:pt-16 pb-6'} ${isHome ? 'px-4 md:px-6 lg:px-8' : isEvidenciasPage ? 'px-4 md:px-8 lg:px-10' : (isActividadesPage || isPresupuestosPage || isObjetivosPage) ? 'px-2 md:px-4' : 'px-4 md:px-20'} w-full`}>
+          <PoaBreadcrumb />
           <Outlet context={{ user, poaRoles, poaPermissions }} />
         </section>
       </main>
 
-      <Dialog
-        open={showAsignarElaboradorDialog}
-        type="info"
-        title="Selecciona una dirección primero"
-        message="Primero selecciona una dirección para crear un indicador."
-        confirmText="Aceptar"
-        hideCancel
-        onConfirm={() => setShowAsignarElaboradorDialog(false)}
-        onClose={() => setShowAsignarElaboradorDialog(false)}
-      />
     </div>
   );
 }

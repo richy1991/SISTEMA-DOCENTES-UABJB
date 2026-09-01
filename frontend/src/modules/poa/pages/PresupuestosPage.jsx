@@ -407,6 +407,7 @@ const PresupuestosPage = () => {
           {showNuevo && (
             <NuevoPresupuestoModal
               actividadId={actividad.id}
+              actividad={actividad}
               documentoId={documentoId}
               documentoEstado={documentoEstado}
               detalle={detalleEdit}
@@ -421,7 +422,6 @@ const PresupuestosPage = () => {
                 setSelectedDetalle(u);
                 setDetalleEdit(null);
                 setShowNuevo(false);
-                toast.success('Detalle actualizado');
               }}
             />
           )}

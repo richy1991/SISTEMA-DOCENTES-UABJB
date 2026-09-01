@@ -242,7 +242,6 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
   const handleUpdated = (updated) => {
     setDocs((prev) => (prev || []).map((doc) => (Number(doc.id) === Number(updated.id) ? updated : doc)));
     closeNuevo();
-    toast.success('Edición guardada');
   };
 
   const handleSuccess = ({ gestion, documentos }) => {
@@ -324,6 +323,7 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
         documentosPath,
         documentoId: Number(id),
         documentoEstado: String(doc?.estado || '').toLowerCase(),
+        documentoNombre: typeof doc?.programa === 'object' ? doc?.programa?.nombre : doc?.programa,
       }),
     });
   };
@@ -562,7 +562,6 @@ const DocumentosPOAPage = ({ viewMode = 'all' }) => {
                 setDocs((prev) => [created, ...(prev || [])]);
               } finally {
                 closeNuevo();
-                toast.success('Documento creado correctamente');
               }
             }}
             onUpdated={handleUpdated}

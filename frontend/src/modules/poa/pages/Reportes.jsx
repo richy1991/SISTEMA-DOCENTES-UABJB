@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Calendar, Download, FileText, Sparkles, TrendingUp, Layers3 } from 'lucide-react';
 import { useOutletContext } from 'react-router-dom';
-import { API_BASE, getDocumentosPOAPorGestion } from '../../../apis/poa.api';
+import { API_BASE, descargarSeguimientoGeneralExcelPOA, getDocumentosPOAPorGestion } from '../../../apis/poa.api';
 import GestionSelectorModal from '../components/GestionSelectorModal';
 import FullscreenPDFViewer from '../../../components/FullscreenPDFViewer';
 
@@ -165,11 +165,31 @@ const Reportes = () => {
     setSelectedSeguimientoId(String(doc.id));
     openPdfViewer({
       section: 'seguimiento',
-      title: `Seguimiento - ${programa}`,
+      title: `Informe de seguimiento - ${programa} · Gestión ${gestion}`,
       fileName: `seguimiento_poa_${doc.id}_${gestion}.pdf`,
-      url: `${API_BASE}/api/poa/documentos_poa/${doc.id}/pdf-oficial/?gestion=${gestion}`,
+      url: `${API_BASE}/api/poa/reportes/seguimiento-institucional/?gestion=${gestion}&documento=${doc.id}&formato=pdf`,
     });
     toast('Se abrió el documento asociado al seguimiento del programa seleccionado.', { icon: 'ℹ️' });
+  };
+
+  const descargarSeguimientoGeneralExcel = async () => {
+    if (!gestionValida) return toast.error('Ingrese una gestión válida.');
+    try {
+      const res = await descargarSeguimientoGeneralExcelPOA(gestion);
+      const url = URL.createObjectURL(res.data); const link = document.createElement('a'); link.href = url;
+      link.download = `informe_general_seguimiento_poa_${gestion}.xlsx`; link.click(); URL.revokeObjectURL(url);
+      toast.success('Excel general de seguimiento generado con todos los programas de la gestión.');
+    } catch (err) { toast.error(err?.response?.data?.detail || 'No se pudo generar el informe de seguimiento.'); }
+  };
+
+  const openSeguimientoInstitucionalPreview = () => {
+    if (!gestionValida) return toast.error('Ingrese una gestión válida.');
+    openPdfViewer({
+      section: 'seguimiento',
+      title: `Informe institucional de seguimiento - Gestión ${gestion}`,
+      fileName: `informe_seguimiento_poa_${gestion}.pdf`,
+      url: `${API_BASE}/api/poa/reportes/seguimiento-institucional/?gestion=${gestion}&formato=pdf`,
+    });
   };
 
   return (
@@ -192,7 +212,7 @@ const Reportes = () => {
                 <Sparkles size={14} /> Reportes POA
               </p>
               <h2 className="text-2xl md:text-4xl font-extrabold text-blue-900 dark:text-slate-100 leading-tight">
-                Descarga los reportes de tu carrera
+                Visualiza y exporta los reportes de tu carrera
               </h2>
               <p className="text-sm md:text-base text-slate-600 dark:text-slate-300 max-w-3xl leading-relaxed">
                 Esta vista organiza tres secciones claras para la gestión seleccionada: reporte general, documentos y seguimiento.
@@ -235,14 +255,14 @@ const Reportes = () => {
               </div>
             </div>
             <p className="mt-3 text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-              Descarga en un solo PDF todos los documentos de la gestión seleccionada correspondientes a la carrera del usuario.
+              Visualiza en un solo PDF todos los documentos de la gestión seleccionada correspondientes a la carrera del usuario.
             </p>
             <button
               type="button"
               onClick={openGeneralPreview}
               className="mt-4 inline-flex items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 py-3 text-sm font-bold text-white shadow hover:bg-blue-600 transition"
             >
-              <Download size={16} /> Descargar general
+              <Download size={16} /> Ver reporte general
             </button>
           </div>
 
@@ -257,7 +277,7 @@ const Reportes = () => {
               </div>
             </div>
             <p className="mt-3 text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-              Aquí se muestran todos los documentos de la gestión seleccionada. Cada tarjeta muestra el nombre del programa y permite descargar su PDF oficial.
+              Aquí se muestran todos los documentos de la gestión seleccionada. Cada tarjeta permite revisar su PDF oficial antes de imprimirlo o descargarlo.
             </p>
 
             <div className="mt-4 space-y-3">
@@ -293,7 +313,7 @@ const Reportes = () => {
                 }}
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-700 px-4 py-3 text-sm font-bold text-white shadow hover:bg-cyan-600 transition"
               >
-                <Download size={16} /> Descargar PDF del programa
+                <Download size={16} /> Ver PDF del programa
               </button>
             </div>
           </div>
@@ -309,7 +329,7 @@ const Reportes = () => {
               </div>
             </div>
             <p className="mt-3 text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-              En este apartado se descarga el documento de seguimiento del programa seleccionado dentro de la gestión activa.
+              Genera el seguimiento real del programa seleccionado: avance físico, resultados, presupuesto y evidencias de la gestión activa.
             </p>
 
             <div className="mt-4 space-y-3">
@@ -330,7 +350,7 @@ const Reportes = () => {
               </select>
 
               <div className="rounded-xl border border-slate-200 bg-white/80 p-4 text-sm text-slate-600 leading-relaxed dark:border-slate-700 dark:bg-slate-950/35 dark:text-slate-300">
-                El seguimiento se organiza por programa. El desplegable muestra los nombres de los documentos disponibles para esta gestión.
+                El seguimiento se organiza por programa y gestión. Seleccione el programa para incluir únicamente sus actividades y evidencias.
               </div>
 
               <button
@@ -345,8 +365,15 @@ const Reportes = () => {
                 }}
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 py-3 text-sm font-bold text-white shadow hover:bg-amber-500 transition"
               >
-                <TrendingUp size={16} /> Descargar seguimiento
+                <TrendingUp size={16} /> Ver seguimiento
               </button>
+              <div className="border-t border-amber-200 pt-3 dark:border-slate-700">
+                <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">El Excel general reúne todos los programas de la gestión y organiza cada programa en una pestaña independiente.</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button type="button" onClick={descargarSeguimientoGeneralExcel} className="rounded-xl bg-emerald-700 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-600">Excel general de seguimiento</button>
+                  <button type="button" onClick={openSeguimientoInstitucionalPreview} className="rounded-xl bg-slate-700 px-3 py-2 text-xs font-bold text-white hover:bg-slate-600">Ver PDF ejecutivo</button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
