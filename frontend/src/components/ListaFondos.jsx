@@ -187,27 +187,25 @@ function ListaFondos({ isDark }) {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
-      {/* Header con mejor contraste */}
-      <div className="bg-white dark:bg-slate-800 border-b-2 border-slate-300 dark:border-slate-700 shadow-md">
-        <div className="px-6 py-5">
-          <div className="flex items-center justify-between">
-            {/* Título */}
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 px-4 py-6 md:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-[1450px] space-y-6">
+        {/* Header */}
+        <div className="bg-blue-900 rounded-2xl shadow-2xl p-6">
+          <div className="flex items-center justify-between gap-6">
             <div>
-              <h2 className="text-3xl font-bold text-blue-600 dark:text-white">
+              <h2 className="text-3xl font-bold text-white">
                 Dashboard de Fondos
               </h2>
-              <p className="text-sm text-slate-700 dark:text-slate-400 mt-1">
+              <p className="text-blue-100 mt-1">
                 Gestión del Fondo de Tiempo Docente
               </p>
               {esIisyp && (
-                <span className="mt-3 inline-flex items-center px-3 py-1.5 rounded-lg border-2 border-cyan-300 bg-cyan-50 text-xs font-bold text-cyan-700 dark:border-cyan-700 dark:bg-cyan-900/20 dark:text-cyan-300">
+                <span className="inline-block mt-3 px-3 py-1.5 rounded-lg text-xs font-semibold border border-cyan-300/60 shadow-sm bg-cyan-400/10 text-cyan-100">
                   Vista de Investigación - Solo Lectura
                 </span>
               )}
             </div>
 
-            {/* Contador y Botón */}
             <div className="flex items-center gap-4">
               {puedeCrear && (
                 <>
@@ -228,21 +226,20 @@ function ListaFondos({ isDark }) {
                   </Link>
                 </>
               )}
-              <div className="bg-slate-50 dark:bg-slate-700 px-6 py-3 rounded-xl border-2 border-slate-300 dark:border-slate-600 shadow-md">
+              <div className="bg-white/10 px-6 py-3 rounded-xl border border-white/15 shadow-sm min-w-[120px]">
                 <div className="text-center">
-                  <div className="text-3xl font-bold text-blue-600 dark:text-white">
+                  <div className="text-3xl font-bold text-white">
                     {fondos.length}
                   </div>
-                  <div className="text-xs text-slate-700 dark:text-slate-400 font-medium">Total fondos</div>
+                  <div className="text-xs font-medium text-blue-100">Total fondos</div>
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
 
       {/* Lista de fondos */}
-      <div className="max-w-7xl mx-auto p-6">
+      <div className="space-y-4">
         {fondos.length > 0 ? (
           <div className="space-y-4">
             {fondos.map((fondo) => (
@@ -379,6 +376,8 @@ function ListaFondos({ isDark }) {
             )}
           </div>
         )}
+      </div>
+
       </div>
 
       {showMassiveModal && (

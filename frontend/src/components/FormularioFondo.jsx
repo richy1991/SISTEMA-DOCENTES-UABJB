@@ -549,6 +549,27 @@ const VerticalSemesterWheelPicker = ({
   );
 };
 
+const HORAS_POR_DEDICACION = {
+  tiempo_completo: 40,
+  medio_tiempo: 20,
+  horario_16: 4,
+  horario_24: 6,
+  horario_40: 10,
+  horario_48: 12,
+};
+
+const DEDICACION_LABELS = {
+  tiempo_completo: 'Tiempo Completo',
+  medio_tiempo: 'Medio Tiempo',
+  horario_16: 'Tiempo Horario 16 hrs/mes',
+  horario_24: 'Tiempo Horario 24 hrs/mes',
+  horario_40: 'Tiempo Horario 40 hrs/mes',
+  horario_48: 'Tiempo Horario 48 hrs/mes',
+  dedicacion_exclusiva: 'Dedicacion Exclusiva',
+};
+
+const DEDICACIONES_TIEMPO_HORARIO = ['horario_16', 'horario_24', 'horario_40', 'horario_48'];
+
 function FormularioFondo({ isDark, editar = false }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -600,8 +621,16 @@ function FormularioFondo({ isDark, editar = false }) {
       || `Docente ${docente.id}`;
   };
 
-  const obtenerVinculoActivo = (docente) => {
+  const obtenerVinculoActivo = (docente, carreraId = formData.carrera) => {
     const vinculos = Array.isArray(docente?.vinculos) ? docente.vinculos : [];
+    const carreraString = String(carreraId || '');
+    if (carreraString) {
+      const vinculoCarrera = vinculos.find((vinculo) => (
+        vinculo?.activo !== false
+        && String(obtenerId(vinculo?.carrera)) === carreraString
+      ));
+      if (vinculoCarrera) return vinculoCarrera;
+    }
     return vinculos.find((vinculo) => vinculo?.activo !== false) || vinculos[0] || null;
   };
 
@@ -634,11 +663,26 @@ function FormularioFondo({ isDark, editar = false }) {
   };
 
   const esSuperAdmin = usuarioActual?.is_superuser === true;
-  const rolActual = esSuperAdmin ? 'iiisyp' : perfilActual?.rol;
   const docenteBloqueadoPorNavegacion = !editar && Boolean(location.state?.docenteId);
   const docenteSeleccionado = docentes.find((docente) => String(docente.id) === String(formData.docente || ''));
-  const vinculoDocenteSeleccionado = obtenerVinculoActivo(docenteSeleccionado);
+  const vinculoDocenteSeleccionado = obtenerVinculoActivo(docenteSeleccionado, formData.carrera);
   const docenteDedicacionExclusiva = vinculoDocenteSeleccionado?.dedicacion === 'dedicacion_exclusiva';
+  const dedicacionDetectada = vinculoDocenteSeleccionado?.dedicacion || '';
+  const dedicacionDetectadaLabel = DEDICACION_LABELS[dedicacionDetectada] || dedicacionDetectada || 'No detectada';
+  const limiteHorasDetectado = HORAS_POR_DEDICACION[dedicacionDetectada] || 0;
+  const docenteEsAutoridadEnCarrera = (Array.isArray(docenteSeleccionado?.asignaciones) ? docenteSeleccionado.asignaciones : [])
+    .some((asignacion) => (
+      asignacion?.activo !== false
+      && ['director', 'jefe_estudios'].includes(asignacion?.rol)
+      && String(obtenerId(asignacion?.carrera)) === String(formData.carrera || '')
+    ));
+  const dedicacionInvalidaParaAutoridad = Boolean(
+    formData.docente
+    && docenteEsAutoridadEnCarrera
+    && dedicacionDetectada
+    && !DEDICACIONES_TIEMPO_HORARIO.includes(dedicacionDetectada)
+    && dedicacionDetectada !== 'dedicacion_exclusiva'
+  );
 
   const obtenerSemestrePorPeriodo = (periodo) => {
     const valor = String(periodo || '').toLowerCase();
@@ -969,6 +1013,9 @@ function FormularioFondo({ isDark, editar = false }) {
     }
     if (docenteDedicacionExclusiva) {
       errores.docente = 'Docente exento de distribución de tiempo (Art. 25°)';
+    }
+    if (dedicacionInvalidaParaAutoridad) {
+      errores.docente = 'Director/Jefe de Estudios debe tener dedicacion Tiempo Horario (TH) en esta carrera.';
     }
     if (!formData.carrera) {
       errores.carrera = 'Por favor, seleccione una opción.';
@@ -1336,9 +1383,23 @@ function FormularioFondo({ isDark, editar = false }) {
                             Todos los docentes tienen fondo de tiempo para este periodo
                           </p>
                         )}
-                        {docenteDedicacionExclusiva && (
-                          <div className="mt-2 rounded-xl border-2 border-red-300 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-700 dark:bg-red-900/20 dark:text-red-300">
-                            Docente exento de distribución de tiempo (Art. 25°)
+                        {formData.docente && vinculoDocenteSeleccionado && (
+                          <div className={`mt-2 rounded-xl border px-4 py-3 text-sm ${
+                            docenteDedicacionExclusiva || dedicacionInvalidaParaAutoridad
+                              ? 'border-red-300 bg-red-50 text-red-700 dark:border-red-700 dark:bg-red-900/20 dark:text-red-300'
+                              : 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-200'
+                          }`}>
+                            <div className="font-bold">Dedicacion detectada: {dedicacionDetectadaLabel}</div>
+                            <div className="text-xs mt-1">
+                              {docenteDedicacionExclusiva
+                                ? 'Exento: no se permite crear Fondo de Tiempo.'
+                                : `Limite para Macro y Micro: ${limiteHorasDetectado} hrs/sem.`}
+                            </div>
+                            {dedicacionInvalidaParaAutoridad && (
+                              <div className="text-xs font-semibold mt-1">
+                                Director/Jefe de Estudios solo puede usar dedicacion Tiempo Horario (TH).
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1566,7 +1627,7 @@ function FormularioFondo({ isDark, editar = false }) {
             </button>
             <button
               type="submit"
-              disabled={loading || docenteDedicacionExclusiva}
+              disabled={loading || docenteDedicacionExclusiva || dedicacionInvalidaParaAutoridad}
               className="px-6 py-2.5 rounded-xl text-white font-bold transition-all shadow-lg hover:shadow-xl flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? 'Guardando...' : (editar ? 'Actualizar Fondo' : 'Crear Fondo')}
