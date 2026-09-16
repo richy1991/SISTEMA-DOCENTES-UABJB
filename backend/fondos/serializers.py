@@ -4,13 +4,259 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from .models import Docente, DocenteCarrera, Carrera, Materia, FondoTiempo, CategoriaFuncion, Actividad, PerfilUsuario, AsignacionCarrera, InformeFondo, ObservacionFondo, MensajeObservacion, HistorialFondo, CargaHoraria, SaldoVacacionesGestion, DatosLaborales
+from .models import Docente, DocenteCarrera, Carrera, Materia, FondoTiempo, CategoriaFuncion, Actividad, PerfilUsuario, AsignacionCarrera, InformeFondo, InformeAsignaturaEjecutada, ObservacionFondo, MensajeObservacion, HistorialFondo, CargaHoraria, SaldoVacacionesGestion, DatosLaborales, EvidenciaCargaHoraria
 from .role_context import get_active_assignment, get_effective_profile, serialize_assignment
+from .utils.informe_texto import construir_defaults_informe, CAMPOS_TEXTO_INFORME
 from django.db.models import Sum
 from django.db import transaction
 from decimal import Decimal
 from django.utils import timezone
     
+SEMANAS_CLASES_AULA = Decimal('40')
+
+CARGA_HORARIA_TIPOS_POR_CATEGORIA = {
+    'academica': [
+        'cursos_verano',
+        'preparacion_temas',
+        'elaboracion_trabajos_practicos',
+        'revision_calificacion_trabajos_practicos',
+        'elaboracion_examenes',
+        'revision_calificacion_examenes',
+        'practica_laboratorios_centro_computo',
+        'practicas_campo',
+        'produccion_docente_textos_guias',
+        'consultas_reclamos_calificaciones',
+        'clases_aula',
+        'elaboracion_planillas_introduccion_notas_moxos',
+        'planificacion_gestion_practica_extra_aula',
+        'ejecucion_practica_extra_aula',
+        'informe_descargo_viaje_practicas_extra_aula',
+    ],
+    'investigacion': [
+        'participacion_iic_cis',
+        'organizacion_eventos_cientificos',
+        'elaboracion_trabajos_investigacion',
+    ],
+    'extension_universitaria': [
+        'proyectos_extension',
+        'tareas_proyectos_extension_interaccion',
+        'cursos',
+        'seminarios',
+        'talleres',
+        'conferencias',
+        'jornadas',
+        'videoconferencias',
+        'asistencia_tecnica',
+        'voluntariado',
+    ],
+    'interaccion_social': [
+        'proyectos_interaccion',
+        'tareas_proyectos_extension_interaccion',
+        'participacion_ferias_campanas_jornadas',
+        'proyectos_sociales',
+        'ferias',
+        'campanas',
+        'jornadas',
+        'tribunal_externo',
+        'capacitacion_externa',
+    ],
+    'gestion': [
+        'modalidad_graduacion',
+        'reuniones',
+        'coordinacion',
+        'convenios',
+        'politicas_academicas',
+    ],
+    'academica_administrativa': [
+        'auxiliares_docencia',
+        'examenes_mesa',
+        'otras_comisiones_academicas',
+        'logistica_carrera',
+        'difusion_perfil_profesional',
+        'caac',
+        'comision_innovacion_curricular',
+        'poa',
+        'programas_analiticos',
+    ],
+    'social_cultural_deportiva': [
+        'acto_academico_facultativo',
+        'acto_academico_universitario',
+        'participacion_actividades_culturales_sociales_deportivas',
+        'aniversarios',
+        'entrada_folclorica',
+        'campeonatos_deportivos',
+        'concursos',
+        'eventos_culturales',
+        'desfile_6_agosto',
+        'desfile_18_noviembre',
+        'claustros_universitarios',
+        'asociacion_docente',
+        'capacitacion_complementaria',
+        'orientacion_vocacional',
+    ],
+}
+
+CARGA_HORARIA_TIPOS_LABELS = {
+    'cursos_verano': 'Cursos de verano',
+    'preparacion_temas': 'Preparaci\u00f3n de temas',
+    'elaboracion_trabajos_practicos': 'Elaboraci\u00f3n de Trabajos Pr\u00e1cticos',
+    'revision_calificacion_trabajos_practicos': 'Revisi\u00f3n y Calificaci\u00f3n de Trabajos Pr\u00e1cticos',
+    'elaboracion_examenes': 'Elaboraci\u00f3n de Ex\u00e1menes',
+    'revision_calificacion_examenes': 'Revisi\u00f3n y Calificaci\u00f3n de Ex\u00e1menes',
+    'practica_laboratorios_centro_computo': 'Pr\u00e1ctica de Laboratorios (Centro de C\u00f3mputo)',
+    'practicas_campo': 'Pr\u00e1cticas de Campo',
+    'produccion_docente_textos_guias': 'Producci\u00f3n docente (textos gu\u00edas)',
+    'consultas_reclamos_calificaciones': 'Consultas y Reclamos de Calificaciones',
+    'clases_aula': 'Clases en aula',
+    'elaboracion_planillas_introduccion_notas_moxos': 'Elaboraci\u00f3n de planillas e Introducci\u00f3n de notas al sistema moxos',
+    'planificacion_gestion_practica_extra_aula': 'Planificaci\u00f3n y gesti\u00f3n de pr\u00e1ctica extra aula',
+    'ejecucion_practica_extra_aula': 'Ejecuci\u00f3n de pr\u00e1ctica extra aula',
+    'informe_descargo_viaje_practicas_extra_aula': 'Informe de descargo de viaje en las pr\u00e1cticas extra aula',
+    'participacion_iic_cis': 'Participaci\u00f3n IIC-CIS',
+    'organizacion_eventos_cientificos': 'Organizaci\u00f3n eventos cient\u00edficos',
+    'elaboracion_trabajos_investigacion': 'Elaboraci\u00f3n trabajos investigaci\u00f3n',
+    'proyectos_extension': 'Proyectos de extensi\u00f3n',
+    'tareas_proyectos_extension_interaccion': 'Tareas en proyectos de extensi\u00f3n e interacci\u00f3n',
+    'cursos': 'Cursos',
+    'seminarios': 'Seminarios',
+    'talleres': 'Talleres',
+    'conferencias': 'Conferencias',
+    'jornadas': 'Jornadas',
+    'videoconferencias': 'Videoconferencias',
+    'asistencia_tecnica': 'Asistencia t\u00e9cnica',
+    'voluntariado': 'Voluntariado',
+    'proyectos_interaccion': 'Proyectos de interacci\u00f3n',
+    'participacion_ferias_campanas_jornadas': 'Participaci\u00f3n en ferias, campa\u00f1as, jornadas',
+    'proyectos_sociales': 'Proyectos sociales',
+    'ferias': 'Ferias',
+    'campanas': 'Campa\u00f1as',
+    'tribunal_externo': 'Tribunal externo',
+    'capacitacion_externa': 'Capacitaci\u00f3n externa',
+    'modalidad_graduacion': 'Modalidad de Graduaci\u00f3n',
+    'reuniones': 'Reuniones',
+    'coordinacion': 'Coordinaci\u00f3n',
+    'convenios': 'Convenios',
+    'politicas_academicas': 'Pol\u00edticas acad\u00e9micas',
+    'auxiliares_docencia': 'Auxiliares de docencia',
+    'examenes_mesa': 'Ex\u00e1menes de mesa',
+    'otras_comisiones_academicas': 'Otras comisiones acad\u00e9micas',
+    'logistica_carrera': 'Log\u00edstica carrera',
+    'difusion_perfil_profesional': 'Difusi\u00f3n perfil profesional',
+    'caac': 'CAAC',
+    'comision_innovacion_curricular': 'Comisi\u00f3n Innovaci\u00f3n Curricular',
+    'poa': 'POA',
+    'programas_analiticos': 'Programas anal\u00edticos',
+    'acto_academico_facultativo': 'Acto acad\u00e9mico facultativo',
+    'acto_academico_universitario': 'Acto acad\u00e9mico universitario',
+    'participacion_actividades_culturales_sociales_deportivas': 'Participaci\u00f3n de actividades culturales, sociales y deportivas',
+    'aniversarios': 'Aniversarios',
+    'entrada_folclorica': 'Entrada folcl\u00f3rica',
+    'campeonatos_deportivos': 'Campeonatos deportivos',
+    'concursos': 'Concursos',
+    'eventos_culturales': 'Eventos culturales',
+    'desfile_6_agosto': 'Desfile 6 agosto',
+    'desfile_18_noviembre': 'Desfile 18 noviembre',
+    'claustros_universitarios': 'Claustros universitarios',
+    'asociacion_docente': 'Asociaci\u00f3n Docente',
+    'capacitacion_complementaria': 'Capacitaci\u00f3n complementaria',
+    'orientacion_vocacional': 'Orientaci\u00f3n Vocacional',
+}
+
+CARGA_HORARIA_EVIDENCIAS_ACADEMICAS = {
+    'preparacion_temas': 'Plan de clases, material de apoyo',
+    'elaboracion_trabajos_practicos': 'Enunciados de trabajos pr\u00e1cticos, r\u00fabricas',
+    'revision_calificacion_trabajos_practicos': 'Actas de calificaci\u00f3n, retroalimentaci\u00f3n',
+    'elaboracion_examenes': 'Bancos de preguntas, ex\u00e1menes impresos',
+    'revision_calificacion_examenes': 'Actas de notas, estad\u00edsticas',
+    'practica_laboratorios_centro_computo': 'Gu\u00edas de laboratorio, registros de asistencia',
+    'practicas_campo': 'Informes de campo, fotos, actas',
+    'produccion_docente_textos_guias': 'Textos gu\u00edas publicados, material did\u00e1ctico',
+    'consultas_reclamos_calificaciones': 'Registro de consultas, actas de revisi\u00f3n',
+    'planificacion_gestion_practica_extra_aula': 'Plan de trabajo, cronograma',
+    'ejecucion_practica_extra_aula': 'Informes de pr\u00e1ctica, evidencias fotogr\u00e1ficas',
+    'cursos_verano': 'Programa del curso, lista de estudiantes',
+    'clases_aula': 'Programa anal\u00edtico, plan de clases, actas de notas, registros de asistencia',
+    'elaboracion_planillas_introduccion_notas_moxos': 'Capturas de pantalla del sistema, actas de notas',
+    'informe_descargo_viaje_practicas_extra_aula': 'Informe de descargo, boletas o facturas de viaje',
+}
+
+CARGA_HORARIA_EVIDENCIAS_INVESTIGACION = {
+    'participacion_iic_cis': 'Memor\u00e1ndum o certificado de participaci\u00f3n en el IIC-CIS, informe de actividades',
+    'organizacion_eventos_cientificos': 'Programa del evento cient\u00edfico, fotograf\u00edas, lista de asistentes',
+    'elaboracion_trabajos_investigacion': 'Productos de investigaci\u00f3n, informes de avance, art\u00edculos publicados',
+}
+
+CARGA_HORARIA_EVIDENCIAS_EXTENSION_UNIVERSITARIA = {
+    'proyectos_extension': 'Informe del proyecto de extensi\u00f3n, productos de extensi\u00f3n',
+    'tareas_proyectos_extension_interaccion': 'Registro de tareas, informe de avance del proyecto',
+    'cursos': 'Programa del curso, lista de asistencia, certificados emitidos',
+    'seminarios': 'Programa del seminario, lista de asistencia, memoria del evento',
+    'talleres': 'Programa del taller, lista de asistencia, material entregado',
+    'conferencias': 'Programa de la conferencia, fotograf\u00edas, lista de asistencia',
+    'jornadas': 'Programa de la jornada, lista de asistencia, informe de resultados',
+    'videoconferencias': 'Grabaci\u00f3n o enlace de la videoconferencia, lista de participantes',
+    'asistencia_tecnica': 'Informe de asistencia t\u00e9cnica, solicitud atendida',
+    'voluntariado': 'Certificado de voluntariado, informe de actividades realizadas',
+}
+
+CARGA_HORARIA_EVIDENCIAS_INTERACCION_SOCIAL = {
+    'proyectos_interaccion': 'Informe del proyecto de interacci\u00f3n social, productos generados',
+    'tareas_proyectos_extension_interaccion': 'Registro de tareas, informe de impacto social',
+    'participacion_ferias_campanas_jornadas': 'Informes de impacto social, fotograf\u00edas, actas de participaci\u00f3n',
+    'proyectos_sociales': 'Informe del proyecto social, fotograf\u00edas, actas',
+    'ferias': 'Fotograf\u00edas, lista de asistencia, informe de la feria',
+    'campanas': 'Material de la campa\u00f1a, fotograf\u00edas, informe de resultados',
+    'tribunal_externo': 'Memor\u00e1ndum de designaci\u00f3n, acta de calificaci\u00f3n',
+    'capacitacion_externa': 'Certificado de capacitaci\u00f3n, programa del curso',
+}
+
+CARGA_HORARIA_EVIDENCIAS_GESTION = {
+    'modalidad_graduacion': 'Memor\u00e1ndum de designaci\u00f3n, acta de defensa o resoluci\u00f3n de aprobaci\u00f3n',
+    'reuniones': 'Convocatoria, acta de reuni\u00f3n y lista de asistencia',
+    'coordinacion': 'Memor\u00e1ndums de coordinaci\u00f3n, informes de seguimiento',
+    'convenios': 'Documento del convenio firmado, resoluci\u00f3n de aprobaci\u00f3n',
+    'politicas_academicas': 'Documento de pol\u00edtica acad\u00e9mica, resoluci\u00f3n de aprobaci\u00f3n',
+}
+
+CARGA_HORARIA_EVIDENCIAS_ACADEMICA_ADMINISTRATIVA = {
+    'auxiliares_docencia': 'Memor\u00e1ndum de designaci\u00f3n, informe de supervisi\u00f3n de auxiliares',
+    'examenes_mesa': 'Actas de examen de mesa, memor\u00e1ndum de designaci\u00f3n de tribunal',
+    'otras_comisiones_academicas': 'Memor\u00e1ndum de designaci\u00f3n, informe de la comisi\u00f3n',
+    'logistica_carrera': 'Informe de log\u00edstica, inventario o cronograma de actividades',
+    'difusion_perfil_profesional': 'Material de difusi\u00f3n, fotograf\u00edas, lista de instituciones visitadas',
+    'caac': 'Actas del CAAC, informe de sesi\u00f3n',
+    'comision_innovacion_curricular': 'Acta de la comisi\u00f3n, documento de innovaci\u00f3n curricular',
+    'poa': 'POA aprobado, informe de seguimiento del POA',
+    'programas_analiticos': 'Programas anal\u00edticos elaborados o revisados, acta de aprobaci\u00f3n',
+}
+
+CARGA_HORARIA_EVIDENCIAS_SOCIAL_CULTURAL_DEPORTIVA = {
+    'acto_academico_facultativo': 'Fotograf\u00edas, lista de asistencia al acto facultativo',
+    'acto_academico_universitario': 'Fotograf\u00edas, lista de asistencia al acto universitario',
+    'participacion_actividades_culturales_sociales_deportivas': 'Fotograf\u00edas, certificado de participaci\u00f3n',
+    'aniversarios': 'Fotograf\u00edas, programa del aniversario',
+    'entrada_folclorica': 'Fotograf\u00edas, certificado de participaci\u00f3n en la entrada folcl\u00f3rica',
+    'campeonatos_deportivos': 'Fotograf\u00edas, certificado o planilla de participaci\u00f3n deportiva',
+    'concursos': 'Certificado de participaci\u00f3n, resultados del concurso',
+    'eventos_culturales': 'Fotograf\u00edas, programa del evento cultural',
+    'desfile_6_agosto': 'Fotograf\u00edas, lista de asistencia al desfile del 6 de agosto',
+    'desfile_18_noviembre': 'Fotograf\u00edas, lista de asistencia al desfile del 18 de noviembre',
+    'claustros_universitarios': 'Convocatoria y acta del claustro universitario',
+    'asociacion_docente': 'Acta o certificado de participaci\u00f3n en la Asociaci\u00f3n de Docentes',
+    'capacitacion_complementaria': 'Certificado de capacitaci\u00f3n complementaria',
+    'orientacion_vocacional': 'Informe o registro de orientaci\u00f3n vocacional, fotograf\u00edas',
+}
+
+CARGA_HORARIA_EVIDENCIAS_POR_CATEGORIA = {
+    'academica': CARGA_HORARIA_EVIDENCIAS_ACADEMICAS,
+    'investigacion': CARGA_HORARIA_EVIDENCIAS_INVESTIGACION,
+    'extension_universitaria': CARGA_HORARIA_EVIDENCIAS_EXTENSION_UNIVERSITARIA,
+    'interaccion_social': CARGA_HORARIA_EVIDENCIAS_INTERACCION_SOCIAL,
+    'gestion': CARGA_HORARIA_EVIDENCIAS_GESTION,
+    'academica_administrativa': CARGA_HORARIA_EVIDENCIAS_ACADEMICA_ADMINISTRATIVA,
+    'social_cultural_deportiva': CARGA_HORARIA_EVIDENCIAS_SOCIAL_CULTURAL_DEPORTIVA,
+}
+
 
 def _usuario_es_iisyp_solo_lectura(context):
     request = context.get('request') if context else None
@@ -320,9 +566,11 @@ def _validar_limite_asignaciones_usuario(bloques):
 
 
 ROLES_AUTORIDAD_ASIGNACION = {'director', 'jefe_estudios'}
+ROLES_GESTION_DEDICACION = {'director', 'jefe_estudios', 'iiisyp'}
 MENSAJE_ASIGNACION_INVALIDA = 'Esta combinaci\u00f3n de roles no es v\u00e1lida seg\u00fan las reglas de asignaci\u00f3n del sistema'
 MENSAJE_CONFLICTO_AUTORIDAD = 'Un usuario no puede tener m\u00e1s de un cargo de gesti\u00f3n (Director o Jefe de Estudios).'
 MENSAJE_INCOMPATIBILIDAD_DEDICACION = 'Seg\u00fan normativa UABJB, los cargos de gesti\u00f3n (Director/Jefe) solo son compatibles con docencia a Tiempo Horario. No se permite dedicaci\u00f3n Tiempo Completo o Medio Tiempo.'
+MENSAJE_DOCENTE_DEDICACION_EXCLUSIVA = 'Los usuarios con rol docente deben registrar dedicacion a Tiempo Horario.'
 
 
 def _usuario_tiene_rol_gestion_activo(user):
@@ -332,15 +580,35 @@ def _usuario_tiene_rol_gestion_activo(user):
     if AsignacionCarrera.objects.filter(
         user=user,
         activo=True,
-        rol__in=ROLES_AUTORIDAD_ASIGNACION,
+        rol__in=ROLES_GESTION_DEDICACION,
     ).exists():
         return True
 
     return PerfilUsuario.objects.filter(
         user=user,
         activo=True,
-        rol__in=ROLES_AUTORIDAD_ASIGNACION,
+        rol__in=ROLES_GESTION_DEDICACION,
     ).exists()
+
+
+def _usuario_tiene_rol_docente_activo(user):
+    if not user:
+        return False
+
+    if AsignacionCarrera.objects.filter(user=user, activo=True, rol='docente').exists():
+        return True
+
+    return PerfilUsuario.objects.filter(user=user, activo=True, rol='docente').exists()
+
+
+def _usuario_tiene_rol_activo(user, rol):
+    if not user:
+        return False
+
+    if AsignacionCarrera.objects.filter(user=user, activo=True, rol=rol).exists():
+        return True
+
+    return PerfilUsuario.objects.filter(user=user, activo=True, rol=rol).exists()
 
 
 def _resolver_usuario_docente_para_validacion(docente=None, user=None):
@@ -359,14 +627,38 @@ def _resolver_usuario_docente_para_validacion(docente=None, user=None):
 
 
 def _validar_dedicacion_compatible_con_roles_gestion(dedicacion, docente=None, user=None):
+    usuario_relacionado = _resolver_usuario_docente_para_validacion(docente=docente, user=user)
+
+    if dedicacion == 'dedicacion_exclusiva' and _usuario_tiene_rol_docente_activo(usuario_relacionado):
+        raise serializers.ValidationError({
+            'dedicacion': MENSAJE_DOCENTE_DEDICACION_EXCLUSIVA
+        })
+
+    if dedicacion == 'dedicacion_exclusiva' and not _usuario_tiene_rol_activo(usuario_relacionado, 'director'):
+        raise serializers.ValidationError({
+            'dedicacion': 'La dedicacion exclusiva solo aplica al Director de Carrera.'
+        })
+
     if dedicacion not in {'tiempo_completo', 'medio_tiempo'}:
         return
 
-    usuario_relacionado = _resolver_usuario_docente_para_validacion(docente=docente, user=user)
-    if _usuario_tiene_rol_gestion_activo(usuario_relacionado):
+    if _usuario_tiene_rol_gestion_activo(usuario_relacionado) and _usuario_tiene_rol_docente_activo(usuario_relacionado):
         raise serializers.ValidationError({
             'dedicacion': MENSAJE_INCOMPATIBILIDAD_DEDICACION
         })
+
+
+def _dedicacion_para_usuario(dedicacion, user):
+    tiene_docencia = _usuario_tiene_rol_docente_activo(user)
+    tiene_director = _usuario_tiene_rol_activo(user, 'director')
+    tiene_jefe_estudios = _usuario_tiene_rol_activo(user, 'jefe_estudios')
+    tiene_iisyp = _usuario_tiene_rol_activo(user, 'iiisyp')
+
+    if tiene_director and not tiene_docencia and not tiene_jefe_estudios and not tiene_iisyp:
+        return 'dedicacion_exclusiva'
+    if (tiene_jefe_estudios or tiene_iisyp) and not tiene_docencia and not tiene_director:
+        return 'tiempo_completo'
+    return dedicacion
 
 
 def _resolver_docente_existente_asignacion(bloque, docente_por_defecto=None):
@@ -623,6 +915,8 @@ class CargaHorariaSerializer(serializers.ModelSerializer):
         hora_fin = data.get('hora_fin', self.instance.hora_fin if self.instance else None)
         aula = data.get('aula', self.instance.aula if self.instance else None)
         horas_nuevas = data.get('horas', self.instance.horas if self.instance else 0)
+        tipo_actividad = data.get('tipo_actividad', self.instance.tipo_actividad if self.instance else '')
+        evidencias = data.get('evidencias', self.instance.evidencias if self.instance else '')
 
         if docente and docente.activo is False:
             raise serializers.ValidationError({
@@ -639,18 +933,33 @@ class CargaHorariaSerializer(serializers.ModelSerializer):
                 archivado=False,
             ).first()
             if fondo:
-                semanas = Decimal(str(fondo.semanas_año or '45.8'))
+                semanas = Decimal(str(getattr(fondo, 'semanas_a\u00f1o', '45.8') or '45.8'))
                 if semanas <= 0:
                     semanas = Decimal('45.8')
                 categoria_macro = CategoriaFuncion.objects.filter(
                     fondo_tiempo=fondo,
                     tipo=categoria,
                 ).first()
+        semanas_validacion = SEMANAS_CLASES_AULA if categoria == 'academica' else semanas
 
         if categoria == 'academica':
+            tipo_actividad = str(tipo_actividad or '').strip()
+            if tipo_actividad not in CARGA_HORARIA_TIPOS_POR_CATEGORIA['academica']:
+                raise serializers.ValidationError({
+                    'tipo_actividad': 'Debe seleccionar una sub-actividad academica valida.'
+                })
             if not materia:
-                raise serializers.ValidationError({'materia': 'Debe seleccionar una materia del plan de estudios para la categoría Académica.'})
-            data['titulo_actividad'] = materia.nombre
+                raise serializers.ValidationError({'materia': 'Debe seleccionar una materia para la actividad académica.'})
+            if tipo_actividad == 'clases_aula':
+                data['titulo_actividad'] = materia.nombre
+                data['horas'] = int(Decimal(materia.horas_totales or 0) * SEMANAS_CLASES_AULA)
+                horas_nuevas = data['horas']
+            else:
+                data['titulo_actividad'] = str(titulo_actividad or CARGA_HORARIA_TIPOS_LABELS.get(tipo_actividad, tipo_actividad)).strip()
+            if not str(evidencias or '').strip():
+                evidencias = CARGA_HORARIA_EVIDENCIAS_ACADEMICAS.get(tipo_actividad, '')
+            data['tipo_actividad'] = tipo_actividad
+            data['evidencias'] = str(evidencias or '').strip()
         else:
             if materia:
                 raise serializers.ValidationError({
@@ -660,7 +969,17 @@ class CargaHorariaSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({
                     'titulo_actividad': 'Debe ingresar una descripción de la actividad para esta categoría.'
                 })
+            tipo_actividad = str(tipo_actividad or '').strip()
+            tipos_validos = CARGA_HORARIA_TIPOS_POR_CATEGORIA.get(categoria, [])
+            if tipos_validos and tipo_actividad not in tipos_validos:
+                raise serializers.ValidationError({
+                    'tipo_actividad': 'Debe seleccionar un tipo de actividad valido para esta categoria.'
+                })
+            if not str(evidencias or '').strip():
+                evidencias = CARGA_HORARIA_EVIDENCIAS_POR_CATEGORIA.get(categoria, {}).get(tipo_actividad, '')
             data['titulo_actividad'] = str(titulo_actividad).strip()
+            data['tipo_actividad'] = tipo_actividad
+            data['evidencias'] = str(evidencias or '').strip()
 
         vinculo = None
         if docente and fondo and fondo.carrera:
@@ -679,7 +998,23 @@ class CargaHorariaSerializer(serializers.ModelSerializer):
                 'materia': 'La materia seleccionada no pertenece a la carrera del Fondo de Tiempo.'
             })
 
-        if categoria == 'academica' and docente and calendario and materia:
+        if docente and calendario and categoria and tipo_actividad:
+            tipo_duplicado = CargaHoraria.objects.filter(
+                docente=docente,
+                calendario=calendario,
+                categoria=categoria,
+                tipo_actividad=tipo_actividad,
+            )
+            if categoria == 'academica':
+                tipo_duplicado = tipo_duplicado.filter(materia=materia)
+            if self.instance:
+                tipo_duplicado = tipo_duplicado.exclude(pk=self.instance.pk)
+            if tipo_duplicado.exists():
+                raise serializers.ValidationError({
+                    'tipo_actividad': 'No puede repetir el mismo tipo de actividad dentro de la misma categoria.'
+                })
+
+        if categoria == 'academica' and tipo_actividad == 'clases_aula' and docente and calendario and materia:
             materia_duplicada = CargaHoraria.objects.filter(
                 docente=docente,
                 calendario=calendario,
@@ -696,9 +1031,9 @@ class CargaHorariaSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'hora_fin': 'La hora de fin debe ser mayor que la hora de inicio.'})
 
         # Tope de plan por materia (horas/semana): horas anuales prorrateadas.
-        horas_asignadas_semana = Decimal(horas_nuevas or 0) / semanas
+        horas_asignadas_semana = Decimal(horas_nuevas or 0) / semanas_validacion
         horas_plan_semana = Decimal((materia.horas_totales or 0)) if materia else Decimal('0')
-        tolerancia_redondeo_anual = Decimal('0.5') / semanas
+        tolerancia_redondeo_anual = Decimal('0.5') / semanas_validacion
         if materia and horas_asignadas_semana > (horas_plan_semana + tolerancia_redondeo_anual):
             exceso_semana = horas_asignadas_semana - horas_plan_semana
             raise serializers.ValidationError({
@@ -719,7 +1054,7 @@ class CargaHorariaSerializer(serializers.ModelSerializer):
                 cargas_categoria = cargas_categoria.exclude(pk=self.instance.pk)
 
             horas_existentes_anuales = Decimal(cargas_categoria.aggregate(total=Sum('horas'))['total'] or 0)
-            total_categoria_semana = (horas_existentes_anuales + Decimal(horas_nuevas or 0)) / semanas
+            total_categoria_semana = (horas_existentes_anuales + Decimal(horas_nuevas or 0)) / semanas_validacion
             presupuesto_semana = Decimal(str(categoria_macro.total_horas or 0))
             if total_categoria_semana > (presupuesto_semana + tolerancia_redondeo_anual):
                 categoria_label = dict(CategoriaFuncion.TIPO_CHOICES).get(categoria, categoria)
@@ -729,6 +1064,26 @@ class CargaHorariaSerializer(serializers.ModelSerializer):
                         f'Las horas asignadas en la categoría {categoria_label} exceden el presupuesto de '
                         f'{presupuesto_semana:g} hrs/sem establecido en la distribución Macro '
                         f'por {exceso_semana:.3f} hrs/sem.'
+                    )
+                })
+
+        if fondo:
+            cargas_fondo = CargaHoraria.objects.filter(
+                docente=docente,
+                calendario=calendario,
+            )
+            if self.instance:
+                cargas_fondo = cargas_fondo.exclude(pk=self.instance.pk)
+
+            horas_existentes_fondo = Decimal(cargas_fondo.aggregate(total=Sum('horas'))['total'] or 0)
+            total_fondo_anual = horas_existentes_fondo + Decimal(horas_nuevas or 0)
+            objetivo_anual = Decimal(str(fondo.horas_efectivas or 1712))
+            if objetivo_anual > 0 and total_fondo_anual > objetivo_anual:
+                exceso_anual = total_fondo_anual - objetivo_anual
+                raise serializers.ValidationError({
+                    'horas': (
+                        f'El Micro excede el total anual permitido de {objetivo_anual:g} horas '
+                        f'por {exceso_anual:g} horas.'
                     )
                 })
 
@@ -795,7 +1150,7 @@ class CargaHorariaSerializer(serializers.ModelSerializer):
 
         horas_existentes = cargas_existentes.aggregate(total=Sum('horas'))['total'] or 0
         total_horas_anuales = Decimal(horas_existentes) + Decimal(horas_nuevas or 0)
-        total_horas_semanales = total_horas_anuales / semanas
+        total_horas_semanales = total_horas_anuales / SEMANAS_CLASES_AULA
 
         horas_maximas = Decimal(str(vinculo.horas_semanales_maximas if vinculo else 0))
 
@@ -814,6 +1169,73 @@ class CargaHorariaSerializer(serializers.ModelSerializer):
         validated_data['creado_por'] = self.context['request'].user
         return super().create(validated_data)
 
+
+# ============================================================
+# EVIDENCIA DE CARGA HORARIA SERIALIZER
+# ============================================================
+class EvidenciaCargaHorariaSerializer(serializers.ModelSerializer):
+    subido_por_nombre = serializers.SerializerMethodField()
+    nombre_archivo = serializers.SerializerMethodField()
+
+    class Meta:
+        model = EvidenciaCargaHoraria
+        fields = [
+            'id', 'carga_horaria', 'archivo', 'nombre_archivo', 'descripcion',
+            'subido_por', 'subido_por_nombre', 'fecha_subida',
+        ]
+        read_only_fields = ['subido_por', 'fecha_subida']
+
+    def get_subido_por_nombre(self, obj):
+        if not obj.subido_por:
+            return None
+        nombre = obj.subido_por.get_full_name()
+        return nombre or obj.subido_por.username
+
+    def get_nombre_archivo(self, obj):
+        if not obj.archivo:
+            return None
+        return obj.archivo.name.rsplit('/', 1)[-1]
+
+    def validate_carga_horaria(self, carga_horaria):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        if not user:
+            return carga_horaria
+
+        if user.is_superuser:
+            return carga_horaria
+
+        # IMPORTANTE: usar el rol ACTIVO (get_effective_profile), no el perfil
+        # base del usuario. Un usuario puede tener varios roles sobre la misma
+        # carrera (p. ej. es Docente Y ademas iiisyp) via AsignacionCarrera; si
+        # aqui se lee `user.perfil.rol` directo y su perfil base no es
+        # 'docente', esta validacion de pertenencia se saltaria por completo
+        # aunque el usuario este operando como Docente en ese momento.
+        perfil = get_effective_profile(user, request)
+        if perfil and perfil.rol == 'docente' and perfil.docente_id:
+            if carga_horaria.docente_id != perfil.docente_id:
+                raise serializers.ValidationError(
+                    'No puede adjuntar evidencias a actividades de otro docente.'
+                )
+
+        fondo = FondoTiempo.objects.filter(
+            docente=carga_horaria.docente,
+            calendario_academico=carga_horaria.calendario,
+            archivado=False,
+        ).first()
+
+        if not fondo:
+            raise serializers.ValidationError(
+                'No se encontro el Fondo de Tiempo asociado a esta actividad.'
+            )
+
+        if fondo.estado != 'en_ejecucion':
+            raise serializers.ValidationError(
+                'Solo se pueden subir evidencias mientras el fondo esta en estado '
+                f'"En Ejecución". Estado actual: {fondo.get_estado_display()}.'
+            )
+
+        return carga_horaria
 
 
 # ============================================================
@@ -835,10 +1257,10 @@ class DocenteCarreraSerializer(serializers.ModelSerializer):
             'categoria', 'tipo_categoria',
             'dedicacion', 'tipo_dedicacion',
             'condicion', 'tipo_condicion',
-            'horas_semanales', 'activo',
+            'horas_semanales', 'es_exento_fondo_tiempo', 'activo',
             'fecha_creacion', 'fecha_modificacion',
         ]
-        read_only_fields = ['fecha_creacion', 'fecha_modificacion']
+        read_only_fields = ['es_exento_fondo_tiempo', 'fecha_creacion', 'fecha_modificacion']
 
     def validate(self, attrs):
         data = super().validate(attrs)
@@ -1063,6 +1485,9 @@ class DocenteSerializer(serializers.ModelSerializer):
                 last_name=str(user_data.get('last_name') or '').strip(),
             )
 
+        dedicacion = _dedicacion_para_usuario(dedicacion, user)
+        _validar_dedicacion_compatible_con_roles_gestion(dedicacion, user=user)
+
         # Determinar DatosLaborales a usar:
         # - Si el usuario ya tiene un PerfilUsuario con datos_laborales -> reutilizar.
         # - Si el PerfilUsuario tiene CI y no se envió CI en payload, usar ese CI.
@@ -1127,15 +1552,21 @@ class DocenteSerializer(serializers.ModelSerializer):
                 user.is_active = True
                 user.save(update_fields=['is_active'])
 
-            perfil = _ensure_docente_role_for_user(user=user, docente=docente, carrera=carrera, force_primary_role=False)
+            if _usuario_tiene_rol_docente_activo(user):
+                perfil = _ensure_docente_role_for_user(user=user, docente=docente, carrera=carrera, force_primary_role=False)
+            else:
+                perfil = PerfilUsuario.objects.filter(user=user).first()
+                if perfil and perfil.docente_id != docente.id:
+                    perfil.docente = docente
+                    perfil.save(update_fields=['docente'])
 
             # Actualizar CI del perfil si llegó en el payload o si lo determinamos antes
-            if effective_ci and perfil.ci != effective_ci:
+            if effective_ci and perfil and perfil.ci != effective_ci:
                 perfil.ci = effective_ci
                 perfil.save(update_fields=['ci'])
 
             # Asegurar que el perfil quede activo
-            if not perfil.activo:
+            if perfil and not perfil.activo:
                 perfil.activo = True
                 perfil.save(update_fields=['activo'])
         else:
@@ -1194,37 +1625,46 @@ class DocenteSerializer(serializers.ModelSerializer):
             if not carrera:
                 raise serializers.ValidationError({'carrera': 'Debe seleccionar una carrera valida para el docente.'})
             vinculo_existente = docente.vinculos_carrera.filter(carrera=carrera).first()
+            dedicacion_final = dedicacion if dedicacion is not serializers.empty else (vinculo_existente.dedicacion if vinculo_existente else 'horario_40')
+            dedicacion_final = _dedicacion_para_usuario(dedicacion_final, docente.user)
+            _validar_dedicacion_compatible_con_roles_gestion(dedicacion_final, docente=docente, user=docente.user)
             DocenteCarrera.objects.update_or_create(
                 docente=docente,
                 carrera=carrera,
                 defaults={
                     'categoria': categoria if categoria is not serializers.empty else (vinculo_existente.categoria if vinculo_existente else 'asistente'),
-                    'dedicacion': dedicacion if dedicacion is not serializers.empty else (vinculo_existente.dedicacion if vinculo_existente else 'horario_40'),
+                    'dedicacion': dedicacion_final,
                     'condicion': condicion if condicion is not serializers.empty else (vinculo_existente.condicion if vinculo_existente else 'titular'),
                     'activo': True,
                 },
             )
-            perfil, _ = PerfilUsuario.objects.get_or_create(
-                docente=docente,
-                defaults={
-                    'user': docente.user,
-                    'rol': 'docente',
-                    'carrera': carrera,
-                    'telefono': '',
-                    'activo': True,
-                    'debe_cambiar_password': False,
-                }
-            )
+            if _usuario_tiene_rol_docente_activo(docente.user):
+                perfil, _ = PerfilUsuario.objects.get_or_create(
+                    docente=docente,
+                    defaults={
+                        'user': docente.user,
+                        'rol': 'docente',
+                        'carrera': carrera,
+                        'telefono': '',
+                        'activo': True,
+                        'debe_cambiar_password': False,
+                    }
+                )
+            else:
+                perfil = PerfilUsuario.objects.filter(user=docente.user).first()
+                if perfil and perfil.docente_id != docente.id:
+                    perfil.docente = docente
+                    perfil.save(update_fields=['docente'])
             cambios = []
-            if perfil.carrera_id != carrera.id:
+            if perfil and perfil.carrera_id != carrera.id:
                 perfil.carrera = carrera
                 cambios.append('carrera')
-            if docente.user_id and perfil.user_id != docente.user_id:
+            if perfil and docente.user_id and perfil.user_id != docente.user_id:
                 perfil.user = docente.user
                 cambios.append('user')
-            if cambios:
+            if perfil and cambios:
                 perfil.save(update_fields=cambios)
-            if docente.user_id:
+            if docente.user_id and _usuario_tiene_rol_docente_activo(docente.user):
                 _ensure_docente_role_for_user(user=docente.user, docente=docente, carrera=carrera, force_primary_role=False)
 
         if activo_en_request is False:
@@ -1447,10 +1887,10 @@ class MateriaSerializer(serializers.ModelSerializer):
         elif total_horas_semana > 12:
             errors['non_field_errors'] = ['La suma de horas teoricas y practicas no puede exceder 12 horas semanales.']
 
-        # Relación reglamentaria usada en el sistema para materia semestral.
-        horas_periodo_20_semanas = total_horas_semana * 20
-        if horas_periodo_20_semanas <= 0 and 'non_field_errors' not in errors:
-            errors['non_field_errors'] = ['La relación con 20 semanas debe resultar en horas mayores a cero.']
+        # Formula reglamentaria: horas_semana * 40 = horas_anio.
+        horas_anio = total_horas_semana * SEMANAS_CLASES_AULA
+        if horas_anio <= 0 and 'non_field_errors' not in errors:
+            errors['non_field_errors'] = ['La relación con 40 semanas debe resultar en horas mayores a cero.']
 
         if sigla_normalizada:
             sigla_qs = Materia.objects.filter(sigla__iexact=sigla_normalizada)
@@ -1492,19 +1932,27 @@ class MateriaSerializer(serializers.ModelSerializer):
         return instance
 
 
+# OBSOLETO desde 2026-09-12: serializa el modelo `Actividad`, deprecado (ver
+# fondos/models.py). Se mantiene solo para no romper la forma de la respuesta
+# de CategoriaFuncionSerializer.actividades, que hoy siempre devuelve una
+# lista vacia (0 filas de Actividad en toda la base). El catalogo vivo de
+# sub-actividades es CargaHoraria.tipo_actividad; no construir features
+# nuevas sobre este serializer.
 class ActividadSerializer(serializers.ModelSerializer):
     categoria_nombre = serializers.CharField(source='categoria.get_tipo_display', read_only=True)
+    subactividad_academica_display = serializers.CharField(source='get_subactividad_academica_display', read_only=True)
     
     class Meta:
         model = Actividad
-        fields = ['id', 'categoria', 'categoria_nombre', 'detalle', 'horas_semana', 
-                  'horas_año', 'evidencias', 'orden', 'archivo_evidencia']
+        fields = ['id', 'categoria', 'categoria_nombre', 'subactividad_academica',
+                  'subactividad_academica_display', 'detalle', 'horas_semana',
+                  'horas_a\u00f1o', 'evidencias', 'orden', 'archivo_evidencia']
         extra_kwargs = {
             'evidencias': {'required': False, 'allow_null': True, 'allow_blank': True}
         }
 
     def validate_evidencias(self, value):
-        """Asegura que evidencias sea una cadena vacía si es None."""
+        """Asegura que evidencias sea una cadena vacia si es None."""
         return value or ""
 
     def validate_horas_semana(self, value):
@@ -1513,11 +1961,14 @@ class ActividadSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Las horas semanales no pueden ser negativas.")
         return value
 
-    def validate_horas_año(self, value):
+    def validate_horas_anio(self, value):
         """Valida que las horas anuales no sean negativas."""
         if value < 0:
             raise serializers.ValidationError("Las horas anuales no pueden ser negativas.")
         return value
+
+    def validate(self, attrs):
+        return super().validate(attrs)
 
 
 class CategoriaFuncionSerializer(serializers.ModelSerializer):
@@ -1588,11 +2039,20 @@ class CategoriaFuncionSerializer(serializers.ModelSerializer):
                 detalles_map[carga.categoria].append({
                     "id": carga.id,
                     "materia_id": carga.materia_id,
+                    "categoria": carga.categoria,
+                    "tipo_actividad": carga.tipo_actividad,
+                    "tipo_actividad_display": CARGA_HORARIA_TIPOS_LABELS.get(carga.tipo_actividad, carga.tipo_actividad.replace('_', ' ').title() if carga.tipo_actividad else ''),
+                    "es_subactividad_academica": carga.categoria == 'academica' and carga.tipo_actividad != 'clases_aula',
+                    "materia_titulo": (
+                        f"{carga.materia.sigla} - {carga.materia.nombre} ({carga.paralelo})"
+                        if carga.materia else ''
+                    ),
                     "titulo_actividad": (
                         f"{carga.materia.sigla} - {carga.materia.nombre} ({carga.paralelo})"
-                        if carga.materia else carga.titulo_actividad
+                        if carga.materia and carga.tipo_actividad == 'clases_aula' else carga.titulo_actividad
                     ),
                     "horas": carga.horas,
+                    "evidencias": carga.evidencias,
                     "respaldo": carga.documento_respaldo
                 })
             
@@ -1669,7 +2129,7 @@ class FondoTiempoSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         """
-        🔒 BLINDAJE: Validación de horas acumuladas (Límite 56 horas semanales)
+         BLINDAJE: Validación de horas acumuladas (Límite 56 horas semanales)
         Verifica que la suma de todas las actividades no supere el límite del docente.
         """
         # Obtener el docente (puede venir en data o ya existir en la instancia)
@@ -1715,11 +2175,11 @@ class FondoTiempoSerializer(serializers.ModelSerializer):
         # Convertir a horas semanales (asumiendo 52 semanas por año)
         horas_semanales_asignadas = total_horas_asignadas / Decimal(52)
         
-        # 🔒 VALIDACIÓN DE LÍMITE DE 56 HORAS SEMANALES
+        # VALIDACION DE LIMITE DE 56 HORAS SEMANALES
         if horas_semanales_asignadas > Decimal('56'):
             raise serializers.ValidationError({
                 'horas_efectivas': 
-                f'⚠️ LÍMITE EXCEDIDO: La suma de todas las actividades ({horas_semanales_asignadas:.2f} horas/semana) '
+                f'ALERTA L\u00cdMITE EXCEDIDO: La suma de todas las actividades ({horas_semanales_asignadas:.2f} horas/semana) '
                 f'supera el máximo permitido de 56 horas semanales. '
                 f'Total anual: {total_horas_asignadas:.2f} horas. '
                 f'Por favor, reduce la carga de actividades.'
@@ -1730,7 +2190,7 @@ class FondoTiempoSerializer(serializers.ModelSerializer):
             dedicacion_label = primer_vinculo.get_dedicacion_display() if primer_vinculo else 'N/A'
             raise serializers.ValidationError({
                 'horas_efectivas':
-                f'⚠️ LÍMITE PERSONAL EXCEDIDO: Tu dedicación ({dedicacion_label}) tiene un límite de '
+                f'ALERTA L\u00cdMITE PERSONAL EXCEDIDO: Tu dedicaci\u00f3n ({dedicacion_label}) tiene un l\u00edmite de '
                 f'{horas_maximas_semanales} horas semanales, pero has asignado {horas_semanales_asignadas:.2f} horas. '
                 f'Por favor, ajusta las actividades para cumplir con tu dedicación.'
             })
@@ -1742,11 +2202,9 @@ class FondoTiempoSerializer(serializers.ModelSerializer):
         return obj.horas_efectivas - total_asignado
 
     def get_informe_actual(self, obj):
-        """Obtiene el informe más reciente del fondo"""
-        informe = obj.informes.filter(tipo='parcial').order_by('-fecha_elaboracion').first()
-        if informe:
-            return InformeFondoSerializer(informe).data
-        return None
+        """Documento del informe (guardado o precargado con defaults, ver
+        _informe_actual_o_borrador)."""
+        return _informe_actual_o_borrador(obj)
 
 
 class FondoTiempoListSerializer(serializers.ModelSerializer):
@@ -1797,7 +2255,7 @@ class FondoTiempoListSerializer(serializers.ModelSerializer):
 
 
 # ============================================
-# SERIALIZERS PARA GESTIÓN DE USUARIOS
+# SERIALIZERS PARA GESTION DE USUARIOS
 # ============================================
 
 class PerfilUsuarioSerializer(serializers.ModelSerializer):
@@ -1807,7 +2265,7 @@ class PerfilUsuarioSerializer(serializers.ModelSerializer):
     foto_perfil = serializers.SerializerMethodField()
     foto_perfil_es_propia = serializers.SerializerMethodField()
 
-    # Campos de datos laborales (vacaciones, feriados, antigüedad)
+    # Campos de datos laborales (vacaciones, feriados, antiguedad)
     fecha_ingreso = serializers.SerializerMethodField()
     dias_vacacion = serializers.SerializerMethodField()
     horas_feriados_gestion = serializers.SerializerMethodField()
@@ -1915,8 +2373,8 @@ class UsuarioSerializer(serializers.ModelSerializer):
                 data['docente_id'] = perfil_efectivo.docente_id
                 data['docente_nombre'] = perfil_efectivo.docente.nombre_completo if perfil_efectivo.docente else None
 
-            # 🔒 PROTECCIÓN INTEGRAL: Validar vínculo docente
-            # GARANTÍA DE ACCESO: Si es superusuario, el frontend SIEMPRE debe verlo como iiisyp
+            # PROTECCION INTEGRAL: Validar vinculo docente
+            # GARANT\u00cdA DE ACCESO: Si es superusuario, el frontend SIEMPRE debe verlo como iiisyp
             if obj.is_superuser:
                 data['rol'] = 'iiisyp'
                 # FIX: Forzar que al admin NUNCA se le pida cambio de contraseña, ignorando la BD
@@ -2255,7 +2713,7 @@ class CrearUsuarioSerializer(serializers.ModelSerializer):
                 user.save(update_fields=['is_staff'])
 
             # Actualizar perfil (se crea automáticamente por signal)
-            # VERIFICACIÓN: Si no existe el perfil, crearlo manualmente
+            # VERIFICACION: Si no existe el perfil, crearlo manualmente
             perfil_ci = obtener_perfil_por_ci(ci)
             perfil_actual_usuario = PerfilUsuario.objects.filter(user=user).first()
 
@@ -2749,7 +3207,7 @@ from .models import CalendarioAcademico, Proyecto, InformeFondo, ObservacionFond
 
 
 # =====================================================
-# CALENDARIO ACADÉMICO SERIALIZER
+# CALENDARIO ACADEMICO SERIALIZER
 # =====================================================
 
 class CalendarioAcademicoSerializer(serializers.ModelSerializer):
@@ -2935,24 +3393,33 @@ class ProyectoListSerializer(serializers.ModelSerializer):
 
 class InformeFondoSerializer(serializers.ModelSerializer):
     tipo_display = serializers.CharField(source='get_tipo_display', read_only=True)
+    estado_display = serializers.CharField(source='get_estado_display', read_only=True)
     cumplimiento_display = serializers.CharField(source='get_cumplimiento_display', read_only=True)
     elaborado_por_nombre = serializers.CharField(source='elaborado_por.get_full_name', read_only=True)
     evaluado_por_nombre = serializers.SerializerMethodField()
     fondo_asignatura = serializers.CharField(source='fondo_tiempo.asignatura', read_only=True)
-    
+
     class Meta:
         model = InformeFondo
         fields = [
             'id', 'fondo_tiempo', 'fondo_asignatura',
-            'tipo', 'tipo_display', 'fecha_elaboracion',
+            'tipo', 'tipo_display', 'estado', 'estado_display', 'fecha_elaboracion',
             'elaborado_por', 'elaborado_por_nombre',
             'resumen_ejecutivo', 'actividades_realizadas', 'resultados',
             'logros' , 'dificultades',
             'evidencias', 'observaciones',
+            'encabezado_texto', 'fecha_texto',
+            'destinatario_nombre', 'destinatario_cargo',
+            'remitente_nombre', 'remitente_cargo', 'referencia_texto',
+            'saludo_intro_html', 'cierre_html',
+            'firma_nombre', 'firma_cargo', 'firma_email',
+            'seccion_academica', 'seccion_investigacion', 'seccion_extension_interaccion',
+            'seccion_asesorias_tutorias', 'seccion_academica_administrativa',
+            'seccion_social_cultural_deportiva', 'conclusiones_generales',
             'cumplimiento', 'cumplimiento_display',
             'evaluacion_director', 'fecha_evaluacion',
             'evaluado_por', 'evaluado_por_nombre',
-            'archivo_adjunto', 'fecha_modificacion'
+            'archivo_adjunto', 'evidencia', 'fecha_modificacion'
         ]
         read_only_fields = ['fecha_elaboracion', 'fecha_modificacion']
 
@@ -2961,6 +3428,49 @@ class InformeFondoSerializer(serializers.ModelSerializer):
         if obj.evaluado_por:
             return obj.evaluado_por.get_full_name()
         return None
+
+    def to_representation(self, instance):
+        """Precarga con el texto calculado desde Docente/Carrera/Director
+        (ver informe_texto.construir_defaults_informe) cualquiera de los 12
+        campos del documento tipo carta que el docente aun no personalizo
+        (quedaron en blanco), para que el editor siempre muestre el
+        documento completo "precargado" en vez de campos vacios."""
+        data = super().to_representation(instance)
+        try:
+            defaults = construir_defaults_informe(instance.fondo_tiempo)
+        except Exception:
+            defaults = {}
+        for campo in CAMPOS_TEXTO_INFORME:
+            if not (data.get(campo) or '').strip():
+                data[campo] = defaults.get(campo, '')
+        return data
+
+
+def _informe_actual_o_borrador(fondo):
+    """Informe 'parcial' mas reciente del fondo, ya serializado (con los 12
+    campos del documento precargados por InformeFondoSerializer). Si el
+    docente todavia no guardo ningun borrador, arma un dict sintetico
+    (id=None, estado='borrador') con el documento completo precargado desde
+    Docente/Carrera/Director, para que el editor tipo Word siempre tenga
+    algo que mostrar aunque no exista fila en InformeFondo todavia."""
+    informe = fondo.informes.filter(tipo='parcial').order_by('-fecha_elaboracion').first()
+    if informe:
+        return InformeFondoSerializer(informe).data
+    defaults = construir_defaults_informe(fondo)
+    return {
+        'id': None,
+        'fondo_tiempo': fondo.id,
+        'tipo': 'parcial',
+        'tipo_display': 'Informe Parcial',
+        'estado': 'borrador',
+        'estado_display': 'Borrador',
+        'seccion_academica': '', 'seccion_investigacion': '',
+        'seccion_extension_interaccion': '', 'seccion_asesorias_tutorias': '',
+        'seccion_academica_administrativa': '', 'seccion_social_cultural_deportiva': '',
+        'conclusiones_generales': '',
+        'evaluacion_director': '', 'fecha_evaluacion': None,
+        **defaults,
+    }
 
 
 class InformeFondoListSerializer(serializers.ModelSerializer):
@@ -2974,12 +3484,22 @@ class InformeFondoListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'fondo_tiempo', 'fondo_asignatura', 'tipo', 'tipo_display',
             'cumplimiento', 'cumplimiento_display', 'fecha_elaboracion',
-            'archivo_adjunto'
+            'archivo_adjunto', 'evidencia'
         ]
 
 
+class InformeAsignaturaEjecutadaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InformeAsignaturaEjecutada
+        fields = [
+            'id', 'fondo_tiempo', 'nombre_materia', 'inscritos',
+            'aprobados', 'reprobados', 'habilitados', 'fecha_creacion'
+        ]
+        read_only_fields = ['fecha_creacion']
+
+
 # =====================================================
-# OBSERVACIÓN FONDO SERIALIZER
+# OBSERVACION FONDO SERIALIZER
 # =====================================================
 
 class MensajeObservacionSerializer(serializers.ModelSerializer):
@@ -3023,7 +3543,7 @@ class MensajeObservacionSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'observacion', 'autor', 'autor_nombre', 'autor_username',
             'responde_a', 'responde_a_detalle', 'texto', 'fecha',
-            'leido_en', 'leido', 'entregado', 'es_admin'
+            'leido_en', 'leido', 'entregado', 'es_admin', 'es_interno'
         ]
         read_only_fields = [
             'id', 'autor', 'fecha', 'responde_a_detalle', 'leido_en',
@@ -3031,27 +3551,65 @@ class MensajeObservacionSerializer(serializers.ModelSerializer):
         ]
 
 
+def _usuario_puede_ver_mensajes_internos(request):
+    """
+    True si el usuario puede ver notas internas entre Director y Jefe de
+    Estudios: superuser, o ROL ACTIVO (no el perfil base) director/jefe_estudios.
+
+    Importante: se usa `get_effective_profile`, no `user.perfil` directo. Un
+    mismo usuario puede tener un perfil base con un rol (p. ej. 'iiisyp') y
+    ademas ser Docente titular de una carrera via AsignacionCarrera; cuando
+    esta operando como Docente (rol activo = 'docente', segun el header
+    X-Active-Role que envia el selector de rol del frontend), NO debe ver
+    las notas internas aunque su perfil base sea de otro rol con más acceso.
+    El docente dueño del fondo NUNCA debe ver estas notas.
+    """
+    user = getattr(request, 'user', None) if request else None
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    if user.is_superuser:
+        return True
+    perfil = get_effective_profile(user, request)
+    return bool(perfil and perfil.rol in ['director', 'jefe_estudios'])
+
+
 class ObservacionFondoSerializer(serializers.ModelSerializer):
     """Serializer para hilos de observación"""
-    mensajes = MensajeObservacionSerializer(many=True, read_only=True)
+    mensajes = serializers.SerializerMethodField()
     resuelta_por_nombre = serializers.SerializerMethodField()
     cantidad_mensajes = serializers.SerializerMethodField()
     ultimo_mensaje = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = ObservacionFondo
         fields = [
-            'id', 'fondo_tiempo', 'fecha_creacion', 'resuelta', 
+            'id', 'fondo_tiempo', 'fecha_creacion', 'resuelta',
             'resuelta_por', 'resuelta_por_nombre', 'fecha_resolucion',
             'mensajes', 'cantidad_mensajes', 'ultimo_mensaje'
         ]
         read_only_fields = ['id', 'fecha_creacion', 'resuelta', 'resuelta_por', 'fecha_resolucion']
-    
+
+    def _mensajes_visibles(self, obj):
+        """
+        Filtra las notas internas (Director <-> Jefe de Estudios) para
+        cualquier usuario que no sea Director, Jefe de Estudios, IIISYP o
+        superuser -- en particular, para el docente dueño del fondo.
+        """
+        mensajes = obj.mensajes.all()
+        request = self.context.get('request')
+        if _usuario_puede_ver_mensajes_internos(request):
+            return list(mensajes)
+        return [m for m in mensajes if not m.es_interno]
+
+    def get_mensajes(self, obj):
+        return MensajeObservacionSerializer(self._mensajes_visibles(obj), many=True).data
+
     def get_cantidad_mensajes(self, obj):
-        return obj.mensajes.count()
-    
+        return len(self._mensajes_visibles(obj))
+
     def get_ultimo_mensaje(self, obj):
-        ultimo = obj.mensajes.last()
+        visibles = self._mensajes_visibles(obj)
+        ultimo = visibles[-1] if visibles else None
         if ultimo:
             return {
                 'texto': ultimo.texto,
@@ -3090,7 +3648,7 @@ class HistorialFondoSerializer(serializers.ModelSerializer):
 
 
 # =====================================================
-# ACTUALIZACIÓN DE DOCENTE SERIALIZER
+# ACTUALIZACION DE DOCENTE SERIALIZER
 # =====================================================
 
 class DocenteDetalleSerializer(serializers.ModelSerializer):
@@ -3111,7 +3669,7 @@ class DocenteDetalleSerializer(serializers.ModelSerializer):
 
 
 # =====================================================
-# ACTUALIZACIÓN DE FONDO TIEMPO SERIALIZER
+# ACTUALIZACION DE FONDO TIEMPO SERIALIZER
 # =====================================================
 
 class FondoTiempoDetalleSerializer(serializers.ModelSerializer):
@@ -3135,6 +3693,7 @@ class FondoTiempoDetalleSerializer(serializers.ModelSerializer):
     requerimientos = CategoriaFuncionSerializer(many=True, read_only=True, source='categorias') # Alias para frontend
     proyectos = ProyectoListSerializer(many=True, read_only=True)
     informes = InformeFondoListSerializer(many=True, read_only=True)
+    asignaturas_ejecutadas = InformeAsignaturaEjecutadaSerializer(many=True, read_only=True)
     observaciones_detalladas = ObservacionFondoSerializer(many=True, read_only=True)
     informe_actual = serializers.SerializerMethodField()
     
@@ -3148,7 +3707,7 @@ class FondoTiempoDetalleSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'docente', 'carrera', 'calendario_academico',
             'gestion', 'periodo', 'periodo_display', 'asignatura',
-            'semanas_año', 'horas_semana', 'horas_vacacion', 'horas_feriados',
+            'semanas_a\u00f1o', 'horas_semana', 'horas_vacacion', 'horas_feriados',
             'contrato_horas', 'clases_aula_horas', 'funciones_sustantivas_horas',
             'horas_efectivas', 'total_asignado',
             'estado', 'estado_display', 'observaciones',
@@ -3160,7 +3719,7 @@ class FondoTiempoDetalleSerializer(serializers.ModelSerializer):
             # Calculados
             'porcentaje_completado', 'horas_disponibles',
             'antiguedad', # Relaciones
-            'categorias', 'requerimientos', 'proyectos', 'informes', 'observaciones_detalladas',
+            'categorias', 'requerimientos', 'proyectos', 'informes', 'asignaturas_ejecutadas', 'observaciones_detalladas',
             'informe_actual',
             # Permisos
             'puede_editar', 'puede_presentar'
@@ -3229,15 +3788,13 @@ class FondoTiempoDetalleSerializer(serializers.ModelSerializer):
         return _filtrar_categorias_investigacion_para_iisyp(data, self.context)
     
     def get_informe_actual(self, obj):
-        """Obtiene el informe más reciente del fondo"""
-        informe = obj.informes.filter(tipo='parcial').order_by('-fecha_elaboracion').first()
-        if informe:
-            return InformeFondoSerializer(informe).data
-        return None
+        """Documento del informe (guardado o precargado con defaults, ver
+        _informe_actual_o_borrador)."""
+        return _informe_actual_o_borrador(obj)
 
 
 # =====================================================
-# SERIALIZERS PARA ACCIONES ESPECÍFICAS
+# SERIALIZERS PARA ACCIONES ESPEC\u00cdFICAS
 # =====================================================
 
 class PresentarFondoSerializer(serializers.Serializer):
@@ -3300,6 +3857,14 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     específicamente si el usuario debe cambiar su contraseña.
     """
     def validate(self, attrs):
+        identificador = str(attrs.get(self.username_field) or '').strip()
+        if identificador:
+            attrs[self.username_field] = identificador
+            if '@' in identificador:
+                usuario_por_correo = User.objects.filter(email__iexact=identificador).order_by('id').first()
+                if usuario_por_correo:
+                    attrs[self.username_field] = usuario_por_correo.get_username()
+
         data = super().validate(attrs)
         
         # Agregar claims personalizados a la respuesta del token

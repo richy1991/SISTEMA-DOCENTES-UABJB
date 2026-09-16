@@ -3,8 +3,20 @@ from django.core.management.base import BaseCommand
 from fondos.models import Docente, Carrera, FondoTiempo, CategoriaFuncion, Actividad
 import os
 
+# OBSOLETO desde 2026-09-12: este comando escribe sobre el modelo `Actividad`
+# (deprecado, ver docstring en fondos/models.py) y sobre un esquema de
+# CategoriaFuncion.tipo ('docente', 'extension', 'asesorias', 'tribunales',
+# 'administrativo', 'vida_universitaria') que ya no existe en
+# CategoriaFuncion.TIPO_CHOICES. Ademas usa `Docente(categoria=..., dedicacion=...)`,
+# campos que se movieron a DocenteCarrera en un refactor posterior, asi que
+# fallaria con TypeError si se ejecuta contra el esquema actual. Se conserva
+# solo como referencia historica de como se cargaron los primeros fondos de
+# ejemplo; no ejecutar. El flujo real de carga hoy es CargaHorariaViewSet /
+# el formulario de Jefatura de Estudios en el frontend.
+
+
 class Command(BaseCommand):
-    help = 'Carga datos desde archivos Excel'
+    help = 'OBSOLETO - no funciona con el esquema actual. Ver comentario al inicio del archivo.'
 
     def handle(self, *args, **kwargs):
         self.stdout.write('Iniciando carga de datos desde Excel...\n')

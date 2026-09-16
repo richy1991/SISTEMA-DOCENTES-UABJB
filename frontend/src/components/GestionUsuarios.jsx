@@ -1551,7 +1551,7 @@ const initialData = {
     try {
       await api.delete(`/usuarios/${usuarioToDelete.id}/`);
       toast.success('Usuario eliminado con éxito');
-      cargarDatos();
+      setUsuarios((prev) => prev.filter((usuario) => usuario.id !== usuarioToDelete.id));
       closeDeleteModal();
     } catch (err) {
       console.error('Error al eliminar usuario:', err);
@@ -2064,10 +2064,10 @@ const initialData = {
 
     if (!emailNormalizado) {
       validationErrors.email = 'No debe estar vacío.';
-      camposFaltantes.push('Email');
+      camposFaltantes.push('Correo institucional');
     } else if (!emailValido) {
       validationErrors.email = 'Ingresa un correo electrónico válido.';
-      camposFaltantes.push('Email');
+      camposFaltantes.push('Correo institucional');
     }
 
     if (!rolNormalizado) {
@@ -2236,6 +2236,7 @@ const initialData = {
     try {
       const response = await api.post('/usuarios/', payload);
       toast.success('Usuario creado correctamente');
+      setUsuarios((prev) => [response.data, ...prev]);
       setIsCreating(false);
       setAsignacionesExtra([]);
       setIndiceAsignacionActiva(0);
@@ -2258,7 +2259,6 @@ const initialData = {
         navigate('/fondo-tiempo/docentes');
         return;
       }
-      cargarDatos();
     } catch (err) {
       console.error('Error al crear usuario:', err.response);
       const apiErrors = err.response?.data;
@@ -2645,9 +2645,9 @@ const initialData = {
                       </p>
                     </div>
 
-                    {/* Fila 3: Email - Cargo profesional / CI */}
+                    {/* Fila 3: Correo institucional - Cargo profesional / CI */}
                     <InputField
-                      label="Email"
+                      label="Correo institucional"
                       name="email"
                       type="text"
                       value={formData.email || ''}
@@ -2727,7 +2727,6 @@ const initialData = {
               )));
               setUsuarioEditando(usuarioActualizado);
             }
-            cargarDatos();
           }}
           userToEdit={usuarioEditando}
           docentes={docentes}
@@ -3148,10 +3147,14 @@ const initialData = {
                   type="button"
                   onClick={async () => {
                     try {
-                      await api.post(`/usuarios/${usuarioToToggle.id}/toggle_activo/`);
+                      const response = await api.post(`/usuarios/${usuarioToToggle.id}/toggle_activo/`);
                       toast.success(`Usuario ${usuarioToToggle.is_active ? 'desactivado' : 'reactivado'} con éxito`);
                       setShowToggleModal(false);
-                      cargarDatos();
+                      setUsuarios((prev) => prev.map((usuario) => (
+                        usuario.id === usuarioToToggle.id
+                          ? (response.data?.id ? response.data : { ...usuario, is_active: !usuario.is_active })
+                          : usuario
+                      )));
                     } catch (err) {
                       console.error('Error:', err);
                       toast.error('Error al cambiar el estado del usuario');

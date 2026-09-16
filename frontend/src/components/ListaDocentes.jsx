@@ -781,10 +781,10 @@ function ListaDocentes({ sidebarCollapsed = false }) {
     const mapaHorasSemanales = {
       tiempo_completo: 40,
       medio_tiempo: 20,
-      horario_16: 4,
-      horario_24: 6,
-      horario_40: 10,
-      horario_48: 12,
+      horario_16: 16,
+      horario_24: 24,
+      horario_40: 40,
+      horario_48: 48,
     };
     const horasSemanales = mapaHorasSemanales[dedicacion];
     if (!horasSemanales) return null;
@@ -1044,8 +1044,6 @@ function ListaDocentes({ sidebarCollapsed = false }) {
               const carreraGuardada = usuarioCreado?._carreraRetornoDocente || datosUsuario?.carrera || '';
               const carreraSeleccionada = carreraGuardada || getCarreraDocenteUsuario(usuarioParaSeleccion) || '';
               const ciSeleccionado = getCiUsuario(usuarioParaSeleccion, ciGuardado);
-              const usuarioTieneRolGestion = ['director', 'jefe_estudios', 'iiisyp'].some((rol) => usuarioTieneRol(usuarioParaSeleccion, rol));
-
               setBuscarUsuario(`${usuarioParaSeleccion.first_name || ''} ${usuarioParaSeleccion.last_name || ''}`.trim());
               setFormData((prev) => ({
                 ...prev,
@@ -1058,9 +1056,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                 password: '',
                 password_confirm: '',
                 carrera: carreraSeleccionada || prev.carrera || '',
-                dedicacion: usuarioTieneRolGestion && ['tiempo_completo', 'medio_tiempo'].includes(String(prev.dedicacion || ''))
-                  ? 'horario_40'
-                  : prev.dedicacion,
+                dedicacion: getDedicacionPermitidaParaUsuario(usuarioParaSeleccion, prev.dedicacion),
               }));
               setShowAutocomplete(false);
               setSearchMode(false);
@@ -1097,10 +1093,25 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       ]);
       const docentesData = docentesResponse.data.results || docentesResponse.data;
       const carrerasData = carrerasResponse.data.results || carrerasResponse.data;
-      const usuariosData = usuariosResponse.data.results || usuariosResponse.data;
+      const docentesLista = Array.isArray(docentesData) ? docentesData : [];
+      const usuariosIniciales = usuariosResponse.data.results || usuariosResponse.data;
+      const usuariosAcumulados = Array.isArray(usuariosIniciales) ? [...usuariosIniciales] : [];
+      let siguientePagina = usuariosResponse.data.next ? 2 : null;
+
+      while (
+        siguientePagina
+        && usuariosAcumulados.filter((usuarioItem) => usuarioEsElegibleParaNuevoDocente(usuarioItem, docentesLista)).length < 5
+      ) {
+        const response = await api.get('/usuarios/', { params: { page: siguientePagina } });
+        const paginaUsuarios = response.data.results || response.data;
+        if (!Array.isArray(paginaUsuarios) || paginaUsuarios.length === 0) break;
+        usuariosAcumulados.push(...paginaUsuarios);
+        siguientePagina = response.data.next ? siguientePagina + 1 : null;
+      }
+
       setDocentes(Array.isArray(docentesData) ? docentesData : []);
       setCarreras(Array.isArray(carrerasData) ? carrerasData : []);
-      setUsuarios(Array.isArray(usuariosData) ? usuariosData : []);
+      setUsuarios(usuariosAcumulados);
       setLoading(false);
     } catch (err) {
       setError('Error al cargar docentes');
@@ -1108,6 +1119,33 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       console.error(err);
     }
   };
+
+  useEffect(() => {
+    if (!searchMode) return;
+
+    const query = buscarUsuario.trim();
+    if (query.length < 2) return;
+
+    const timeoutId = setTimeout(async () => {
+      try {
+        const response = await api.get('/usuarios/', { params: { search: query } });
+        const usuariosData = response.data.results || response.data;
+        if (!Array.isArray(usuariosData)) return;
+
+        setUsuarios((prev) => {
+          const map = new Map(prev.map((usuarioItem) => [String(usuarioItem.id), usuarioItem]));
+          usuariosData.forEach((usuarioItem) => {
+            map.set(String(usuarioItem.id), usuarioItem);
+          });
+          return Array.from(map.values());
+        });
+      } catch (err) {
+        console.error('Error al buscar usuarios:', err);
+      }
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [buscarUsuario, searchMode]);
 
   useEffect(() => {
     const initialData = {
@@ -1243,6 +1281,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       if (name === 'dedicacion') {
         if (
           usuarioFormularioTieneRolGestion
+          && usuarioFormularioTieneRolDocente
           && ['tiempo_completo', 'medio_tiempo'].includes(String(nextValue || ''))
         ) {
           return prev;
@@ -1369,9 +1408,38 @@ function ListaDocentes({ sidebarCollapsed = false }) {
   const usuarioTieneRol = (usuarioItem, rolBuscado) =>
     getRolesActivosUsuario(usuarioItem).includes(String(rolBuscado || '').trim().toLowerCase());
 
+  const getDedicacionPermitidaParaUsuario = (usuarioItem, dedicacionActual = '') => {
+    const tieneRolDirector = usuarioTieneRol(usuarioItem, 'director');
+    const tieneRolJefeEstudios = usuarioTieneRol(usuarioItem, 'jefe_estudios');
+    const tieneRolIisyp = usuarioTieneRol(usuarioItem, 'iiisyp');
+    const tieneRolDocente = usuarioTieneRol(usuarioItem, 'docente');
+    const dedicacion = String(dedicacionActual || '');
+
+    if (tieneRolDirector && !tieneRolDocente && !tieneRolJefeEstudios && !tieneRolIisyp) {
+      return 'dedicacion_exclusiva';
+    }
+
+    if ((tieneRolJefeEstudios || tieneRolIisyp) && !tieneRolDocente && !tieneRolDirector) {
+      return 'tiempo_completo';
+    }
+
+    if (tieneRolDocente && !['horario_16', 'horario_24', 'horario_40', 'horario_48'].includes(dedicacion)) {
+      return 'horario_40';
+    }
+
+    return dedicacionActual;
+  };
+
   const usuarioTienePerfilDocente = (usuarioItem) => Boolean(
     usuarioItem?.perfil?.docente_id || usuarioItem?.perfil?.docente
   );
+
+  const usuarioEsElegibleParaNuevoDocente = (usuarioItem, docentesBase = docentes) => {
+    const tieneRolDocente = usuarioTieneRol(usuarioItem, 'docente');
+    const tienePerfilDocente = usuarioTienePerfilDocente(usuarioItem);
+    const yaTieneDocente = docentesBase.some((docente) => String(docente.user_id || docente.usuario_id || '') === String(usuarioItem.id || ''));
+    return tieneRolDocente && !tienePerfilDocente && !yaTieneDocente;
+  };
 
   const getNombreCarreraUsuario = (carreraValue) => {
     if (!carreraValue) return '';
@@ -1459,9 +1527,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       password: '',
       password_confirm: '',
       carrera: getCarreraDocenteUsuario(usuarioItem) || prev.carrera || '',
-      dedicacion: usuarioTieneRolGestion && ['tiempo_completo', 'medio_tiempo'].includes(String(prev.dedicacion || ''))
-        ? 'horario_40'
-        : prev.dedicacion,
+      dedicacion: getDedicacionPermitidaParaUsuario(usuarioItem, prev.dedicacion),
     }));
     setShowAutocomplete(false);
     setShowUserInfo(true);
@@ -1498,11 +1564,8 @@ function ListaDocentes({ sidebarCollapsed = false }) {
     return Number.isNaN(timestamp) ? Number(usuarioItem?.id || 0) : timestamp;
   };
 
-  const usuariosAutocomplete = usuarios.filter((usuarioItem) => {
-    const tieneRolDocente = usuarioTieneRol(usuarioItem, 'docente');
-    const tienePerfilDocente = usuarioTienePerfilDocente(usuarioItem);
-    const yaTieneDocente = docentes.some((docente) => String(docente.user_id || docente.usuario_id || '') === String(usuarioItem.id || ''));
-    if (!tieneRolDocente || tienePerfilDocente || yaTieneDocente) return false;
+  const usuariosFiltradosAutocomplete = usuarios.filter((usuarioItem) => {
+    if (!usuarioEsElegibleParaNuevoDocente(usuarioItem)) return false;
 
     const query = buscarUsuario.trim().toLowerCase();
     if (!query) return true;
@@ -1510,25 +1573,38 @@ function ListaDocentes({ sidebarCollapsed = false }) {
     const correo = String(usuarioItem.email || '').toLowerCase();
     const username = String(usuarioItem.username || '').toLowerCase();
     return nombre.includes(query) || correo.includes(query) || username.includes(query);
-  }).sort((a, b) => getFechaCreacionUsuario(b) - getFechaCreacionUsuario(a)).slice(0, 3);
+  }).sort((a, b) => getFechaCreacionUsuario(b) - getFechaCreacionUsuario(a));
+  const usuariosAutocomplete = buscarUsuario.trim()
+    ? usuariosFiltradosAutocomplete
+    : usuariosFiltradosAutocomplete.slice(0, 5);
 
   const usuarioSeleccionado = usuarios.find((usuarioItem) => String(usuarioItem.id) === String(formData.user || ''));
   const usuarioFormularioTieneRolGestion = ['director', 'jefe_estudios', 'iiisyp'].some((rol) =>
     usuarioTieneRol(usuarioSeleccionado, rol)
   );
+  const usuarioFormularioTieneRolDirector = usuarioTieneRol(usuarioSeleccionado, 'director');
+  const usuarioFormularioTieneRolJefeEstudios = usuarioTieneRol(usuarioSeleccionado, 'jefe_estudios');
+  const usuarioFormularioTieneRolIisyp = usuarioTieneRol(usuarioSeleccionado, 'iiisyp');
+  const usuarioFormularioTieneRolDocente = usuarioTieneRol(usuarioSeleccionado, 'docente');
+  const usuarioFormularioSoloDirector = usuarioFormularioTieneRolDirector
+    && !usuarioFormularioTieneRolDocente
+    && !usuarioFormularioTieneRolJefeEstudios
+    && !usuarioFormularioTieneRolIisyp;
   const dedicacionEsTiempoHorario = ['horario_16', 'horario_24', 'horario_40', 'horario_48'].includes(String(formData.dedicacion || ''));
   const esDedicacionExclusiva = formData.dedicacion === 'dedicacion_exclusiva';
   const mostrarAdvertenciaGestion = usuarioFormularioTieneRolGestion && showGestionWarningVisible && !dedicacionEsTiempoHorario && !esDedicacionExclusiva;
   const opcionesDedicacion = [
     { value: 'tiempo_completo', label: 'Tiempo Completo' },
     { value: 'medio_tiempo', label: 'Medio Tiempo' },
-    { value: 'horario_16', label: 'Horario 16hrs/mes' },
-    { value: 'horario_24', label: 'Horario 24hrs/mes' },
-    { value: 'horario_40', label: 'Horario 40hrs/mes' },
-    { value: 'horario_48', label: 'Horario 48hrs/mes' },
+    { value: 'horario_16', label: 'Horario 16hrs/sem' },
+    { value: 'horario_24', label: 'Horario 24hrs/sem' },
+    { value: 'horario_40', label: 'Horario 40hrs/sem' },
+    { value: 'horario_48', label: 'Horario 48hrs/sem' },
     { value: 'dedicacion_exclusiva', label: 'Dedicacion Exclusiva' },
   ].filter((opcion) => (
-    !usuarioFormularioTieneRolGestion || !['tiempo_completo', 'medio_tiempo'].includes(opcion.value)
+    usuarioFormularioTieneRolDocente
+      ? ['horario_16', 'horario_24', 'horario_40', 'horario_48'].includes(opcion.value)
+      : (!usuarioFormularioTieneRolGestion || opcion.value !== 'dedicacion_exclusiva')
   ));
   const carrerasUsuarioSeleccionado = getCarrerasUsuario(usuarioSeleccionado);
   const carreraSeleccionadaNombre = carrerasUsuarioSeleccionado.length > 0
@@ -1559,10 +1635,10 @@ function ListaDocentes({ sidebarCollapsed = false }) {
   };
   const horasSemanalesDerivadas = formData.dedicacion === 'tiempo_completo' ? 40
     : formData.dedicacion === 'medio_tiempo' ? 20
-    : formData.dedicacion === 'horario_16' ? 4
-    : formData.dedicacion === 'horario_24' ? 6
-    : formData.dedicacion === 'horario_40' ? 10
-    : formData.dedicacion === 'horario_48' ? 12
+    : formData.dedicacion === 'horario_16' ? 16
+    : formData.dedicacion === 'horario_24' ? 24
+    : formData.dedicacion === 'horario_40' ? 40
+    : formData.dedicacion === 'horario_48' ? 48
     : '';
 
   const handleCreateSubmit = async (e) => {
@@ -1601,7 +1677,14 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       return;
     }
 
-    if (usuarioFormularioTieneRolGestion && ['tiempo_completo', 'medio_tiempo'].includes(String(formData.dedicacion || ''))) {
+    if (usuarioFormularioTieneRolDocente && formData.dedicacion === 'dedicacion_exclusiva') {
+      setErrors((prev) => ({ ...prev, dedicacion: ['Los usuarios con rol docente deben registrar dedicacion a Tiempo Horario.'] }));
+      toast.error('Los usuarios con rol docente deben registrar dedicacion a Tiempo Horario.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (usuarioFormularioTieneRolGestion && usuarioFormularioTieneRolDocente && ['tiempo_completo', 'medio_tiempo'].includes(String(formData.dedicacion || ''))) {
       setErrors((prev) => ({ ...prev, dedicacion: [mensajeIncompatibilidadGestion] }));
       toast.error(mensajeIncompatibilidadGestion);
       setIsSubmitting(false);
@@ -1637,6 +1720,9 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       payload.ci = ciNormalizado;
       delete payload.condicion;
       delete payload.nombre_completo;
+      if (usuarioFormularioSoloDirector) {
+        payload.dedicacion = 'dedicacion_exclusiva';
+      }
       if (payload.email === '') payload.email = null;
       if (payload.telefono === '') payload.telefono = null;
       payload.user = Number(formData.user);
@@ -1671,8 +1757,9 @@ function ListaDocentes({ sidebarCollapsed = false }) {
         }, 800);
       } else {
         toast.success('Docente creado correctamente');
+        setDocentes((prev) => [response.data, ...prev]);
+        setUsuarios((prev) => prev.filter((usuarioItem) => String(usuarioItem.id) !== String(payload.user)));
         setIsCreating(false);
-        cargarDocentes();
       }
     } catch (err) {
       console.error('Error al crear docente:', err);
@@ -1702,7 +1789,14 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       return;
     }
 
-    if (usuarioFormularioTieneRolGestion && ['tiempo_completo', 'medio_tiempo'].includes(String(formData.dedicacion || ''))) {
+    if (usuarioFormularioTieneRolDocente && formData.dedicacion === 'dedicacion_exclusiva') {
+      setErrors((prev) => ({ ...prev, dedicacion: ['Los usuarios con rol docente deben registrar dedicacion a Tiempo Horario.'] }));
+      toast.error('Los usuarios con rol docente deben registrar dedicacion a Tiempo Horario.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (usuarioFormularioTieneRolGestion && usuarioFormularioTieneRolDocente && ['tiempo_completo', 'medio_tiempo'].includes(String(formData.dedicacion || ''))) {
       setErrors((prev) => ({ ...prev, dedicacion: [mensajeIncompatibilidadGestion] }));
       toast.error(mensajeIncompatibilidadGestion);
       setIsSubmitting(false);
@@ -1743,6 +1837,9 @@ function ListaDocentes({ sidebarCollapsed = false }) {
       delete payload.cargo_profesional;
       delete payload.condicion;
       delete payload.nombre_completo;
+      if (usuarioFormularioSoloDirector) {
+        payload.dedicacion = 'dedicacion_exclusiva';
+      }
       if (payload.email === '') payload.email = null;
       if (payload.telefono === '') payload.telefono = null;
 
@@ -1993,7 +2090,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                       {showAutocomplete && buscarUsuario !== null && (
                         <>
                           <style>{`@keyframes slideDown{from{transform:translateY(-8px);opacity:0}to{transform:translateY(0);opacity:1}} .slide-down{animation:slideDown 220ms ease-out forwards}`}</style>
-                          <div className="absolute left-0 top-full z-50 mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 max-h-48 overflow-auto shadow-2xl slide-down">
+                          <div className="absolute left-0 top-full z-50 mt-2 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 max-h-64 overflow-auto shadow-2xl slide-down">
                             {usuariosAutocomplete.map((usuarioItem) => (
                               <button
                                 key={usuarioItem.id}
@@ -2080,15 +2177,17 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                     inputMode="numeric"
                   />
                   <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-5">
-                    <SelectConDropdown
-                      label="Dedicacion"
-                      name="dedicacion"
-                      value={formData.dedicacion}
-                      onChange={handleChange}
-                      options={opcionesDedicacion}
-                      menuClassName="overflow-visible"
-                      error={errors.dedicacion}
-                    />
+                    {!usuarioFormularioSoloDirector && (
+                      <SelectConDropdown
+                        label="Dedicacion"
+                        name="dedicacion"
+                        value={formData.dedicacion}
+                        onChange={handleChange}
+                        options={opcionesDedicacion}
+                        menuClassName="overflow-visible"
+                        error={errors.dedicacion}
+                      />
+                    )}
                     <SelectConDropdown
                       label="Categoria"
                       name="categoria"
@@ -2115,7 +2214,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                   </div>
                   <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-[minmax(0,267px)_1fr] gap-4 items-start">
                     <div>
-                      {!esDedicacionExclusiva && (
+                      {!esDedicacionExclusiva && !usuarioFormularioSoloDirector && (
                         <>
                           <InputField
                             label="Horas Semanales"
@@ -2126,10 +2225,10 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                             inputClassName="max-w-[267px]"
                           />
                           <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
-                            {formData.dedicacion === 'horario_16' && 'Este docente trabaja 16 horas al mes (4 horas por semana).'}
-                            {formData.dedicacion === 'horario_24' && 'Este docente trabaja 24 horas al mes (6 horas por semana).'}
-                            {formData.dedicacion === 'horario_40' && 'Este docente trabaja 40 horas al mes (10 horas por semana).'}
-                            {formData.dedicacion === 'horario_48' && 'Este docente trabaja 48 horas al mes (12 horas por semana).'}
+                            {formData.dedicacion === 'horario_16' && 'Este docente trabaja 16 horas por semana.'}
+                            {formData.dedicacion === 'horario_24' && 'Este docente trabaja 24 horas por semana.'}
+                            {formData.dedicacion === 'horario_40' && 'Este docente trabaja 40 horas por semana.'}
+                            {formData.dedicacion === 'horario_48' && 'Este docente trabaja 48 horas por semana.'}
                             {(formData.dedicacion === 'tiempo_completo' || formData.dedicacion === 'medio_tiempo')
                               && 'Horas semanales fijas por reglamento.'}
                           </p>
@@ -2159,7 +2258,7 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                                 Cargos de gestión solo compatibles con docencia a Tiempo Horario.
                               </p>
                               <p className="text-xs leading-5 text-blue-800 dark:text-blue-400">
-                                Usuarios con rol de Director, Jefe de Estudios o Instituto solo pueden usar: 16, 24, 40 o 48 hrs/mes. TC y MT no aplican.
+                                Usuarios con rol de Director, Jefe de Estudios o Instituto solo pueden usar: 16, 24, 40 o 48 hrs/sem. TC y MT no aplican.
                               </p>
                             </div>
                           </div>
@@ -2193,10 +2292,10 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                                 const dedicacionLabels = {
                                   tiempo_completo: 'Tiempo Completo',
                                   medio_tiempo: 'Medio Tiempo',
-                                  horario_16: 'Horario 16hrs/mes',
-                                  horario_24: 'Horario 24hrs/mes',
-                                  horario_40: 'Horario 40hrs/mes',
-                                  horario_48: 'Horario 48hrs/mes',
+                                  horario_16: 'Horario 16hrs/sem',
+                                  horario_24: 'Horario 24hrs/sem',
+                                  horario_40: 'Horario 40hrs/sem',
+                                  horario_48: 'Horario 48hrs/sem',
                                   dedicacion_exclusiva: 'Dedicacion Exclusiva',
                                 };
                                 const label = dedicacionLabels[formData.dedicacion] || formData.dedicacion;
@@ -2355,10 +2454,10 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                           <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-2 border-green-300 dark:border-green-700 shadow-sm">
                             {docente.vinculos?.[0]?.dedicacion === 'tiempo_completo' ? 'Tiempo Completo'
                               : docente.vinculos?.[0]?.dedicacion === 'medio_tiempo' ? 'Medio Tiempo'
-                              : docente.vinculos?.[0]?.dedicacion === 'horario_16' ? 'Horario 16hrs/mes'
-                              : docente.vinculos?.[0]?.dedicacion === 'horario_24' ? 'Horario 24hrs/mes'
-                              : docente.vinculos?.[0]?.dedicacion === 'horario_40' ? 'Horario 40hrs/mes'
-                              : docente.vinculos?.[0]?.dedicacion === 'horario_48' ? 'Horario 48hrs/mes'
+                              : docente.vinculos?.[0]?.dedicacion === 'horario_16' ? 'Horario 16hrs/sem'
+                              : docente.vinculos?.[0]?.dedicacion === 'horario_24' ? 'Horario 24hrs/sem'
+                              : docente.vinculos?.[0]?.dedicacion === 'horario_40' ? 'Horario 40hrs/sem'
+                              : docente.vinculos?.[0]?.dedicacion === 'horario_48' ? 'Horario 48hrs/sem'
                               : docente.vinculos?.[0]?.dedicacion}
                           </span>
                           {obtenerRolesDocente(docente) && (
@@ -2551,29 +2650,33 @@ function ListaDocentes({ sidebarCollapsed = false }) {
                   error={errors.categoria}
                   containerClassName={estiloAdvertenciaEditable}
                 />
-                <SelectConDropdown
-                  label="Dedicacion"
-                  name="dedicacion"
-                  value={formData.dedicacion}
-                  onChange={handleChange}
-                  options={opcionesDedicacion}
-                  error={errors.dedicacion}
-                  containerClassName={estiloAdvertenciaEditable}
-                />
+                {!usuarioFormularioSoloDirector && (
+                  <SelectConDropdown
+                    label="Dedicacion"
+                    name="dedicacion"
+                    value={formData.dedicacion}
+                    onChange={handleChange}
+                    options={opcionesDedicacion}
+                    error={errors.dedicacion}
+                    containerClassName={estiloAdvertenciaEditable}
+                  />
+                )}
                 <div className="md:col-span-2 grid grid-cols-1 gap-4 md:grid-cols-2 md:items-center">
                   <div className="min-w-0">
-                    <InputField
-                      label="Horas Semanales"
-                      name="horas_contrato_semanales"
-                      value={horasSemanalesDerivadas}
-                      onChange={() => {}}
-                      disabled
-                    />
+                    {!usuarioFormularioSoloDirector && (
+                      <InputField
+                        label="Horas Semanales"
+                        name="horas_contrato_semanales"
+                        value={horasSemanalesDerivadas}
+                        onChange={() => {}}
+                        disabled
+                      />
+                    )}
                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
-                      {formData.dedicacion === 'horario_16' && 'Este docente trabaja 16 horas al mes (4 horas por semana).'}
-                      {formData.dedicacion === 'horario_24' && 'Este docente trabaja 24 horas al mes (6 horas por semana).'}
-                      {formData.dedicacion === 'horario_40' && 'Este docente trabaja 40 horas al mes (10 horas por semana).'}
-                      {formData.dedicacion === 'horario_48' && 'Este docente trabaja 48 horas al mes (12 horas por semana).'}
+                      {formData.dedicacion === 'horario_16' && 'Este docente trabaja 16 horas por semana.'}
+                      {formData.dedicacion === 'horario_24' && 'Este docente trabaja 24 horas por semana.'}
+                      {formData.dedicacion === 'horario_40' && 'Este docente trabaja 40 horas por semana.'}
+                      {formData.dedicacion === 'horario_48' && 'Este docente trabaja 48 horas por semana.'}
                       {(formData.dedicacion === 'tiempo_completo' || formData.dedicacion === 'medio_tiempo')
                         && 'Horas semanales fijas por reglamento.'}
                     </p>

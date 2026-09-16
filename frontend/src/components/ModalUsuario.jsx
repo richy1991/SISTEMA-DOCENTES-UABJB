@@ -126,10 +126,10 @@ const ROLES_AUTORIDAD_FONDO = new Set(['director', 'jefe_estudios']);
 const HORAS_POR_DEDICACION = {
   tiempo_completo: 40,
   medio_tiempo: 20,
-  horario_16: 4,
-  horario_24: 6,
-  horario_40: 10,
-  horario_48: 12,
+  horario_16: 16,
+  horario_24: 24,
+  horario_40: 40,
+  horario_48: 48,
 };
 
 const obtenerHorasVinculo = (vinculo) => {
@@ -749,7 +749,7 @@ const ModalUsuario = ({ isOpen, onClose, onSaveSuccess, userToEdit, docentes, ca
                 )}
               </div>
 
-              <InputField label="Email" name="email" type="email" value={formData.email} onChange={handleChange} error={errors.email} />
+              <InputField label="Correo institucional" name="email" type="email" value={formData.email} onChange={handleChange} error={errors.email} />
               <div>
                 <label className="block text-sm font-semibold mb-2 text-slate-800 dark:text-slate-300">Contraseña inicial</label>
                 <div className="w-full px-4 py-3 rounded-xl border-2 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 font-mono font-semibold">

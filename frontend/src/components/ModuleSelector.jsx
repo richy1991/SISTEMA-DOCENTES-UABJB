@@ -1,6 +1,13 @@
 import { Link, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import toast from 'react-hot-toast';
 import ThemeToggle from './ThemeToggle';
 import { useActiveRole } from '../contexts/ActiveRoleContext';
+import {
+    ERROR_FIELD_BORDER_CLASS,
+    ERROR_MOTION_CLASS,
+    useErrorPulse,
+} from '../utils/formErrors';
 
 // --- ICONOS ---
 // Se mantienen los mismos iconos, pero ahora se pueden personalizar más fácilmente.
@@ -55,6 +62,8 @@ const BuildingIcon = (props) => (
 // --- COMPONENTE PRINCIPAL ---
 const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
     const navigate = useNavigate();
+    const [roleSelectionError, setRoleSelectionError] = useState('');
+    const [roleErrorPulse, setRoleErrorPulse] = useState(0);
     const activeRoleContext = useActiveRole();
     const {
         activeAssignment,
@@ -62,6 +71,7 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
         hasMultipleAssignments,
         assignments,
         selectAssignment,
+        openRoleSelector,
         getRoleLabel,
     } = activeRoleContext;
     const currentUser = effectiveUser || user;
@@ -147,6 +157,31 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
         { x: -320, y: 220 },
         { x: 320, y: 220 },
     ];
+
+    const requiereSeleccionRolParaFondo = Boolean(
+        currentUser
+        && !currentUser.is_superuser
+        && hasMultipleAssignments
+        && !activeAssignment
+    );
+
+    const handleModuleNavigation = (event, module) => {
+        if (module.path !== '/fondo-tiempo' || !requiereSeleccionRolParaFondo) return;
+
+        event.preventDefault();
+        openRoleSelector();
+        setRoleSelectionError('Debe seleccionar un rol antes de ingresar al Fondo de Tiempo.');
+        setRoleErrorPulse((pulse) => pulse + 1);
+        toast.error('Selecciona un rol antes de ingresar al Fondo de Tiempo.', {
+            id: 'role-selection-required',
+            className: 'toast-brinco',
+        });
+    };
+
+    const handleSelectAssignment = (assignment) => {
+        setRoleSelectionError('');
+        selectAssignment(assignment);
+    };
 
     return (
         <div className="module-selector-root relative isolate min-h-screen w-full bg-gradient-to-br from-blue-100 via-indigo-50 to-purple-100 dark:from-gray-900 dark:via-blue-900 dark:to-purple-900 text-slate-800 dark:text-slate-200 font-sans transition-colors duration-500 overflow-hidden">
@@ -368,7 +403,11 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
                                     animationDelay: `${160 + index * 120}ms`,
                                 }}
                             >
-                                <ModuleCard {...module} onClick={module.action} />
+                                <ModuleCard
+                                    {...module}
+                                    onClick={module.action}
+                                    onNavigateClick={(event) => handleModuleNavigation(event, module)}
+                                />
                             </div>
                         );
                     })}
@@ -394,9 +433,11 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
                                 <RoleInlineSelector
                                     assignments={assignments}
                                     activeAssignment={activeAssignment}
-                                    onSelect={selectAssignment}
+                                    onSelect={handleSelectAssignment}
                                     getRoleLabel={getRoleLabel}
                                     compactTop={mostrarHerramientasGestion}
+                                    error={roleSelectionError}
+                                    pulse={roleErrorPulse}
                                 />
                             )}
                         </div>
@@ -407,12 +448,19 @@ const ModuleSelector = ({ user, onLogout, theme, setTheme }) => {
     );
 };
 
-const RoleInlineSelector = ({ assignments, activeAssignment, onSelect, getRoleLabel, compactTop }) => (
-    <div className={`${compactTop ? 'mt-4 pt-4 border-t border-white/20 dark:border-white/10' : ''}`}>
+const RoleInlineSelector = ({ assignments, activeAssignment, onSelect, getRoleLabel, compactTop, error = '', pulse = 0 }) => {
+    const { motionClass } = useErrorPulse(error, pulse);
+
+    return (
+    <div className={compactTop ? 'mt-4 pt-4 border-t border-white/20 dark:border-white/10' : ''}>
         <p className="module-tools-title text-xs uppercase tracking-[0.22em] text-cyan-200/90 dark:text-cyan-300/80 mb-3 text-center">
             Rol de Ingreso
         </p>
-        <div className="space-y-2">
+        <div className={`space-y-2 rounded-2xl border-2 p-3 transition-colors ${
+            error
+                ? `${ERROR_FIELD_BORDER_CLASS} bg-red-50/75 dark:bg-red-950/25 ${motionClass}`
+                : 'border-white/25 bg-white/10 dark:border-white/15 dark:bg-slate-900/10'
+        }`}>
             {assignments.map((assignment) => {
                 const selected = String(activeAssignment?.id || '') === String(assignment.id);
                 return (
@@ -434,8 +482,10 @@ const RoleInlineSelector = ({ assignments, activeAssignment, onSelect, getRoleLa
                 );
             })}
         </div>
+        {error && <p className="mt-2 text-xs font-semibold text-red-600 dark:text-red-400">{error}</p>}
     </div>
-);
+    );
+};
 
 const FloatingToolButton = ({ name, description, path, icon: Icon, color }) => {
     const colorClasses = {
@@ -462,7 +512,7 @@ const FloatingToolButton = ({ name, description, path, icon: Icon, color }) => {
 };
 
 // --- TARJETA DE MÓDULO REDISEÑADA ---
-const ModuleCard = ({ name, description, path, icon: Icon, color, enabled, onClick }) => {
+const ModuleCard = ({ name, description, path, icon: Icon, color, enabled, onClick, onNavigateClick }) => {
     
     const colorClasses = {
         blue: {
@@ -557,7 +607,7 @@ const ModuleCard = ({ name, description, path, icon: Icon, color, enabled, onCli
     }
 
     return (
-        <Link to={path} className="focus:outline-none focus:ring-4 focus:ring-offset-0 focus:ring-blue-500/50 rounded-2xl transition-all duration-300">
+        <Link to={path} onClick={onNavigateClick} className="focus:outline-none focus:ring-4 focus:ring-offset-0 focus:ring-blue-500/50 rounded-2xl transition-all duration-300">
             {cardContent}
         </Link>
     );

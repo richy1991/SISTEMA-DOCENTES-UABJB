@@ -19,6 +19,11 @@ backend/db_corrupt_*.sqlite3
 # Media files
 backend/media/
 
+# Fuentes propietarias (Verdana de Microsoft): no redistribuir en git,
+# cada despliegue debe copiarlas manualmente desde una instalación con
+# licencia (ej. C:\Windows\Fonts\verdana.ttf y verdanab.ttf en Windows).
+backend/fondos/fonts/
+
 # Temporary files
 tmpclaude-*-cwd
 tmpclaude-*-cwd/

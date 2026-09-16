@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronsDown,
   Copy,
+  EyeOff,
   MessageCircle,
   Pin,
   Reply,
@@ -30,6 +31,7 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
   const [open, setOpen] = useState(false);
   const [isClosingChat, setIsClosingChat] = useState(false);
   const [texto, setTexto] = useState('');
+  const [esInterno, setEsInterno] = useState(false);
   const [sending, setSending] = useState(false);
   const [usuarioActual, setUsuarioActual] = useState(null);
   const [alguienEscribiendo, setAlguienEscribiendo] = useState(false);
@@ -583,12 +585,13 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
     setSending(true);
     shouldAutoScrollRef.current = true;
     try {
-      await agregarMensajeObservacion(conversacionActiva.id, textoLimpio, respondiendoA?.id || null);
+      await agregarMensajeObservacion(conversacionActiva.id, textoLimpio, respondiendoA?.id || null, esInterno);
       localTypingRef.current = false;
       window.setTimeout(() => {
         setTypingObservacionFondo(fondoId, false).catch(() => {});
       }, 650);
       setTexto('');
+      setEsInterno(false);
       setRespondiendoA(null);
       await cargarObservaciones({ silent: true, marcarLeido: true });
     } catch (err) {
@@ -993,6 +996,11 @@ const BotonFlotanteObservaciones = forwardRef(({ fondoId, estadoFondo, onObserva
                           <span>{nombreCita(mensaje.responde_a_detalle)}</span>
                           <p>{resumenMensaje(mensaje.responde_a_detalle)}</p>
                         </div>
+                      )}
+                      {mensaje.es_interno && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 mb-1 rounded text-[10px] font-bold uppercase tracking-wide bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                          <EyeOff size={10} /> Interno
+                        </span>
                       )}
                       <p className="ft-chat-text text-sm break-words whitespace-pre-wrap">{mensaje.texto}</p>
                       {mensaje.esInicial && (

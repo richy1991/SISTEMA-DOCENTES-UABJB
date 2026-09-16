@@ -27,6 +27,7 @@ import ModuleSelector from './components/ModuleSelector';
 import FondoTiempoLayout from './components/FondoTiempoLayout';
 import ListaFondos from './components/ListaFondos';
 import DetalleFondo from './components/DetalleFondo';
+import EditorInformePage from './components/EditorInformePage';
 import Comparador from './components/Comparador';
 import FormularioFondo from './components/FormularioFondo';
 import GestionUsuarios from './components/GestionUsuarios';
@@ -291,6 +292,9 @@ function App() {
         ) : (
           <>
             <Route path="/" element={<ModuleSelector user={user} onLogout={handleLogout} theme={theme} setTheme={setTheme} />} />
+
+            {/* Página completa (sin sidebar) para redactar/ver el Informe de Fondo de Tiempo */}
+            <Route path="/fondos/:id/informe" element={<EditorInformePage />} />
 
             {/* AHORA SÍ: Estructura de enrutamiento anidada correctamente */}
             <Route 

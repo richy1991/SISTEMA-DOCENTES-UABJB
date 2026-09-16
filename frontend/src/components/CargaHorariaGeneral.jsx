@@ -168,10 +168,10 @@ const CargaHorariaGeneral = ({ isDark }) => {
                             const labels = {
                                 tiempo_completo: 'Tiempo Completo',
                                 medio_tiempo: 'Medio Tiempo',
-                                horario_16: 'Horario 16hrs/mes',
-                                horario_24: 'Horario 24hrs/mes',
-                                horario_40: 'Horario 40hrs/mes',
-                                horario_48: 'Horario 48hrs/mes',
+                                horario_16: 'Horario 16hrs/sem',
+                                horario_24: 'Horario 24hrs/sem',
+                                horario_40: 'Horario 40hrs/sem',
+                                horario_48: 'Horario 48hrs/sem',
                             };
                             return labels[docente?.vinculos?.[0]?.dedicacion] || docente?.vinculos?.[0]?.dedicacion || 'No especificada';
                         })()}

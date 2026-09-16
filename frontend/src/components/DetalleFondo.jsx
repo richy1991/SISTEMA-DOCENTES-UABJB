@@ -3,11 +3,9 @@ import ReactDOM from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getFondoTiempoDetalle, crearActividad, eliminarActividad, presentarFondoADirector, aprobarFondo } from '../apis/api';
 import api from '../apis/api';
-import { API_URL } from '../apis/apiConfig';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
 import DistribuirHoras from './DistribuirHoras';
 import { useActiveRole } from '../contexts/ActiveRoleContext';
-import FormularioActividad from './FormularioActividad';
 import FormularioObservar from './FormularioObservar';
 import BotonFlotanteObservaciones from './BotonFlotanteObservaciones';
 
@@ -22,10 +20,58 @@ import ThemeToggle from './ThemeToggle';
 import CargaHorariaManager from './CargaHorariaManager';
 import { getApiErrorMessage } from '../utils/formErrors';
 import { FileText as ArchivoIcon, Check as CheckIcon, Trash2 as TrashIcon, AlertTriangle as AlertTriangleIcon, Info as InfoIcon, Send as SendIcon, EyeOff as EyeOffIcon, X as XIcon, Plus as PlusIcon, ChevronDown as ChevronDownIcon, ChevronUp as ChevronUpIcon, Pencil as PencilIcon, Calendar as CalendarIcon, User as UserIcon } from 'lucide-react';
-import { Eye, CheckCircle2, FileDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Eye, CheckCircle2, FileDown, ChevronLeft, ChevronRight, Paperclip } from 'lucide-react';
 
 // Alias for template consistency
 const EyeIcon = Eye;
+
+const ActividadAsignadaCell = ({ detalle, compact = false }) => {
+  if (!detalle?.es_subactividad_academica) {
+    return <>{detalle?.titulo_actividad || '-'}</>;
+  }
+
+  return (
+    <div className="flex items-center gap-2 pl-5 whitespace-nowrap">
+      <span className="font-black text-sky-700 dark:text-sky-300">-</span>
+      <span className={compact ? 'font-semibold' : ''}>{detalle.titulo_actividad || '-'}</span>
+    </div>
+  );
+};
+
+const ordenarDetallesCarga = (categoria) => {
+  const detalles = categoria?.detalles_carga || [];
+  if (categoria?.tipo !== 'academica') {
+    return detalles;
+  }
+
+  const usados = new Set();
+  const materias = detalles.filter((detalle) => detalle.tipo_actividad === 'clases_aula' && detalle.materia_id);
+  const ordenados = [];
+
+  materias.forEach((materia) => {
+    ordenados.push(materia);
+    usados.add(materia.id);
+
+    detalles
+      .filter((detalle) => (
+        detalle.es_subactividad_academica
+        && String(detalle.materia_id || '') === String(materia.materia_id || '')
+      ))
+      .sort((a, b) => String(a.tipo_actividad_display || '').localeCompare(String(b.tipo_actividad_display || ''), 'es'))
+      .forEach((detalle) => {
+        ordenados.push(detalle);
+        usados.add(detalle.id);
+      });
+  });
+
+  detalles.forEach((detalle) => {
+    if (!usados.has(detalle.id)) {
+      ordenados.push(detalle);
+    }
+  });
+
+  return ordenados;
+};
 
 const ToastDistribucionGuardada = ({ t, onHidden }) => {
   const onHiddenCalledRef = useRef(false);
@@ -192,7 +238,7 @@ const ExternalLinkIcon = (props) => (
 );
 import toast from 'react-hot-toast';
 import EstadoTimeline from './fondos/EstadoTimeline';
-import PDFPreviewModal from './PDFPreviewModal';
+import EvidenciaActividadModal from './EvidenciaActividadModal';
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4'];
 const CATEGORIAS_BLOQUEADAS = [];
@@ -239,7 +285,7 @@ function DetalleFondo({ isDark }) {
   const [mostrarFormEvaluarInforme, setMostrarFormEvaluarInforme] = useState(false);
   const [mostrarModalIniciarEjecucion, setMostrarModalIniciarEjecucion] = useState(false);
   const [mostrarModalInforme, setMostrarModalInforme] = useState(false);
-  const [mostrarModalPDF, setMostrarModalPDF] = useState(false);
+  const [evidenciaActividadModal, setEvidenciaActividadModal] = useState(null);
   const [cargaParaEditar, setCargaParaEditar] = useState(null);
   const [panelCentral, setPanelCentral] = useState('resumen');
   const [direccionPanel, setDireccionPanel] = useState('derecha');
@@ -303,15 +349,13 @@ function DetalleFondo({ isDark }) {
     ];
   };
 
-  // ESTADOS PARA MODAL DE INFORME FINAL
-  const [mostrarModalPresentacion, setMostrarModalPresentacion] = useState(false);
-  const [informeData, setInformeData] = useState({
-    resumen: '',
-    logros: '',
-    dificultades: '',
-    conclusiones: ''
-  });
-  const [enviandoInforme, setEnviandoInforme] = useState(false);
+  // La redacción/edición del Informe de Cumplimiento vive ahora en una página
+  // dedicada (EditorInformePage.jsx, ruta /fondos/:id/informe) en vez de un
+  // modal aquí. Solo quedan los estados para "Ver Informe" (solo lectura) y
+  // el flujo de observaciones del Director, que siguen siendo parte de esta vista.
+  const [mostrarModalObservarInforme, setMostrarModalObservarInforme] = useState(false);
+  const [comentarioObservarInforme, setComentarioObservarInforme] = useState('');
+  const [enviandoObservacionInforme, setEnviandoObservacionInforme] = useState(false);
 
   // iiisyp es solo lectura: no puede aprobar ni gestionar fondos
   const rolOperativo = activeRole || activeAssignment?.rol || effectiveUser?.perfil?.rol || usuarioActual?.perfil?.rol;
@@ -333,35 +377,24 @@ function DetalleFondo({ isDark }) {
     setPanelCentral('resumen');
   }, [puedeGestionarCarga]);
 
-  const abrirModalPresentacion = () => {
-    setMostrarModalPresentacion(true);
-  };
-
-  const handleInformeChange = (e) => {
-    const { name, value } = e.target;
-    setInformeData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const enviarInformeFinal = async () => {
-    if (!informeData.resumen.trim() || !informeData.logros.trim() || !informeData.dificultades.trim() || !informeData.conclusiones.trim()) {
-      toast.error("⚠️ Por favor completa todos los campos obligatorios.");
+  const solicitarCorreccionesInforme = async () => {
+    if (comentarioObservarInforme.trim().length < 10) {
+      toast.error('Debes explicar qué debe corregir el docente (mínimo 10 caracteres).');
       return;
     }
-
     try {
-      setEnviandoInforme(true);
-      toast.loading('Enviando Informe Final...');
-      await api.post(`/fondos-tiempo/${fondo.id}/presentar/`, informeData);
-      toast.dismiss();
-      toast.success('Informe Final enviado exitosamente');
-      setMostrarModalPresentacion(false);
-      await cargarDetalle();
+      setEnviandoObservacionInforme(true);
+      await api.post(`/fondos-tiempo/${fondo.id}/observar-informe/`, { comentario: comentarioObservarInforme.trim() });
+      toast.success('Se solicitaron correcciones al docente.');
+      setMostrarModalObservarInforme(false);
+      setComentarioObservarInforme('');
+      setMostrarModalInforme(false);
+      await cargarDetalle({ silencioso: true });
     } catch (err) {
-      toast.dismiss();
-      console.error('Error al presentar informe:', err);
-      toast.error(getApiErrorMessage(err, 'Error al presentar el informe'));
+      console.error('Error al observar informe:', err);
+      toast.error(getApiErrorMessage(err, 'No se pudo enviar la solicitud de corrección'));
     } finally {
-      setEnviandoInforme(false);
+      setEnviandoObservacionInforme(false);
     }
   };
 
@@ -392,8 +425,6 @@ function DetalleFondo({ isDark }) {
     setMostrarModalAprobar(false);
     setMostrarModalIniciarEjecucion(false);
     setMostrarModalInforme(false);
-    setMostrarModalPresentacion(false);
-    setMostrarModalPDF(false);
     setActividadAEliminar(null);
   }, [id]);
 
@@ -409,8 +440,6 @@ function DetalleFondo({ isDark }) {
       setMostrarModalAprobar(false);
       setMostrarModalIniciarEjecucion(false);
       setMostrarModalInforme(false);
-      setMostrarModalPresentacion(false);
-      setMostrarModalPDF(false);
       setActividadAEliminar(null);
     };
   }, [activeAssignment?.id]);
@@ -598,7 +627,7 @@ function DetalleFondo({ isDark }) {
       await crearActividad(actividadData);
       toast.success('Actividad agregada exitosamente');
       cerrarFormularioActividad();
-      await cargarDetalle();
+      await cargarDetalle({ silencioso: true });
 
       setTimeout(() => {
         const container = getScrollContainer();
@@ -642,7 +671,7 @@ function DetalleFondo({ isDark }) {
       toast.success('Actividad actualizada exitosamente');
       setMostrarFormEditar(false);
       setActividadAEditar(null);
-      await cargarDetalle();
+      await cargarDetalle({ silencioso: true });
 
       setTimeout(() => {
         const container = getScrollContainer();
@@ -674,7 +703,7 @@ function DetalleFondo({ isDark }) {
       await eliminarActividad(actividadAEliminar);
       toast.success('Actividad eliminada');
       setActividadAEliminar(null);
-      await cargarDetalle();
+      await cargarDetalle({ silencioso: true });
 
       setTimeout(() => {
         const container = getScrollContainer();
@@ -725,47 +754,36 @@ function DetalleFondo({ isDark }) {
       const response = await aprobarFondo(fondo.id);
       toast.success('Fondo aprobado exitosamente');
       setMostrarModalAprobar(false);
-      await cargarDetalle();
+      await cargarDetalle({ silencioso: true });
     } catch (err) {
       console.error('Error al aprobar:', err);
       toast.error(getApiErrorMessage(err, 'Error al aprobar el fondo'));
     }
   };
 
-  const descargarPDF = async () => {
-    try {
-      toast.loading('Generando PDF...');
-      setMostrarModalPDF(false);
-
-      const response = await api.get(`/fondos-tiempo/${id}/pdf-oficial/`, {
-        responseType: 'blob'  // Importante para archivos binarios
+  const abrirPdfEnNuevaPestana = () => {
+    toast.loading('Generando PDF...', { id: 'pdf-oficial' });
+    api.get(`/fondos-tiempo/${id}/pdf-oficial/`, { responseType: 'blob' })
+      .then((response) => {
+        const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
+        // Un <a target="_blank"> "clickeado" programáticamente abre el blob
+        // en una pestaña nueva sin que el bloqueador de pop-ups lo detenga
+        // (a diferencia de window.open() llamado después de un await).
+        const link = document.createElement('a');
+        link.href = url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.setTimeout(() => window.URL.revokeObjectURL(url), 60000);
+        toast.dismiss('pdf-oficial');
+      })
+      .catch((error) => {
+        console.error('Error al generar PDF:', error);
+        toast.dismiss('pdf-oficial');
+        toast.error('❌ Error al generar el PDF');
       });
-
-      // Crear un link temporal para descargar
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-
-      // Nombre del archivo
-      const nombreArchivo = `Fondo_${fondo.docente?.nombre_completo?.replace(/ /g, '_')}_${fondo.gestion}_${fondo.periodo}.pdf`;
-      link.setAttribute('download', nombreArchivo);
-
-      // Simular click para descargar
-      document.body.appendChild(link);
-      link.click();
-
-      // Limpiar
-      link.parentNode.removeChild(link);
-      window.URL.revokeObjectURL(url);
-
-      toast.dismiss();
-      toast.success('📄 PDF descargado exitosamente');
-
-    } catch (error) {
-      toast.dismiss();
-      console.error('Error al descargar PDF:', error);
-      toast.error('❌ Error al generar el PDF');
-    }
   };
 
   const iniciarEjecucionHandler = async () => {
@@ -773,7 +791,7 @@ function DetalleFondo({ isDark }) {
       await api.post(`/fondos-tiempo/${fondo.id}/iniciar_ejecucion/`);
       toast.success('Ejecución iniciada exitosamente');
       setMostrarModalIniciarEjecucion(false);
-      await cargarDetalle();
+      await cargarDetalle({ silencioso: true });
     } catch (err) {
       console.error('Error al iniciar ejecución:', err);
       toast.error(getApiErrorMessage(err, 'Error al iniciar la ejecucion'));
@@ -899,7 +917,7 @@ function DetalleFondo({ isDark }) {
     const totalAsignado = Number(fondo.total_asignado || 0);
     const horasObjetivo = Number(fondo.horas_semana || 0);
     const horas = horasObjetivo > 0 && Math.abs(totalAsignado - horasObjetivo) < 0.1;
-    const micro = fondo.categorias?.some(c => Array.isArray(c.detalles_carga) && c.detalles_carga.length > 0);
+    const micro = microCompletoExacto;
 
     return {
       horas,
@@ -977,7 +995,7 @@ function DetalleFondo({ isDark }) {
     try {
       await api.delete(`/cargas-horarias/${id}/`);
       toast.success("Asignación eliminada");
-      cargarDetalle();
+      cargarDetalle({ silencioso: true });
     } catch (err) {
       console.error(err);
       toast.error("Error al eliminar");
@@ -1063,6 +1081,17 @@ function DetalleFondo({ isDark }) {
   const mostrarBalanceWidget = secuenciaGuardado.activa ? secuenciaGuardado.balance : tieneDistribucionGuardada;
   const mostrarDistribucionWidget = secuenciaGuardado.activa ? secuenciaGuardado.distribucion : tieneDistribucionGuardada;
   const mostrarAccionesWidget = secuenciaGuardado.activa ? secuenciaGuardado.acciones : tieneDistribucionGuardada;
+  const objetivoMicroAnual = Math.round(Number(fondo.horas_efectivas || 1712));
+  const totalMicroAnual = Math.round((fondo.categorias || []).reduce(
+    (total, categoria) => total + Number(categoria.total_carga_horaria || 0),
+    0
+  ));
+  const microCompletoExacto = objetivoMicroAnual > 0 && totalMicroAnual === objetivoMicroAnual;
+  const tieneProgramaAnalitico = Boolean(fondo.tiene_programa_analitico);
+  const puedeConfirmarPresentacion = microCompletoExacto && tieneProgramaAnalitico;
+  const motivoPresentacionBloqueada = !microCompletoExacto
+    ? `Micro incompleto: ${totalMicroAnual}/${objetivoMicroAnual} hrs/año`
+    : (!tieneProgramaAnalitico ? 'Debe adjuntar el Programa Analítico antes de presentar al Director' : '');
 
   const puedeEditar = fondo.puede_editar;
   const ocultarDetallePorBorradorDirector = esDirector && !esSuperAdmin && fondo.estado === 'borrador';
@@ -1542,8 +1571,7 @@ function DetalleFondo({ isDark }) {
                                 editable={puedeEditarDistribucion}
                                 onActualizar={handleActualizacionHoras}
                                 onGuardarExitoso={handleDistribucionGuardada}
-                                onAgregarActividad={puedeGestionarDistribucion ? abrirFormularioActividadGlobal : undefined}
-                                canAddActivity={puedeGestionarDistribucion}
+                                canAddActivity={false}
                                 hideActionButtons={esAdmin || !puedeEditarDistribucion}
                               />
                             </div>
@@ -1622,7 +1650,7 @@ function DetalleFondo({ isDark }) {
                       )}
 
                       <button
-                        onClick={() => setMostrarModalPDF(true)}
+                        onClick={abrirPdfEnNuevaPestana}
                         className="w-full py-2 rounded-xl font-bold text-white bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 dark:from-indigo-700 dark:to-blue-700 dark:hover:from-indigo-800 dark:hover:to-blue-800 shadow-md hover:shadow-lg flex justify-center items-center gap-2 transition-all text-xs border border-indigo-500 dark:border-indigo-600"
                       >
                         <FileDown className="w-3.5 h-3.5" /> PDF
@@ -1635,7 +1663,13 @@ function DetalleFondo({ isDark }) {
                     {puedePresentarADirector && (
                       <button
                         onClick={presentarADirector}
-                        className="w-full py-2 rounded-xl font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg shadow-blue-500/30 flex justify-center items-center gap-2 transition-all hover:scale-[1.02] text-xs"
+                        disabled={!puedeConfirmarPresentacion}
+                        className={`w-full py-2 rounded-xl font-bold text-white shadow-lg flex justify-center items-center gap-2 transition-all text-xs ${
+                          puedeConfirmarPresentacion
+                            ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-blue-500/30 hover:scale-[1.02]'
+                            : 'bg-slate-400 dark:bg-slate-600 cursor-not-allowed opacity-70 shadow-none'
+                        }`}
+                        title={puedeConfirmarPresentacion ? 'Presentar al Director' : motivoPresentacionBloqueada}
                       >
                         <PaperAirplaneIcon className="w-3.5 h-3.5" />
                         Presentar
@@ -1666,7 +1700,13 @@ function DetalleFondo({ isDark }) {
                     {puedeReenviarADirector && (
                       <button
                         onClick={presentarADirector}
-                        className="w-full py-2 rounded-xl font-bold text-white bg-orange-500 hover:bg-orange-600 shadow-lg shadow-orange-500/30 flex justify-center items-center gap-2 transition-all hover:scale-[1.02] text-xs"
+                        disabled={!puedeConfirmarPresentacion}
+                        className={`w-full py-2 rounded-xl font-bold text-white shadow-lg flex justify-center items-center gap-2 transition-all text-xs ${
+                          puedeConfirmarPresentacion
+                            ? 'bg-orange-500 hover:bg-orange-600 shadow-orange-500/30 hover:scale-[1.02]'
+                            : 'bg-slate-400 dark:bg-slate-600 cursor-not-allowed opacity-70 shadow-none'
+                        }`}
+                        title={puedeConfirmarPresentacion ? 'Reenviar al Director' : motivoPresentacionBloqueada}
                       >
                         <SendIcon className="w-3.5 h-3.5" />
                         Reenviar al Director
@@ -1695,10 +1735,10 @@ function DetalleFondo({ isDark }) {
                       </button>
                     )}
 
-                    {/* DOCENTE: Presentar Informe */}
+                    {/* DOCENTE: Presentar Informe - página dedicada, no modal */}
                     {fondo.estado === 'en_ejecucion' && !esStaff && (
                       <button
-                        onClick={abrirModalPresentacion}
+                        onClick={() => window.open(`/fondos/${fondo.id}/informe`, '_blank', 'noopener,noreferrer')}
                         className="w-full py-2 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-500/30 flex justify-center items-center gap-2 transition-all hover:scale-[1.02] text-xs"
                       >
                         <DocumentTextIcon className="w-3.5 h-3.5" />
@@ -1720,7 +1760,14 @@ function DetalleFondo({ isDark }) {
                           className="w-full py-2 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 shadow-lg shadow-green-500/30 flex justify-center items-center gap-2 transition-all hover:scale-[1.02] text-xs"
                         >
                           <CheckBadgeIcon className="w-3.5 h-3.5" />
-                          Evaluar
+                          Aprobar Informe
+                        </button>
+                        <button
+                          onClick={() => setMostrarModalObservarInforme(true)}
+                          className="w-full py-2 rounded-xl font-bold text-white bg-orange-500 hover:bg-orange-600 shadow-lg shadow-orange-500/30 flex justify-center items-center gap-2 transition-all hover:scale-[1.02] text-xs"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          Solicitar Correcciones
                         </button>
                       </div>
                     )}
@@ -1740,7 +1787,7 @@ function DetalleFondo({ isDark }) {
                   <span className="text-2xl">📋</span> Actividades Planificadas
                 </h2>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                <div className="grid grid-cols-1 gap-4">
                   {(() => {
                     const ORDEN_FUNCIONES = ['academica', 'investigacion', 'extension_universitaria', 'interaccion_social', 'gestion', 'academica_administrativa', 'social_cultural_deportiva'];
                     const categoriasOrdenadas = [...fondo.categorias].sort((a, b) => {
@@ -1771,7 +1818,7 @@ function DetalleFondo({ isDark }) {
                       const aparecioRecien = totalPrevio <= 0 && totalActual > 0;
 
                       return (
-                        <div key={categoria.id} className={`group bg-white dark:bg-slate-800 rounded-2xl border border-slate-300 dark:border-slate-700 shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden flex flex-col h-full ${aparecioRecien ? 'animate-fade-in' : ''}`}>
+                        <div key={categoria.id} className={`group bg-white dark:bg-slate-800 rounded-2xl border border-slate-300 dark:border-slate-700 shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden flex flex-col ${aparecioRecien ? 'animate-fade-in' : ''}`}>
 
                           {/* Header de categoría con diseño moderno */}
                           <div className="px-6 py-5 flex justify-between items-center bg-white dark:bg-slate-800 border-b border-slate-300 dark:border-slate-700 relative overflow-hidden">
@@ -1826,7 +1873,9 @@ function DetalleFondo({ isDark }) {
                                     <thead>
                                       <tr className="bg-slate-50/30 dark:bg-slate-800/30 border-b border-slate-300 dark:border-slate-700">
                                         <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Actividad Asignada</th>
+                                        <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Tipo</th>
                                         <th className="px-6 py-3 text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Horas</th>
+                                        <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Evidencias</th>
                                         <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider pl-8">Respaldo</th>
                                         {esJefeEstudios && (
                                           <th className="px-6 py-3 text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Acciones</th>
@@ -1834,10 +1883,14 @@ function DetalleFondo({ isDark }) {
                                       </tr>
                                     </thead>
                                     <tbody>
-                                      {categoria.detalles_carga.map((detalle, dIdx) => (
+                                      {ordenarDetallesCarga(categoria).map((detalle, dIdx) => (
                                         <tr key={dIdx} className="border-b border-slate-200 dark:border-slate-800/50 hover:bg-blue-50/30 dark:hover:bg-blue-900/10 last:border-0 transition-colors">
-                                          <td className="px-6 py-3.5 text-sm text-slate-700 dark:text-slate-300 font-medium">{detalle.titulo_actividad}</td>
+                                          <td className="px-6 py-3.5 text-sm text-slate-700 dark:text-slate-300 font-medium">
+                                            <ActividadAsignadaCell detalle={detalle} />
+                                          </td>
+                                          <td className="px-6 py-3.5 text-sm text-slate-600 dark:text-slate-400">{detalle.tipo_actividad_display || '-'}</td>
                                           <td className="px-6 py-3.5 text-sm font-bold text-slate-800 dark:text-white text-right">{detalle.horas}</td>
+                                          <td className="px-6 py-3.5 text-sm text-slate-500 dark:text-slate-400">{detalle.evidencias || '-'}</td>
                                           <td className="px-6 py-3.5 text-sm text-slate-500 dark:text-slate-400 italic pl-8">
                                             <span className="bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded text-xs">{detalle.respaldo || 'Sin respaldo'}</span>
                                           </td>
@@ -1872,14 +1925,14 @@ function DetalleFondo({ isDark }) {
                             {/* 2. MOSTRAR ACTIVIDADES MANUALES (SI NO ESTÁ BLOQUEADA) */}
                             {vistaActual === 'docente' && !esBloqueada && (
                               <div>
-                                {categoria.detalles_carga && categoria.detalles_carga.length > 0 && categoria.actividades && categoria.actividades.length > 0 && (
+                                {false && categoria.detalles_carga && categoria.detalles_carga.length > 0 && categoria.actividades && categoria.actividades.length > 0 && (
                                   <div className="px-6 py-2 bg-slate-50/50 dark:bg-slate-800 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-y border-slate-300 dark:border-slate-700 flex items-center gap-2">
                                     <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-                                    Planificación de Actividades (Detalle Docente)
+                                    Fondo de Tiempo - Gestion Jefatura
                                   </div>
                                 )}
 
-                                {categoria.actividades && categoria.actividades.length > 0 ? (
+                                {false && categoria.actividades && categoria.actividades.length > 0 ? (
                                   <div className="overflow-x-auto">
                                     <table className="min-w-full">
                                       <thead>
@@ -1962,20 +2015,79 @@ function DetalleFondo({ isDark }) {
                                             <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                                               Actividad Asignada
                                             </th>
+                                            <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                                              Tipo
+                                            </th>
                                             <th className="px-6 py-3 text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                                               Horas
                                             </th>
+                                            <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                                              Evidencias
+                                            </th>
+                                            {fondo.estado === 'en_ejecucion' && (
+                                              <th className="px-6 py-3 text-center text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                                                Archivos
+                                              </th>
+                                            )}
+                                            {puedeGestionarCarga && (
+                                              <th className="px-6 py-3 text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                                                Acciones
+                                              </th>
+                                            )}
                                           </tr>
                                         </thead>
                                         <tbody>
-                                          {categoria.detalles_carga.map((detalle, dIdx) => (
+                                          {ordenarDetallesCarga(categoria).map((detalle, dIdx) => (
                                             <tr key={dIdx} className="border-b border-slate-200 dark:border-slate-800/50 last:border-b-0 hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
                                               <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-300 font-medium">
-                                                {detalle.titulo_actividad}
+                                                <ActividadAsignadaCell detalle={detalle} compact />
+                                              </td>
+                                              <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400">
+                                                {detalle.tipo_actividad_display || '-'}
                                               </td>
                                               <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-300 text-right font-semibold">
                                                 {detalle.horas}
                                               </td>
+                                              <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400">
+                                                {detalle.evidencias || '-'}
+                                              </td>
+                                              {fondo.estado === 'en_ejecucion' && (
+                                                <td className="px-6 py-4 text-center">
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => setEvidenciaActividadModal({
+                                                      cargaHorariaId: detalle.id,
+                                                      titulo: detalle.titulo_actividad || detalle.tipo_actividad_display || 'Actividad',
+                                                    })}
+                                                    className="p-2 text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                                                    title={rolOperativo === 'docente' ? 'Subir o ver evidencias' : 'Ver evidencias'}
+                                                  >
+                                                    <Paperclip className="w-4 h-4" />
+                                                  </button>
+                                                </td>
+                                              )}
+                                              {puedeGestionarCarga && (
+                                                <td className="px-6 py-4 text-right">
+                                                  <div className="flex gap-1 justify-end">
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => handleEditCarga(detalle, categoria.tipo)}
+                                                      className="p-2 text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                                                      title="Editar asignacion"
+                                                    >
+                                                      <PencilIcon className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => handleDeleteCarga(detalle.id)}
+                                                      className="p-2 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                                                      title="Eliminar asignacion"
+                                                    >
+                                                      <TrashIcon className="w-4 h-4" />
+                                                    </button>
+                                                  </div>
+                                                </td>
+                                              )}
                                             </tr>
                                           ))}
                                         </tbody>
@@ -2008,48 +2120,23 @@ function DetalleFondo({ isDark }) {
       </div>
 
 
-      {/* BOTÓN OBSERVACIONES - Portal para que quede fijo en la esquina de la pantalla */}
-      {!ocultarDetallePorBorradorDirector && ReactDOM.createPortal(
+      {/* BOTÓN OBSERVACIONES - Portal para que quede fijo en la esquina de la pantalla.
+          Restringido a pedido: el chat flotante queda reservado exclusivamente para
+          que Director y Jefe de Estudios se comuniquen entre si sobre este fondo.
+          Superadmin, IISYP y el docente no lo ven. */}
+      {!ocultarDetallePorBorradorDirector && (esDirector || esJefeEstudios) && ReactDOM.createPortal(
         <div className="fixed bottom-[6.5rem] right-16 z-[9999]">
           <BotonFlotanteObservaciones
             ref={observacionesRef}
             fondoId={fondo.id}
             estadoFondo={fondo.estado}
             onObservacionCambiada={async () => {
-              await cargarDetalle();
+              await cargarDetalle({ silencioso: true });
             }}
           />
         </div>,
         document.body
       )}
-      {/* Modal de formulario - Portal para centrar en pantalla */}
-      {fondo && mostrarFormActividad && categoriaSeleccionada && ReactDOM.createPortal(
-        <FormularioActividad
-          categoria={categoriaSeleccionada}
-          categoriasDisponibles={fondo.categorias.filter(c => c.tipo !== 'academica').map(c => ({ id: c.id, nombre: c.tipo_display, tipo: c.tipo }))}
-          onGuardar={guardarActividad}
-          onCancelar={cerrarFormularioActividad}
-          horasDisponibles={fondo.horas_disponibles}
-        />,
-        document.body
-      )}
-
-      {/* Modal de editar actividad - Portal para centrar en pantalla */}
-      {fondo && mostrarFormEditar && actividadAEditar && ReactDOM.createPortal(
-        <FormularioActividad
-          categoria={categoriaSeleccionada}
-          actividadInicial={actividadAEditar}
-          onGuardar={actualizarActividad}
-          onCancelar={() => {
-            setMostrarFormEditar(false);
-            setActividadAEditar(null);
-          }}
-          modoEdicion={true}
-          horasDisponibles={fondo.horas_disponibles}
-        />,
-        document.body
-      )}
-
       {/* Modal de observaciones - Portal para centrar en pantalla */}
       {fondo && mostrarFormObservar && ReactDOM.createPortal(
         <FormularioObservar
@@ -2069,7 +2156,7 @@ function DetalleFondo({ isDark }) {
             fondoId={fondo.id}
             onInformePresentado={async () => {
               setMostrarFormPresentarInforme(false);
-              await cargarDetalle();
+              await cargarDetalle({ silencioso: true });
             }}
             onCancelar={() => setMostrarFormPresentarInforme(false)}
           />
@@ -2085,7 +2172,7 @@ function DetalleFondo({ isDark }) {
             fondoId={fondo.id}
             onInformeEvaluado={async () => {
               setMostrarFormEvaluarInforme(false);
-              await cargarDetalle();
+              await cargarDetalle({ silencioso: true });
             }}
             onCancelar={() => setMostrarFormEvaluarInforme(false)}
           />
@@ -2244,70 +2331,30 @@ function DetalleFondo({ isDark }) {
               <div className="flex-1 overflow-y-auto bg-gradient-to-br from-slate-50 to-blue-50/30 dark:from-slate-900 dark:to-blue-900/10 p-6">
                 <div className="max-w-3xl mx-auto space-y-5">
 
-                  {/* Actividades Realizadas */}
-                  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
-                    <div className="bg-gradient-to-r from-blue-500/10 to-indigo-500/10 dark:from-blue-900/30 dark:to-indigo-900/30 px-4 py-3 border-b border-slate-200 dark:border-slate-700">
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-blue-500/20 flex items-center justify-center">
-                          <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                          </svg>
-                        </div>
-                        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                          Actividades Realizadas
-                        </h3>
-                      </div>
-                    </div>
-                    <div className="p-4">
-                      <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
-                        {fondo.informe_actual.actividades_realizadas}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Logros Alcanzados */}
-                  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
-                    <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/10 dark:from-green-900/30 dark:to-emerald-900/30 px-4 py-3 border-b border-slate-200 dark:border-slate-700">
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-green-500/20 flex items-center justify-center">
-                          <svg className="w-4 h-4 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-                          </svg>
-                        </div>
-                        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                          Logros Alcanzados
-                        </h3>
-                      </div>
-                    </div>
-                    <div className="p-4">
-                      <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
-                        {fondo.informe_actual.logros || fondo.informe_actual.resultados || 'No especificado'}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Dificultades Encontradas */}
-                  {fondo.informe_actual.dificultades && (
-                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
-                      <div className="bg-gradient-to-r from-amber-500/10 to-orange-500/10 dark:from-amber-900/30 dark:to-orange-900/30 px-4 py-3 border-b border-slate-200 dark:border-slate-700">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-lg bg-amber-500/20 flex items-center justify-center">
-                            <svg className="w-4 h-4 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                            </svg>
-                          </div>
+                  {/* Secciones del informe por categoria */}
+                  {[
+                    { campo: 'seccion_academica', titulo: 'Académica', header: 'bg-gradient-to-r from-blue-500/10 to-blue-500/5 dark:from-blue-900/30 dark:to-blue-900/10' },
+                    { campo: 'seccion_investigacion', titulo: 'Investigación', header: 'bg-gradient-to-r from-purple-500/10 to-purple-500/5 dark:from-purple-900/30 dark:to-purple-900/10' },
+                    { campo: 'seccion_extension_interaccion', titulo: 'Extensión Universitaria e Interacción Social', header: 'bg-gradient-to-r from-teal-500/10 to-teal-500/5 dark:from-teal-900/30 dark:to-teal-900/10' },
+                    { campo: 'seccion_asesorias_tutorias', titulo: 'Asesorías y Tutorías', header: 'bg-gradient-to-r from-indigo-500/10 to-indigo-500/5 dark:from-indigo-900/30 dark:to-indigo-900/10' },
+                    { campo: 'seccion_academica_administrativa', titulo: 'Académica-Administrativa', header: 'bg-gradient-to-r from-cyan-500/10 to-cyan-500/5 dark:from-cyan-900/30 dark:to-cyan-900/10' },
+                    { campo: 'seccion_social_cultural_deportiva', titulo: 'Social, Cultural y Deportiva', header: 'bg-gradient-to-r from-pink-500/10 to-pink-500/5 dark:from-pink-900/30 dark:to-pink-900/10' },
+                    { campo: 'conclusiones_generales', titulo: 'Conclusiones Generales', header: 'bg-gradient-to-r from-green-500/10 to-green-500/5 dark:from-green-900/30 dark:to-green-900/10' },
+                  ].map(({ campo, titulo, header }) => (
+                    fondo.informe_actual[campo] && (
+                      <div key={campo} className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
+                        <div className={`${header} px-4 py-3 border-b border-slate-200 dark:border-slate-700`}>
                           <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                            Dificultades Encontradas
+                            {titulo}
                           </h3>
                         </div>
+                        <div
+                          className="p-4 text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-line [&_img]:max-w-full [&_img]:rounded-lg [&_img]:my-2 [&_ul]:list-disc [&_ul]:pl-5"
+                          dangerouslySetInnerHTML={{ __html: fondo.informe_actual[campo] }}
+                        />
                       </div>
-                      <div className="p-4">
-                        <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
-                          {fondo.informe_actual.dificultades}
-                        </p>
-                      </div>
-                    </div>
-                  )}
+                    )
+                  ))}
 
                   {/* Info de fecha */}
                   <div className="bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm rounded-xl border border-slate-200 dark:border-slate-700 p-4 shadow-sm">
@@ -2328,6 +2375,71 @@ function DetalleFondo({ isDark }) {
                     </div>
                   </div>
                 </div>
+              </div>
+
+              {fondo.estado === 'informe_presentado' && esDirector && !esIisyp && (
+                <div className="px-6 py-4 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
+                  <button
+                    onClick={() => { setMostrarModalInforme(false); setMostrarModalObservarInforme(true); }}
+                    className="px-5 py-2.5 rounded-xl font-bold text-white bg-orange-500 hover:bg-orange-600 shadow-lg transition-all flex items-center gap-2"
+                  >
+                    <Eye className="w-4 h-4" /> Solicitar Correcciones
+                  </button>
+                  <button
+                    onClick={() => { setMostrarModalInforme(false); setMostrarFormEvaluarInforme(true); }}
+                    className="px-5 py-2.5 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 shadow-lg transition-all flex items-center gap-2"
+                  >
+                    <CheckBadgeIcon className="w-4 h-4" /> Aprobar Informe
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Modal Solicitar Correcciones al Informe */}
+        {mostrarModalObservarInforme && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[90] p-4">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden">
+              <div className="bg-orange-500 px-6 py-4">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Eye className="w-5 h-5" /> Solicitar Correcciones al Informe
+                </h3>
+              </div>
+              <div className="p-6 space-y-3">
+                <p className="text-sm text-slate-600 dark:text-slate-300">
+                  Explica qué debe corregir {fondo.docente?.nombre_completo}. El informe volverá a estado editable para que lo actualice y lo reenvíe.
+                </p>
+                <textarea
+                  value={comentarioObservarInforme}
+                  onChange={(e) => setComentarioObservarInforme(e.target.value)}
+                  rows={5}
+                  disabled={enviandoObservacionInforme}
+                  placeholder="Ej: Falta detallar los resultados por materia en la sección Académica..."
+                  className="w-full px-4 py-3 rounded-xl border-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none"
+                />
+                <p className="text-xs text-slate-500 dark:text-slate-400">Mínimo 10 caracteres.</p>
+              </div>
+              <div className="px-6 pb-6 flex gap-3">
+                <button
+                  onClick={() => { setMostrarModalObservarInforme(false); setComentarioObservarInforme(''); }}
+                  disabled={enviandoObservacionInforme}
+                  className="flex-1 px-4 py-2.5 rounded-xl font-bold text-slate-700 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 transition-all"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={solicitarCorreccionesInforme}
+                  disabled={enviandoObservacionInforme || comentarioObservarInforme.trim().length < 10}
+                  className="flex-1 px-4 py-2.5 rounded-xl font-bold text-white bg-orange-500 hover:bg-orange-600 disabled:opacity-50 shadow-lg transition-all flex items-center justify-center gap-2"
+                >
+                  {enviandoObservacionInforme ? (
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                  Enviar solicitud
+                </button>
               </div>
             </div>
           </div>
@@ -2371,123 +2483,15 @@ function DetalleFondo({ isDark }) {
         document.body
       )}
 
-      {/* MODAL PREVIEW PDF */}
-      {fondo && (
-        <PDFPreviewModal
-          isOpen={mostrarModalPDF}
-          onClose={() => setMostrarModalPDF(false)}
-          pdfUrl={`${API_URL}/fondos-tiempo/${id}/pdf-oficial/`}
-        />
-      )}
+      {/* MODAL EVIDENCIAS DE ACTIVIDAD (Fondo en Ejecucion) */}
+      <EvidenciaActividadModal
+        open={Boolean(evidenciaActividadModal)}
+        onClose={() => setEvidenciaActividadModal(null)}
+        cargaHorariaId={evidenciaActividadModal?.cargaHorariaId}
+        tituloActividad={evidenciaActividadModal?.titulo}
+        puedeSubir={rolOperativo === 'docente'}
+      />
 
-      {/* MODAL DE REDACCIÓN DE INFORME FINAL */}
-      {fondo && mostrarModalPresentacion && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[80] p-4 animate-fade-in">
-            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden">
-              {/* Header */}
-              <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4 flex justify-between items-center">
-                <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                  <span>📝</span> Presentación de Informe Final
-                </h2>
-                <button onClick={() => setMostrarModalPresentacion(false)} className="text-white/80 hover:text-white">
-                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
-              </div>
-
-              {/* Body */}
-              <div className="flex-1 overflow-y-auto p-6 space-y-5 bg-slate-50 dark:bg-slate-900">
-                <div className="bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500 p-4 rounded-r-lg mb-4">
-                  <p className="text-sm text-blue-800 dark:text-blue-300">
-                    Por favor, complete los siguientes campos para finalizar la ejecución del fondo. Esta información será revisada por el Director de Carrera.
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
-                    1. Resumen Ejecutivo (¿Qué se hizo en general?) <span className="text-red-500">*</span>
-                  </label>
-                  <textarea
-                    name="resumen"
-                    value={informeData.resumen}
-                    onChange={handleInformeChange}
-                    rows={4}
-                    className="w-full px-4 py-3 rounded-xl border-2 border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                    placeholder="Describa brevemente las actividades principales realizadas..."
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
-                    2. Logros Alcanzados (Metas cumplidas) <span className="text-red-500">*</span>
-                  </label>
-                  <textarea
-                    name="logros"
-                    value={informeData.logros}
-                    onChange={handleInformeChange}
-                    rows={3}
-                    className="w-full px-4 py-3 rounded-xl border-2 border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                    placeholder="Liste los logros cuantitativos y cualitativos..."
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
-                    3. Dificultades/Obstáculos (Problemas encontrados) <span className="text-red-500">*</span>
-                  </label>
-                  <textarea
-                    name="dificultades"
-                    value={informeData.dificultades}
-                    onChange={handleInformeChange}
-                    rows={3}
-                    className="w-full px-4 py-3 rounded-xl border-2 border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                    placeholder="Mencione las dificultades que impidieron el cumplimiento total..."
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
-                    4. Conclusiones y Recomendaciones <span className="text-red-500">*</span>
-                  </label>
-                  <textarea
-                    name="conclusiones"
-                    value={informeData.conclusiones}
-                    onChange={handleInformeChange}
-                    rows={3}
-                    className="w-full px-4 py-3 rounded-xl border-2 border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                    placeholder="Conclusiones finales y sugerencias para futuras gestiones..."
-                  />
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div className="px-6 py-4 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
-                <button
-                  onClick={() => setMostrarModalPresentacion(false)}
-                  disabled={enviandoInforme}
-                  className="px-6 py-2.5 rounded-xl font-bold text-slate-700 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 transition-all"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={enviarInformeFinal}
-                  disabled={enviandoInforme}
-                  className="px-6 py-2.5 rounded-xl font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg hover:shadow-xl transition-all flex items-center gap-2"
-                >
-                  {enviandoInforme ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                      Enviando...
-                    </>
-                  ) : (
-                    <>
-                      <span>📤</span> Enviar Informe Final
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
     </div>
   );
 }

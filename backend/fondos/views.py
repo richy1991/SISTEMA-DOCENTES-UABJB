@@ -2,6 +2,7 @@ from rest_framework import viewsets, filters, status, generics, serializers as d
 from rest_framework.decorators import action, api_view, permission_classes, renderer_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, BasePermission
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from django_filters.rest_framework import DjangoFilterBackend
 from django.contrib.auth.models import User
 from django.shortcuts import get_object_or_404
@@ -9,23 +10,26 @@ from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied
 from django.http import HttpResponse, JsonResponse, FileResponse
 from django.db import transaction, IntegrityError
-from django.db.models import Prefetch, ProtectedError, prefetch_related_objects, Q
+from django.db.models import Prefetch, ProtectedError, prefetch_related_objects, Q, Sum
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.cache import cache
 from datetime import datetime, date
 from decimal import Decimal, InvalidOperation
+import json
+import io
 from .utils.carrera_pdf_generator import CarreraPDFGenerator
-from .utils.pdf_generator import FondoPDFGenerator
+from .utils.pdf_generator import FondoPDFGenerator, InformePDFGenerator
+from .utils.informe_texto import CAMPOS_TEXTO_INFORME
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from .models import (
-    Docente, Carrera, Materia, FondoTiempo, CategoriaFuncion, Actividad, PerfilUsuario, CargaHoraria,
-    CalendarioAcademico, Proyecto, InformeFondo, ObservacionFondo, MensajeObservacion, HistorialFondo,
-    SaldoVacacionesGestion, FacultadCatalogo, DatosLaborales, DocenteCarrera
+    Docente, Carrera, Materia, FondoTiempo, CategoriaFuncion, PerfilUsuario, CargaHoraria,
+    CalendarioAcademico, Proyecto, InformeFondo, InformeAsignaturaEjecutada, ObservacionFondo, MensajeObservacion, HistorialFondo,
+    SaldoVacacionesGestion, FacultadCatalogo, DatosLaborales, DocenteCarrera, EvidenciaCargaHoraria
 )
 from .serializers import (
     DocenteSerializer, CarreraSerializer, MateriaSerializer, FondoTiempoSerializer,
-    FondoTiempoListSerializer, CategoriaFuncionSerializer, ActividadSerializer, CargaHorariaSerializer,
+    FondoTiempoListSerializer, CategoriaFuncionSerializer, CargaHorariaSerializer,
     UsuarioSerializer, CrearUsuarioSerializer, ActualizarUsuarioSerializer,
     FotoPerfilSerializer, PerfilUsuarioSerializer,
     CalendarioAcademicoSerializer, ProyectoSerializer, ProyectoListSerializer,
@@ -35,7 +39,7 @@ from .serializers import (
     FondoTiempoDetalleSerializer, PresentarFondoSerializer,
     AprobarFondoSerializer, ObservarFondoSerializer,
     SaldoVacacionesGestionSerializer, DatosLaboralesSerializer,
-    CustomTokenObtainPairSerializer,
+    CustomTokenObtainPairSerializer, EvidenciaCargaHorariaSerializer,
     # Validadores estructurales de asignación (blindaje de reactivación, normativa UABJB)
     validar_unicidad_cargo_por_carrera,
     _validar_fondo_tiempo_contractual_doble_rol,
@@ -945,6 +949,82 @@ class CargaHorariaViewSet(viewsets.ModelViewSet):
         instance.delete()
 
 # =====================================================
+# EVIDENCIA DE CARGA HORARIA VIEWSET
+# =====================================================
+
+class EvidenciaCargaHorariaViewSet(viewsets.ModelViewSet):
+    """
+    Archivos de evidencia que el docente adjunta a cada actividad de su
+    carga horaria mientras el fondo esta 'en_ejecucion'.
+
+    - Docente: solo ve y sube evidencias de sus propias actividades.
+    - Director/Jefe/Admin: solo lectura (ven las evidencias de los docentes
+      de su(s) carrera(s) para poder revisarlas), no pueden subir ni borrar.
+    """
+    queryset = EvidenciaCargaHoraria.objects.select_related(
+        'carga_horaria', 'carga_horaria__docente', 'carga_horaria__materia', 'subido_por'
+    ).all()
+    serializer_class = EvidenciaCargaHorariaSerializer
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['carga_horaria']
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+
+        if user.is_superuser:
+            return queryset
+
+        perfil = _obtener_perfil_efectivo(user, self.request)
+        if not perfil:
+            return queryset.none()
+
+        if perfil.rol == 'docente' and perfil.docente_id:
+            return queryset.filter(carga_horaria__docente_id=perfil.docente_id)
+
+        if perfil.rol in ['director', 'jefe_estudios', 'iiisyp']:
+            carreras_activas = _obtener_carreras_activas_usuario(user, self.request)
+            if not carreras_activas.exists():
+                return queryset.none()
+            docentes_carrera = _docentes_por_carreras(carreras_activas)
+            return queryset.filter(carga_horaria__docente__in=docentes_carrera)
+
+        return queryset.none()
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            user = self.request.user
+            if not user.is_superuser:
+                perfil = _obtener_perfil_efectivo(user, self.request)
+                if not (perfil and perfil.rol == 'docente' and perfil.docente_id):
+                    raise PermissionDenied(
+                        'Solo el docente dueño de la actividad puede subir o eliminar evidencias.'
+                    )
+        return super().get_permissions()
+
+    def perform_create(self, serializer):
+        serializer.save(subido_por=self.request.user)
+
+    def perform_destroy(self, instance):
+        user = self.request.user
+        if not user.is_superuser and instance.subido_por_id != user.id:
+            raise PermissionDenied('Solo quien subió el archivo puede eliminarlo.')
+
+        fondo = FondoTiempo.objects.filter(
+            docente=instance.carga_horaria.docente,
+            calendario_academico=instance.carga_horaria.calendario,
+            archivado=False,
+        ).first()
+        if fondo and fondo.estado != 'en_ejecucion' and not user.is_superuser:
+            raise PermissionDenied(
+                'Solo se pueden eliminar evidencias mientras el fondo esta en estado "En Ejecución".'
+            )
+
+        instance.delete()
+
+# =====================================================
 # CALENDARIO ACADÉMICO VIEWSET
 # =====================================================
 
@@ -1080,9 +1160,10 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
     """
     queryset = FondoTiempo.objects.select_related(
         'docente', 'carrera', 'calendario_academico', 'aprobado_por', 'validado_por'
-    ).prefetch_related('categorias__actividades', 'proyectos', 'observaciones_detalladas')
+    ).prefetch_related('categorias', 'proyectos', 'observaciones_detalladas')
     serializer_class = FondoTiempoSerializer
     permission_classes = [IsAuthenticated]
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
 
     def _usuario_carrera_inactiva(self, user):
         if user.is_superuser:
@@ -1157,7 +1238,7 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
             queryset = queryset.none()
         
         # 2. Aplicar filtros según la acción
-        if self.action in ['retrieve', 'restaurar', 'destroy', 'generar_pdf_oficial']:
+        if self.action in ['retrieve', 'restaurar', 'destroy', 'generar_pdf_oficial', 'generar_pdf_informe']:
             # Acciones que permiten ver archivados (con validación de dueño)
             if not self.request.user.is_superuser:
                 perfil = _obtener_perfil_efectivo(self.request.user, self.request)
@@ -1205,7 +1286,6 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         # AHORA hacemos el prefetch manual para incluir las categorías recién creadas
         prefetch_related_objects([obj], 
             'categorias',
-            Prefetch('categorias__actividades', queryset=Actividad.objects.all().order_by('orden', 'id')),
             'proyectos', 'informes', 'observaciones_detalladas'
         )
         
@@ -1249,7 +1329,7 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
             filtros['carrera'] = carrera
 
         vinculos = DocenteCarrera.objects.filter(**filtros)
-        if vinculos.filter(dedicacion='dedicacion_exclusiva').exists():
+        if vinculos.filter(es_exento_fondo_tiempo=True).exists():
             raise drf_serializers.ValidationError(
                 {'docente': 'Docente exento de distribución de tiempo según Art. 25°'}
             )
@@ -1284,9 +1364,6 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
 
         if perfil.rol in ['director', 'jefe_estudios'] and user.is_staff:
             return _usuario_tiene_acceso_a_carrera(user, fondo.carrera, self.request)
-
-        if perfil.rol == 'docente' and perfil.docente:
-            return fondo.docente_id == perfil.docente.id
 
         return False
 
@@ -1350,16 +1427,21 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         except Exception:
             perfil = None
 
-        # 1. Permitir solo Superuser
+        # 1. Permitir solo Super Admin
         if user.is_superuser:
             pass
-        # 2. Bloquear a Docentes
+        # 2. Permitir solo Jefatura de Estudios entre usuarios operativos
+        elif perfil and perfil.rol == 'jefe_estudios':
+            pass
+        elif perfil and perfil.rol == 'director':
+             raise PermissionDenied("Los Directores solo pueden revisar y aprobar Fondos de Tiempo; la creación corresponde a Jefatura de Estudios.")
+        # 3. Bloquear a Docentes
         elif perfil and perfil.rol == 'docente':
              raise PermissionDenied("Los docentes no pueden crear Fondos de Tiempo. Esta tarea corresponde a Jefatura de Estudios.")
-        # 3. IIISYP solo tiene acceso de lectura para fiscalizacion de investigacion.
+        # 4. IIISYP solo tiene acceso de lectura para fiscalizacion de investigacion.
         elif perfil and perfil.rol == 'iiisyp':
              raise PermissionDenied("IIISYP solo tiene acceso de lectura a los Fondos de Tiempo.")
-        # 3. Bloquear usuarios sin perfil
+        # 5. Bloquear usuarios sin perfil
         elif not perfil:
              raise PermissionDenied("El usuario no tiene un perfil asignado.")
 
@@ -1453,7 +1535,7 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         user = request.user
         perfil = _obtener_perfil_efectivo(user, request)
 
-        if not user.is_superuser and (not perfil or perfil.rol not in ['director', 'jefe_estudios']):
+        if not user.is_superuser and (not perfil or perfil.rol != 'jefe_estudios'):
             raise PermissionDenied("No tienes permisos para generar Fondos de Tiempo masivamente.")
 
         carreras_activas = _obtener_carreras_activas_usuario(user, request)
@@ -1482,7 +1564,11 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
                     omitidos_ya_existentes += 1
                     continue
 
-                if vinculo.dedicacion == 'dedicacion_exclusiva':
+                vinculos_docente = DocenteCarrera.objects.filter(
+                    docente=vinculo.docente,
+                    activo=True,
+                )
+                if vinculos_docente.filter(es_exento_fondo_tiempo=True).exists():
                     omitidos_exclusiva += 1
                     continue
 
@@ -1658,9 +1744,7 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
             docente_id=docente_id,
             gestion__in=[gestion1, gestion2],
             archivado=False
-        ).select_related('docente', 'carrera').prefetch_related(
-            Prefetch('categorias__actividades', queryset=Actividad.objects.all())
-        )
+        ).select_related('docente', 'carrera').prefetch_related('categorias')
         
         serializer = self.get_serializer(fondos, many=True)
         return Response(serializer.data)
@@ -1721,7 +1805,123 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
     
     # NUEVAS ACCIONES SEGÚN REGLAMENTO UAB
-    
+
+    def _extraer_secciones_informe(self, request):
+        """Lee las 7 secciones del informe MAS los 12 campos del documento
+        tipo carta (encabezado, fecha, destinatario/remitente/referencia,
+        saludo+intro, cierre, firma) desde request.data. El editor del
+        frontend envia el documento completo en cada guardado, no solo las
+        secciones. Compartido por guardar-informe-borrador y presentar."""
+        campos = [
+            'seccion_academica', 'seccion_investigacion', 'seccion_extension_interaccion',
+            'seccion_asesorias_tutorias', 'seccion_academica_administrativa',
+            'seccion_social_cultural_deportiva', 'conclusiones_generales',
+            *CAMPOS_TEXTO_INFORME,
+        ]
+        return {campo: (request.data.get(campo) or '').strip() for campo in campos}
+
+    @action(detail=True, methods=['patch'], url_path='guardar-informe-borrador')
+    def guardar_informe_borrador(self, request, pk=None):
+        """
+        Guarda el progreso del informe SIN presentarlo formalmente al
+        Director. El docente puede llamar esto tantas veces como quiera
+        mientras redacta; no cambia el estado del Fondo de Tiempo.
+        """
+        fondo = self.get_object()
+
+        perfil = _obtener_perfil_efectivo(request.user, request)
+        if not request.user.is_superuser:
+            if not (perfil and perfil.rol == 'docente' and perfil.docente and fondo.docente_id == perfil.docente_id):
+                raise PermissionDenied("Solo el docente dueño del fondo puede editar su informe.")
+
+        if fondo.estado != 'en_ejecucion':
+            return Response(
+                {'error': f'Solo se puede editar el informe mientras el fondo está "En Ejecución". Estado actual: {fondo.get_estado_display()}.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        informe_existente = fondo.informes.filter(tipo='parcial').order_by('-fecha_elaboracion').first()
+        if informe_existente and informe_existente.estado not in ['borrador', 'observado']:
+            return Response(
+                {'error': f'El informe ya fue enviado formalmente (estado: {informe_existente.get_estado_display()}) y no se puede editar como borrador.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        secciones = self._extraer_secciones_informe(request)
+        informe, _creado = InformeFondo.objects.update_or_create(
+            fondo_tiempo=fondo,
+            tipo='parcial',
+            defaults={
+                'elaborado_por': request.user,
+                'estado': 'borrador',
+                **secciones,
+            }
+        )
+
+        return Response(InformeFondoSerializer(informe, context={'request': request}).data)
+
+    @action(detail=True, methods=['post'], url_path='observar-informe')
+    @transaction.atomic
+    def observar_informe(self, request, pk=None):
+        """
+        El Director solicita correcciones al informe presentado: el informe
+        vuelve a ser editable por el docente (estado 'observado') y el fondo
+        vuelve a 'en_ejecucion'. Se notifica al docente con el comentario.
+        """
+        fondo = self.get_object()
+        user = request.user
+
+        perfil = _obtener_perfil_efectivo(user, request)
+        if not (perfil and perfil.rol == 'director' and _usuario_tiene_acceso_a_carrera(user, fondo.carrera, request)):
+            raise PermissionDenied("Solo el Director de la carrera correspondiente puede solicitar correcciones al informe.")
+
+        if fondo.estado != 'informe_presentado':
+            return Response(
+                {'error': f'Solo se pueden observar informes en estado "Presentado". Estado actual: {fondo.get_estado_display()}.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        informe = fondo.informes.filter(tipo='parcial').order_by('-fecha_elaboracion').first()
+        if not informe:
+            return Response({'error': 'No se encontró informe asociado al fondo.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        comentario = (request.data.get('comentario') or '').strip()
+        if len(comentario) < 10:
+            return Response(
+                {'comentario': 'Debe explicar qué debe corregir el docente (mínimo 10 caracteres).'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        informe.estado = 'observado'
+        informe.evaluacion_director = comentario
+        informe.evaluado_por = user
+        informe.fecha_evaluacion = timezone.now().date()
+        informe.save()
+
+        estado_anterior = fondo.estado
+        fondo.estado = 'en_ejecucion'
+        fondo.save()
+
+        HistorialFondo.objects.create(
+            fondo_tiempo=fondo,
+            usuario=user,
+            tipo_cambio='observacion',
+            descripcion=f'Director solicitó correcciones al informe: {comentario}',
+            estado_anterior=estado_anterior,
+            estado_nuevo=fondo.estado
+        )
+
+        # Notificar al docente (mismo canal que las demas observaciones del fondo).
+        observacion = ObservacionFondo.objects.create(fondo_tiempo=fondo, resuelta=False)
+        MensajeObservacion.objects.create(
+            observacion=observacion,
+            autor=user,
+            texto=f'Se solicitaron correcciones a tu Informe de Cumplimiento:\n\n{comentario}',
+            es_admin=True,
+        )
+
+        return Response(InformeFondoSerializer(informe, context={'request': request}).data)
+
     @action(detail=True, methods=['post'])
     @transaction.atomic
     def presentar(self, request, pk=None):
@@ -1736,11 +1936,19 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         
         # LÓGICA FLEXIBLE: Manejo de estados
         if fondo.estado == 'en_ejecucion':
-            # Obtener datos del informe final
-            resumen = request.data.get('resumen', '').strip()
-            logros = request.data.get('logros', '').strip()
-            dificultades = request.data.get('dificultades', '').strip()
-            conclusiones = request.data.get('conclusiones', '').strip()
+            secciones = self._extraer_secciones_informe(request)
+
+            # Minimos exigibles: Academica (todo docente dicta materias) y
+            # Conclusiones (cierre del informe). Las demas secciones quedan
+            # opcionales porque no todos los docentes tienen actividad en
+            # investigacion, gestion, tutorias, etc. en una gestion dada.
+            errores_secciones = {}
+            if not secciones['seccion_academica']:
+                errores_secciones['seccion_academica'] = 'Debe describir el cumplimiento de la sección Académica.'
+            if not secciones['conclusiones_generales']:
+                errores_secciones['conclusiones_generales'] = 'Debe redactar las conclusiones generales del informe.'
+            if errores_secciones:
+                return Response(errores_secciones, status=status.HTTP_400_BAD_REQUEST)
 
             # Transición directa para informe (Modo Flexible)
             estado_anterior = fondo.estado
@@ -1748,18 +1956,16 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
             fondo.fecha_informe = timezone.now()
             fondo.save()
 
-            # Crear o actualizar el informe con datos reales
+            # Crear o actualizar el informe con datos reales; queda marcado
+            # 'enviado' (formal, ya no editable por el docente) hasta que el
+            # Director lo apruebe o lo observe.
             InformeFondo.objects.update_or_create(
                 fondo_tiempo=fondo,
                 tipo='parcial',
                 defaults={
                     'elaborado_por': request.user,
-                    'resumen_ejecutivo': resumen or "Sin resumen",
-                    'actividades_realizadas': resumen or "Ver resumen ejecutivo", # Mapeo por defecto
-                    'logros': logros or "Sin logros registrados",
-                    'dificultades': dificultades or "Sin dificultades registradas",
-                    'resultados': conclusiones or "Sin conclusiones", # Mapeamos conclusiones a resultados
-                    'fecha_elaboracion': timezone.now().date()
+                    'estado': 'enviado',
+                    **secciones,
                 }
             )
 
@@ -1815,6 +2021,12 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        if not fondo.tiene_programa_analitico:
+            return Response(
+                {'error': 'Debe adjuntar el Programa Analítico antes de presentar al Director. Es un requisito reglamentario obligatorio (Art. 15).'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         total_macro = Decimal(str(fondo.total_asignado or 0)).quantize(Decimal('0.01'))
         horas_objetivo = Decimal(str(fondo.horas_semana or 0)).quantize(Decimal('0.01'))
         tiene_micro = CargaHoraria.objects.filter(
@@ -1822,9 +2034,23 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
             calendario=fondo.calendario_academico,
         ).exists()
 
+        total_micro_anual = Decimal(str(
+            CargaHoraria.objects.filter(
+                docente=fondo.docente,
+                calendario=fondo.calendario_academico,
+            ).aggregate(total=Sum('horas'))['total'] or 0
+        )).quantize(Decimal('0.01'))
+        objetivo_micro_anual = Decimal(str(fondo.horas_efectivas or 1712)).quantize(Decimal('0.01'))
+
         if horas_objetivo <= 0 or total_macro != horas_objetivo or not tiene_micro:
             return Response(
                 {'error': 'Complete la distribución de horas y asigne al menos una materia antes de presentar'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if total_micro_anual != objetivo_micro_anual:
+            return Response(
+                {'error': f'El Micro debe sumar exactamente {objetivo_micro_anual:g} horas anuales. Total actual: {total_micro_anual:g}.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -2072,7 +2298,7 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
     # NUEVAS ACCIONES PARA COMPLETAR FLUJO DE ESTADOS
     # =====================================================
 
-    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     @transaction.atomic
     def iniciar_ejecucion(self, request, pk=None):
         """
@@ -2081,6 +2307,13 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         Estado: aprobado_director → en_ejecucion
         """
         fondo = self.get_object()
+        perfil = _obtener_perfil_efectivo(request.user, request)
+
+        if not request.user.is_superuser:
+            if not perfil or perfil.rol != 'director':
+                raise PermissionDenied("Solo el Director de Carrera puede iniciar la ejecucion del Fondo de Tiempo.")
+            if not _usuario_tiene_acceso_a_carrera(request.user, fondo.carrera, request):
+                raise PermissionDenied("No tienes acceso a la carrera de este Fondo de Tiempo.")
         
         # Validar estado actual
         if fondo.estado != 'aprobado_director':
@@ -2120,12 +2353,11 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         fondo = self.get_object()
         
         # Verificar que sea el docente dueño del fondo
-        if not self.request.user.is_staff:
-            if hasattr(self.request.user, 'perfil') and self.request.user.perfil.docente:
-                if fondo.docente != self.request.user.perfil.docente:
-                    raise PermissionDenied("No puede presentar informes de otros docentes")
-            else:
-                raise PermissionDenied("Usuario no tiene docente asignado")
+        perfil = _obtener_perfil_efectivo(request.user, request)
+        if not perfil or perfil.rol != 'docente' or not perfil.docente:
+            raise PermissionDenied("Solo el docente titular puede presentar el informe final.")
+        if fondo.docente_id != perfil.docente.id:
+            raise PermissionDenied("No puede presentar informes de otros docentes")
         
         # Validar estado actual
         if fondo.estado != 'en_ejecucion':
@@ -2138,7 +2370,7 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         actividades_realizadas = request.data.get('actividades_realizadas', '').strip()
         logros = request.data.get('logros', '').strip()
         dificultades = request.data.get('dificultades', '').strip()
-        archivo_adjunto = request.FILES.get('archivo_adjunto', None)
+        evidencia = request.FILES.get('evidencia') or request.FILES.get('archivo_adjunto')
         
         if not actividades_realizadas or len(actividades_realizadas) < 50:
             return Response(
@@ -2155,14 +2387,48 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
         # Crear el informe
         informe = InformeFondo.objects.create(
             fondo_tiempo=fondo,
-            tipo='parcial',
+            tipo='final',
+            resumen_ejecutivo=actividades_realizadas[:500],
             actividades_realizadas=actividades_realizadas,
+            resultados=logros,
             logros=logros,
             dificultades=dificultades,
             elaborado_por=request.user,
             fecha_elaboracion=timezone.now().date(),
-            archivo_adjunto=archivo_adjunto
+            evidencia=evidencia,
+            archivo_adjunto=evidencia
         )
+
+        asignaturas_raw = request.data.get('asignaturas') or request.data.get('materias') or '[]'
+        if isinstance(asignaturas_raw, str):
+            try:
+                asignaturas_data = json.loads(asignaturas_raw)
+            except json.JSONDecodeError:
+                asignaturas_data = []
+        else:
+            asignaturas_data = asignaturas_raw if isinstance(asignaturas_raw, list) else []
+
+        def entero_no_negativo(valor):
+            try:
+                return max(int(valor or 0), 0)
+            except (TypeError, ValueError):
+                return 0
+
+        InformeAsignaturaEjecutada.objects.filter(fondo_tiempo=fondo).delete()
+        for asignatura in asignaturas_data:
+            if not isinstance(asignatura, dict):
+                continue
+            nombre_materia = str(asignatura.get('nombre_materia') or asignatura.get('nombre') or '').strip()
+            if not nombre_materia:
+                continue
+            InformeAsignaturaEjecutada.objects.create(
+                fondo_tiempo=fondo,
+                nombre_materia=nombre_materia,
+                inscritos=entero_no_negativo(asignatura.get('inscritos')),
+                aprobados=entero_no_negativo(asignatura.get('aprobados')),
+                reprobados=entero_no_negativo(asignatura.get('reprobados')),
+                habilitados=entero_no_negativo(asignatura.get('habilitados')),
+            )
         
         # Cambiar estado del fondo
         estado_anterior = fondo.estado
@@ -2240,18 +2506,19 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
             )
         
         # Actualizar el informe con la evaluación
+        informe.estado = 'aprobado'
         informe.cumplimiento = cumplimiento
         informe.evaluacion_director = evaluacion_director
         informe.evaluado_por = request.user
         informe.fecha_evaluacion = timezone.now().date()
         informe.save()
-        
+
         # Cambiar estado del fondo a finalizado
         estado_anterior = fondo.estado
         fondo.estado = 'finalizado'
         fondo.fecha_finalizacion = timezone.now()
         fondo.save()
-        
+
         # Registrar en historial
         HistorialFondo.objects.create(
             fondo_tiempo=fondo,
@@ -2261,7 +2528,16 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
             estado_anterior=estado_anterior,
             estado_nuevo=fondo.estado
         )
-        
+
+        # Notificar al docente que su informe fue aprobado.
+        observacion = ObservacionFondo.objects.create(fondo_tiempo=fondo, resuelta=True)
+        MensajeObservacion.objects.create(
+            observacion=observacion,
+            autor=request.user,
+            texto=f'Tu Informe de Cumplimiento fue aprobado (Cumplimiento: {dict(InformeFondo.CUMPLIMIENTO_CHOICES).get(cumplimiento, cumplimiento)}).\n\n{evaluacion_director}',
+            es_admin=True,
+        )
+
         output_serializer = FondoTiempoDetalleSerializer(fondo, context={'request': request})
         return Response({
             'fondo': output_serializer.data,
@@ -2307,6 +2583,29 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
 
         except Exception as e:
             print(f"❌ ERROR PDF: {e}")
+            import traceback
+            traceback.print_exc()
+            return HttpResponse(f"Error crítico: {str(e)}", status=500)
+
+    @action(detail=True, methods=['get'], url_path='pdf-informe')
+    def generar_pdf_informe(self, request, pk=None):
+        """
+        Carta institucional narrativa del Informe de Fondo de Tiempo (las 7
+        secciones que redacta el docente), como documento independiente del
+        reporte de horas de 'pdf-oficial'.
+        """
+        try:
+            fondo = self.get_object()
+            buffer = InformePDFGenerator.generar_informe_individual(fondo)
+
+            nombre_docente = fondo.docente.nombre_completo.replace(' ', '_') if fondo.docente else 'Docente'
+            nombre_archivo = f"Informe_{nombre_docente}_{fondo.gestion}.pdf"
+
+            return FileResponse(
+                buffer, as_attachment=False, filename=nombre_archivo, content_type='application/pdf',
+            )
+        except Exception as e:
+            print(f"❌ ERROR PDF INFORME: {e}")
             import traceback
             traceback.print_exc()
             return HttpResponse(f"Error crítico: {str(e)}", status=500)
@@ -2395,10 +2694,25 @@ class FondoTiempoViewSet(viewsets.ModelViewSet):
 
         dedicacion_esperada = float(horas_semanales) if horas_semanales else 0.0
         diferencia = abs(total_horas_semanales_horario - dedicacion_esperada)
-        if diferencia > 0.01:
+        # BUGFIX 2026-09-13: este chequeo bloqueaba la generación del PDF para
+        # cualquier fondo cuya CargaHoraria se cargó por horas anuales totales
+        # (el flujo real y mayoritario) en lugar de bloques semanales con
+        # hora_inicio/hora_fin (usados solo para armar la grilla de horario
+        # L-S). Sin bloques cargados, total_horas_semanales_horario da 0 y
+        # esto se reportaba como "0.00h vs 40.00h", bloqueando el PDF aunque
+        # el fondo estuviera correctamente cargado. Ahora solo es un error
+        # bloqueante si SÍ hay bloques horarios cargados y no cuadran; si no
+        # hay ninguno, es solo una advertencia (no hay grilla de horario que
+        # mostrar, pero el resto del PDF se genera igual).
+        if total_horas_semanales_horario > 0 and diferencia > 0.01:
             errores.append(
                 'La suma semanal de bloques horarios no coincide con la dedicación del docente '
                 f'({total_horas_semanales_horario:.2f}h vs {dedicacion_esperada:.2f}h).'
+            )
+        elif total_horas_semanales_horario == 0:
+            advertencias.append(
+                'No hay bloques horarios (hora_inicio/hora_fin) cargados para armar la grilla de horario '
+                'semanal; el PDF se generará sin esa tabla.'
             )
 
         # 4) Criterio de mapeo de horarios para tabla L-S
@@ -2539,37 +2853,6 @@ class CategoriaFuncionViewSet(FondoTiempoDistribucionAccessMixin, viewsets.Model
 
     def perform_destroy(self, instance):
         self._validar_fondo_modificable(instance.fondo_tiempo)
-        instance.delete()
-
-
-class ActividadViewSet(FondoTiempoDistribucionAccessMixin, viewsets.ModelViewSet):
-    queryset = Actividad.objects.select_related(
-        'categoria',
-        'categoria__fondo_tiempo',
-        'categoria__fondo_tiempo__docente',
-        'categoria__fondo_tiempo__carrera',
-    ).all()
-    serializer_class = ActividadSerializer
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ['categoria', 'categoria__fondo_tiempo', 'proyecto']
-    search_fields = ['detalle', 'evidencias']
-
-    def get_queryset(self):
-        return self._filtrar_por_rol(super().get_queryset(), 'categoria__fondo_tiempo')
-
-    def perform_create(self, serializer):
-        categoria = serializer.validated_data.get('categoria')
-        self._validar_fondo_modificable(categoria.fondo_tiempo if categoria else None)
-        serializer.save()
-
-    def perform_update(self, serializer):
-        instance = self.get_object()
-        categoria = serializer.validated_data.get('categoria', instance.categoria)
-        self._validar_fondo_modificable(categoria.fondo_tiempo if categoria else None)
-        serializer.save()
-
-    def perform_destroy(self, instance):
-        self._validar_fondo_modificable(instance.categoria.fondo_tiempo)
         instance.delete()
 
 
@@ -2840,13 +3123,21 @@ class ObservacionFondoViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
     
+        # Nota interna Director <-> Jefe de Estudios: nunca visible para el docente.
+        # Solo Director/Jefe de Estudios (o superuser) pueden marcar un mensaje como interno;
+        # cualquier otro rol que envie el flag es ignorado y se fuerza a False.
+        rol_activo = getattr(getattr(request.user, 'perfil', None), 'rol', None)
+        puede_marcar_interno = request.user.is_superuser or rol_activo in ['director', 'jefe_estudios']
+        es_interno = puede_marcar_interno and str(request.data.get('es_interno', '')).lower() in ('1', 'true', 'yes')
+
         # Crear mensaje
         mensaje = MensajeObservacion.objects.create(
             observacion=observacion,
             autor=request.user,
             responde_a=responde_a,
             texto=texto,
-            es_admin=request.user.perfil.rol in ['director', 'jefe_estudios']
+            es_admin=rol_activo in ['director', 'jefe_estudios'],
+            es_interno=es_interno,
        )
 
         output_serializer = self.get_serializer(observacion)
@@ -2924,7 +3215,7 @@ class ObservacionFondoViewSet(viewsets.ModelViewSet):
 
         if request.user.is_superuser or es_jefatura:
             siguiente_estado = 'presentado_director'
-            descripcion_historial = 'Jefatura marcÃ³ observaciÃ³n como resuelta y presentÃ³ a Director.'
+            descripcion_historial = 'Jefatura marcó observación como resuelta y presentó a Director.'
         elif primer_mensaje and hasattr(primer_mensaje.autor, 'perfil'):
             if primer_mensaje.autor.perfil.rol == 'director':
                 siguiente_estado = 'presentado_director'
@@ -3427,6 +3718,24 @@ def usuario_actual(request):
     user = request.user
     serializer = UsuarioSerializer(user, context={'request': request})
     return Response(serializer.data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def test_pdf_hola_mundo(request):
+    """
+    Endpoint de diagnostico (auditoria PDF 2026-09-13): genera un PDF minimo
+    con ReportLab para aislar si un fallo de generacion de PDF es de la
+    libreria/configuracion (este endpoint tambien fallaria) o de la logica
+    especifica de FondoPDFGenerator (este endpoint funciona, el otro no).
+    """
+    from reportlab.pdfgen import canvas
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer)
+    pdf.drawString(100, 750, "Hola Mundo")
+    pdf.save()
+    buffer.seek(0)
+    return FileResponse(buffer, as_attachment=False, filename='prueba.pdf', content_type='application/pdf')
 
 
 @api_view(['GET'])

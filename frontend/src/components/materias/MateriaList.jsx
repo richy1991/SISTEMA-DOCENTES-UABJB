@@ -6,10 +6,14 @@ import { Link, Outlet } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
 // Componente Select con diseÃ±o personalizado (mismo estilo que ListaDocentes)
-const SelectConDropdown = ({ label, value, onChange, options, name, placeholder = 'Buscar...', emptyText = 'Sin resultados', hideSelectedOption = false }) => {
+const SelectConDropdown = ({ label, value, onChange, options, name, placeholder = 'Buscar...', emptyText = 'Sin resultados' }) => {
   const [open, setOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const containerRef = React.useRef(null);
+  const inputRef = React.useRef(null);
+  const optionRefs = React.useRef({});
+  const emptyValue = name === 'semestre' ? 'todos' : 'todas';
+  const hasSelection = Boolean(value && value !== emptyValue);
 
   useEffect(() => {
     const handleOutside = (event) => {
@@ -26,14 +30,21 @@ const SelectConDropdown = ({ label, value, onChange, options, name, placeholder 
     };
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+
+    setSearchTerm('');
+    inputRef.current?.focus();
+    window.requestAnimationFrame(() => {
+      optionRefs.current[String(value)]?.scrollIntoView({ block: 'center' });
+    });
+  }, [open, value]);
+
   const selectedLabel = value && options.find(opt => opt.value === value)?.label;
   const query = searchTerm.trim().toLowerCase();
-  const menuOptions = hideSelectedOption
-    ? options.filter((option) => option.value !== value)
-    : options;
   const visibleOptions = query
-    ? menuOptions.filter((option) => option.label.toLowerCase().includes(query))
-    : menuOptions;
+    ? options.filter((option) => option.label.toLowerCase().includes(query))
+    : options;
 
   const handleSelect = (optionValue) => {
     onChange({ target: { name, value: optionValue } });
@@ -43,7 +54,7 @@ const SelectConDropdown = ({ label, value, onChange, options, name, placeholder 
 
   const clearSelection = (event) => {
     event.stopPropagation();
-    onChange({ target: { name, value: name === 'semestre' ? 'todos' : 'todas' } });
+    onChange({ target: { name, value: emptyValue } });
     setSearchTerm('');
     setOpen(false);
   };
@@ -56,6 +67,7 @@ const SelectConDropdown = ({ label, value, onChange, options, name, placeholder 
       <div className={`relative w-full min-w-[200px] rounded-xl border-2 bg-slate-50 dark:bg-slate-700 shadow-sm border-slate-300 dark:border-slate-600`}>
         <div className="flex items-center gap-2 px-4 py-2.5">
           <input
+            ref={inputRef}
             type="text"
             value={open ? searchTerm : (selectedLabel || '')}
             onChange={(event) => {
@@ -69,7 +81,7 @@ const SelectConDropdown = ({ label, value, onChange, options, name, placeholder 
             placeholder={placeholder}
             className="w-full bg-transparent text-slate-800 dark:text-white placeholder-slate-400/70 dark:placeholder-slate-400/60 focus:outline-none"
           />
-          {selectedLabel && (
+          {hasSelection && (
             <button
               type="button"
               onClick={clearSelection}
@@ -95,6 +107,9 @@ const SelectConDropdown = ({ label, value, onChange, options, name, placeholder 
               visibleOptions.map((option) => (
                 <button
                   key={option.value}
+                  ref={(element) => {
+                    optionRefs.current[String(option.value)] = element;
+                  }}
                   type="button"
                   onClick={() => handleSelect(option.value)}
                   className={`w-full text-left px-3 py-1.5 text-xs rounded-lg transition-colors ${
@@ -347,7 +362,6 @@ const MateriaList = ({ isDark, sidebarCollapsed = false }) => {
                                       options={[{ value: 'todas', label: 'Todas las carreras' }, ...carreraOptions]}
                                       placeholder="Buscar carrera..."
                                       emptyText="No hay carreras"
-                                      hideSelectedOption
                                     />
                                 </div>
                             )}
@@ -361,7 +375,6 @@ const MateriaList = ({ isDark, sidebarCollapsed = false }) => {
                                   options={semestreOptions}
                                   placeholder="Buscar semestre..."
                                   emptyText="No hay semestres"
-                                  hideSelectedOption
                                 />
                             </div>
 

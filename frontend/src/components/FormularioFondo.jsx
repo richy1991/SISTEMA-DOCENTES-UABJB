@@ -11,6 +11,7 @@ import {
   sanitizeApiErrors,
   getApiErrorMessage,
 } from '../utils/formErrors';
+import { puedeCrearFondoTiempo } from '../utils/fondoTiempoPermissions';
 
 const SelectConDropdown = ({
   label,
@@ -1108,6 +1109,13 @@ function FormularioFondo({ isDark, editar = false }) {
       e.stopPropagation();
     }
     setError('');
+
+    if (!editar && !puedeCrearFondoTiempo(usuarioActual)) {
+      const mensajeError = 'No tienes permisos para crear Fondos de Tiempo. Esta tarea corresponde a Jefatura de Estudios.';
+      setError(mensajeError);
+      toast.error(mensajeError);
+      return;
+    }
 
     const erroresValidados = validarFormulario();
     const hayErrores = Object.keys(erroresValidados).length > 0;

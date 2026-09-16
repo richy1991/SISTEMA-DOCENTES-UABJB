@@ -1,7 +1,8 @@
-import { Outlet } from 'react-router-dom';
+import { Navigate, Outlet } from 'react-router-dom';
 import { useEffect } from 'react';
 import Sidebar from './Sidebar';
 import ThemeToggle from './ThemeToggle';
+import { useActiveRole } from '../contexts/ActiveRoleContext';
 
 const FondoTiempoLayout = ({ 
     user, 
@@ -13,12 +14,34 @@ const FondoTiempoLayout = ({
     onProfileUpdate, // <-- Recibimos la prop
     onCarreraActivaChange,
 }) => {
+    const {
+        activeAssignment,
+        assignments,
+        hasMultipleAssignments,
+    } = useActiveRole();
+
+    const storedAssignmentId = localStorage.getItem('active_assignment_id');
+    const hasValidStoredAssignment = assignments.some(
+        (assignment) => String(assignment.id) === String(storedAssignmentId)
+    );
+    const requiereSeleccionRol = Boolean(
+        user
+        && !user.is_superuser
+        && hasMultipleAssignments
+        && !activeAssignment
+        && !hasValidStoredAssignment
+    );
+
     useEffect(() => {
         document.documentElement.style.setProperty('--fondo-sidebar-width', sidebarCollapsed ? '5rem' : '18rem');
         return () => {
             document.documentElement.style.removeProperty('--fondo-sidebar-width');
         };
     }, [sidebarCollapsed]);
+
+    if (requiereSeleccionRol) {
+        return <Navigate to="/" replace />;
+    }
 
     return (
         <div

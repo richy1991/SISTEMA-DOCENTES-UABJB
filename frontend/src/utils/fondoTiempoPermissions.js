@@ -1,4 +1,4 @@
-const ROLES_CREACION_FONDO_TIEMPO = ['director', 'jefe_estudios'];
+const ROLES_CREACION_FONDO_TIEMPO = ['jefe_estudios'];
 
 export const puedeCrearFondoTiempo = (user) => {
   if (!user) return false;

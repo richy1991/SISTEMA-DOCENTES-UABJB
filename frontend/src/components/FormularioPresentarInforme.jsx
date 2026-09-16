@@ -16,6 +16,10 @@ function FormularioPresentarInforme({ fondoId, onInformePresentado, onCancelar }
     logros: '',
     dificultades: ''
   });
+  const [evidencia, setEvidencia] = useState(null);
+  const [asignaturas, setAsignaturas] = useState([
+    { nombre_materia: '', inscritos: '', aprobados: '', reprobados: '', habilitados: '' }
+  ]);
   const [errores, setErrores] = useState({});
 
   const handleChange = (e) => {
@@ -32,6 +36,23 @@ function FormularioPresentarInforme({ fondoId, onInformePresentado, onCancelar }
         [name]: ''
       }));
     }
+  };
+
+  const handleAsignaturaChange = (index, field, value) => {
+    setAsignaturas(prev => prev.map((item, idx) => (
+      idx === index ? { ...item, [field]: value } : item
+    )));
+  };
+
+  const agregarAsignatura = () => {
+    setAsignaturas(prev => [
+      ...prev,
+      { nombre_materia: '', inscritos: '', aprobados: '', reprobados: '', habilitados: '' }
+    ]);
+  };
+
+  const quitarAsignatura = (index) => {
+    setAsignaturas(prev => prev.length === 1 ? prev : prev.filter((_, idx) => idx !== index));
   };
 
   const validarFormulario = () => {
@@ -60,7 +81,28 @@ function FormularioPresentarInforme({ fondoId, onInformePresentado, onCancelar }
     setLoading(true);
 
     try {
-      await api.post(`/fondos-tiempo/${fondoId}/presentar-informe/`, formData);
+      const payload = new FormData();
+      payload.append('actividades_realizadas', formData.actividades_realizadas);
+      payload.append('logros', formData.logros);
+      payload.append('dificultades', formData.dificultades);
+      if (evidencia) {
+        payload.append('evidencia', evidencia);
+      }
+      payload.append('asignaturas', JSON.stringify(
+        asignaturas
+          .filter(item => item.nombre_materia.trim())
+          .map(item => ({
+            nombre_materia: item.nombre_materia.trim(),
+            inscritos: Number(item.inscritos || 0),
+            aprobados: Number(item.aprobados || 0),
+            reprobados: Number(item.reprobados || 0),
+            habilitados: Number(item.habilitados || 0),
+          }))
+      ));
+
+      await api.post(`/fondos-tiempo/${fondoId}/presentar-informe/`, payload, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
       toast.success('Informe presentado exitosamente');
       onInformePresentado();
     } catch (err) {
@@ -169,6 +211,69 @@ function FormularioPresentarInforme({ fondoId, onInformePresentado, onCancelar }
                 rows="4"
                 placeholder="Si encontraste dificultades durante la ejecución, descríbelas aquí..."
                 className="w-full px-4 py-3 rounded-xl border-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md resize-none"
+              />
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <label className="block text-sm font-bold text-slate-800 dark:text-slate-300">
+                  Asignaturas Ejecutadas
+                </label>
+                <button
+                  type="button"
+                  onClick={agregarAsignatura}
+                  disabled={loading}
+                  className="px-3 py-2 rounded-lg text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                >
+                  Agregar
+                </button>
+              </div>
+              {asignaturas.map((asignatura, index) => (
+                <div key={index} className="grid grid-cols-1 md:grid-cols-6 gap-2">
+                  <input
+                    type="text"
+                    value={asignatura.nombre_materia}
+                    onChange={(e) => handleAsignaturaChange(index, 'nombre_materia', e.target.value)}
+                    disabled={loading}
+                    placeholder="Materia"
+                    className="md:col-span-2 px-3 py-2 rounded-lg border-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white"
+                  />
+                  {['inscritos', 'aprobados', 'reprobados', 'habilitados'].map((field) => (
+                    <input
+                      key={field}
+                      type="number"
+                      min="0"
+                      value={asignatura[field]}
+                      onChange={(e) => handleAsignaturaChange(index, field, e.target.value)}
+                      disabled={loading}
+                      placeholder={field.charAt(0).toUpperCase() + field.slice(1)}
+                      className="px-3 py-2 rounded-lg border-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white"
+                    />
+                  ))}
+                  {asignaturas.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => quitarAsignatura(index)}
+                      disabled={loading}
+                      className="md:col-span-6 text-sm font-bold text-red-600 hover:text-red-700 disabled:opacity-50"
+                    >
+                      Quitar asignatura
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold mb-2 text-slate-800 dark:text-slate-300">
+                Evidencia Digital
+              </label>
+              <input
+                type="file"
+                accept=".pdf,image/*"
+                onChange={(e) => setEvidencia(e.target.files?.[0] || null)}
+                disabled={loading}
+                className="w-full px-4 py-3 rounded-xl border-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white"
               />
             </div>
 

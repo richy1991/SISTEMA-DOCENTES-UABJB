@@ -14,15 +14,19 @@ function ObservacionesSection({ fondoId, estadoFondo, usuarioActual }) {
     cargarObservaciones();
   }, [fondoId]);
 
-  const cargarObservaciones = async () => {
+  const cargarObservaciones = async ({ silencioso = false } = {}) => {
     try {
-      setLoading(true);
+      if (!silencioso) {
+        setLoading(true);
+      }
       const response = await getObservacionesPorFondo(fondoId);
       setObservaciones(response.data.results || response.data || []);
     } catch (err) {
       console.error('Error al cargar observaciones:', err);
     } finally {
-      setLoading(false);
+      if (!silencioso) {
+        setLoading(false);
+      }
     }
   };
 
@@ -38,7 +42,7 @@ function ObservacionesSection({ fondoId, estadoFondo, usuarioActual }) {
       toast.success('Mensaje enviado');
       setRespondiendo(null);
       setMensajeTexto('');
-      await cargarObservaciones();
+      await cargarObservaciones({ silencioso: true });
     } catch (err) {
       console.error('Error al enviar mensaje:', err);
       toast.error(err.response?.data?.error || 'Error al enviar mensaje');

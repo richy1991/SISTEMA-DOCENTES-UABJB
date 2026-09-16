@@ -13,10 +13,10 @@ router.register(r'saldos-vacaciones', views.SaldoVacacionesGestionViewSet)
 router.register(r'carreras', views.CarreraViewSet)
 router.register(r'materias', views.MateriaViewSet)
 router.register(r'cargas-horarias', views.CargaHorariaViewSet, basename='cargahoraria')
+router.register(r'evidencias-carga-horaria', views.EvidenciaCargaHorariaViewSet, basename='evidenciacargahoraria')
 router.register(r'calendarios', views.CalendarioAcademicoViewSet)
 router.register(r'fondos-tiempo', views.FondoTiempoViewSet)
 router.register(r'categorias', views.CategoriaFuncionViewSet)
-router.register(r'actividades', views.ActividadViewSet)
 router.register(r'proyectos', views.ProyectoViewSet)
 router.register(r'informes', views.InformeFondoViewSet)
 router.register(r'observaciones', views.ObservacionFondoViewSet)
@@ -42,6 +42,9 @@ urlpatterns = [
     
     # Endpoint para actualizar la foto de perfil
     path('perfil/foto/', views.FotoPerfilUpdateView.as_view(), name='foto-perfil-update'),
+
+    # Endpoint de diagnostico: PDF minimo para aislar problemas de libreria vs. logica
+    path('test-pdf-hola-mundo/', views.test_pdf_hola_mundo, name='test-pdf-hola-mundo'),
 
     # Endpoint para cambio de contraseña inicial obligatorio
     path('auth/cambiar-password-inicial/', views.cambiar_password_inicial, name='cambiar-password-inicial'),

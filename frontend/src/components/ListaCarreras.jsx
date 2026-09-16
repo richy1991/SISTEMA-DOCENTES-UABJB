@@ -1469,12 +1469,14 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
     setIsSubmitting(true);
     try {
       const payload = buildCarreraPayload();
-      await api.post('/carreras/', payload, {
+      const response = await api.post('/carreras/', payload, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       toast.success('Carrera creada correctamente');
+      if (response.data?.id) {
+        setCarreras((prev) => [response.data, ...prev]);
+      }
       setIsCreating(false);
-      cargarCarreras();
     } catch (err) {
       console.error(err);
       const apiErrors = err.response?.data;
@@ -1510,7 +1512,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
     setIsSubmitting(true);
     try {
       const payload = buildCarreraPayload();
-      await api.put(`/carreras/${carreraSeleccionada.id}/`, payload, {
+      const response = await api.put(`/carreras/${carreraSeleccionada.id}/`, payload, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       if (!suppressUpdateToastRef.current) {
@@ -1521,7 +1523,11 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
       setLogoFile(null);
       setLogoPreview('');
       setRemoveLogoCarrera(false);
-      cargarCarreras();
+      if (response.data?.id) {
+        setCarreras((prev) => prev.map((carrera) => (
+          carrera.id === response.data.id ? response.data : carrera
+        )));
+      }
     } catch (err) {
       console.error(err);
       const apiData = err.response?.data;
@@ -1562,7 +1568,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
     setIsSubmitting(true);
     try {
       const payload = buildLogoOnlyPayload();
-      await api.patch(`/carreras/${carreraSeleccionada.id}/`, payload, {
+      const response = await api.patch(`/carreras/${carreraSeleccionada.id}/`, payload, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       toast.success('Logo de carrera actualizado correctamente');
@@ -1570,7 +1576,11 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
       setLogoFile(null);
       setLogoPreview('');
       setRemoveLogoCarrera(false);
-      cargarCarreras();
+      if (response.data?.id) {
+        setCarreras((prev) => prev.map((carrera) => (
+          carrera.id === response.data.id ? response.data : carrera
+        )));
+      }
     } catch (err) {
       console.error(err);
       const apiErrors = err.response?.data;
@@ -1652,7 +1662,7 @@ function ListaCarreras({ isDark, sidebarCollapsed = false, hasSidebar = true }) 
     try {
       await api.delete(`/carreras/${carreraToDelete.id}/`);
       toast.success('Carrera eliminada correctamente');
-      cargarCarreras();
+      setCarreras((prev) => prev.filter((carrera) => carrera.id !== carreraToDelete.id));
       closeDeleteModal();
     } catch (err) {
       console.error(err);

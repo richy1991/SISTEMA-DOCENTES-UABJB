@@ -100,6 +100,12 @@ export const aprobarFondo = (fondoId) => {
 };
 export const observarFondo = (fondoId, data) => api.post(`/fondos-tiempo/${fondoId}/observar/`, data);
 
+// Informe de cumplimiento: borrador / previsualizar / enviar / observar
+export const guardarInformeBorrador = (fondoId, secciones) =>
+  api.patch(`/fondos-tiempo/${fondoId}/guardar-informe-borrador/`, secciones);
+export const observarInforme = (fondoId, comentario) =>
+  api.post(`/fondos-tiempo/${fondoId}/observar-informe/`, { comentario });
+
 export const cambiarEstadoFondo = (id, estado, comentarios = '') => 
   api.post(`/fondos-tiempo/${id}/cambiar_estado/`, { estado, comentarios });
 export const agregarComentarioFondo = (id, comentario) => 
@@ -191,10 +197,32 @@ export const getObservacionesPorFondo = (fondoId, options = {}) => {
   if (options.marcarLeido) params.marcar_leido = true;
   return api.get('/observaciones/', { params });
 };
-export const agregarMensajeObservacion = (observacionId, texto, respondeA = null) => {
+export const agregarMensajeObservacion = (observacionId, texto, respondeA = null, esInterno = false) => {
   const payload = { texto };
   if (respondeA) payload.responde_a = respondeA;
+  if (esInterno) payload.es_interno = true;
   return api.post(`/observaciones/${observacionId}/agregar-mensaje/`, payload);
+};
+
+// ===================================
+// ENDPOINTS - EVIDENCIAS DE CARGA HORARIA (actividades en ejecucion)
+// ===================================
+export const getEvidenciasCargaHoraria = (cargaHorariaId) => {
+  return api.get('/evidencias-carga-horaria/', { params: { carga_horaria: cargaHorariaId } });
+};
+
+export const subirEvidenciaCargaHoraria = (cargaHorariaId, archivo, descripcion = '') => {
+  const formData = new FormData();
+  formData.append('carga_horaria', cargaHorariaId);
+  formData.append('archivo', archivo);
+  if (descripcion) formData.append('descripcion', descripcion);
+  return api.post('/evidencias-carga-horaria/', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
+
+export const eliminarEvidenciaCargaHoraria = (evidenciaId) => {
+  return api.delete(`/evidencias-carga-horaria/${evidenciaId}/`);
 };
 
 export const getTypingObservacionFondo = (fondoId) => {

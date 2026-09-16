@@ -40,7 +40,7 @@ function Login({ onLogin }) {
 
   try {
     const response = await axios.post(`${API_URL}/token/`, {
-      username,
+      username: username.trim(),
       password,
     });
 
@@ -143,9 +143,9 @@ function Login({ onLogin }) {
             </div>
           )}
           
-          {/* Username */}
+          {/* Email */}
           <div className="space-y-2">
-            <label className="text-xs font-bold text-blue-100/85 ml-1 uppercase tracking-wider">Usuario</label>
+            <label className="text-xs font-bold text-blue-100/85 ml-1 uppercase tracking-wider">Correo</label>
             <div className="relative group">
               <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-blue-200/70 group-focus-within:text-blue-300 transition-colors">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -158,7 +158,8 @@ function Login({ onLogin }) {
                 onChange={(e) => setUsername(e.target.value)}
                 required
                 className="login-fixed-input block w-full pl-11 pr-4 py-4 bg-blue-500/20 border border-blue-400/40 rounded-xl text-white placeholder-blue-100/70 focus:outline-none focus:ring-4 focus:ring-blue-300/40 focus:border-blue-300/80 transition-all duration-200 hover:border-blue-300/60 hover:bg-blue-500/25 shadow-[0_10px_24px_rgba(8,15,40,0.35),inset_0_2px_4px_rgba(59,130,246,0.2)]"
-                placeholder="Ingrese su usuario"
+                placeholder="Ingrese su correo"
+                autoComplete="username"
               />
             </div>
           </div>

@@ -2070,13 +2070,19 @@ function ListaCalendarios() {
 
     try {
       if (calendarioSeleccionado) {
-        await api.put(`/calendarios/${calendarioSeleccionado.id}/`, payload);
-        await cargarCalendarios();
+        const response = await api.put(`/calendarios/${calendarioSeleccionado.id}/`, payload);
+        if (response.data?.id) {
+          setCalendarios((prev) => prev.map((calendario) => (
+            calendario.id === response.data.id ? response.data : calendario
+          )));
+        }
         toast.success('Calendario actualizado correctamente');
         resetAndCloseModal();
       } else {
-        await api.post('/calendarios/', payload);
-        await cargarCalendarios();
+        const response = await api.post('/calendarios/', payload);
+        if (response.data?.id) {
+          setCalendarios((prev) => [response.data, ...prev].sort((a, b) => b.gestion - a.gestion || b.periodo.localeCompare(a.periodo)));
+        }
         toast.success(`Calendario Académico ${payload.gestion}-${payload.periodo} creado exitosamente. Ahora puedes asignar Fondos de Tiempo.`);
         resetAndCloseModal();
       }
@@ -2151,12 +2157,16 @@ function ListaCalendarios() {
     if (!calendarioToToggle) return;
     toast.loading(calendarioToToggle.activo ? 'Desactivando calendario...' : 'Activando calendario...');
     try {
-      await api.patch(`/calendarios/${calendarioToToggle.id}/`, { activo: !calendarioToToggle.activo });
+      const response = await api.patch(`/calendarios/${calendarioToToggle.id}/`, { activo: !calendarioToToggle.activo });
       toast.dismiss();
       toast.success(`Calendario ${calendarioToToggle.activo ? 'desactivado' : 'activado'} correctamente.`);
       setShowToggleModal(false);
       setCalendarioToToggle(null);
-      cargarCalendarios();
+      setCalendarios((prev) => prev.map((calendario) => (
+        calendario.id === calendarioToToggle.id
+          ? (response.data?.id ? response.data : { ...calendario, activo: !calendario.activo })
+          : calendario
+      )));
     } catch (err) {
       toast.dismiss();
       toast.error('Error al cambiar el estado del calendario.');

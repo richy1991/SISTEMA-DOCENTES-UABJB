@@ -1,6 +1,6 @@
 from django.db import models
 from decimal import Decimal
-from django.core.validators import MinValueValidator, MaxValueValidator, MinLengthValidator
+from django.core.validators import MinValueValidator, MaxValueValidator, MinLengthValidator, FileExtensionValidator
 from django.core.exceptions import ValidationError
 from django.contrib.auth.models import User
 from django.db.models.signals import post_save, post_delete
@@ -20,6 +20,15 @@ MENSAJE_INCOMPATIBILIDAD_DEDICACION_GESTION = (
     'solo son compatibles con docencia a Tiempo Horario. '
     'No se permite dedicación Tiempo Completo o Medio Tiempo.'
 )
+
+
+CARGA_SEMANAL_ROL_GESTION = {
+    'iiisyp': Decimal('40'),
+    'director': Decimal('40'),
+    'jefe_estudios': Decimal('40'),
+}
+
+TOPE_HORAS_SEMANALES_FONDO = Decimal('40')
 
 
 class DatosLaborales(models.Model):
@@ -117,10 +126,10 @@ class Docente(models.Model):
     DEDICACION_CHOICES = [
         ('tiempo_completo', 'Tiempo Completo'),
         ('medio_tiempo', 'Medio Tiempo'),
-        ('horario_16', 'Horario 16hrs/mes'),
-        ('horario_24', 'Horario 24hrs/mes'),
-        ('horario_40', 'Horario 40hrs/mes'),
-        ('horario_48', 'Horario 48hrs/mes'),
+        ('horario_16', 'Horario 16hrs/sem'),
+        ('horario_24', 'Horario 24hrs/sem'),
+        ('horario_40', 'Horario 40hrs/sem'),
+        ('horario_48', 'Horario 48hrs/sem'),
         ('dedicacion_exclusiva', 'Dedicacion Exclusiva'),
     ]
 
@@ -254,6 +263,7 @@ class DocenteCarrera(models.Model):
     # === Datos específicos del vínculo con esta carrera ===
     categoria = models.CharField(max_length=20, choices=Docente.CATEGORIA_CHOICES)
     dedicacion = models.CharField(max_length=20, choices=Docente.DEDICACION_CHOICES)
+    es_exento_fondo_tiempo = models.BooleanField(default=False)
     condicion = models.CharField(max_length=10, choices=CONDICION_CHOICES, default='titular', blank=False)
     activo = models.BooleanField(default=True)
 
@@ -275,10 +285,10 @@ class DocenteCarrera(models.Model):
         mapa_horas = {
             'tiempo_completo': 40,
             'medio_tiempo': 20,
-            'horario_16': 4,
-            'horario_24': 6,
-            'horario_40': 10,
-            'horario_48': 12,
+            'horario_16': 16,
+            'horario_24': 24,
+            'horario_40': 40,
+            'horario_48': 48,
         }
         return mapa_horas.get(self.dedicacion, 0)
 
@@ -286,30 +296,43 @@ class DocenteCarrera(models.Model):
         from django.core.exceptions import ValidationError
         super().clean()
 
+        user_ids = set()
+        if self.docente and self.docente.user_id:
+            user_ids.add(self.docente.user_id)
+
+        perfiles_relacionados = PerfilUsuario.objects.filter(
+            docente=self.docente,
+            user__isnull=False,
+            activo=True,
+        ).values_list('user_id', flat=True)
+        user_ids.update(user_id for user_id in perfiles_relacionados if user_id)
+
+        roles_asignacion = set(AsignacionCarrera.objects.filter(
+            user_id__in=user_ids,
+            activo=True,
+        ).values_list('rol', flat=True)) if user_ids else set()
+        roles_perfil = set(PerfilUsuario.objects.filter(
+            user_id__in=user_ids,
+            activo=True,
+        ).values_list('rol', flat=True)) if user_ids else set()
+        roles_activos = roles_asignacion | roles_perfil
+        tiene_rol_docente = 'docente' in roles_activos
+        tiene_rol_director = 'director' in roles_activos
+
+        if self.dedicacion == 'dedicacion_exclusiva' and tiene_rol_docente:
+            raise ValidationError({
+                'dedicacion': 'Los usuarios con rol docente deben registrar dedicacion a Tiempo Horario.'
+            })
+
+        if self.dedicacion == 'dedicacion_exclusiva' and not tiene_rol_director:
+            raise ValidationError({
+                'dedicacion': 'La dedicacion exclusiva solo aplica al Director de Carrera.'
+            })
+
         if self.dedicacion in {'tiempo_completo', 'medio_tiempo'}:
-            user_ids = set()
-            if self.docente and self.docente.user_id:
-                user_ids.add(self.docente.user_id)
+            tiene_rol_gestion = bool(roles_activos & {'iiisyp', 'director', 'jefe_estudios'})
 
-            perfiles_relacionados = PerfilUsuario.objects.filter(
-                docente=self.docente,
-                user__isnull=False,
-                activo=True,
-            ).values_list('user_id', flat=True)
-            user_ids.update(user_id for user_id in perfiles_relacionados if user_id)
-
-            tiene_asignacion_gestion = user_ids and AsignacionCarrera.objects.filter(
-                user_id__in=user_ids,
-                activo=True,
-                rol__in=['iiisyp', 'director', 'jefe_estudios'],
-            ).exists()
-            tiene_perfil_gestion = user_ids and PerfilUsuario.objects.filter(
-                user_id__in=user_ids,
-                activo=True,
-                rol__in=['iiisyp', 'director', 'jefe_estudios'],
-            ).exists()
-
-            if tiene_asignacion_gestion or tiene_perfil_gestion:
+            if tiene_rol_gestion and tiene_rol_docente:
                 raise ValidationError({
                     'dedicacion': MENSAJE_INCOMPATIBILIDAD_DEDICACION_GESTION
                 })
@@ -338,6 +361,10 @@ class DocenteCarrera(models.Model):
 
     def save(self, *args, **kwargs):
         """Garantiza que full_clean() (y por tanto clean()) se ejecute antes de guardar."""
+        self.es_exento_fondo_tiempo = self.dedicacion == 'dedicacion_exclusiva'
+        update_fields = kwargs.get('update_fields')
+        if update_fields is not None and 'dedicacion' in update_fields:
+            kwargs['update_fields'] = set(update_fields) | {'es_exento_fondo_tiempo'}
         self.full_clean()
         return super().save(*args, **kwargs)
 
@@ -450,13 +477,14 @@ class Carrera(models.Model):
     """Carreras de la universidad"""
 
     DEFAULT_FACULTADES = [
-        'Facultad de Ingeniería y Tecnología',
-        'Facultad de Ciencias y Tecnologia',
+        'Facultad de Ciencias Pecuarias',
         'Facultad de Ciencias de la Salud',
-        'Facultad de Ciencias Juridicas, Politicas y Sociales',
-        'Facultad de Ciencias Economicas y Financieras',
-        'Facultad de Humanidades y Ciencias de la Educacion',
-        'Facultad de Ciencias Agropecuarias',
+        'Facultad de Ciencias Económicas',
+        'Facultad de Humanidades y Ciencias de la Educación',
+        'Facultad de Ciencias Jurídicas, Políticas y Sociales',
+        'Facultad de Ingeniería y Tecnología',
+        'Facultad de Ciencias Agrícolas',
+        'Facultad de Ciencias Forestales',
     ]
     
     nombre = models.CharField(max_length=200, unique=True)
@@ -899,29 +927,23 @@ class FondoTiempo(models.Model):
         Vacaciones son de la PERSONA (Docente.dias_vacacion).
         Horas diarias se calculan según la dedicación del VÍNCULO (DocenteCarrera).
         """
-        vinculo = self._obtener_vinculo()
-        if not self.docente or not vinculo:
+        horas_semana = self._obtener_horas_semanales_contractuales()
+        if not self.docente or horas_semana <= 0:
             return 0
 
         # Intenta obtener del saldo específico de la gestión
-        try:
-            saldo = SaldoVacacionesGestion.objects.get(
-                docente=self.docente,
-                gestion=self.gestion
-            )
-            dias_vacacion = saldo.dias_disponibles
-            horas_diarias = Decimal(vinculo.horas_semanales_maximas) / 5
-            return int(Decimal(dias_vacacion) * horas_diarias)
-        except SaldoVacacionesGestion.DoesNotExist:
-            pass
+        dedicaciones = set(DocenteCarrera.objects.filter(
+            docente=self.docente,
+            activo=True,
+        ).values_list('dedicacion', flat=True))
 
-        # Fallback: usa el valor del docente
-        dias_vacacion = self.docente.dias_vacacion or 0
-        if dias_vacacion <= 0:
-            dias_vacacion = self.docente.calcular_dias_vacacion(self.gestion)
+        if 'tiempo_completo' in dedicaciones or horas_semana >= Decimal('40'):
+            return 240
 
-        horas_diarias = Decimal(vinculo.horas_semanales_maximas) / 5
-        return int(Decimal(dias_vacacion) * horas_diarias)
+        if 'medio_tiempo' in dedicaciones or horas_semana == Decimal('20'):
+            return 120
+
+        return int((Decimal(horas_semana) / Decimal('40')) * Decimal('240'))
 
     def _obtener_horas_feriados_docente(self):
         """
@@ -930,17 +952,85 @@ class FondoTiempo(models.Model):
         Feriados son de la PERSONA (Docente.horas_feriados_gestion).
         Horas diarias se calculan según la dedicación del VÍNCULO (DocenteCarrera).
         """
-        vinculo = self._obtener_vinculo()
-        if not self.docente or not vinculo:
+        horas_semana = self._obtener_horas_semanales_contractuales()
+        if not self.docente or horas_semana <= 0:
             return 0
 
         dias_feriados = self.docente.horas_feriados_gestion or 128
 
         if dias_feriados == 128:
-            horas_diarias = Decimal(vinculo.horas_semanales_maximas) / 5
+            horas_diarias = Decimal(horas_semana) / 5
             return int(Decimal(16) * horas_diarias)
         else:
             return int(dias_feriados)
+
+    def _obtener_user_ids_docente(self):
+        if not self.docente_id:
+            return set()
+
+        user_ids = set()
+        if self.docente.user_id:
+            user_ids.add(self.docente.user_id)
+
+        perfiles_relacionados = PerfilUsuario.objects.filter(
+            docente=self.docente,
+            user__isnull=False,
+            activo=True,
+        ).values_list('user_id', flat=True)
+        user_ids.update(user_id for user_id in perfiles_relacionados if user_id)
+        return user_ids
+
+    def _obtener_roles_activos_docente(self):
+        user_ids = self._obtener_user_ids_docente()
+        if not user_ids:
+            return set()
+
+        roles = set(AsignacionCarrera.objects.filter(
+            user_id__in=user_ids,
+            activo=True,
+        ).values_list('rol', flat=True))
+
+        roles.update(PerfilUsuario.objects.filter(
+            user_id__in=user_ids,
+            activo=True,
+        ).values_list('rol', flat=True))
+
+        return roles
+
+    def _tiene_rol_gestion_activo(self):
+        return bool(self._obtener_roles_activos_docente() & set(CARGA_SEMANAL_ROL_GESTION.keys()))
+
+    def _obtener_horas_semanales_contractuales(self):
+        """
+        Calcula la carga semanal del fondo considerando dobles roles.
+
+        Suma los vinculos docentes activos y reconoce los roles de gestion como
+        dedicacion contractual base cuando superan la docencia horaria.
+        """
+        if not self.docente_id:
+            return Decimal('0')
+
+        vinculos = DocenteCarrera.objects.filter(
+            docente=self.docente,
+            activo=True,
+        )
+        horas_docencia = sum(
+            (Decimal(vinculo.horas_semanales_maximas or 0) for vinculo in vinculos),
+            Decimal('0'),
+        )
+
+        roles_activos = self._obtener_roles_activos_docente()
+        horas_gestion = max(
+            (
+                CARGA_SEMANAL_ROL_GESTION[rol]
+                for rol in roles_activos
+                if rol in CARGA_SEMANAL_ROL_GESTION
+            ),
+            default=Decimal('0'),
+        )
+
+        horas_semana = max(horas_docencia, horas_gestion)
+        return min(horas_semana, TOPE_HORAS_SEMANALES_FONDO)
 
     def _recalcular_horas_automaticas(self):
         """
@@ -953,17 +1043,11 @@ class FondoTiempo(models.Model):
             return
 
         # Buscar el vínculo DocenteCarrera para esta carrera
-        vinculo = DocenteCarrera.objects.filter(
-            docente=self.docente,
-            carrera=self.carrera,
-            activo=True
-        ).first()
+        horas_semana = self._obtener_horas_semanales_contractuales()
 
-        if not vinculo:
+        if horas_semana <= 0:
             # Si no hay vínculo, no se puede calcular
             return
-
-        horas_semana = vinculo.horas_semanales_maximas
 
         # 1. Horas semanales del vínculo
         self.horas_semana = Decimal(horas_semana)
@@ -1019,6 +1103,9 @@ class FondoTiempo(models.Model):
             ('aprobado_director', 'en_ejecucion'),
             ('en_ejecucion', 'informe_presentado'),
             ('informe_presentado', 'finalizado'),
+            # El Director solicita correcciones al informe: vuelve a ejecucion
+            # para que el docente pueda editarlo y reenviarlo.
+            ('informe_presentado', 'en_ejecucion'),
             # Flujo legado soportado para datos/endpoints antiguos.
             ('borrador', 'presentado_jefe'),
             ('presentado_jefe', 'presentado_director'),
@@ -1031,18 +1118,48 @@ class FondoTiempo(models.Model):
             
             # Si está en estado bloqueado, comparar con cambios
             if fondo_actual.estado in ESTADOS_BLOQUEADOS:
-                # Campos que NO pueden cambiar una vez presentado
+                # Campos de CONTENIDO del fondo (lo que se presento): quedan
+                # congelados apenas el fondo entra a un estado bloqueado.
+                # Auditoria 2026-09-12: la lista original solo cubria 7 campos
+                # (docente, carrera, gestion, periodo, horas_vacacion,
+                # horas_feriados, horas_efectivas) y dejaba editables campos
+                # como asignatura, tipo_fondo, semanas_año, horas_semana,
+                # contrato_horas, clases_aula_horas,
+                # funciones_sustantivas_horas, calendario_academico,
+                # tiene_programa_analitico, programa_analitico_url y
+                # observaciones aunque el fondo ya estuviera presentado.
+                #
+                # `observaciones` (texto libre en el propio FondoTiempo) se
+                # incluye aqui como bloqueado: los comentarios reales del
+                # Director/Jefatura con auditoria de quien/cuando ya tienen
+                # su propio canal (ObservacionFondo + MensajeObservacion, via
+                # el endpoint `agregar-comentario`), asi que este campo no
+                # necesita quedar editable.
+                #
+                # Deliberadamente NO estan en esta lista los campos de
+                # workflow/auditoria que las propias transiciones de estado
+                # deben poder escribir aunque el fondo ya este en un estado
+                # bloqueado (aprobar, observar, iniciar ejecucion, etc.):
+                # `estado` (validado aparte, mas abajo), `fecha_presentacion`,
+                # `fecha_aprobacion`, `fecha_validacion`,
+                # `fecha_inicio_ejecucion`, `fecha_informe`,
+                # `fecha_finalizacion`, `aprobado_por`, `validado_por`,
+                # `comentarios_admin`, `archivado`, y los automaticos
+                # `fecha_creacion`/`fecha_modificacion`.
                 campos_criticos = [
-                    'docente', 'carrera', 'gestion', 'periodo',
-                    'horas_vacacion', 'horas_feriados', 'horas_efectivas'
+                    'docente', 'carrera', 'calendario_academico', 'gestion', 'periodo',
+                    'asignatura', 'tipo_fondo', 'semanas_año', 'horas_semana',
+                    'horas_vacacion', 'horas_feriados', 'contrato_horas',
+                    'clases_aula_horas', 'funciones_sustantivas_horas', 'horas_efectivas',
+                    'observaciones', 'tiene_programa_analitico', 'programa_analitico_url',
                 ]
-                
+
                 cambios_detectados = False
                 for campo in campos_criticos:
                     if getattr(self, campo) != getattr(fondo_actual, campo):
                         cambios_detectados = True
                         break
-                
+
                 if cambios_detectados:
                     raise ValidationError({
                         'estado': (
@@ -1160,9 +1277,66 @@ def evidencia_upload_path(instance, filename):
         return f'uploads/uncategorized/{filename}'
 
 class Actividad(models.Model):
-    """Actividades específicas dentro de cada categoría"""
+    """
+    OBSOLETO desde 2026-09-12 — no usar en código nuevo.
+
+    Este modelo era el catálogo original de sub-actividades por CategoriaFuncion,
+    de la primera versión del Fondo de Tiempo. Quedó reemplazado por
+    `CargaHoraria.tipo_actividad` (texto libre validado contra
+    `CARGA_HORARIA_TIPOS_POR_CATEGORIA` en `fondos/serializers.py`), que es el
+    único catálogo que alimenta hoy la carga horaria real de un docente.
+
+    Motivo de la deprecación (auditoría técnica de Fondo de Tiempo, 2026-09-12):
+    - 0 filas en toda la base de datos: ningún fondo real usa este modelo.
+    - Sus 15 `SUBACTIVIDAD_ACADEMICA_CHOICES` ya divergieron de los tipos
+      vigentes en `CARGA_HORARIA_TIPOS_POR_CATEGORIA['academica']` (p. ej.
+      `practica_laboratorios` aquí vs. `practica_laboratorios_centro_computo`
+      en el catálogo vivo), por lo que ya no son intercambiables.
+    - El único formulario que lo usaba (`FormularioActividad.jsx`) fue
+      eliminado del frontend; en `DetalleFondo.jsx` la sección que leía
+      `categoria.actividades` quedó deshabilitada de forma permanente
+      (`{false && ...}`).
+    - El único código que aún podía escribir filas aquí,
+      `fondos/management/commands/cargar_excel.py`, ya está roto por
+      cambios previos e independientes en `Docente` (usa campos
+      `categoria`/`dedicacion` que ya no existen en ese modelo), así que en
+      la práctica no hay ninguna ruta de escritura activa.
+
+    No se elimina la tabla ni el modelo para no romper el historial de
+    migraciones ni la serialización existente (`ActividadSerializer`,
+    expuesta como `CategoriaFuncion.actividades`), que sigue devolviendo una
+    lista vacía sin efectos secundarios. `ActividadAdmin` quedó en solo
+    lectura para impedir que se creen filas nuevas manualmente desde
+    /admin/. No agregar funcionalidad nueva sobre este modelo: cualquier
+    necesidad de sub-actividades académicas debe implementarse sobre
+    `CargaHoraria`.
+    """
+
+    SUBACTIVIDAD_ACADEMICA_CHOICES = [
+        ('preparacion_temas', 'Preparación de temas'),
+        ('clases_aula', 'Clases en aula'),
+        ('elaboracion_trabajos_practicos', 'Elaboración de Trabajos Prácticos'),
+        ('revision_calificacion_trabajos_practicos', 'Revisión y Calificación de Trabajos Prácticos'),
+        ('elaboracion_examenes', 'Elaboración de Exámenes'),
+        ('revision_calificacion_examenes', 'Revisión y Calificación de Exámenes'),
+        ('practica_laboratorios', 'Práctica de Laboratorios'),
+        ('practicas_campo', 'Prácticas de Campo'),
+        ('produccion_docente_textos_guias', 'Producción docente (textos guías)'),
+        ('consultas_reclamos_calificaciones', 'Consultas y Reclamos de Calificaciones'),
+        ('elaboracion_planillas_introduccion_notas', 'Elaboración de planillas e Introducción de notas'),
+        ('planificacion_gestion_practica_extra_aula', 'Planificación y gestión de práctica extra aula'),
+        ('ejecucion_practica_extra_aula', 'Ejecución de práctica extra aula'),
+        ('informe_descargo_viaje_practicas_extra_aula', 'Informe de descargo de viaje en prácticas extra aula'),
+        ('cursos_verano', 'Cursos de verano'),
+    ]
     
     categoria = models.ForeignKey(CategoriaFuncion, on_delete=models.CASCADE, related_name='actividades')
+    subactividad_academica = models.CharField(
+        max_length=60,
+        choices=SUBACTIVIDAD_ACADEMICA_CHOICES,
+        blank=True,
+        help_text="Sub-actividad pedagógica reglamentaria para la categoría Académica"
+    )
     detalle = models.CharField(max_length=300)
     horas_semana = models.DecimalField(max_digits=5, decimal_places=2, default=0, validators=[MinValueValidator(0)])
     horas_año = models.DecimalField(max_digits=6, decimal_places=2, default=0, validators=[MinValueValidator(0)])
@@ -1184,8 +1358,9 @@ class Actividad(models.Model):
     )
     
     class Meta:
-        verbose_name = "Actividad"
-        verbose_name_plural = "Actividades"
+        # Nombres visibles en /admin/ marcados a proposito: ver docstring de la clase (OBSOLETO desde 2026-09-12).
+        verbose_name = "Actividad (OBSOLETO - usar CargaHoraria)"
+        verbose_name_plural = "Actividades (OBSOLETO - usar CargaHoraria)"
         ordering = ['categoria', 'orden', 'id']
     
     def __str__(self):
@@ -1234,7 +1409,17 @@ class CargaHoraria(models.Model):
         blank=True,
         help_text='Descripcion de la actividad para cargas no academicas.'
     )
+    tipo_actividad = models.CharField(
+        max_length=80,
+        blank=True,
+        help_text='Sub-actividad especifica segun la categoria del Fondo de Tiempo.'
+    )
     horas = models.PositiveIntegerField(help_text="Cantidad de horas anuales asignadas para esta actividad.")
+    evidencias = models.TextField(
+        blank=True,
+        default='',
+        help_text='Evidencias o respaldo descriptivo de la actividad.'
+    )
     documento_respaldo = models.CharField(
         max_length=100,
         blank=True,
@@ -1254,6 +1439,31 @@ class CargaHoraria(models.Model):
                 condition=models.Q(hora_fin__gt=models.F('hora_inicio')),
                 name='cargahoraria_hora_fin_gt_inicio',
             ),
+            # Blindaje a nivel de base de datos (auditoria 2026-09-12): la regla de
+            # "materia obligatoria en Academica" antes solo vivia en
+            # CargaHorariaSerializer.validate(). Cualquier escritura que no pase por
+            # el serializer (admin, shell, un endpoint nuevo) quedaba sin protegerse.
+            models.CheckConstraint(
+                condition=models.Q(categoria='academica', materia__isnull=False)
+                | ~models.Q(categoria='academica'),
+                name='cargahoraria_materia_obligatoria_si_academica',
+            ),
+            # Blindaje a nivel de base de datos (auditoria 2026-09-12): la regla de
+            # "no repetir tipo_actividad en la misma categoria" antes solo vivia en
+            # CargaHorariaSerializer.validate(). Se separa en dos constraints porque
+            # en Academica dos materias distintas SI pueden compartir el mismo
+            # tipo_actividad (p. ej. 'clases_aula' de dos materias), mientras que en
+            # el resto de categorias el tipo_actividad debe ser unico sin mas.
+            models.UniqueConstraint(
+                fields=['docente', 'calendario', 'categoria', 'tipo_actividad', 'materia'],
+                condition=models.Q(categoria='academica'),
+                name='cargahoraria_unique_tipo_academica_por_materia',
+            ),
+            models.UniqueConstraint(
+                fields=['docente', 'calendario', 'categoria', 'tipo_actividad'],
+                condition=~models.Q(categoria='academica'),
+                name='cargahoraria_unique_tipo_no_academica',
+            ),
         ]
 
     def clean(self):
@@ -1266,6 +1476,72 @@ class CargaHoraria(models.Model):
             f"{self.docente.nombre_completo} - {materia_txt} {self.paralelo} "
             f"({self.dia_semana} {self.hora_inicio}-{self.hora_fin})"
         )
+
+
+def evidencia_carga_horaria_upload_path(instance, filename):
+    """Genera la ruta: /evidencias_carga/docente_id/gestion_YYYY/categoria/carga_id/filename"""
+    try:
+        carga = instance.carga_horaria
+        docente_id = carga.docente_id
+        gestion = carga.calendario.gestion if carga.calendario_id else 'sin_gestion'
+        return f'evidencias_carga/docente_{docente_id}/gestion_{gestion}/{carga.categoria}/{carga.id}/{filename}'
+    except Exception:
+        return f'evidencias_carga/uncategorized/{filename}'
+
+
+class EvidenciaCargaHoraria(models.Model):
+    """
+    Archivo de respaldo (evidencia de cumplimiento) que el docente adjunta a
+    una actividad especifica de su carga horaria (CargaHoraria) mientras el
+    fondo esta 'en_ejecucion'.
+
+    Es independiente del campo de texto `CargaHoraria.evidencias` (la
+    descripcion esperada de que evidencia corresponde): este modelo guarda
+    los archivos reales que prueban que la actividad se cumplio, y permite
+    varios archivos por actividad.
+    """
+
+    EXTENSIONES_PERMITIDAS = ['pdf', 'jpg', 'jpeg', 'png', 'docx']
+    TAMANO_MAXIMO_MB = 10
+
+    carga_horaria = models.ForeignKey(
+        CargaHoraria,
+        on_delete=models.CASCADE,
+        related_name='archivos_evidencia',
+    )
+    archivo = models.FileField(
+        upload_to=evidencia_carga_horaria_upload_path,
+        validators=[FileExtensionValidator(allowed_extensions=EXTENSIONES_PERMITIDAS)],
+        help_text='PDF, imagen (JPG/PNG) o documento Word (DOCX) que respalda el cumplimiento de la actividad.',
+    )
+    descripcion = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        help_text='Descripcion opcional del archivo adjunto.',
+    )
+    subido_por = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='evidencias_carga_horaria_subidas',
+    )
+    fecha_subida = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Evidencia de Carga Horaria'
+        verbose_name_plural = 'Evidencias de Carga Horaria'
+        ordering = ['-fecha_subida']
+
+    def __str__(self):
+        return f'Evidencia #{self.pk} - {self.carga_horaria}'
+
+    def clean(self):
+        super().clean()
+        if self.archivo and self.archivo.size > self.TAMANO_MAXIMO_MB * 1024 * 1024:
+            raise ValidationError({
+                'archivo': f'El archivo supera el tamaño maximo permitido de {self.TAMANO_MAXIMO_MB}MB.'
+            })
 
 
 class Proyecto(models.Model):
@@ -1345,19 +1621,100 @@ class InformeFondo(models.Model):
         ('incumplido', 'Incumplido'),
     ]
     
+    ESTADO_CHOICES = [
+        ('borrador', 'Borrador'),
+        ('enviado', 'Enviado'),
+        ('observado', 'Observado'),
+        ('aprobado', 'Aprobado'),
+    ]
+
     fondo_tiempo = models.ForeignKey(FondoTiempo, on_delete=models.CASCADE, related_name='informes')
     elaborado_por = models.ForeignKey(User, on_delete=models.PROTECT, related_name='informes_elaborados')
     tipo = models.CharField(max_length=10, choices=TIPO_CHOICES)
+    estado = models.CharField(
+        max_length=10, choices=ESTADO_CHOICES, default='borrador',
+        help_text='Flujo de revision: borrador (el docente edita libremente) -> enviado '
+                   '(formal, ya no editable) -> observado (el Director pidio correcciones, '
+                   'vuelve a ser editable) -> aprobado (cierre del fondo).'
+    )
     fecha_elaboracion = models.DateField(auto_now_add=True)
     
-    resumen_ejecutivo = models.TextField(help_text="Resumen de las actividades realizadas")
-    actividades_realizadas = models.TextField(help_text="Detalle de actividades ejecutadas")
-    resultados = models.TextField(help_text="Resultados obtenidos")
-    logros = models.TextField(help_text="Logros alcanzados")
-    dificultades = models.TextField(blank=True, help_text="Dificultades encontradas") 
+    # Campos legados (pre 2026-09-13): el formulario ya no los pide de forma
+    # individual, quedaron blank=True para no romper filas ya guardadas ni
+    # el guardado desde el nuevo formulario por secciones. El contenido real
+    # del informe vive ahora en las 7 secciones de abajo.
+    resumen_ejecutivo = models.TextField(blank=True, default='', help_text="Resumen de las actividades realizadas (legado)")
+    actividades_realizadas = models.TextField(blank=True, default='', help_text="Detalle de actividades ejecutadas (legado)")
+    resultados = models.TextField(blank=True, default='', help_text="Resultados obtenidos (legado)")
+    logros = models.TextField(blank=True, default='', help_text="Logros alcanzados (legado)")
+    dificultades = models.TextField(blank=True, help_text="Dificultades encontradas (legado)")
     evidencias = models.TextField(blank=True, help_text="Evidencias de cumplimiento")
     observaciones = models.TextField(blank=True)
-    
+
+    # Secciones del informe por categoria del Fondo de Tiempo (Art. 28):
+    # el docente redacta libremente cada una; ninguna es obligatoria a nivel
+    # de modelo porque no todos los docentes tienen actividad en las 7
+    # categorias (p. ej. no todos hacen gestion o asesorias/tutorias). La
+    # validacion de minimos (Academica y Conclusiones) vive en el formulario
+    # y en el endpoint de presentacion.
+    seccion_academica = models.TextField(
+        blank=True, default='',
+        help_text='Cumplimiento de objetivos, resultados por materia (inscritos/aprobados/reprobados), metodologia de evaluacion.'
+    )
+    seccion_investigacion = models.TextField(
+        blank=True, default='',
+        help_text='Proyectos de investigacion realizados, colaboraciones, resultados concretos.'
+    )
+    seccion_extension_interaccion = models.TextField(
+        blank=True, default='',
+        help_text='Extension universitaria e interaccion social: ferias, consultorias, cursos de actualizacion.'
+    )
+    seccion_asesorias_tutorias = models.TextField(
+        blank=True, default='',
+        help_text='Tribunales de graduacion, tutorias de proyectos.'
+    )
+    seccion_academica_administrativa = models.TextField(
+        blank=True, default='',
+        help_text='Actividades de gestion, POA, comisiones.'
+    )
+    seccion_social_cultural_deportiva = models.TextField(
+        blank=True, default='',
+        help_text='Participacion en eventos universitarios sociales, culturales y deportivos.'
+    )
+    conclusiones_generales = models.TextField(
+        blank=True, default='',
+        help_text='Resumen final del informe y recomendaciones.'
+    )
+
+    # Bloques editables del documento tipo carta (encabezado, datos del
+    # documento, saludo/introduccion, cierre y firma), en reemplazo del
+    # editor "7 cajas sueltas": ahora todo el informe se edita como un
+    # documento continuo tipo Word. Quedan blank por defecto: mientras el
+    # docente no guarde un valor propio, el editor y el PDF precargan el
+    # texto calculado desde Docente/Carrera/Director en
+    # fondos/utils/informe_texto.py (construir_defaults_informe).
+    encabezado_texto = models.TextField(
+        blank=True, default='',
+        help_text='Encabezado institucional (Universidad/Vicerrectorado/Facultad/Carrera), una línea por renglón.'
+    )
+    fecha_texto = models.CharField(max_length=100, blank=True, default='')
+    destinatario_nombre = models.CharField(max_length=255, blank=True, default='')
+    destinatario_cargo = models.CharField(max_length=255, blank=True, default='')
+    remitente_nombre = models.CharField(max_length=255, blank=True, default='')
+    remitente_cargo = models.CharField(max_length=255, blank=True, default='')
+    referencia_texto = models.CharField(max_length=255, blank=True, default='')
+    saludo_intro_html = models.TextField(
+        blank=True, default='',
+        help_text='Saludo y párrafo introductorio, en HTML (mismo formato que las 7 secciones).'
+    )
+    cierre_html = models.TextField(
+        blank=True, default='',
+        help_text='Párrafos de cierre y "Atentamente,", en HTML.'
+    )
+    firma_nombre = models.CharField(max_length=255, blank=True, default='')
+    firma_cargo = models.CharField(max_length=255, blank=True, default='')
+    firma_email = models.CharField(max_length=255, blank=True, default='')
+
     cumplimiento = models.CharField(max_length=15, choices=CUMPLIMIENTO_CHOICES, blank=True)
     evaluacion_director = models.TextField(blank=True)
     fecha_evaluacion = models.DateField(null=True, blank=True)
@@ -1368,6 +1725,12 @@ class InformeFondo(models.Model):
         blank=True,
         help_text="Archivo de evidencia adjunto al informe (PDF, ZIP, etc.)"
     )
+    evidencia = models.FileField(
+        upload_to='evidencias/',
+        null=True,
+        blank=True,
+        help_text="Evidencia digital del informe final (PDF/Imagen)"
+    )
     fecha_modificacion = models.DateTimeField(auto_now=True)
     
     class Meta:
@@ -1377,6 +1740,26 @@ class InformeFondo(models.Model):
     
     def __str__(self):
         return f"Informe {self.get_tipo_display()} - {self.fondo_tiempo.docente.nombre_completo}"
+
+
+class InformeAsignaturaEjecutada(models.Model):
+    """Materias ejecutadas reportadas dinámicamente en el informe final."""
+
+    fondo_tiempo = models.ForeignKey(FondoTiempo, on_delete=models.CASCADE, related_name='asignaturas_ejecutadas')
+    nombre_materia = models.CharField(max_length=200)
+    inscritos = models.PositiveIntegerField(default=0)
+    aprobados = models.PositiveIntegerField(default=0)
+    reprobados = models.PositiveIntegerField(default=0)
+    habilitados = models.PositiveIntegerField(default=0)
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Asignatura Ejecutada en Informe"
+        verbose_name_plural = "Asignaturas Ejecutadas en Informes"
+        ordering = ['nombre_materia']
+
+    def __str__(self):
+        return f"{self.nombre_materia} - {self.fondo_tiempo.docente.nombre_completo}"
 
 
 class ObservacionFondo(models.Model):
@@ -1431,7 +1814,15 @@ class MensajeObservacion(models.Model):
     fecha = models.DateTimeField(auto_now_add=True)
     leido_en = models.DateTimeField(null=True, blank=True)
     es_admin = models.BooleanField(default=False)  # True si lo envió un admin/director
-    
+    es_interno = models.BooleanField(
+        default=False,
+        help_text=(
+            'Si es True, el mensaje es una nota interna entre Director y Jefe de '
+            'Estudios: no se muestra al docente dueño del fondo, solo a Director, '
+            'Jefe de Estudios y administradores.'
+        ),
+    )
+
     class Meta:
         verbose_name = "Mensaje de Observación"
         verbose_name_plural = "Mensajes de Observación"

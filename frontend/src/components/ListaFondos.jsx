@@ -36,6 +36,19 @@ const SparklesIcon = (props) => (
   </svg>
 );
 
+const ESTADOS_FONDO = {
+  borrador: 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-600',
+  presentado_jefe: 'bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700',
+  observado: 'bg-orange-100 dark:bg-orange-900 text-orange-700 dark:text-orange-300 border-orange-300 dark:border-orange-700',
+  presentado_director: 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300 border-yellow-300 dark:border-yellow-700',
+  aprobado_director: 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700',
+  en_ejecucion: 'bg-cyan-100 dark:bg-cyan-900 text-cyan-700 dark:text-cyan-300 border-cyan-300 dark:border-cyan-700',
+  informe_presentado: 'bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-700',
+  finalizado: 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700',
+  rechazado: 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 border-red-300 dark:border-red-700',
+  archivado: 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600',
+};
+
 function ListaFondos({ isDark }) {
   const { effectiveUser, activeAssignment } = useActiveRole();
   const [fondos, setFondos] = useState([]);
@@ -109,7 +122,7 @@ function ListaFondos({ isDark }) {
     try {
       await eliminarFondoTiempo(fondoId);
 
-      await cargarFondos();
+      setFondos((prev) => prev.filter((fondo) => fondo.id !== fondoId));
       alert('✅ Fondo archivado correctamente');
     } catch (err) {
       console.error(err);
@@ -136,7 +149,7 @@ function ListaFondos({ isDark }) {
       const response = await generarFondosTiempoMasivo();
       const resumen = response.data || {};
       setShowMassiveModal(false);
-      await cargarFondos();
+      await cargarFondos({ silencioso: true });
       alert(
         `Fondos generados correctamente.\n\nCreados: ${resumen.creados || 0}\n` +
         `Omitidos por Dedicación Exclusiva: ${resumen.omitidos_exclusiva || 0}\n` +
@@ -264,15 +277,7 @@ function ListaFondos({ isDark }) {
                     </div>
 
                     {/* Estado */}
-                    <span className={`px-3 py-1.5 rounded-lg text-xs font-semibold border-2 shadow-sm ${
-                      fondo.estado === 'validado' 
-                        ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700' 
-                        : fondo.estado === 'aprobado' 
-                          ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700'
-                          : fondo.estado === 'revision'
-                            ? 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300 border-yellow-300 dark:border-yellow-700'
-                            : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-600'
-                    }`}>
+                    <span className={`px-3 py-1.5 rounded-lg text-xs font-semibold border-2 shadow-sm ${ESTADOS_FONDO[fondo.estado] || ESTADOS_FONDO.borrador}`}>
                       {fondo.estado.toUpperCase()}
                     </span>
                   </div>
@@ -327,7 +332,7 @@ function ListaFondos({ isDark }) {
                         </Link>
                       )}
 
-                      {esAdmin() && ['aprobado_director', 'finalizado', 'rechazado', 'aprobado', 'anulado'].includes(fondo.estado) && (
+                      {esAdmin() && ['aprobado_director', 'finalizado', 'rechazado', 'archivado'].includes(fondo.estado) && (
                         <button
                           onClick={() => archivarFondo(fondo.id)}
                           className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-lg transition duration-300 hover:scale-105 shadow-md hover:shadow-lg"

@@ -270,7 +270,10 @@ class CategoriaFuncionAdmin(admin.ModelAdmin):
 
 
 # =====================================================
-# ACTIVIDAD ADMIN
+# ACTIVIDAD ADMIN -- OBSOLETO desde 2026-09-12, ver docstring de Actividad en models.py.
+# Solo lectura: el catalogo vivo de sub-actividades es CargaHoraria.tipo_actividad.
+# No se permite crear/editar/borrar filas nuevas desde /admin/ para evitar que
+# se reintroduzcan datos huerfanos fuera del flujo real (CargaHorariaViewSet).
 # =====================================================
 
 @admin.register(Actividad)
@@ -279,6 +282,15 @@ class ActividadAdmin(admin.ModelAdmin):
     list_filter = ['categoria__tipo']
     search_fields = ['detalle', 'categoria__fondo_tiempo__asignatura']
     ordering = ['categoria', 'orden']
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 # =====================================================
