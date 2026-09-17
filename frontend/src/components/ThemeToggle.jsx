@@ -1,12 +1,8 @@
-import { SunMedium, MoonStar } from 'lucide-react';
-
-function ThemeToggle({ theme, setTheme, variant = 'floating' }) {
+function ThemeToggle({ theme, setTheme }) {
   const toggleTheme = () => {
-    const isDark = theme
-      ? theme === 'dark'
-      : document.documentElement.classList.contains('dark');
+    const isDark = document.documentElement.classList.contains('dark');
     const nextTheme = isDark ? 'light' : 'dark';
-
+    
     // Aplicar inmediatamente al DOM
     if (nextTheme === 'dark') {
       document.documentElement.classList.add('dark');
@@ -14,52 +10,17 @@ function ThemeToggle({ theme, setTheme, variant = 'floating' }) {
       document.documentElement.classList.remove('dark');
     }
     localStorage.setItem('theme', nextTheme);
-
+    
     // Notificar al padre
     if (setTheme) setTheme(nextTheme);
-
+    
     // Forzar re-render de toda la página
     window.dispatchEvent(new Event('storage'));
   };
 
-  // Leer estado actual: preferir la prop theme, si no, leer el DOM
-  const isDarkMode = theme
-    ? theme === 'dark'
-    : document.documentElement.classList.contains('dark');
+  // Leer estado actual del DOM
+  const isDarkMode = document.documentElement.classList.contains('dark');
 
-  // --- VARIANTE INLINE (integrada en el Sidebar) ---
-  // El Sidebar SIEMPRE usa fondo bg-blue-900 (no depende del tema),
-  // por eso el botón tiene un estilo FIJO armonizado con esa paleta azul.
-  // Solo el ícono cambia (sol/luna) para reflejar el tema global actual,
-  // deslizándose horizontalmente (derecha <-> izquierda).
-  if (variant === 'inline') {
-    return (
-      <button
-        type="button"
-        onClick={toggleTheme}
-        className="ft-theme-toggle group relative w-11 h-11 rounded-lg flex items-center justify-center overflow-hidden border text-blue-100 bg-blue-800/50 border-blue-600/40 cursor-pointer"
-        title={isDarkMode ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
-        aria-label={isDarkMode ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
-      >
-        {/* Sol (modo claro): centrado en claro, se desliza a la izquierda en oscuro */}
-        <SunMedium
-          className={`w-5 h-5 absolute transition-all duration-300 ease-out ${
-            isDarkMode ? 'opacity-0 -translate-x-[150%]' : 'opacity-100 translate-x-0'
-          }`}
-          strokeWidth={1.8}
-        />
-        {/* Luna con estrella (modo oscuro): centrado en oscuro, se desliza a la derecha en claro */}
-        <MoonStar
-          className={`w-5 h-5 absolute transition-all duration-300 ease-out ${
-            isDarkMode ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-[150%]'
-          }`}
-          strokeWidth={1.8}
-        />
-      </button>
-    );
-  }
-
-  // --- VARIANTE FLOTANTE (original) ---
   return (
     <button
       onClick={toggleTheme}

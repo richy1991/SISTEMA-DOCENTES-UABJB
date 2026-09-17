@@ -3,7 +3,7 @@ import { uploadProfilePicture, deleteProfilePicture } from '../apis/api';
 import defaultProfileImg from '../assets/logoPre.jpg';
 import toast from 'react-hot-toast';
 
-const ProfilePicture = ({ user, onUpdate, className = '' }) => {
+const ProfilePicture = ({ user, onUpdate }) => {
   // Inicializar con la imagen predeterminada importada
   const [image, setImage] = useState(defaultProfileImg);
   const [isCustomImage, setIsCustomImage] = useState(false);
@@ -125,7 +125,7 @@ const ProfilePicture = ({ user, onUpdate, className = '' }) => {
         accept="image/png, image/jpeg"
       />
       
-      <div className={`w-full h-full rounded-full overflow-hidden shadow-md relative group bg-white ${className}`}>
+      <div className="w-full h-full rounded-full overflow-hidden shadow-md relative group bg-white">
         <img
           src={image}
           alt="Perfil"

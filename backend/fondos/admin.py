@@ -3,8 +3,7 @@ from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from .models import (
     Docente, DocenteCarrera, Carrera, CalendarioAcademico, FondoTiempo,
-    CategoriaFuncion, Actividad, SubActividadDocente, Proyecto, InformeFondo,
-    InformeAsignaturaEjecutada, Evidencia,
+    CategoriaFuncion, Actividad, Proyecto, InformeFondo,
     ObservacionFondo, HistorialFondo, PerfilUsuario,
     MensajeObservacion, HistorialFondo, DatosLaborales, SaldoVacacionesGestion
 )
@@ -294,24 +293,6 @@ class ActividadAdmin(admin.ModelAdmin):
         return False
 
 
-@admin.register(SubActividadDocente)
-class SubActividadDocenteAdmin(admin.ModelAdmin):
-    list_display = ['fondo_tiempo', 'tipo', 'horas_semana', 'horas_anio', 'orden']
-    list_filter = ['tipo', 'fondo_tiempo__gestion']
-    search_fields = ['fondo_tiempo__docente__apellido_paterno', 'fondo_tiempo__docente__nombres', 'evidencias']
-    ordering = ['fondo_tiempo', 'orden', 'id']
-
-
-class InformeAsignaturaEjecutadaInline(admin.TabularInline):
-    model = InformeAsignaturaEjecutada
-    extra = 0
-
-
-class EvidenciaInline(admin.TabularInline):
-    model = Evidencia
-    extra = 0
-
-
 # =====================================================
 # PROYECTO ADMIN (NUEVO)
 # =====================================================
@@ -386,10 +367,10 @@ class ProyectoAdmin(admin.ModelAdmin):
 @admin.register(InformeFondo)
 class InformeFondoAdmin(admin.ModelAdmin):
     list_display = [
-        'fondo_tiempo', 'tipo_display', 'estado', 'cumplimiento_badge',
+        'fondo_tiempo', 'tipo_display', 'cumplimiento_badge',
         'fecha_elaboracion', 'elaborado_por'
     ]
-    list_filter = ['tipo', 'estado', 'cumplimiento', 'fecha_elaboracion']
+    list_filter = ['tipo', 'cumplimiento', 'fecha_elaboracion']
     search_fields = [
         'fondo_tiempo__asignatura',
         'fondo_tiempo__docente__apellido_paterno',
@@ -399,7 +380,7 @@ class InformeFondoAdmin(admin.ModelAdmin):
     
     fieldsets = (
         ('Información Básica', {
-            'fields': ('fondo_tiempo', 'tipo', 'estado', 'elaborado_por')
+            'fields': ('fondo_tiempo', 'tipo', 'elaborado_por')
         }),
         ('Contenido del Informe', {
             'fields': (
@@ -419,7 +400,6 @@ class InformeFondoAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
-    inlines = [InformeAsignaturaEjecutadaInline, EvidenciaInline]
     
     readonly_fields = ['fecha_elaboracion', 'fecha_modificacion']
     

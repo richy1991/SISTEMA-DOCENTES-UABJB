@@ -280,7 +280,7 @@ function DistribuirHoras({
           </button>
         )}
 
-        {false && canAddActivity && onAgregarActividad && !hideActionButtons && (
+        {canAddActivity && onAgregarActividad && !hideActionButtons && (
           <button
             onClick={onAgregarActividad}
             className="mt-4 w-full py-2 px-4 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-sm shadow-blue-500/30 transition-all hover:scale-[1.01] flex items-center justify-center gap-2"

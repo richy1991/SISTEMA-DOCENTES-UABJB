@@ -1,33 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;500;600;700;800;900&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@layer components {
-  .input-fondo {
-    @apply w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder-slate-500 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 dark:border-slate-600 dark:bg-slate-700 dark:text-white dark:placeholder-slate-400;
-  }
-}
-
-@keyframes toastPop {
-  0% {
-    transform: translateY(0) scale(1);
-  }
-  35% {
-    transform: translateY(-4px) scale(1.02);
-  }
-  70% {
-    transform: translateY(1px) scale(0.99);
-  }
-  100% {
-    transform: translateY(0) scale(1);
-  }
-}
-
-.toast-brinco {
-  animation: toastPop 240ms ease-out;
-}
 
 html,
 body,
@@ -60,32 +33,6 @@ html:not(.dark) input[type='radio'] {
 
 html:not(.dark) .border-t {
   border-top-color: #cbd5e1;
-}
-
-.ft-sidebar-footer {
-  border-top: 1px solid rgba(96, 165, 250, 0.42);
-}
-
-/* Botón de tema del Sidebar (Fondo de Tiempo).
-   Neutraliza la regla global `button:not(:disabled):hover` del módulo POA
-   para que NO se levante ni resalte al pasar el cursor. */
-.ft-theme-toggle,
-.ft-theme-toggle:hover,
-.ft-theme-toggle:active,
-.ft-theme-toggle:focus-visible {
-  /* Colores FIJOS (idénticos en modo claro y oscuro): el sidebar siempre es
-     azul, por lo que el botón de tema no debe cambiar de fondo ni de texto
-     al alternar el tema. Coinciden con bg-blue-800/50 y text-blue-100. */
-  background-color: rgba(30, 64, 175, 0.5) !important;
-  color: #dbeafe !important;
-  transform: none !important;
-  filter: none !important;
-  box-shadow: none !important;
-  outline: none !important;
-}
-
-.ft-sidebar-profile-section {
-  border-bottom: 1px solid rgba(96, 165, 250, 0.42);
 }
 
 /* Uniformizar color de bordes en modo claro.
@@ -409,36 +356,12 @@ html.dark [class*="border-red-500"] {
 }
 
 /* Fondo de Tiempo: aislar tablas/tarjetas de Actividades Planificadas */
-.fondo-select-menu-scroll {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.fondo-select-menu-scroll::-webkit-scrollbar {
-  display: none;
-}
-
-@keyframes fondo-card-flow {
-  from {
-    opacity: 0;
-    transform: translateY(18px) scale(0.985);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-.animate-fondo-card-flow {
-  animation: fondo-card-flow 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
 .fondo-tiempo-cards table {
   width: 100% !important;
   border-collapse: collapse !important;
   border-spacing: 0 !important;
   background: transparent !important;
-  border: 1px solid #b8c7d6 !important;
+  border: none !important;
   border-radius: 0 !important;
   box-shadow: none !important;
 }
@@ -450,34 +373,22 @@ html.dark [class*="border-red-500"] {
 .fondo-tiempo-cards table th,
 .fondo-tiempo-cards table td {
   background: transparent !important;
-  font-family: "Nunito Sans", "Segoe UI", Helvetica, Arial, sans-serif !important;
+  font-size: inherit !important;
   letter-spacing: normal !important;
   text-transform: none !important;
 }
 
 .fondo-tiempo-cards table th {
-  background: #a9d8df !important;
-  color: #123c49 !important;
-  border-bottom: 1px solid #6ba6b1 !important;
-  padding: 0.9rem 1.5rem !important;
-  font-size: 0.875rem !important;
-  line-height: 1.25rem !important;
-  font-weight: 900 !important;
+  background: rgba(241, 245, 249, 0.55) !important;
+  color: #64748b !important;
+  border-bottom: 1px solid rgba(203, 213, 225, 0.6) !important;
+  padding: 0.75rem !important;
 }
 
 .fondo-tiempo-cards table td {
-  background: #e6f0f7 !important;
-  color: #0f2233 !important;
-  border-bottom: 1px solid #b3c7d8 !important;
-  padding: 1rem 1.5rem !important;
-  font-size: 0.875rem !important;
-  line-height: 1.35rem !important;
-  font-weight: 800 !important;
-}
-
-.fondo-tiempo-cards table th:not(:last-child),
-.fondo-tiempo-cards table td:not(:last-child) {
-  border-right: 1px solid #adc2d4 !important;
+  color: #334155 !important;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.6) !important;
+  padding: 0.75rem !important;
 }
 
 .fondo-tiempo-cards table tbody tr {
@@ -490,7 +401,7 @@ html.dark [class*="border-red-500"] {
 }
 
 .fondo-tiempo-cards table tbody tr:hover {
-  background: #e9f3fa !important;
+  background: rgba(248, 250, 252, 0.7) !important;
 }
 
 .dark .fondo-tiempo-cards table,
@@ -504,32 +415,17 @@ html.dark [class*="border-red-500"] {
   box-shadow: none !important;
 }
 
-.dark .fondo-tiempo-cards table {
-  border: 1px solid #64748b !important;
-}
-
 .dark .fondo-tiempo-cards table th {
-  background: #263241 !important;
-  color: #dbe7f1 !important;
-  border-bottom: 1px solid #64748b !important;
-  padding: 0.9rem 1.5rem !important;
-  font-size: 0.875rem !important;
-  line-height: 1.25rem !important;
-  font-weight: 900 !important;
+  background: rgba(30, 41, 59, 0.45) !important;
+  color: #94a3b8 !important;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.6) !important;
+  padding: 0.75rem !important;
 }
 
 .dark .fondo-tiempo-cards table td {
-  color: #f1f5f9 !important;
-  border-bottom: 1px solid #526174 !important;
-  padding: 1rem 1.5rem !important;
-  font-size: 0.875rem !important;
-  line-height: 1.35rem !important;
-  font-weight: 800 !important;
-}
-
-.dark .fondo-tiempo-cards table th:not(:last-child),
-.dark .fondo-tiempo-cards table td:not(:last-child) {
-  border-right: 1px solid #526174 !important;
+  color: #cbd5e1 !important;
+  border-bottom: 1px solid rgba(30, 41, 59, 0.6) !important;
+  padding: 0.75rem !important;
 }
 
 .dark .fondo-tiempo-cards table tbody tr:hover {
@@ -539,40 +435,23 @@ html.dark [class*="border-red-500"] {
 /* Refuerzo por ID: anula definitivamente estilos globales de POA en esta sección */
 #fondo-actividades-planificadas table {
   background: transparent !important;
-  border: 1px solid #b8c7d6 !important;
+  border: none !important;
   border-radius: 0 !important;
   box-shadow: none !important;
 }
 
-.dark #fondo-actividades-planificadas table {
-  border: 1px solid #64748b !important;
-}
-
 #fondo-actividades-planificadas table th {
-  background: #a9d8df !important;
-  color: #123c49 !important;
-  border-bottom: 1px solid #6ba6b1 !important;
-  padding: 0.9rem 1.5rem !important;
-  font-family: "Nunito Sans", "Segoe UI", Helvetica, Arial, sans-serif !important;
-  font-size: 0.875rem !important;
-  line-height: 1.25rem !important;
-  font-weight: 900 !important;
+  background: rgba(241, 245, 249, 0.55) !important;
+  color: #64748b !important;
+  border-bottom: 1px solid rgba(203, 213, 225, 0.6) !important;
+  padding: 0.75rem !important;
 }
 
 #fondo-actividades-planificadas table td {
-  background: #e6f0f7 !important;
-  color: #0f2233 !important;
-  border-bottom: 1px solid #b3c7d8 !important;
-  padding: 1rem 1.5rem !important;
-  font-family: "Nunito Sans", "Segoe UI", Helvetica, Arial, sans-serif !important;
-  font-size: 0.875rem !important;
-  line-height: 1.35rem !important;
-  font-weight: 800 !important;
-}
-
-#fondo-actividades-planificadas table th:not(:last-child),
-#fondo-actividades-planificadas table td:not(:last-child) {
-  border-right: 1px solid #adc2d4 !important;
+  background: transparent !important;
+  color: #334155 !important;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.6) !important;
+  padding: 0.75rem !important;
 }
 
 #fondo-actividades-planificadas table tbody tr,
@@ -582,36 +461,23 @@ html.dark [class*="border-red-500"] {
 }
 
 #fondo-actividades-planificadas table tbody tr:hover {
-  background: #e9f3fa !important;
+  background: rgba(248, 250, 252, 0.7) !important;
 }
 
 /* (Removed) Styles for login-fixed-theme moved to component scope to avoid global overrides */
 
 .dark #fondo-actividades-planificadas table th {
-  background: #263241 !important;
-  color: #dbe7f1 !important;
-  border-bottom: 1px solid #64748b !important;
-  padding: 0.9rem 1.5rem !important;
-  font-family: "Nunito Sans", "Segoe UI", Helvetica, Arial, sans-serif !important;
-  font-size: 0.875rem !important;
-  line-height: 1.25rem !important;
-  font-weight: 900 !important;
+  background: rgba(30, 41, 59, 0.45) !important;
+  color: #94a3b8 !important;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.6) !important;
+  padding: 0.75rem !important;
 }
 
 .dark #fondo-actividades-planificadas table td {
   background: transparent !important;
-  color: #f1f5f9 !important;
-  border-bottom: 1px solid #526174 !important;
-  padding: 1rem 1.5rem !important;
-  font-family: "Nunito Sans", "Segoe UI", Helvetica, Arial, sans-serif !important;
-  font-size: 0.875rem !important;
-  line-height: 1.35rem !important;
-  font-weight: 800 !important;
-}
-
-.dark #fondo-actividades-planificadas table th:not(:last-child),
-.dark #fondo-actividades-planificadas table td:not(:last-child) {
-  border-right: 1px solid #526174 !important;
+  color: #cbd5e1 !important;
+  border-bottom: 1px solid rgba(30, 41, 59, 0.6) !important;
+  padding: 0.75rem !important;
 }
 
 .dark #fondo-actividades-planificadas table tbody tr:hover {
@@ -1543,20 +1409,18 @@ html.dark [class*="border-red-500"] {
 }
 
 .ft-chat-panel {
-  font-family: "Nunito Sans", "Segoe UI", Helvetica, Arial, sans-serif;
+  font-family: "Segoe UI", Helvetica, Arial, sans-serif;
   border: 1px solid #d5dde8;
   background: #ffffff;
   color: #050505;
   box-shadow: 0 24px 72px rgba(15, 23, 42, 0.22);
   user-select: none;
-  transform-origin: center center;
-  --ft-chat-close-x: 54px;
-  --ft-chat-close-y: 76px;
+  transform-origin: calc(100% - 1.75rem) calc(100% + 4.5rem);
 }
 
 .ft-chat-panel.is-closing {
   pointer-events: none;
-  animation: ftChatAbsorbIntoButton 540ms cubic-bezier(0.32, 0, 0.2, 1) forwards;
+  animation: ftChatAbsorbIntoButton 320ms cubic-bezier(0.32, 0, 0.2, 1) forwards;
 }
 
 .ft-chat-panel input,
@@ -1578,10 +1442,15 @@ html.dark [class*="border-red-500"] {
     transform: translate3d(0, 0, 0) scale(1);
     filter: blur(0);
   }
+  65% {
+    opacity: 0.82;
+    transform: translate3d(32px, 42px, 0) scale(0.28);
+    filter: blur(0.2px);
+  }
   100% {
     opacity: 0;
-    transform: translate3d(var(--ft-chat-close-x), var(--ft-chat-close-y), 0) scale(0.01);
-    filter: blur(0.45px);
+    transform: translate3d(54px, 76px, 0) scale(0.04);
+    filter: blur(1px);
   }
 }
 
@@ -1814,27 +1683,6 @@ html.dark [class*="border-red-500"] {
   background: rgba(31, 42, 58, 0.94);
 }
 
-.ft-chat-system-message {
-  display: flex;
-  justify-content: center;
-  margin: 0.55rem auto 0.75rem;
-  padding: 0 1rem;
-  text-align: center;
-  pointer-events: none;
-}
-
-.ft-chat-system-message span {
-  max-width: 22rem;
-  color: #64748b;
-  font-size: 0.68rem;
-  font-weight: 400;
-  line-height: 1.3;
-}
-
-.dark .ft-chat-system-message span {
-  color: #8fa6ba;
-}
-
 .ft-chat-empty {
   display: inline-block;
   max-width: 100%;
@@ -2045,8 +1893,7 @@ html.dark [class*="border-red-500"] {
 }
 
 .ft-chat-message-menu.is-peer {
-  left: 0.15rem;
-  right: auto;
+  right: 0.15rem;
 }
 
 .ft-chat-message-menu button {
@@ -2066,17 +1913,6 @@ html.dark [class*="border-red-500"] {
 .ft-chat-message-menu button:hover {
   background: #2C4AAE;
   color: #ffffff;
-}
-
-.ft-chat-message-menu button:disabled {
-  cursor: not-allowed;
-  color: #94a3b8;
-  opacity: 0.62;
-}
-
-.ft-chat-message-menu button:disabled:hover {
-  background: transparent;
-  color: #94a3b8;
 }
 
 .ft-chat-bubble {
@@ -2164,9 +2000,8 @@ html.dark [class*="border-red-500"] {
   display: block;
   color: var(--ft-chat-accent, #00e5ff);
   font-size: 0.74rem;
-  font-weight: 700;
+  font-weight: 500;
   line-height: 1.1;
-  text-shadow: 0 0 8px color-mix(in srgb, var(--ft-chat-accent, #00e5ff) 45%, transparent);
 }
 
 .ft-chat-reply-quote p {
@@ -2345,36 +2180,6 @@ html.dark [class*="border-red-500"] {
 
 .dark .ft-chat-pinned-bar > svg,
 .dark .ft-chat-pinned-clear {
-  color: #94a3b8;
-}
-
-.ft-chat-readonly-banner {
-  position: relative;
-  z-index: 12;
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
-  background: rgba(248, 250, 252, 0.96);
-  color: #475569;
-  padding: 0.5rem 0.72rem;
-  font-size: 0.74rem;
-  font-weight: 400;
-}
-
-.ft-chat-readonly-banner svg {
-  flex: 0 0 auto;
-  color: #64748b;
-  stroke-width: 2.2;
-}
-
-.dark .ft-chat-readonly-banner {
-  border-bottom-color: rgba(148, 163, 184, 0.16);
-  background: rgba(31, 42, 58, 0.96);
-  color: #cbd5e1;
-}
-
-.dark .ft-chat-readonly-banner svg {
   color: #94a3b8;
 }
 
@@ -2564,8 +2369,6 @@ html.dark [class*="border-red-500"] {
 
 .ft-chat-reply-preview span {
   color: var(--ft-chat-accent, #00e5ff);
-  font-weight: 700;
-  text-shadow: 0 0 8px color-mix(in srgb, var(--ft-chat-accent, #00e5ff) 42%, transparent);
 }
 
 .ft-chat-reply-preview p,
@@ -2739,10 +2542,6 @@ html.dark [class*="border-red-500"] {
 .dark .ft-chat-resolve-confirm p,
 .dark .ft-chat-resolve-sticky p {
   color: #cbd5e1;
-}
-
-.dark .ft-chat-reply-preview span {
-  color: var(--ft-chat-accent, #00e5ff);
 }
 
 .dark .ft-chat-reply-preview button,
@@ -3000,7 +2799,7 @@ body .observacion-modal-overlay {
 }
 
 .observacion-modal-card {
-  font-family: "Nunito Sans", "Segoe UI", Helvetica, Arial, sans-serif;
+  font-family: "Segoe UI", Helvetica, Arial, sans-serif;
   width: min(42rem, 100%);
   max-height: 90vh;
   overflow-y: auto;
@@ -3013,7 +2812,7 @@ body .observacion-modal-overlay {
 
 .observacion-modal-card textarea,
 .observacion-modal-card button {
-  font-family: "Nunito Sans", "Segoe UI", Helvetica, Arial, sans-serif;
+  font-family: "Segoe UI", Helvetica, Arial, sans-serif;
 }
 
 .observacion-modal-header {
