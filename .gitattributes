@@ -33,6 +33,15 @@
 *.sqlite3 binary -text -eol -working-tree-encoding
 *.sqlite binary -text -eol -working-tree-encoding
 *.db binary -text -eol -working-tree-encoding
+*.xlsx binary -text -eol -working-tree-encoding
+*.xls binary -text -eol -working-tree-encoding
+*.xlsm binary -text -eol -working-tree-encoding
+*.docx binary -text -eol -working-tree-encoding
+*.doc binary -text -eol -working-tree-encoding
+*.pptx binary -text -eol -working-tree-encoding
+*.ppt binary -text -eol -working-tree-encoding
+*.pdf binary -text -eol -working-tree-encoding
+*.zip binary -text -eol -working-tree-encoding
 
 # Images and binary assets (never normalize line endings/encoding)
 *.png binary -text -eol -working-tree-encoding
